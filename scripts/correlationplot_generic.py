@@ -58,8 +58,8 @@ def main(records, ZEROS=0, stat='spearman'):
 
 
     g = sb.PairGrid(ibaqs_log)
-    g.map_upper(plot_delegator, stat='pearson', filter_zeros=True, upper_or_lower='upper')
-    g.map_lower(plot_delegator, stat='pearson', filter_zeros=True, upper_or_lower='lower')
+    g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper')
+    g.map_lower(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='lower')
     g.map_diag(hist)
     # save_multiple(g, '../figures/correlationplot2/scatter_human_3less_zeros', '.png', '.pdf',
     #               dpi=96)
@@ -86,9 +86,14 @@ if __name__ == '__main__':
             runno=1,
             searchno=1
         ),
+        dict(
+            recno=32920,
+            runno=1,
+            searchno=1
+        ),
 
     ]
     ZEROS = 'max'  # a number or 'max', for the clustermap
-    stat='spearman'
+    stat='pearson'
 
     main(EXPS, ZEROS, stat)

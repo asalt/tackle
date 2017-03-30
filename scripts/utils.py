@@ -58,7 +58,8 @@ def hist(x, **kwargs):
     X = x[ (~x.isnull()) & ~(x.abs() == np.inf) ]
     plt.hist(X.values, **kwargs)
 
-r_colors = sb.color_palette("coolwarm", n_colors=200)
+N_COLORS = 100
+r_colors = sb.color_palette("coolwarm", n_colors=N_COLORS)
 
 def plot_delegator(x, y, stat='pearson', filter_zeros=True,
                     upper_or_lower='upper', **kwargs):
@@ -90,7 +91,7 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
     text = 'n = {:,}\nr = {:.2f}'.format(len(X), r)
 
 
-    ax_bg_ix = int(round(r+1, 2) * 100 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
+    ax_bg_ix = int(round(r+1, 2) * N_COLORS/2 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
     ax_bg = r_colors[ax_bg_ix]
     ax.patch.set_facecolor(ax_bg)
     # kwargs['text'] = text
@@ -101,7 +102,7 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
 def annotate_stat(x, y, ax, text, **kwargs):
 
     ax.annotate(text, xy=(0.5, 0.5), xycoords='axes fraction',
-                va='center', ha='center'
+                va='center', ha='center', size=30
     )
     sb.despine(ax=ax, left=True, bottom=True)
 
