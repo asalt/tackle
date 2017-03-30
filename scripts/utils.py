@@ -48,17 +48,17 @@ def filter_taxon(panel, taxon=9606):
     return panel.loc[:, indices, :]
 
 
-def pearson_r2(x, y):
-    return stats.pearsonr(x, y)[0] ** 2
+def pearson_r(x, y):
+    return stats.pearsonr(x, y)[0]
 
-def spearman_r2(x, y):
-    return stats.spearmanr(x, y)[0] ** 2
+def spearman_r(x, y):
+    return stats.spearmanr(x, y)[0]
 
 def hist(x, **kwargs):
     X = x[ (~x.isnull()) & ~(x.abs() == np.inf) ]
     plt.hist(X.values, **kwargs)
 
-rsquare_colors = sb.color_palette("coolwarm", n_colors=100)
+r_colors = sb.color_palette("coolwarm", n_colors=200)
 
 def plot_delegator(x, y, stat='pearson', filter_zeros=True,
                     upper_or_lower='upper', **kwargs):
@@ -82,16 +82,16 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
     ax = plt.gca()
 
     if stat == 'pearson':
-        rsquared = pearson_r2(X,Y)
+        r = pearson_r(X,Y)
         text = 'Pearson'
     elif stat == 'spearman':
-        rsquared = spearman_r2(X,Y)
+        r = spearman_r(X,Y)
         text = 'Spearman'
-    text = 'n = {:,}\nr$^2$ = {:.2f}'.format(len(X), rsquared)
+    text = 'n = {:,}\nr = {:.2f}'.format(len(X), r)
 
 
-    ax_bg_ix = int(round(rsquared, 2) * 100 )
-    ax_bg = rsquare_colors[ax_bg_ix]
+    ax_bg_ix = int(round(r+1, 2) * 100 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
+    ax_bg = r_colors[ax_bg_ix]
     ax.patch.set_facecolor(ax_bg)
     # kwargs['text'] = text
 
@@ -103,6 +103,7 @@ def annotate_stat(x, y, ax, text, **kwargs):
     ax.annotate(text, xy=(0.5, 0.5), xycoords='axes fraction',
                 va='center', ha='center'
     )
+    sb.despine(ax=ax, left=True, bottom=True)
 
 def scatter(x, y, ax, **kwargs):
     try:
