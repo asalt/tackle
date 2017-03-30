@@ -56,10 +56,16 @@ def spearman_r2(x, y):
 
 def hist(x, **kwargs):
     X = x[ (~x.isnull()) & ~(x.abs() == np.inf) ]
-    plt.hist(X, **kwargs)
+    plt.hist(X.values, **kwargs)
 
 rsquare_colors = sb.color_palette("coolwarm", n_colors=100)
-def scatter(x, y, stat='pearson', filter_zeros=True, **kwargs):
+
+def plot_delegator(x, y, stat='pearson', filter_zeros=True,
+                    upper_or_lower='upper', **kwargs):
+    if upper_or_lower == 'upper':
+        func = annotate_stat
+    elif upper_or_lower == 'lower':
+        func = scatter
 
     x_nonzero = x[ (~x.isnull()) & ~(x.abs() == np.inf) ].index
     y_nonzero = y[ (~y.isnull()) & ~(y.abs() == np.inf) ].index
@@ -74,20 +80,38 @@ def scatter(x, y, stat='pearson', filter_zeros=True, **kwargs):
 
     kwargs['alpha'] = .2
     ax = plt.gca()
-    ax.scatter(X, Y, c='k', **kwargs)
+
     if stat == 'pearson':
         rsquared = pearson_r2(X,Y)
         text = 'Pearson'
     elif stat == 'spearman':
         rsquared = spearman_r2(X,Y)
         text = 'Spearman'
-    text += ' r$^2$ {:.2f}'.format(rsquared)
-    ax.annotate(text, xy=(0.05, 0.95), xycoords='axes fraction')
+    text = 'n = {:,}\nr$^2$ = {:.2f}'.format(len(X), rsquared)
 
 
     ax_bg_ix = int(round(rsquared, 2) * 100 )
     ax_bg = rsquare_colors[ax_bg_ix]
     ax.patch.set_facecolor(ax_bg)
+    # kwargs['text'] = text
+
+    func(X, Y, ax, text=text, **kwargs)
+
+
+def annotate_stat(x, y, ax, text, **kwargs):
+
+    ax.annotate(text, xy=(0.5, 0.5), xycoords='axes fraction',
+                va='center', ha='center'
+    )
+
+def scatter(x, y, ax, **kwargs):
+    try:
+        kwargs.pop('text')
+    except KeyError:
+        pass
+
+    ax.scatter(x, y, c='k', **kwargs)
+
     # anchored_text = AnchoredText(text, loc=2)
     # ax.add_artist(anchored_text)
 

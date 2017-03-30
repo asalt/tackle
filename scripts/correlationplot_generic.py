@@ -58,7 +58,8 @@ def main(records, ZEROS=0, stat='spearman'):
 
 
     g = sb.PairGrid(ibaqs_log)
-    g.map_offdiag(scatter, stat='spearman', filter_zeros=True)
+    g.map_upper(plot_delegator, stat='spearman', filter_zeros=True, upper_or_lower='upper')
+    g.map_lower(plot_delegator, stat='spearman', filter_zeros=True, upper_or_lower='lower')
     g.map_diag(hist)
     # save_multiple(g, '../figures/correlationplot2/scatter_human_3less_zeros', '.png', '.pdf',
     #               dpi=96)
@@ -69,9 +70,9 @@ def main(records, ZEROS=0, stat='spearman'):
     min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
     ibaqs_nonzero = (ibaqs.fillna(0) + min_nonzero*.1).apply(np.log10)
     ibaqs_zscore = (ibaqs_nonzero - ibaqs_nonzero.mean()) / ibaqs_nonzero.std()
-    g = sb.clustermap(ibaqs_zscore)
-    g.ax_heatmap.setyticklabels([])
-    save_multiple(g, '../figures/clustermap_human_{}less_zeros'.format(ZEROS), '.png',)
+    # g = sb.clustermap(ibaqs_zscore)
+    # g.ax_heatmap.setyticklabels([])
+    # save_multiple(g, '../figures/clustermap_human_{}less_zeros'.format(ZEROS), '.png',)
 
 if __name__ == '__main__':
 
