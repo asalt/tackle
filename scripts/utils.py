@@ -54,19 +54,32 @@ def pearson_r2(x, y):
 def spearman_r2(x, y):
     return stats.spearmanr(x, y)[0] ** 2
 
+def hist(x, **kwargs):
+    X = x[ (~x.isnull()) & ~(x.abs() == np.inf) ]
+    plt.hist(X, **kwargs)
 
 rsquare_colors = sb.color_palette("coolwarm", n_colors=100)
-def scatter(x, y, stat='pearson', **kwargs):
+def scatter(x, y, stat='pearson', filter_zeros=True, **kwargs):
 
+    x_nonzero = x[ (~x.isnull()) & ~(x.abs() == np.inf) ].index
+    y_nonzero = y[ (~y.isnull()) & ~(y.abs() == np.inf) ].index
+
+    nonzeros = list(set(x_nonzero) & set(y_nonzero))
+
+    X, Y = x, y
+
+    if filter_zeros:
+        X = x.loc[nonzeros]
+        Y = y.loc[nonzeros]
 
     kwargs['alpha'] = .2
     ax = plt.gca()
-    ax.scatter(x, y, **kwargs)
+    ax.scatter(X, Y, c='k', **kwargs)
     if stat == 'pearson':
-        rsquared = pearson_r2(x,y)
+        rsquared = pearson_r2(X,Y)
         text = 'Pearson'
     elif stat == 'spearman':
-        rsquared = spearman_r2(x,y)
+        rsquared = spearman_r2(X,Y)
         text = 'Spearman'
     text += ' r$^2$ {:.2f}'.format(rsquared)
     ax.annotate(text, xy=(0.05, 0.95), xycoords='axes fraction')

@@ -34,7 +34,7 @@ def main(records, ZEROS=0, stat='spearman'):
 
     exps = dict()
     for record in records:
-        exp = ispec.E2G(**record, data_dir='../data/raw/')
+        exp = ispec.E2G(data_dir='../data/raw/', **record)
         if len(exp) == 0:
             print('No data in {!r}'.format(exp))
             continue
@@ -45,29 +45,32 @@ def main(records, ZEROS=0, stat='spearman'):
 
     panel = pd.Panel(exps)
     panel_filtered = (panel.pipe(filter_observations, 'iBAQ_dstrAdj', ZEROS)
-                    .pipe(filter_taxon)
+                      .pipe(filter_taxon)
     )
 
-    ibaqs = panel_filtered.minor_xs('iBAQ_dstrAdj')
-    min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
-    ibaqs = ((ibaqs.fillna(0) + min_nonzero*.1)
-            .apply(np.log10)
-    )
+    ibaqs = panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
+
+    ibaqs_log = ibaqs.apply(np.log10)
+    # min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
+    # ibaqs = ((ibaqs.fillna(0) + min_nonzero*.1)
+    #         .apply(np.log10)
+    # )
 
 
-
-
-    g = sb.PairGrid(ibaqs)
-    g.map_offdiag(scatter, stat='spearman')
-    g.map_diag(plt.hist)
+    g = sb.PairGrid(ibaqs_log)
+    g.map_offdiag(scatter, stat='spearman', filter_zeros=True)
+    g.map_diag(hist)
     # save_multiple(g, '../figures/correlationplot2/scatter_human_3less_zeros', '.png', '.pdf',
     #               dpi=96)
     save_multiple(g, '../figures/scatter_human_{}less_zeros'.format(ZEROS), '.png',
-                dpi=96)
+                  dpi=96)
 
 
-    ibaqs_zscore = (ibaqs - ibaqs.mean()) / ibaqs.std()
+    min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
+    ibaqs_nonzero = (ibaqs.fillna(0) + min_nonzero*.1).apply(np.log10)
+    ibaqs_zscore = (ibaqs_nonzero - ibaqs_nonzero.mean()) / ibaqs_nonzero.std()
     g = sb.clustermap(ibaqs_zscore)
+    g.ax_heatmap.setyticklabels([])
     save_multiple(g, '../figures/clustermap_human_{}less_zeros'.format(ZEROS), '.png',)
 
 if __name__ == '__main__':
@@ -84,7 +87,7 @@ if __name__ == '__main__':
         ),
 
     ]
-    ZEROS = 0 # a number or 'max'
+    ZEROS = 'max'  # a number or 'max', for the clustermap
     stat='spearman'
 
     main(EXPS, ZEROS, stat)
