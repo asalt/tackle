@@ -3,7 +3,9 @@
 """
 import os
 import re
+import configparser
 import operator as op
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 import pandas as pd
@@ -89,3 +91,37 @@ def save_multiple(fig, filename, *exts, verbose=True, dpi=300, **save_kwargs):
         fig.savefig(out, dpi=dpi, **save_kwargs)
         if verbose:
             print('done.', flush=True)
+
+def make_config(path='.'):
+    config = configparser.ConfigParser()
+    config['Name'] = OrderedDict((('recno', 12345),
+                                  ('runno', 1),
+                                  ('searchno', 1)))
+    file_ = os.path.join(path, 'generic_config.ini')
+    with open(file_, 'w') as cf:
+        print('Creating ', file_)
+        config.write(cf)
+        cf.write('#runno and searchno are optional, default to 1\n')
+
+def read_config(configfile):
+    """reads config file and returns the data"""
+    config = configparser.ConfigParser()
+    with open(configfile, 'r') as f:
+        config.read_file(f)
+
+    sections = config.sections()
+    FIELDS = ('recno', 'runno', 'searchno',)
+
+    data = defaultdict(lambda : dict(runno=1, searchno=1))
+    for section_key in sections:
+        section = config[section_key]
+        for field in FIELDS:
+            value = section.get(field)
+            if value is None:
+                continue
+            data[section_key][field] = value
+        if 'recno' not in data[section_key]:  # record number is required
+            print(section_key, 'does not have recno defined, skipping')
+            data.pop(section_key)
+
+    return dict(data)
