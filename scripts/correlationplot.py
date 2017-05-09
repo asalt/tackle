@@ -36,7 +36,7 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
 
     exps = OrderedDict()
     for name, record in records.items():
-        exp = ispec.E2G(**record, data_dir=data_dir)
+        exp = ispec.E2G(data_dir=data_dir, **record)
         if len(exp) == 0:
             print('No data in {!r}'.format(exp))
             continue
