@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import operator as op
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -20,7 +21,7 @@ import click
 
 
 from bcmproteomics_ext import ispec
-sb.set_context('notebook', font_scale=1.2)
+sb.set_context('notebook', font_scale=1.4)
 
 from utils import *
 
@@ -33,7 +34,7 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
 
 
 
-    exps = dict()
+    exps = OrderedDict()
     for name, record in records.items():
         exp = ispec.E2G(**record, data_dir=data_dir)
         if len(exp) == 0:
@@ -52,16 +53,51 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
     ibaqs = panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
 
     ibaqs_log = ibaqs.apply(np.log10)
+
+    minval = ibaqs_log.min().min()
+    shift_val = np.ceil(np.abs(minval))
+
+    ibaqs_log_shifted = ibaqs_log + shift_val
+
+    xymin = np.floor(ibaqs_log_shifted.min().min())
+    xymax = np.ceil(ibaqs_log_shifted.max().max())
+
     # min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
     # ibaqs = ((ibaqs.fillna(0) + min_nonzero*.1)
     #         .apply(np.log10)
     # )
 
 
-    g = sb.PairGrid(ibaqs_log)
+    g = sb.PairGrid(ibaqs_log_shifted)
     g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper')
-    g.map_lower(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='lower')
-    g.map_diag(hist)
+    g.map_lower(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='lower',
+                xymin=xymin, xymax=xymax)
+    g.map_diag(hist, xmin=xymin, xmax=xymax)
+
+    sb.despine(fig=g.fig, left=True, bottom=True)
+    remove_ticklabels(fig=g.fig)
+
+    #  adjust the spacing between subplots
+    hspace = g.fig.subplotpars.hspace
+    wspace = g.fig.subplotpars.wspace
+    g.fig.subplots_adjust(hspace=hspace*.25, wspace=wspace*.25, right=.8, bottom=.2)
+
+    cbar_ax = g.fig.add_axes([.85, .15, .05, .7])
+    plot_cbar(cbar_ax)
+
+    # range_ax = g.fig.add_axes([.25, .05, .65, .05])
+    range_ax = g.fig.add_axes([.20, .06, .50, .06])
+    range_ax.set_xlim((xymin, xymax))
+    props = dict(color='black', linewidth=2, markeredgewidth=2)
+    with sb.plotting_context(context='notebook', font_scale=1.4):
+        font_size = mpl.rcParams['font.size'] * .9
+        make_xaxis(range_ax, fmt_str='%1.0f', **props)
+        range_ax.set_xlabel('log10 iBAQ dstrAdj', labelpad=16,
+                            fontdict={'size': font_size, 'weight': 'normal'},)
+        sb.despine(ax=range_ax, left=True, bottom=True)
+        remove_ticklabels(ax=range_ax)
+
+
     # save_multiple(g, '../figures/correlationplot2/scatter_human_3less_zeros', '.png', '.pdf',
     #               dpi=96)
     save_multiple(g, '../figures/scatter_human_{}less_zeros'.format(ZEROS), '.png',
