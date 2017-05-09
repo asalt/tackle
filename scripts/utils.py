@@ -60,7 +60,7 @@ def hist(x, xmin=None, xmax=None, **kwargs):
     if 'color' in kwargs:
         color = kwargs.pop('color')
     X = x[ (~x.isnull()) & ~(x.abs() == np.inf) ]
-    plt.hist(X.values, **kwargs, color='grey')
+    plt.hist(X.values, color='grey', **kwargs)
 
     # sb.despine(ax=ax, left=True, bottom=True)
     ax = plt.gca()
