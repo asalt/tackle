@@ -111,12 +111,12 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
                            '{}_scatter_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png', dpi=96)
 
-    # ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
-    # g = sb.clustermap(ibaqs_zscore)
-    # g.ax_heatmap.set_yticklabels([])
-    # outname = os.path.join(OUTPATH,
-    #                        '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
-    # save_multiple(g, outname, '.png',)
+    ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
+    g = sb.clustermap(ibaqs_zscore)
+    g.ax_heatmap.set_yticklabels([])
+    outname = os.path.join(OUTPATH,
+                           '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
+    save_multiple(g, outname, '.png',)
 
 @click.command()
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
