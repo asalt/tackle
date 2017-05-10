@@ -26,8 +26,10 @@ build/
 dist/
 auto/
 
+figures/*
 figures/*.png
 figures/*pdf
 data/raw/*txt
 data/raw/*tab
 data/raw/*json
+*.ini

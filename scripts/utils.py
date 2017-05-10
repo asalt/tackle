@@ -16,7 +16,7 @@ mpl.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
 import seaborn as sb
-from seaborn.distributions import _freedman_diaconis_bins
+from seaborn.distributions import _freedman_diaconis_bins as seaborn_bin_calc
 import click
 
 
@@ -59,8 +59,14 @@ def spearman_r(x, y):
 def hist(x, xmin=None, xmax=None, **kwargs):
     if 'color' in kwargs:
         color = kwargs.pop('color')
-    X = x[ (~x.isnull()) & ~(x.abs() == np.inf) ]
-    plt.hist(X.values, color='grey', **kwargs)
+    if 'bins' in kwargs:
+        kwargs.pop('bins')
+    if 'edgecolor' in kwargs:
+        kwargs.pop('edgecolor')
+    X = x[ x>0 ]
+    nbins = seaborn_bin_calc(X)
+    # print(nbins)
+    plt.hist(X.values, color='grey', bins=nbins, edgecolor='none', **kwargs)
 
     # sb.despine(ax=ax, left=True, bottom=True)
     ax = plt.gca()
@@ -96,6 +102,7 @@ def plot_cbar(ax):
     ax.set_ylabel('r value')
 
 def make_xaxis(ax, yloc=0, offset=0.05, fmt_str='%1.1f', **props):
+
     xmin, xmax = ax.get_xlim()
     locs = [loc for loc in ax.xaxis.get_majorticklocs()
             if loc >= xmin and loc <= xmax]
@@ -118,10 +125,13 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
     elif upper_or_lower == 'lower':
         func = scatter
 
-    x_nonzero = x[ (~x.isnull()) & ~(x.abs() == np.inf) ].index
-    y_nonzero = y[ (~y.isnull()) & ~(y.abs() == np.inf) ].index
+    # x_nonzero = x[ (~x.isnull()) & ~(x.abs() == np.inf) ].index
+    # y_nonzero = y[ (~y.isnull()) & ~(y.abs() == np.inf) ].index
+    x_nonzero = x[ x > 0 ].index
+    y_nonzero = y[ y > 0 ].index
 
     nonzeros = list(set(x_nonzero) & set(y_nonzero))
+    # nonzeros = list(set(x_nonzero) | set(y_nonzero))
 
     X, Y = x, y
 
@@ -140,29 +150,43 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
         text = 'Spearman'
     text = 'n = {:,}\nr = {:.2f}'.format(len(X), r)
 
-
-    ax_bg_ix = int(round(r+1, 2) * N_COLORS/2 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
-    ax_bg = r_colors[ax_bg_ix]
-    ax.patch.set_facecolor(ax_bg)
-    # kwargs['text'] = text
+    if np.isnan(r):
+        print("Could not calculate r")
+    else:
+        ax_bg_ix = int(round(r+1, 2) * N_COLORS/2 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
+        ax_bg = r_colors[ax_bg_ix]
+        ax.patch.set_facecolor(ax_bg)
+        # kwargs['text'] = text
 
     func(X, Y, ax, text=text, **kwargs)
 
 
 def annotate_stat(x, y, ax, text, **kwargs):
 
+    # textsplit = text.split('\n')
+    # maxlen = max(len(x) for x in textsplit)
+    # size = 30
+    # if maxlen >= 9:
+    #     size -= 6
+    # if maxlen >= 15:
+    #     size -= 6
+
+    size = mpl.rcParams['font.size']
     ax.annotate(text, xy=(0.5, 0.5), xycoords='axes fraction',
-                va='center', ha='center', size=30
+                va='center', ha='center', size=size
     )
     # sb.despine(ax=ax, left=True, bottom=True)
 
 def scatter(x, y, ax, xymin, xymax, **kwargs):
-    try:
-        kwargs.pop('text')
-    except KeyError:
-        pass
 
-    ax.scatter(x, y, c='k', **kwargs)
+    if 'text' in kwargs:
+        kwargs.pop('text')
+    if 'color' in kwargs:
+        kwargs.pop('color')
+    if 'alpha' in kwargs:
+        alpha = kwargs.pop('alpha')
+
+    ax.scatter(x, y, color='#222222', alpha=alpha, **kwargs)
     # sb.despine(ax=ax, left=True, bottom=True)
 
     if xymin and xymax:

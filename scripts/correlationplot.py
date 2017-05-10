@@ -6,6 +6,7 @@ import os
 import re
 import operator as op
 from collections import OrderedDict
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -27,12 +28,13 @@ from utils import *
 
 sys.setrecursionlimit(10000)
 
-def run(records, ZEROS=0, stat='spearman', data_dir=None):
+TAXON_MAPPER = {'human': 9606,
+                'mouse': 10090}
+
+def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures'):
 
     if stat not in ('pearson', 'spearman'):
         raise ValueError('Must select from `pearson` or `spearman`')
-
-
 
     exps = OrderedDict()
     for name, record in records.items():
@@ -46,27 +48,30 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
         ZEROS = len(exps)
 
     panel = pd.Panel(exps)
+
+    dummy_filter = lambda x, *args, **kwargs: x
+    taxon_filter = TAXON_MAPPER.get(taxon)
+    if taxon_filter is None:
+        filter_func = dummy_filter
+    else:
+        filter_func = partial(filter_taxon, taxon=taxon_filter)
+
     panel_filtered = (panel.pipe(filter_observations, 'iBAQ_dstrAdj', ZEROS)
-                      .pipe(filter_taxon)
+                      .pipe(filter_func)
     )
 
     ibaqs = panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
 
-    ibaqs_log = ibaqs.apply(np.log10)
+    ibaqs_log = np.log10(ibaqs.fillna(0)+1e-10)
 
     minval = ibaqs_log.min().min()
     shift_val = np.ceil(np.abs(minval))
 
     ibaqs_log_shifted = ibaqs_log + shift_val
 
-    xymin = np.floor(ibaqs_log_shifted.min().min())
+    # xymin = 0
+    xymin = np.floor(ibaqs_log_shifted[ibaqs_log_shifted > 0].min().min())
     xymax = np.ceil(ibaqs_log_shifted.max().max())
-
-    # min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
-    # ibaqs = ((ibaqs.fillna(0) + min_nonzero*.1)
-    #         .apply(np.log10)
-    # )
-
 
     g = sb.PairGrid(ibaqs_log_shifted)
     g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper')
@@ -80,9 +85,13 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
     #  adjust the spacing between subplots
     hspace = g.fig.subplotpars.hspace
     wspace = g.fig.subplotpars.wspace
-    g.fig.subplots_adjust(hspace=hspace*.25, wspace=wspace*.25, right=.8, bottom=.2)
+    g.fig.subplots_adjust(hspace=hspace*.1, wspace=wspace*.1, right=.8, bottom=.2,
+                          left=.2, top=.8)
 
-    cbar_ax = g.fig.add_axes([.85, .15, .05, .7])
+    outpath_name = os.path.split(OUTPATH)[-1]
+    # g.fig.suptitle(outpath_name.replace('_', ' '))
+    # cbar_ax = g.fig.add_axes([.85, .15, .05, .7])
+    cbar_ax = g.fig.add_axes([.85, .15, .05, .65])
     plot_cbar(cbar_ax)
 
     # range_ax = g.fig.add_axes([.25, .05, .65, .05])
@@ -98,18 +107,16 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
         remove_ticklabels(ax=range_ax)
 
 
-    # save_multiple(g, '../figures/correlationplot2/scatter_human_3less_zeros', '.png', '.pdf',
-    #               dpi=96)
-    save_multiple(g, '../figures/scatter_human_{}less_zeros'.format(ZEROS), '.png',
-                  dpi=96)
+    outname = os.path.join(OUTPATH,
+                           '{}_scatter_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
+    save_multiple(g, outname, '.png', dpi=96)
 
-
-    min_nonzero = ibaqs.where(lambda x: x > 0).min().min()
-    ibaqs_nonzero = (ibaqs.fillna(0) + min_nonzero*.1).apply(np.log10)
-    ibaqs_zscore = (ibaqs_nonzero - ibaqs_nonzero.mean()) / ibaqs_nonzero.std()
-    g = sb.clustermap(ibaqs_zscore)
-    g.ax_heatmap.set_yticklabels([])
-    save_multiple(g, '../figures/clustermap_human_{}less_zeros'.format(ZEROS), '.png',)
+    # ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
+    # g = sb.clustermap(ibaqs_zscore)
+    # g.ax_heatmap.set_yticklabels([])
+    # outname = os.path.join(OUTPATH,
+    #                        '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
+    # save_multiple(g, outname, '.png',)
 
 @click.command()
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
@@ -117,17 +124,29 @@ def run(records, ZEROS=0, stat='spearman', data_dir=None):
               help='optional location to store and read e2g files')
 @click.option('--stat', type=click.Choice(['pearson', 'spearman']),
               default='spearman', show_default=True)
+@click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
+              default='all', show_default=True)
 @click.option('-z', '--zeros', default=0, show_default=True,
               help='Number of zeros tolerated across all samples.')
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
-def main(data_dir, stat, zeros, experiment_file):
+def main(data_dir, stat, taxon, zeros, experiment_file):
+    fname, ext = os.path.splitext(experiment_file)
+    try:
+        analysis_name = re.findall('\w+', fname)[-1]
+    except IndexError:
+        print('Error parsing configfile name.')
+        analysis_name = 'Unnamed'
+    OUTPATH = os.path.join('../figures/', analysis_name)
+    if not os.path.exists(OUTPATH):
+        os.mkdir(OUTPATH)
+
     data = read_config(experiment_file)
     if len(data) == 0:
         raise ValueError('No items in configfile.')
 
 
     # experiment_file
-    run(data, ZEROS=zeros, stat=stat, data_dir=data_dir)
+    run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH)
 
 
 if __name__ == '__main__':
