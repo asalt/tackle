@@ -31,7 +31,8 @@ sys.setrecursionlimit(10000)
 TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
 
-def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures'):
+def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
+        funcat=None, geneid_subset=None, highlight_gids=None):
 
     if stat not in ('pearson', 'spearman'):
         raise ValueError('Must select from `pearson` or `spearman`')
@@ -42,7 +43,13 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         if len(exp) == 0:
             print('No data in {!r}'.format(exp))
             continue
-        exps[name] = exp.df
+        if funcat:
+            df = exp.df[ exp.df['FunCats'].fillna('').str.contains(funcat)]
+        else:
+            df = exp.df
+        if geneid_subset:
+            df = df.loc[geneid_subset]
+        exps[name] = df
 
     if ZEROS == 'max':
         ZEROS = len(exps)
@@ -113,7 +120,12 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 
     ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
     g = sb.clustermap(ibaqs_zscore)
-    g.ax_heatmap.set_yticklabels([])
+    yticklabels = []
+    if highlight_gids:
+        yticklabels = ['*' if float(t.get_text()) in highlight_gids else ''
+                       for t in g.ax_heatmap.yaxis.get_ticklabels()
+        ]
+    g.ax_heatmap.set_yticklabels(yticklabels)
     outname = os.path.join(OUTPATH,
                            '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png',)
@@ -122,6 +134,17 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
               default='../data/raw',
               help='optional location to store and read e2g files')
+@click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True,
+              help="""Optional list of geneids to subset by.
+              Should have 1 geneid per line. """)
+@click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True,
+              help="""Optional list of geneids to highlight by.
+              Should have 1 geneid per line. """)
+@click.option('--funcat', type=str, default=None, show_default=True,
+              help="""Optional gene subset based on funcat or funcats,
+              regular expression allowed. """)
 @click.option('--stat', type=click.Choice(['pearson', 'spearman']),
               default='spearman', show_default=True)
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
@@ -129,13 +152,27 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('-z', '--zeros', default=0, show_default=True,
               help='Number of zeros tolerated across all samples.')
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
-def main(data_dir, stat, taxon, zeros, experiment_file):
+def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, experiment_file):
     fname, ext = os.path.splitext(experiment_file)
+
+    geneid_subset=None
+    if geneids:
+        geneid_subset = parse_gid_file(geneids)
+        if len(geneid_subset) == 0:
+            print('Non geneids found in file {}'.format(geneids))
+
+    highlight_gids = None
+    if highlight_geneids:
+        highlight_gids = parse_gid_file(highlight_geneids)
+        if len(highlight_gids) == 0:
+            print('Non geneids found in file {}'.format(highlight_geneids))
+
     try:
         analysis_name = re.findall('\w+', fname)[-1]
     except IndexError:
         print('Error parsing configfile name.')
         analysis_name = 'Unnamed'
+
     OUTPATH = os.path.join('../figures/', analysis_name)
     if not os.path.exists(OUTPATH):
         os.mkdir(OUTPATH)
@@ -146,7 +183,9 @@ def main(data_dir, stat, taxon, zeros, experiment_file):
 
 
     # experiment_file
-    run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH)
+    run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
+        funcat=funcat, geneid_subset=geneid_subset, highlight_gids=highlight_gids
+    )
 
 
 if __name__ == '__main__':

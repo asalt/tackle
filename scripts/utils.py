@@ -64,7 +64,10 @@ def hist(x, xmin=None, xmax=None, **kwargs):
     if 'edgecolor' in kwargs:
         kwargs.pop('edgecolor')
     X = x[ x>0 ]
-    nbins = seaborn_bin_calc(X)
+    try:
+        nbins = seaborn_bin_calc(X)
+    except ZeroDivisionError:
+        nbins = 10
     # print(nbins)
     plt.hist(X.values, color='grey', bins=nbins, edgecolor='none', **kwargs)
 
@@ -247,3 +250,15 @@ def read_config(configfile):
 
 
     return ordered_data
+
+def parse_gid_file(gids):
+
+    gid_out = list()
+    with open(gids, 'r') as f:
+        for line in f:
+            try:
+                gid = float(line.strip())
+                gid_out.append(gid)
+            except ValueError:
+                pass
+    return gid_out
