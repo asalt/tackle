@@ -262,3 +262,11 @@ def parse_gid_file(gids):
             except ValueError:
                 pass
     return gid_out
+
+def get_file_name(full_file):
+    fname, ext = os.path.splitext(full_file)
+    grp = re.search('\w+', fname)
+    if grp:
+        return grp.group()
+    else:
+        return None

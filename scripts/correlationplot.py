@@ -32,7 +32,7 @@ TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
 
 def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
-        funcat=None, geneid_subset=None, highlight_gids=None):
+        funcat=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None):
 
     if stat not in ('pearson', 'spearman'):
         raise ValueError('Must select from `pearson` or `spearman`')
@@ -119,13 +119,24 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     save_multiple(g, outname, '.png', dpi=96)
 
     ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
-    g = sb.clustermap(ibaqs_zscore)
-    yticklabels = []
+
+
+    row_colors = None
     if highlight_gids:
-        yticklabels = ['*' if float(t.get_text()) in highlight_gids else ''
-                       for t in g.ax_heatmap.yaxis.get_ticklabels()
-        ]
-    g.ax_heatmap.set_yticklabels(yticklabels)
+
+        cmap = sb.color_palette(n_colors=max(8, len(highlight_gids)))
+        colors_dfs = list()
+        for ix, hgid in enumerate(highlight_gids):
+            color = cmap[ix]
+            highlights = {gid: color for gid in hgid}
+            colors = ibaqs_zscore.index.map( lambda x: highlights.get(x, 'white') )
+            colors_df = pd.DataFrame(colors, index=ibaqs_zscore.index)
+            colors_dfs.append(colors_df)
+        row_colors = pd.concat(colors_dfs,axis=1)
+        row_colors.columns = highlight_gid_names
+
+    g = sb.clustermap(ibaqs_zscore, row_colors=row_colors, yticklabels=False)
+    # g.ax_heatmap.set_yticklabels([], rotation=0)
     outname = os.path.join(OUTPATH,
                            '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png',)
@@ -139,7 +150,7 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
-              default=None, show_default=True,
+              default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
               Should have 1 geneid per line. """)
 @click.option('--funcat', type=str, default=None, show_default=True,
@@ -162,8 +173,20 @@ def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, exper
             print('Non geneids found in file {}'.format(geneids))
 
     highlight_gids = None
+    highlight_gid_names = None
     if highlight_geneids:
-        highlight_gids = parse_gid_file(highlight_geneids)
+        highlight_gids = list()
+        highlight_gid_names = list()
+
+        for ix, h_gid in enumerate(highlight_geneids):
+            highlight_gid = parse_gid_file(h_gid)
+            highlight_gids.append(highlight_gid)
+            h_gid_name = get_file_name(h_gid)
+            if h_gid_name:
+                highlight_gid_names.append(h_gid_name)
+            else:
+                highlight_gid_names.append(ix)
+
         if len(highlight_gids) == 0:
             print('Non geneids found in file {}'.format(highlight_geneids))
 
@@ -184,7 +207,8 @@ def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, exper
 
     # experiment_file
     run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
-        funcat=funcat, geneid_subset=geneid_subset, highlight_gids=highlight_gids
+        funcat=funcat, geneid_subset=geneid_subset, highlight_gids=highlight_gids,
+        highlight_gid_names=highlight_gid_names
     )
 
 
@@ -209,3 +233,8 @@ if __name__ == '__main__':
     # stat='spearman'
 
     # main(EXPS, ZEROS, stat)
+
+    # experiment_file = './configtest.ini'
+    # fname, ext = os.path.splitext(experiment_file)
+    # geneids = './geneid_subset.txt'
+    # highlight_geneids = './highlight_subset.txt'
