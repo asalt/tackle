@@ -4,6 +4,8 @@
 import sys
 import os
 import re
+import json
+from datetime import datetime
 import operator as op
 from collections import OrderedDict
 from functools import partial
@@ -164,6 +166,25 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
               help='Number of zeros tolerated across all samples.')
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, experiment_file):
+
+
+    analysis_name = get_file_name(experiment_file)
+    if analysis_name is None:
+        print('Error parsing configfile name.')
+        analysis_name = 'Unnamed'
+
+    OUTPATH = os.path.join('../figures/', analysis_name)
+    if not os.path.exists(OUTPATH):
+        os.mkdir(OUTPATH)
+
+    now = datetime.now()
+    cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
+    context = click.get_current_context()
+    params = context.params
+    with open(os.path.join(OUTPATH, cf), 'w') as f:
+        json.dump(params, f)
+
+
     fname, ext = os.path.splitext(experiment_file)
 
     geneid_subset=None
@@ -190,15 +211,7 @@ def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, exper
         if len(highlight_gids) == 0:
             print('Non geneids found in file {}'.format(highlight_geneids))
 
-    try:
-        analysis_name = re.findall('\w+', fname)[-1]
-    except IndexError:
-        print('Error parsing configfile name.')
-        analysis_name = 'Unnamed'
 
-    OUTPATH = os.path.join('../figures/', analysis_name)
-    if not os.path.exists(OUTPATH):
-        os.mkdir(OUTPATH)
 
     data = read_config(experiment_file)
     if len(data) == 0:
