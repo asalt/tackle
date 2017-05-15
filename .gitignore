@@ -33,3 +33,5 @@ data/raw/*txt
 data/raw/*tab
 data/raw/*json
 *.ini
+
+scripts/*.txt
