@@ -24,11 +24,16 @@ from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.8)
 
 
+N_COLORS = 100
+# r_colors = sb.color_palette("coolwarm", n_colors=N_COLORS+1)
+r_colors = sb.color_palette("RdBu_r", n_colors=N_COLORS+1)
+STEP = .2
+
+
 def filter_observations(panel, column, threshold):
     """
     Filter by less than or equal to threshold of 0 observations
     """
-
     indices = (panel.minor_xs(column)
                .fillna(0)
                .where(lambda x: x == 0)
@@ -56,7 +61,15 @@ def pearson_r(x, y):
 def spearman_r(x, y):
     return stats.spearmanr(x, y)[0]
 
-def hist(x, xmin=None, xmax=None, **kwargs):
+def color_diag(g):
+    for ax in np.diag(g.axes):
+        ax.set_axis_bgcolor(r_colors[-1])
+
+def hist(x, xmin=None, xmax=None, colors_only=False, **kwargs):
+    if colors_only:
+        return
+
+    ax = plt.gca()
     if 'color' in kwargs:
         color = kwargs.pop('color')
     if 'bins' in kwargs:
@@ -69,16 +82,12 @@ def hist(x, xmin=None, xmax=None, **kwargs):
     except ZeroDivisionError:
         nbins = 10
     # print(nbins)
-    plt.hist(X.values, color='grey', bins=nbins, edgecolor='none', **kwargs)
+    ax.hist(X.values, color='grey', bins=nbins, edgecolor='none', **kwargs)
 
     # sb.despine(ax=ax, left=True, bottom=True)
-    ax = plt.gca()
     if xmin and xmax:
         ax.set_xlim((xmin, xmax))
 
-N_COLORS = 100
-r_colors = sb.color_palette("coolwarm", n_colors=N_COLORS+1)
-STEP = .2
 
 def remove_ticklabels(fig=None, ax=None):
     # idea via seaborn/utils.py :: despine
@@ -122,7 +131,7 @@ def make_xaxis(ax, yloc=0, offset=0.05, fmt_str='%1.1f', **props):
 
 
 def plot_delegator(x, y, stat='pearson', filter_zeros=True,
-                    upper_or_lower='upper', **kwargs):
+                    upper_or_lower='upper', colors_only=False, **kwargs):
     if upper_or_lower == 'upper':
         func = annotate_stat
     elif upper_or_lower == 'lower':
@@ -160,6 +169,9 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
         ax_bg = r_colors[ax_bg_ix]
         ax.patch.set_facecolor(ax_bg)
         # kwargs['text'] = text
+
+    if colors_only:
+        return
 
     func(X, Y, ax, text=text, **kwargs)
 

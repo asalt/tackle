@@ -34,7 +34,8 @@ TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
 
 def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
-        funcat=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None):
+        funcat=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None,
+        colors_only=False):
 
     if stat not in ('pearson', 'spearman'):
         raise ValueError('Must select from `pearson` or `spearman`')
@@ -83,10 +84,11 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     xymax = np.ceil(ibaqs_log_shifted.max().max())
 
     g = sb.PairGrid(ibaqs_log_shifted)
-    g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper')
+    g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper', colors_only=colors_only)
     g.map_lower(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='lower',
-                xymin=xymin, xymax=xymax)
-    g.map_diag(hist, xmin=xymin, xmax=xymax)
+                xymin=xymin, xymax=xymax, colors_only=colors_only)
+    g.map_diag(hist, xmin=xymin, xmax=xymax, colors_only=colors_only)
+    color_diag(g)
 
     sb.despine(fig=g.fig, left=True, bottom=True)
     remove_ticklabels(fig=g.fig)
@@ -131,14 +133,14 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         for ix, hgid in enumerate(highlight_gids):
             color = cmap[ix]
             highlights = {gid: color for gid in hgid}
-            colors = ibaqs_zscore.index.map( lambda x: highlights.get(x, 'white') )
-            colors_df = pd.DataFrame(colors, index=ibaqs_zscore.index)
+            colors = [highlights.get(x, (1., 1., 1.)) for x in ibaqs_zscore.index]
+            # colors = ibaqs_zscore.index.map( lambda x: highlights.get(x, 'white') )
+            colors_df = pd.Series(colors, index=ibaqs_zscore.index).to_frame(highlight_gid_names[ix])
             colors_dfs.append(colors_df)
         row_colors = pd.concat(colors_dfs,axis=1)
-        row_colors.columns = highlight_gid_names
+        # row_colors.columns = highlight_gid_names
 
     g = sb.clustermap(ibaqs_zscore, row_colors=row_colors, yticklabels=False)
-    # g.ax_heatmap.set_yticklabels([], rotation=0)
     outname = os.path.join(OUTPATH,
                            '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png',)
@@ -147,6 +149,8 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
               default='../data/raw',
               help='optional location to store and read e2g files')
+@click.option('--colors-only', default=False, is_flag=True, show_default=True,
+              help="Only plot colors on correlationplot, no datapoints")
 @click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True,
               help="""Optional list of geneids to subset by.
@@ -165,7 +169,7 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('-z', '--zeros', default=0, show_default=True,
               help='Number of zeros tolerated across all samples.')
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
-def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, experiment_file):
+def main(data_dir, colors_only, geneids, highlight_geneids, funcat, stat, taxon, zeros, experiment_file):
 
 
     analysis_name = get_file_name(experiment_file)
@@ -221,7 +225,7 @@ def main(data_dir, geneids, highlight_geneids, funcat, stat, taxon, zeros, exper
     # experiment_file
     run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
         funcat=funcat, geneid_subset=geneid_subset, highlight_gids=highlight_gids,
-        highlight_gid_names=highlight_gid_names
+        highlight_gid_names=highlight_gid_names, colors_only=colors_only
     )
 
 
