@@ -36,9 +36,9 @@ def filter_observations(panel, column, threshold):
     """
     indices = (panel.minor_xs(column)
                .fillna(0)
-               .where(lambda x: x == 0)
+               .where(lambda x: x != 0)
                .count(1)
-               .where(lambda x: x <= threshold)
+               .where(lambda x: x >= threshold)
                .dropna()
                .index
     )
@@ -82,7 +82,7 @@ def hist(x, xmin=None, xmax=None, colors_only=False, **kwargs):
     except ZeroDivisionError:
         nbins = 10
     # print(nbins)
-    ax.hist(X.values, color='grey', bins=nbins, edgecolor='none', **kwargs)
+    ax.hist(X.values, color='k', bins=nbins, edgecolor='none', **kwargs)
 
     # sb.despine(ax=ax, left=True, bottom=True)
     if xmin and xmax:
@@ -151,7 +151,7 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
         X = x.loc[nonzeros]
         Y = y.loc[nonzeros]
 
-    kwargs['alpha'] = .2
+    kwargs['alpha'] = .4
     ax = plt.gca()
 
     if stat == 'pearson':

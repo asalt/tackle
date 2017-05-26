@@ -35,13 +35,14 @@ TAXON_MAPPER = {'human': 9606,
 
 def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
         funcat=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None,
-        colors_only=False):
+        colors_only=False, gene_symbols=False):
 
     if stat not in ('pearson', 'spearman'):
         raise ValueError('Must select from `pearson` or `spearman`')
 
     exps = OrderedDict()
     for name, record in records.items():
+        # print('Loading', record)
         exp = ispec.E2G(data_dir=data_dir, **record)
         if len(exp) == 0:
             print('No data in {!r}'.format(exp))
@@ -83,28 +84,25 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     xymin = np.floor(ibaqs_log_shifted[ibaqs_log_shifted > 0].min().min())
     xymax = np.ceil(ibaqs_log_shifted.max().max())
 
+    outpath_name = os.path.split(OUTPATH)[-1]
+
     g = sb.PairGrid(ibaqs_log_shifted)
     g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper', colors_only=colors_only)
     g.map_lower(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='lower',
                 xymin=xymin, xymax=xymax, colors_only=colors_only)
     g.map_diag(hist, xmin=xymin, xmax=xymax, colors_only=colors_only)
     color_diag(g)
-
     sb.despine(fig=g.fig, left=True, bottom=True)
     remove_ticklabels(fig=g.fig)
-
     #  adjust the spacing between subplots
     hspace = g.fig.subplotpars.hspace
     wspace = g.fig.subplotpars.wspace
     g.fig.subplots_adjust(hspace=hspace*.1, wspace=wspace*.1, right=.8, bottom=.2,
                           left=.2, top=.8)
-
-    outpath_name = os.path.split(OUTPATH)[-1]
     # g.fig.suptitle(outpath_name.replace('_', ' '))
     # cbar_ax = g.fig.add_axes([.85, .15, .05, .7])
     cbar_ax = g.fig.add_axes([.85, .15, .05, .65])
     plot_cbar(cbar_ax)
-
     # range_ax = g.fig.add_axes([.25, .05, .65, .05])
     range_ax = g.fig.add_axes([.20, .06, .50, .06])
     range_ax.set_xlim((xymin, xymax))
@@ -140,7 +138,36 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         row_colors = pd.concat(colors_dfs,axis=1)
         # row_colors.columns = highlight_gid_names
 
-    g = sb.clustermap(ibaqs_zscore, row_colors=row_colors, yticklabels=False)
+    if gene_symbols:
+        fname = os.path.split(OUTPATH)[-1] +'_geneinfo.tab'
+        geneinfo_f = os.path.join(data_dir, fname)
+        if os.path.exists(geneinfo_f):
+            geneinfo = pd.read_table(geneinfo_f, index_col='GeneID')
+            geneinfo['GeneID'] = geneinfo.index
+        elif not os.path.exists(geneinfo_f) or len(geneinfo) != len(ibaqs_zscore):
+            geneinfo = ispec.get_funcats(ibaqs_zscore.index)
+            geneinfo.to_csv(geneinfo_f, sep='\t', index=False)
+
+        geneinfo_dict = geneinfo['GeneSymbol'].to_dict()
+        new_ix = [geneinfo_dict.get(x, '?') for x in ibaqs_zscore.index]
+        ibaqs_zscore.index = new_ix
+
+    g = sb.clustermap(ibaqs_zscore, row_colors=row_colors,
+                      yticklabels=False if not gene_symbols else True)
+    if gene_symbols:
+        for tick in g.ax_heatmap.yaxis.get_ticklabels():
+            tick.set_rotation(0)
+            tick.set_size(tick.get_size()*.7)
+    for tick in g.ax_heatmap.xaxis.get_ticklabels():
+        tick.set_rotation(90)
+    if g.ax_row_colors:
+        ticks = g.ax_row_colors.xaxis.get_ticklabels()
+        if len(ticks) > 1:
+            scale = .9/ (np.log1p(len(ticks)) *.9)
+            for tick in ticks:
+                tick.set_size(tick.get_size()*scale)
+
+
     outname = os.path.join(OUTPATH,
                            '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png',)
@@ -151,6 +178,8 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
               help='optional location to store and read e2g files')
 @click.option('--colors-only', default=False, is_flag=True, show_default=True,
               help="Only plot colors on correlationplot, no datapoints")
+@click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
+              help="Show Gene Symbols on clustermap")
 @click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True,
               help="""Optional list of geneids to subset by.
@@ -169,7 +198,8 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('-z', '--zeros', default=0, show_default=True,
               help='Number of zeros tolerated across all samples.')
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
-def main(data_dir, colors_only, geneids, highlight_geneids, funcat, stat, taxon, zeros, experiment_file):
+def main(data_dir, colors_only, gene_symbols, geneids, highlight_geneids, funcat,
+         stat, taxon, zeros, experiment_file):
 
 
     analysis_name = get_file_name(experiment_file)
@@ -225,7 +255,7 @@ def main(data_dir, colors_only, geneids, highlight_geneids, funcat, stat, taxon,
     # experiment_file
     run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
         funcat=funcat, geneid_subset=geneid_subset, highlight_gids=highlight_gids,
-        highlight_gid_names=highlight_gid_names, colors_only=colors_only
+        highlight_gid_names=highlight_gid_names, colors_only=colors_only, gene_symbols=gene_symbols
     )
 
 
