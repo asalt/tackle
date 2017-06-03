@@ -32,6 +32,11 @@ sys.setrecursionlimit(10000)
 
 TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
+def get_outname(plottype: str, name, taxon, zeros, colors_only,  outpath='.'):
+    colors = 'colors_only' if colors_only else 'annotated'
+    fname = '{}_{}_{}_{}_{}less_zeros'.format(name, plottype, taxon, colors, zeros)
+    return os.path.join(outpath, fname)
+
 
 def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
         funcat=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None,
@@ -116,8 +121,10 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         remove_ticklabels(ax=range_ax)
 
 
-    outname = os.path.join(OUTPATH,
-                           '{}_scatter_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
+    outname = get_outname('scatter', name=outpath_name, taxon=taxon, zeros=ZEROS,
+                          colors_only=colors_only, outpath=OUTPATH)
+    # outname = os.path.join(OUTPATH,
+    #                        '{}_scatter_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png', dpi=96)
 
     ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
@@ -168,8 +175,10 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
                 tick.set_size(tick.get_size()*scale)
 
 
-    outname = os.path.join(OUTPATH,
-                           '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
+    # outname = os.path.join(OUTPATH,
+    #                        '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
+    outname = get_outname('clustermap', name=outpath_name, taxon=taxon, zeros=ZEROS,
+                          colors_only=colors_only, outpath=OUTPATH)
     save_multiple(g, outname, '.png',)
 
 @click.command()
