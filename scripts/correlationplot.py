@@ -127,7 +127,8 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     #                        '{}_scatter_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     save_multiple(g, outname, '.png', dpi=96)
 
-    ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean()) / ibaqs_log_shifted.std()
+    # ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean(axis=1)) / ibaqs_log_shifted.std(axis=1)
+    ibaqs_zscore = ibaqs_log_shifted
 
 
     row_colors = None
@@ -146,25 +147,37 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         # row_colors.columns = highlight_gid_names
 
     if gene_symbols:
-        fname = os.path.split(OUTPATH)[-1] +'_geneinfo.tab'
+        # fname = os.path.split(OUTPATH)[-1] +'_geneinfo.tab'
+        fname = outpath_name +'_geneinfo.tab'
         geneinfo_f = os.path.join(data_dir, fname)
         if os.path.exists(geneinfo_f):
+            print('Loading', geneinfo_f)
             geneinfo = pd.read_table(geneinfo_f, index_col='GeneID')
             geneinfo['GeneID'] = geneinfo.index
-        elif not os.path.exists(geneinfo_f) or len(geneinfo) != len(ibaqs_zscore):
-            geneinfo = ispec.get_funcats(ibaqs_zscore.index)
+        if not os.path.exists(geneinfo_f) or not all(x in geneinfo.index for x in ibaqs_zscore.index):
+            print('Downloading geneinfo from remote')
+            # geneinfo = ispec.get_funcats(ibaqs_zscore.index)
+            # gids = ispec.get_geneids(9606)
+            gids = ibaqs_zscore.index
+            dfs = [ispec.get_funcats(gids[i:i+1000]) for i in range(0, len(gids), 1000) ]
+            geneinfo = pd.concat(dfs)
+            print(geneinfo_f)
             geneinfo.to_csv(geneinfo_f, sep='\t', index=False)
 
         geneinfo_dict = geneinfo['GeneSymbol'].to_dict()
         new_ix = [geneinfo_dict.get(x, '?') for x in ibaqs_zscore.index]
         ibaqs_zscore.index = new_ix
 
+    figheight = min(len(ibaqs_zscore) / 6, 100)
+    figwidth  = len(ibaqs_zscore.columns)
     g = sb.clustermap(ibaqs_zscore, row_colors=row_colors,
-                      yticklabels=False if not gene_symbols else True)
+                      yticklabels=False if not gene_symbols else True,
+                      z_score=0, figsize=(figwidth, figheight)
+    )
     if gene_symbols:
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
             tick.set_rotation(0)
-            tick.set_size(tick.get_size()*.7)
+            tick.set_size(tick.get_size()*.4)
     for tick in g.ax_heatmap.xaxis.get_ticklabels():
         tick.set_rotation(90)
     if g.ax_row_colors:
@@ -179,7 +192,11 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     #                        '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     outname = get_outname('clustermap', name=outpath_name, taxon=taxon, zeros=ZEROS,
                           colors_only=colors_only, outpath=OUTPATH)
-    save_multiple(g, outname, '.png',)
+    save_multiple(g, outname, '.png', '.pdf')
+
+    # outname = get_outname('volcannoplot', name=outpath_name, taxon=taxon, zeros=ZEROS,
+    #                       colors_only=colors_only, outpath=OUTPATH)
+
 
 @click.command()
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
