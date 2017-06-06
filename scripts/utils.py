@@ -131,7 +131,8 @@ def make_xaxis(ax, yloc=0, offset=0.05, fmt_str='%1.1f', **props):
 
 
 def plot_delegator(x, y, stat='pearson', filter_zeros=True,
-                    upper_or_lower='upper', colors_only=False, **kwargs):
+                   upper_or_lower='upper', colors_only=False,
+                   shade_correlation=True, **kwargs):
     if upper_or_lower == 'upper':
         func = annotate_stat
     elif upper_or_lower == 'lower':
@@ -162,14 +163,15 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
         text = 'Spearman'
     text = 'n = {:,}\nr = {:.2f}'.format(len(X), r)
 
-    if np.isnan(r):
+    if not shade_correlation:
+        pass
+    elif np.isnan(r):
         print("Could not calculate r")
     else:
         ax_bg_ix = int(round(r+1, 2) * N_COLORS/2 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
         ax_bg = r_colors[ax_bg_ix]
         ax.patch.set_facecolor(ax_bg)
         # kwargs['text'] = text
-
     if colors_only:
         return
 
@@ -282,3 +284,10 @@ def get_file_name(full_file):
         return grp.group()
     else:
         return None
+
+
+def fillna_meta(panel, col):
+    df = panel.loc[:, :, col]
+    panel.loc[:, :, col] = (df.fillna(method='ffill', axis=1)
+                            .fillna(method='bfill', axis=1)
+    )

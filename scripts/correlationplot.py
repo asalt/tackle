@@ -27,6 +27,7 @@ from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
 
 from utils import *
+# from cluster_to_plotly import cluster_to_plotly
 
 sys.setrecursionlimit(10000)
 
@@ -40,7 +41,8 @@ def get_outname(plottype: str, name, taxon, zeros, colors_only,  outpath='.'):
 
 def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
         funcat=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None,
-        colors_only=False, gene_symbols=False):
+        colors_only=False, gene_symbols=False, col_cluster=True, row_cluster=True,
+        shade_correlation=True, z_score=0):
 
     if stat not in ('pearson', 'spearman'):
         raise ValueError('Must select from `pearson` or `spearman`')
@@ -64,6 +66,9 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         ZEROS = len(exps)
 
     panel = pd.Panel(exps)
+    for ax in ('GeneCapacity', 'GeneSymbol', 'GeneDescription', 'FunCats', 'TaxonID'):
+        fillna_meta(panel, ax)
+    gid_symbol = panel.iloc[0]['GeneSymbol'].to_dict()
 
     dummy_filter = lambda x, *args, **kwargs: x
     taxon_filter = TAXON_MAPPER.get(taxon)
@@ -76,7 +81,11 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
                       .pipe(filter_func)
     )
 
+
     ibaqs = panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
+    if len(ibaqs) == 0:
+        print('No data')
+        return
 
     ibaqs_log = np.log10(ibaqs.fillna(0)+1e-10)
 
@@ -92,11 +101,12 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     outpath_name = os.path.split(OUTPATH)[-1]
 
     g = sb.PairGrid(ibaqs_log_shifted)
-    g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper', colors_only=colors_only)
+    g.map_upper(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='upper', colors_only=colors_only, shade_correlation=shade_correlation)
     g.map_lower(plot_delegator, stat=stat, filter_zeros=True, upper_or_lower='lower',
-                xymin=xymin, xymax=xymax, colors_only=colors_only)
+                xymin=xymin, xymax=xymax, colors_only=colors_only, shade_correlation=shade_correlation)
     g.map_diag(hist, xmin=xymin, xmax=xymax, colors_only=colors_only)
-    color_diag(g)
+    if shade_correlation:
+        color_diag(g)
     sb.despine(fig=g.fig, left=True, bottom=True)
     remove_ticklabels(fig=g.fig)
     #  adjust the spacing between subplots
@@ -128,7 +138,7 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
     save_multiple(g, outname, '.png', dpi=96)
 
     # ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean(axis=1)) / ibaqs_log_shifted.std(axis=1)
-    ibaqs_zscore = ibaqs_log_shifted
+    # ibaqs_log_shifted
 
 
     row_colors = None
@@ -139,40 +149,29 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
         for ix, hgid in enumerate(highlight_gids):
             color = cmap[ix]
             highlights = {gid: color for gid in hgid}
-            colors = [highlights.get(x, (1., 1., 1.)) for x in ibaqs_zscore.index]
-            # colors = ibaqs_zscore.index.map( lambda x: highlights.get(x, 'white') )
-            colors_df = pd.Series(colors, index=ibaqs_zscore.index).to_frame(highlight_gid_names[ix])
+            colors = [highlights.get(x, (1., 1., 1.)) for x in ibaqs_log_shifted.index]
+            # colors = ibaqs_log_shifted.index.map( lambda x: highlights.get(x, 'white') )
+            colors_df = pd.Series(colors, index=ibaqs_log_shifted.index).to_frame(highlight_gid_names[ix])
             colors_dfs.append(colors_df)
         row_colors = pd.concat(colors_dfs,axis=1)
         # row_colors.columns = highlight_gid_names
 
+
+    clustermap_symbols = [gid_symbol.get(x, '?') for x in ibaqs_log_shifted.index]
     if gene_symbols:
-        # fname = os.path.split(OUTPATH)[-1] +'_geneinfo.tab'
-        fname = outpath_name +'_geneinfo.tab'
-        geneinfo_f = os.path.join(data_dir, fname)
-        if os.path.exists(geneinfo_f):
-            print('Loading', geneinfo_f)
-            geneinfo = pd.read_table(geneinfo_f, index_col='GeneID')
-            geneinfo['GeneID'] = geneinfo.index
-        if not os.path.exists(geneinfo_f) or not all(x in geneinfo.index for x in ibaqs_zscore.index):
-            print('Downloading geneinfo from remote')
-            # geneinfo = ispec.get_funcats(ibaqs_zscore.index)
-            # gids = ispec.get_geneids(9606)
-            gids = ibaqs_zscore.index
-            dfs = [ispec.get_funcats(gids[i:i+1000]) for i in range(0, len(gids), 1000) ]
-            geneinfo = pd.concat(dfs)
-            print(geneinfo_f)
-            geneinfo.to_csv(geneinfo_f, sep='\t', index=False)
+        ibaqs_log_shifted.index = clustermap_symbols
+        if row_colors is not None:
+            row_colors.index = clustermap_symbols
 
-        geneinfo_dict = geneinfo['GeneSymbol'].to_dict()
-        new_ix = [geneinfo_dict.get(x, '?') for x in ibaqs_zscore.index]
-        ibaqs_zscore.index = new_ix
-
-    figheight = min(len(ibaqs_zscore) / 6, 100)
-    figwidth  = len(ibaqs_zscore.columns)
-    g = sb.clustermap(ibaqs_zscore, row_colors=row_colors,
+    figheight = min(len(ibaqs_log_shifted) / 6, 100)
+    # figheight = 12
+    figwidth  = len(ibaqs_log_shifted.columns)
+    g = sb.clustermap(ibaqs_log_shifted, row_colors=row_colors,
                       yticklabels=False if not gene_symbols else True,
-                      z_score=0, figsize=(figwidth, figheight)
+                      z_score=z_score, figsize=(figwidth, figheight),
+                      row_cluster=row_cluster, col_cluster=col_cluster,
+                      cmap = 'YlOrRd' if z_score is None else None
+
     )
     if gene_symbols:
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
@@ -187,12 +186,13 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
             for tick in ticks:
                 tick.set_size(tick.get_size()*scale)
 
+    # cluster_to_plotly(g, labels=clustermap_symbols)
 
     # outname = os.path.join(OUTPATH,
     #                        '{}_clustermap_{}_{}less_zeros'.format(outpath_name, taxon, ZEROS))
     outname = get_outname('clustermap', name=outpath_name, taxon=taxon, zeros=ZEROS,
                           colors_only=colors_only, outpath=OUTPATH)
-    save_multiple(g, outname, '.png', '.pdf')
+    save_multiple(g, outname, '.png',)
 
     # outname = get_outname('volcannoplot', name=outpath_name, taxon=taxon, zeros=ZEROS,
     #                       colors_only=colors_only, outpath=OUTPATH)
@@ -202,6 +202,10 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
               default='../data/raw',
               help='optional location to store and read e2g files')
+@click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
+              help="Cluster columns")
+@click.option('--shade-correlation/--no-shade-correlation', default=True, is_flag=True,
+              show_default=True, help="")
 @click.option('--colors-only', default=False, is_flag=True, show_default=True,
               help="Only plot colors on correlationplot, no datapoints")
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
@@ -217,15 +221,20 @@ def run(records, ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='
 @click.option('--funcat', type=str, default=None, show_default=True,
               help="""Optional gene subset based on funcat or funcats,
               regular expression allowed. """)
+@click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
+              help="Cluster rows")
 @click.option('--stat', type=click.Choice(['pearson', 'spearman']),
               default='spearman', show_default=True)
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
               default='all', show_default=True)
 @click.option('-z', '--zeros', default=0, show_default=True,
               help='Number of zeros tolerated across all samples.')
+@click.option('--z-score', type=click.Choice(['None', '0', '1']),
+              default='0')
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 def main(data_dir, colors_only, gene_symbols, geneids, highlight_geneids, funcat,
-         stat, taxon, zeros, experiment_file):
+         stat, taxon, zeros, experiment_file, col_cluster, row_cluster,
+         shade_correlation, z_score):
 
 
     analysis_name = get_file_name(experiment_file)
@@ -277,11 +286,17 @@ def main(data_dir, colors_only, gene_symbols, geneids, highlight_geneids, funcat
     if len(data) == 0:
         raise ValueError('No items in configfile.')
 
+    if z_score == 'None':
+        z_score = None
+    else:
+        z_score = int(z_score)
 
     # experiment_file
     run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
         funcat=funcat, geneid_subset=geneid_subset, highlight_gids=highlight_gids,
-        highlight_gid_names=highlight_gid_names, colors_only=colors_only, gene_symbols=gene_symbols
+        highlight_gid_names=highlight_gid_names, colors_only=colors_only, gene_symbols=gene_symbols,
+        col_cluster=col_cluster, row_cluster=row_cluster, shade_correlation=shade_correlation,
+        z_score=z_score
     )
 
 
