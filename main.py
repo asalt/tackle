@@ -98,7 +98,7 @@ def run(data_obj):
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
 @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
-              default='../data/raw', show_default=True,
+              default='./data/', show_default=True,
               help='optional location to store and read e2g files')
 @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster columns")
