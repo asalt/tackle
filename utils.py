@@ -23,6 +23,7 @@ import click
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.8)
 
+idx = pd.IndexSlice
 
 N_COLORS = 100
 # r_colors = sb.color_palette("coolwarm", n_colors=N_COLORS+1)
@@ -30,30 +31,57 @@ r_colors = sb.color_palette("RdBu_r", n_colors=N_COLORS+1)
 STEP = .2
 
 
-def filter_observations(panel, column, threshold):
-    """
-    Filter by less than or equal to threshold of 0 observations
-    """
-    indices = (panel.minor_xs(column)
-               .fillna(0)
-               .where(lambda x: x != 0)
-               .count(1)
-               .where(lambda x: x >= threshold)
-               .dropna()
-               .index
+# def filter_observations(panel, column, threshold):
+#     """
+#     Filter by less than or equal to threshold of 0 observations
+#     """
+#     indices = (panel.minor_xs(column)
+#                .fillna(0)
+#                .where(lambda x: x != 0)
+#                .count(1)
+#                .where(lambda x: x >= threshold)
+#                .dropna()
+#                .index
+#     )
+#     return panel.loc[:, indices, :]
+
+def filter_observations(df, column, threshold):
+
+    mask = (df.loc[ idx[:, column], :].fillna(0)
+            .where(lambda x : x != 0)
+            .count(1)
+            .where(lambda x: x >= threshold)
+            .dropna())
+
+    gids = mask.index.get_level_values(0)
+
+    return df.loc[ gids.values ]
+
+
+def filter_sra(df, SRA='S'):
+
+    mask = ((df.loc[ idx[:, 'SRA'], :] == 'S')
+            .any(1)
+            .where(lambda x: x)
+            .dropna()
     )
-    return panel.loc[:, indices, :]
+    gids = mask.index.get_level_values(0)
 
+    return df.loc[ gids.values ]
 
-def filter_taxon(panel, taxon=9606):
-    indices = ((panel.minor_xs('TaxonID') == taxon)
-               .any(1)
-               .where(lambda x : x == True)
-               .dropna()
-               .index
-    )
-    return panel.loc[:, indices, :]
+# def filter_taxon(panel, taxon=9606):
+#     indices = ((panel.minor_xs('TaxonID') == taxon)
+#                .any(1)
+#                .where(lambda x : x == True)
+#                .dropna()
+#                .index
+#     )
+#     return panel.loc[:, indices, :]
 
+def filter_taxon(df, taxon=9606):
+    mask = df.loc[ idx[:, ('TaxonID')], : ] == 9606
+    gids = mask.index.get_level_values(0)
+    return df.loc[ gids.values ]
 
 def pearson_r(x, y):
     return stats.pearsonr(x, y)[0]
@@ -63,7 +91,7 @@ def spearman_r(x, y):
 
 def color_diag(g):
     for ax in np.diag(g.axes):
-        ax.set_axis_bgcolor(r_colors[-1])
+        ax.set_facecolor(r_colors[-1])
 
 def hist(x, xmin=None, xmax=None, colors_only=False, **kwargs):
     if colors_only:
@@ -171,6 +199,7 @@ def plot_delegator(x, y, stat='pearson', filter_zeros=True,
         ax_bg_ix = int(round(r+1, 2) * N_COLORS/2 )  # add 1 to shift from -1 - 1 to 0 - 2 for indexing
         ax_bg = r_colors[ax_bg_ix]
         ax.patch.set_facecolor(ax_bg)
+        ax.patch.set_alpha(.5)
         # kwargs['text'] = text
     if colors_only:
         return
@@ -196,14 +225,21 @@ def annotate_stat(x, y, ax, text, **kwargs):
 
 def scatter(x, y, ax, xymin, xymax, **kwargs):
 
+    s = 4
+    marker = '.'
     if 'text' in kwargs:
         kwargs.pop('text')
     if 'color' in kwargs:
         kwargs.pop('color')
     if 'alpha' in kwargs:
         alpha = kwargs.pop('alpha')
+    if 's' in kwargs:
+        s = kwargs.pop('s')
+    if 'marker' in kwargs:
+        marker = kwargs.pop('marker')
 
-    ax.scatter(x, y, color='#222222', alpha=alpha, **kwargs)
+
+    ax.scatter(x, y, color='#222222', alpha=alpha, s=s, marker=marker, **kwargs)
     # sb.despine(ax=ax, left=True, bottom=True)
 
     if xymin and xymax:
@@ -227,6 +263,7 @@ def save_multiple(fig, filename, *exts, verbose=True, dpi=300, **save_kwargs):
 
 def make_config(path='.'):
     config = configparser.ConfigParser()
+    config.optionxform = str
     config['Name'] = OrderedDict((('recno', 12345),
                                   ('runno', 1),
                                   ('searchno', 1)))
@@ -236,32 +273,44 @@ def make_config(path='.'):
         config.write(cf)
         cf.write('#runno and searchno are optional, default to 1\n')
 
-def read_config(configfile):
-    """reads config file and returns the data"""
+def read_config(configfile, enforce=True):
+    """reads config file and returns the data.
+    Needs to have recno at a minimum.
+    recno, runno, searchno are used for getting data.
+    Other fields are used for PCA plots and (optionally) clustermaps.
+    """
     config = configparser.ConfigParser()
+    config.optionxform = str
     with open(configfile, 'r') as f:
         config.read_file(f)
 
     sections = config.sections()  # retains order
     FIELDS = ('recno', 'runno', 'searchno',)
 
+
     data = defaultdict(lambda : dict(runno=1, searchno=1))  # does not retain order (no guarantee)
     for section_key in sections:
         section = config[section_key]
+        other_fields = set(section.keys()) - set(FIELDS)
         for field in FIELDS:
             value = section.get(field)
             if value is None:
                 continue
             data[section_key][field] = value
-        if 'recno' not in data[section_key]:  # record number is required
+        for field in other_fields:
+            value = section.get(field)
+            data[section_key][field] = value
+        if section_key.startswith('__'):
+            pass
+        elif 'recno' not in data[section_key] and enforce:  # record number is required
             print(section_key, 'does not have recno defined, skipping')
             data.pop(section_key)
 
     ordered_data = OrderedDict()
     for key in sections:
+        if key not in data.keys():
+            continue
         ordered_data[key] = data[key]
-
-
 
     return ordered_data
 
@@ -286,8 +335,40 @@ def get_file_name(full_file):
         return None
 
 
-def fillna_meta(panel, col):
-    df = panel.loc[:, :, col]
-    panel.loc[:, :, col] = (df.fillna(method='ffill', axis=1)
-                            .fillna(method='bfill', axis=1)
+# def fillna_meta(panel, col):
+#     df = panel.loc[:, :, col]
+#     panel.loc[:, :, col] = (df.fillna(method='ffill', axis=1)
+#                             .fillna(method='bfill', axis=1)
+#     )
+
+def fillna_meta(df, index_col):
+    """
+    Fill NANs across rows
+    """
+    selection = df.loc[idx[:, index_col], :]
+    df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
+                                    .fillna(method='bfill', axis=1)
     )
+
+
+
+def parse_metadata(metadata):
+    expids = ('recno', 'runno', 'searchno')
+    metadata_filtered = {k:v for k, v in metadata.items() if not k.startswith('__')}
+    # col_data = pd.DataFrame.from_dict(metadata, orient='columns').filter(regex='^(?!__)')
+    col_data = pd.DataFrame.from_dict(metadata_filtered, orient='columns')
+    col_data = col_data.loc[[x for x in col_data.index if x not in expids]]
+    return col_data
+
+
+def filter_and_assign(df, name, funcats=None, geneid_subset=None):
+    if funcats:
+        df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
+    if geneid_subset:
+        df = df.loc[geneid_subset]
+    return df
+
+def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.'):
+    colors = 'colors_only' if colors_only else 'annotated'
+    fname = '{}_{}_{}_{}_{}less_non_zeros'.format(name, plottype, taxon, colors, non_zeros)
+    return os.path.join(outpath, fname)
