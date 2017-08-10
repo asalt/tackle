@@ -76,8 +76,9 @@ def clusterplot(ibaqs_log_shifted, highlight_gids=None, highlight_gid_names=None
     # figheight = min(len(ibaqs_log_shifted) / 6, 100)
     figheight = 12
     figwidth  = len(ibaqs_log_shifted.columns) / 2
-    g = sb.clustermap(ibaqs_log_shifted, row_colors=row_colors,
-                      col_colors=col_colors,
+    g = sb.clustermap(ibaqs_log_shifted, 
+                      row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
+                      col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                       yticklabels=False if not gene_symbols else True,
                       z_score=z_score, standard_scale=standard_scale,
                       figsize=(figwidth, figheight),
