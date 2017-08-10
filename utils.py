@@ -362,11 +362,14 @@ def parse_metadata(metadata):
 
 
 def filter_and_assign(df, name, funcats=None, geneid_subset=None):
+    """Filter by funcats and geneid_subset (if given)
+       remove NAN GeneIDs"""
     if funcats:
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
     if geneid_subset:
         df = df.loc[geneid_subset]
-    return df
+    valid_ixs = (x for x in df.index if not np.isnan(x))
+    return df.loc[valid_ixs]
 
 def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.'):
     colors = 'colors_only' if colors_only else 'annotated'
