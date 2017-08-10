@@ -12,7 +12,7 @@ package_version = calculate_version('main.py')
 setup(
     name='correlation-plotter',
     version=package_version,
-    py_modules=['main', 'utils', 'clusterplot', 'scatterplot', 'pcaplot'],
+    py_modules=['main', 'utils', 'clusterplot', 'scatterplot', 'pcaplot', 'containers'],
     install_requires=[
         'Click',
     ],
