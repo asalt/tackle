@@ -83,6 +83,7 @@ def run(data_obj):
         bbox_inches='tight'
         if extra_artists is not None:
             bbox_inches=None
+        # extra_artists=None
         save_multiple(g, outname, '.png', bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
 
     # if 'pca' in plots or 'all' in plots:
@@ -143,24 +144,22 @@ def run(data_obj):
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
-def main(additional_info, data_dir, colors_only, export_data,
-         gene_symbols, geneids, highlight_geneids, funcats, ifot,
-         stat, taxon, plots, name, non_zeros, experiment_file, col_cluster, row_cluster,
-         standard_scale,
-         show_metadata, shade_correlation, z_score):
+def main(additional_info, data_dir, colors_only, export_data, gene_symbols, geneids,
+         highlight_geneids, funcats, ifot, stat, taxon, plots, name, non_zeros, experiment_file,
+         col_cluster, row_cluster, standard_scale, show_metadata, shade_correlation, z_score):
 
     analysis_name = get_file_name(experiment_file)
     if analysis_name is None:
         print('Error parsing configfile name.')
         analysis_name = 'Unnamed'
 
-    OUTPATH = os.path.join('../figures/', analysis_name)
-    if not os.path.exists(OUTPATH):
-        os.mkdir(OUTPATH)
-    if name:
-        OUTPATH = os.path.join(OUTPATH, name)
-        if not os.path.exists(OUTPATH):
-            os.mkdir(OUTPATH)
+    # OUTPATH = os.path.join('../figures/', analysis_name)
+    # if not os.path.exists(OUTPATH):
+    #     os.mkdir(OUTPATH)
+    # if name:
+    #     OUTPATH = os.path.join(OUTPATH, name)
+    #     if not os.path.exists(OUTPATH):
+    #         os.mkdir(OUTPATH)
 
     now = datetime.now()
     context = click.get_current_context()

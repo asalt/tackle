@@ -132,15 +132,19 @@ def pcaplot(X, metadata=None, col_data=None):
             name = row[marker_label]
             if name not in marker_labels:
                 marker_labels.append(name)
-                marker_handle = plt.Line2D((0, 1), (0, 0), color='gray', marker=marker, linestyle='')
+                marker_handle = plt.Line2D((0, 1), (0, 0), color='gray', marker=marker,
+                                           linestyle='')
                 marker_handles.append(marker_handle)
 
     legends = list()
     if color_label:
-        leg1 = ax.legend(color_handles, color_labels, loc='upper right', title=color_label)
+        leg1 = ax.legend(color_handles, color_labels, title=color_label, bbox_to_anchor=(1.04, 1),
+                         loc='upper left',
+                         borderaxespad=0)
         legends.append(leg1)
     if marker_label:
-        leg2 = ax.legend(marker_handles, marker_labels, loc='lower right', title=marker_label)
+        leg2 = ax.legend(marker_handles, marker_labels, loc='lower left', title=marker_label,
+                         bbox_to_anchor=(1.04, 0), borderaxespad=0)
         legends.append(leg2)
 
     ax.set_xlabel('PC1 ({:.2%})'.format(var1))
@@ -151,6 +155,8 @@ def pcaplot(X, metadata=None, col_data=None):
 
     ax.axhline(color='grey')
     ax.axvline(color='grey')
+    fig.tight_layout(rect=[0,0,0.75,1])
+
 
     return fig, ax
 

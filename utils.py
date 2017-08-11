@@ -254,7 +254,7 @@ def save_multiple(fig, filename, *exts, verbose=True, dpi=300, **save_kwargs):
     """save a figure to a specific file multiple
     times with different extensions"""
     for ext in exts:
-        out = filename+ext
+        out = os.path.abspath(filename+ext)
         if verbose:
             print("Saving", out, '...', end='', flush=True)
         fig.savefig(out, dpi=dpi, **save_kwargs)
