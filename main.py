@@ -292,7 +292,7 @@ def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, 
     if extra_artists is not None:
         bbox_inches=None
         # extra_artists=None
-        save_multiple(g, outname, '.png', bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
+    save_multiple(g, outname, '.png', bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
 
 
     if kmeans_res is not None:
