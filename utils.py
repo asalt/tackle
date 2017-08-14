@@ -345,6 +345,8 @@ def fillna_meta(df, index_col):
     """
     Fill NANs across rows
     """
+    if index_col not in df.index.get_level_values(1).unique():
+        return
     selection = df.loc[idx[:, index_col], :]
     df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
                                     .fillna(method='bfill', axis=1)

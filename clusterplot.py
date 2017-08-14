@@ -2,6 +2,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from matplotlib.offsetbox import AnchoredText
 from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import rgb2hex
@@ -49,7 +50,7 @@ def plot_silhouette_scores(scores, start, end):
 
 
 def calc_optimal_clusters(data, start=2, end=20):
-    best_score = np.inf
+    best_score = -np.inf
     best_cluster = None
 
     scores = list()
@@ -61,7 +62,7 @@ def calc_optimal_clusters(data, start=2, end=20):
 
         scores.append(score)
 
-        if score < best_score:
+        if score > best_score:
             best_score = score
             best_cluster = i
 
@@ -69,16 +70,68 @@ def calc_optimal_clusters(data, start=2, end=20):
 
     return best_cluster, fig, ax
 
+def silhouette_plot(data, labels):
+
+    fig, ax = plt.subplots()
+    n_clusters = len(set(labels))
+
+    # ax.set_xlim([-0.1, 1])
+    ax.set_ylim([0, len(data) + (n_clusters + 1) * 10])
+
+    silhouette_avg = silhouette_score(data, labels)
+    sample_silhouette_values = silhouette_samples(data, labels)
+
+    y_lower = 10
+
+    cmap = iter(sb.color_palette('hls', n_colors=max(6, n_clusters)))
+    cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(n_clusters)}
+
+
+    for i in range(n_clusters):
+        ith_cluster_silhouette_values = sample_silhouette_values[labels == i]
+
+        ith_cluster_silhouette_values.sort()
+
+        size_cluster_i = ith_cluster_silhouette_values.shape[0]
+        y_upper = y_lower + size_cluster_i
+
+        color = cmap_mapping[i]
+        ax.fill_betweenx(np.arange(y_lower, y_upper),
+                          0, ith_cluster_silhouette_values,
+                          facecolor=color, edgecolor=color, alpha=0.7)
+
+        # Label the silhouette plots with their cluster numbers at the middle
+        ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+        y_lower = y_upper + 10  # 10 for the 0 samples
+
+    ax.set_title('Silhouette Plot for the Various Clusters.')
+    ax.set_xlabel("Silhouette Coefficient Values")
+    ax.set_ylabel("Cluster Label")
+    ax.set_yticks([])  # Clear the yaxis labels / ticks
+
+    # The vertical line for average silhouette score of all the values
+    ax.axvline(x=silhouette_avg, color="red", linestyle="--")
+
+    return fig, ax
+
+
 def calc_kmeans(data, nclusters, seed=None):
 
-    fig, ax = None, None
+    autofig, autoax = None, None
     if nclusters == 'auto':
-        nclusters, fig, ax = calc_optimal_clusters(data)
+        nclusters, autofig, autoax = calc_optimal_clusters(data)
 
     kmeans = KMeans(n_clusters=nclusters, random_state=seed).fit(data)
 
-    ret = {'nclusters': nclusters, 'figdata': {'fig': fig, 'ax': ax},
-           'kmeans': kmeans}
+    fig, ax = silhouette_plot(data, kmeans.labels_)
+
+
+    ret = {'nclusters': nclusters, 'auto': {'fig': autofig, 'ax': autoax},
+           'silhouette': {'fig': fig, 'ax': ax},
+           'kmeans': kmeans,
+           'nclusters': nclusters
+    }
 
     return ret
 
@@ -149,17 +202,18 @@ def clusterplot(data, highlight_gids=None, highlight_gid_names=None,
         cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(kmeans.n_clusters)}
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
+        cluster_data = data.assign(Cluster=clusters)
+        cluster_data['silhouette_score'] = silhouette_samples(data, kmeans.labels_)
+
+
         if row_colors is None:
             row_colors = cluster_colors
         else:
             row_colors = pd.concat([row_colors, cluster_colors])
 
         row_cluster = False
-
-        retval['kmeans'] = dict(data=data.assign(Cluster=clusters),
-                                figdata=kmeans_result.get('figdata'),
-                                nclusters=kmeans.n_clusters
-        )
+        kmeans_result['data'] = cluster_data
+        retval['kmeans'] = kmeans_result
 
     else:
         plot_data = data

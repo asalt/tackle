@@ -287,13 +287,18 @@ def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, ncluster
 
     if kmeans_res is not None:
         kmeans_data = kmeans_res['data']
-        outname = os.path.abspath(outname_func('{}clusters_labels.tab'.format(kmeans_clusters)))
+        outname = os.path.abspath(outname_func('{}clusters_labels'.format(kmeans_clusters))+'.tab')
         kmeans_data.to_csv(outname, index=True, sep='\t')
         print('Saved:', outname)
 
-        fig = kmeans_res['figdata'].get('fig')
+        fig = kmeans_res['auto'].get('fig')
         if fig is not None:
             outname = outname_func('cluster_optimized_results')
+            save_multiple(fig, outname, '.png')
+
+        fig = kmeans_res['silhouette'].get('fig')
+        if fig is not None:
+            outname = outname_func('{}clusters_silhouette'.format(kmeans_clusters))
             save_multiple(fig, outname, '.png')
 
 
