@@ -27,7 +27,7 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-__version__ = '0.2'
+__version__ = '0.3'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -113,6 +113,36 @@ class Path_or_Subcommand(click.Path):
 
         return click.Path.convert(self, value, param, ctx)
 
+def validate_cluster_number(ctx, param, value):
+
+    if value == 'auto':
+        return 'auto'
+
+    elif value == 'None' or value is None:
+        return None
+
+    elif value.isdigit():
+        retval = int(value)
+        if retval < 1:
+            raise click.BadParameter('must be set to at least 1')
+        return retval
+
+    else:
+        raise click.BadParameter('must be one of `None`, `auto` or an integer')
+
+def validate_seed(ctx, param, value):
+
+    if value == 'None' or value is None:
+        return None
+
+    elif value.isdigit():
+        return int(value)
+
+    else:
+        raise click.BadParameter('Must be an integer or `None`')
+
+
+
 
 @click.group(chain=True)
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
@@ -190,7 +220,8 @@ def export(ctx, level):
 
 @main.command('cluster')
 @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
-              help="Cluster columns")
+              help="""Cluster columns via hierarchical clustering.
+              Note this is overridden by specifying `nclusters`""")
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
               help="Show Gene Symbols on clustermap")
 @click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
@@ -201,8 +232,12 @@ def export(ctx, level):
               default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
               Should have 1 geneid per line. """)
+@click.option('--nclusters', default=None, callback=validate_cluster_number, show_default=True,
+              help="""If specified by an integer, use that number of clusters via k-means clustering. If specified as `auto`, will try to find the optimal number of clusters""")
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
-              help="Cluster rows")
+              help="Cluster rows via hierarchical clustering")
+@click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
+              show_default=True)
 @click.option('--show-metadata', default=False, show_default=True,
               is_flag=True,
               help="""Show metadata on clustermap if present""")
@@ -211,32 +246,57 @@ def export(ctx, level):
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, row_cluster, show_metadata,
-            standard_scale, z_score):
+def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, nclusters, row_cluster,
+            seed, show_metadata, standard_scale, z_score):
 
     data_obj = ctx.obj['data_obj']
     data_obj.set_highlight_gids(highlight_geneids)
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
 
-    g, extra_artists = clusterplot(data_obj.areas_log_shifted, highlight_gids=data_obj.highlight_gids,
-                                   highlight_gid_names=data_obj.highlight_gid_names,
-                                   gid_symbol=data_obj.gid_symbol,
-                                   gene_symbols=gene_symbols, z_score=data_obj.z_score,
-                                   standard_scale=data_obj.standard_scale,
-                                   row_cluster=row_cluster, col_cluster=col_cluster,
-                                   metadata=data_obj.config if show_metadata else None,
-                                   col_data = data_obj.col_metadata
+    result = clusterplot(data_obj.areas_log_shifted, highlight_gids=data_obj.highlight_gids,
+                         highlight_gid_names=data_obj.highlight_gid_names,
+                         gid_symbol=data_obj.gid_symbol,
+                         gene_symbols=gene_symbols, z_score=data_obj.z_score,
+                         standard_scale=data_obj.standard_scale,
+                         row_cluster=row_cluster, col_cluster=col_cluster,
+                         metadata=data_obj.config if show_metadata else None,
+                         col_data = data_obj.col_metadata,
+                         nclusters=nclusters
     )
-    outname = get_outname('clustermap', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros,
-                          colors_only=data_obj.colors_only, outpath=data_obj.outpath)
+
+    g = result['clustermap']['clustergrid']
+    extra_artists = result['clustermap']['extra_artists']
+    outname_func = partial(get_outname, name=data_obj.outpath_name,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                           outpath=data_obj.outpath )
+
+    kmeans_res = result.get('kmeans')
+    if kmeans_res is not None:
+        kmeans_clusters = kmeans_res['nclusters']
+        outname = outname_func('clustermap_{}clusters'.format(kmeans_clusters))
+    else:
+        outname = outname_func('clustermap')
 
     bbox_inches='tight'
     if extra_artists is not None:
         bbox_inches=None
         # extra_artists=None
         save_multiple(g, outname, '.png', bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
+
+
+    if kmeans_res is not None:
+        kmeans_data = kmeans_res['data']
+        outname = os.path.abspath(outname_func('{}clusters_labels.tab'.format(kmeans_clusters)))
+        kmeans_data.to_csv(outname, index=True, sep='\t')
+        print('Saved:', outname)
+
+        fig = kmeans_res['figdata'].get('fig')
+        if fig is not None:
+            outname = outname_func('cluster_optimized_results')
+            save_multiple(fig, outname, '.png')
+
+
 
 @main.command('pca')
 @click.pass_context
