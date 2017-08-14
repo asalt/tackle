@@ -10,7 +10,7 @@ from matplotlib.colors import rgb2hex
 import numpy as np
 import pandas as pd
 import seaborn as sb
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_samples, silhouette_score
 
 from utils import *
@@ -87,7 +87,7 @@ def silhouette_plot(data, labels):
     cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(n_clusters)}
 
 
-    for i in range(n_clusters):
+    for i in reversed(range(n_clusters)):
         ith_cluster_silhouette_values = sample_silhouette_values[labels == i]
 
         ith_cluster_silhouette_values.sort()
@@ -105,13 +105,14 @@ def silhouette_plot(data, labels):
 
         y_lower = y_upper + 10  # 10 for the 0 samples
 
-    ax.set_title('Silhouette Plot for the Various Clusters.')
+    ax.set_title('Silhouette Plot for the Various Clusters')
     ax.set_xlabel("Silhouette Coefficient Values")
     ax.set_ylabel("Cluster Label")
     ax.set_yticks([])  # Clear the yaxis labels / ticks
 
     # The vertical line for average silhouette score of all the values
     ax.axvline(x=silhouette_avg, color="red", linestyle="--")
+    sb.despine(fig=fig, left=True, bottom=True)
 
     return fig, ax
 
@@ -137,9 +138,9 @@ def calc_kmeans(data, nclusters, seed=None):
 
 
 
-def clusterplot(data, highlight_gids=None, highlight_gid_names=None,
-                gid_symbol=None, nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, row_cluster=True, seed=None,
-                col_cluster=True, metadata=None, col_data=None):
+def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
+                nclusters=None, gene_symbols=None, z_score=None, standard_scale=None,
+                row_cluster=True, seed=None, col_cluster=True, metadata=None, col_data=None):
     """
     :nclusters: None, 'auto', or positive integer
 
@@ -189,9 +190,18 @@ def clusterplot(data, highlight_gids=None, highlight_gid_names=None,
     # if col_colors is not None:
     #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
 
+    if nclusters is not None or dbscan:
+        if z_score is not None:
+            data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
+        else:
+            data_t = data
+
+        row_cluster = False
+
     if nclusters is not None:
 
-        kmeans_result = calc_kmeans(data, nclusters, seed)
+
+        kmeans_result = calc_kmeans(data_t, nclusters, seed)
         kmeans = kmeans_result['kmeans']
         clusters = pd.Series(data=kmeans.labels_, index=data.index)
         cluster_order = clusters.sort_values().index
@@ -202,18 +212,50 @@ def clusterplot(data, highlight_gids=None, highlight_gid_names=None,
         cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(kmeans.n_clusters)}
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
-        cluster_data = data.assign(Cluster=clusters)
-        cluster_data['silhouette_score'] = silhouette_samples(data, kmeans.labels_)
-
+        cluster_data = data_t.assign(Cluster=clusters)
+        cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
         if row_colors is None:
             row_colors = cluster_colors
         else:
             row_colors = pd.concat([row_colors, cluster_colors])
 
-        row_cluster = False
         kmeans_result['data'] = cluster_data
         retval['kmeans'] = kmeans_result
+
+
+    elif dbscan:
+        db = DBSCAN().fit(data_t)
+        clusters = pd.Series(data=db.labels_, index=data.index)
+        n_clusters = len(set(db.labels_)) - (1 if -1 in db.labels_ else 0)
+        if n_clusters == 0:
+            raise ValueError('No clusters found!')
+        cluster_order = clusters.sort_values().index
+
+        plot_data = data.loc[cluster_order]
+
+        cmap = iter(sb.color_palette('hls', n_colors=max(6, n_clusters)))
+        cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(n_clusters)}
+        cmap_mapping[-1] = 'k'
+        cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
+
+        cluster_data = data_t.assign(Cluster=clusters)
+        cluster_data['silhouette_score'] = silhouette_samples(data_t, db.labels_)
+        cluster_data.loc[cluster_data.Cluster == -1, 'silhouette_score'] = np.nan
+
+        if row_colors is None:
+            row_colors = cluster_colors
+        else:
+            row_colors = pd.concat([row_colors, cluster_colors])
+
+        valid_gids = clusters.where(lambda x: x != -1).dropna().index
+        fig, ax = silhouette_plot(data.loc[valid_gids],
+                                  clusters.loc[valid_gids].values)
+
+        retval['dbscan'] = {'nclusters': n_clusters,
+                            'silhouette': {'fig': fig, 'ax': ax},
+                            'data' : cluster_data
+        }
 
     else:
         plot_data = data

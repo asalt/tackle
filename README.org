@@ -1,0 +1,187 @@
+* Correlation Plotter
+  A set of CLI-based data filtering and plotting tools for proteomics data at
+  BCM.
+
+
+* Requirements
+
+  This package is written for Python3. Nothing should be prevented from getting
+  it to work with Python2 as well, but it will likely not work without changes.
+  Pull requests welcome.
+
+  + numpy
+  + scipy
+  + scikit-learn
+  + pandas
+  + matplotlib
+  + seaborn
+  + click
+  + bcmproteomics
+  + bcmproteomics_ext
+
+
+* Installation
+  Clone the repository and use pip to install:
+  #+BEGIN_SRC sh
+  git clone https://github.com/asalt/correlation-plotter
+  cd ./correlation-plotter
+  pip install .
+  #+END_SRC
+
+* Using the Tools
+
+  `correlationplot` is a suite of tools which do different things with the
+  data. Each tool is specified by the user at the command line after the base
+  `correlationplot` command (see below for examples).
+  The following tools are available:
+
+  - cluster :: Cluster the data via either hierarchical or K-means clustering and
+       produce a heatmap
+  - export :: export the data after specified filtering
+  - pca :: Produce a PCA plot with the first two principle components from the
+       data.
+  - scatter :: Produce a grid of scatterplots comparing each sample to others.
+
+** =correlationplot= Base Command
+
+   The first command has a required input of =EXPERIMENT_FILE=, a config file
+   that specifies which experiments to download and analyze. Additionally,
+   optional arguments can be set such as whether or not to perform =iFOT=
+   normalization and how many =non-zero= observations are to be permitted per
+   observation.
+
+   #+BEGIN_SRC sh
+    Usage: correlationplot [OPTIONS] EXPERIMENT_FILE COMMAND1 [ARGS]... [COMMAND2
+                          [ARGS]...]...
+
+    Options:
+      --additional-info PATH     .ini file with metadata for isobaric data used
+                                for scatter and PCA plots
+      --data-dir DIRECTORY       location to store and read e2g files  [default:
+                                ./data/]
+      --funcats TEXT             Optional gene subset based on funcat or funcats,
+                                regular expression allowed.
+      --iFOT                     Calculate iFOT (divide by total input per
+                                experiment)  [default: False]
+      -n, --name TEXT            An optional name for the analysis that will place
+                                all results in a subfolder.
+      --non-zeros INTEGER        Minimum number of non-non_zeros allowed across
+                                samples.  [default: 0]
+      --taxon [human|mouse|all]  [default: all]
+      --help                     Show this message and exit.
+
+    Commands:
+      cluster
+      export
+      pca
+      scatter
+   #+END_SRC
+
+*** EXPERIMENT FILE Format
+    The experiment file is a required input for specifying which experiments to
+    analyze. It has the following format:
+
+    #+BEGIN_SRC
+    [NAME 1]
+    recno = 1
+    runno = 1
+    searchno = 1
+
+    #+END_SRC
+    Note that runno and searchno will default to 1 if not specified. The name
+    within the brackets will be used to label the sample in all plots and data
+    exports.
+
+    Additionally, metadata can be added for each experiment. For example, one
+    may wish to specify which samples are controls and which are treatments. The
+    modified version of the config file will then look like this:
+
+    #+BEGIN_SRC
+    [NAME 1]
+    recno = 1
+    runno = 1
+    searchno = 1
+    Treatment = Vehicle
+    Batch = 1
+
+    [NAME 2]
+    recno = 2
+    runno = 1
+    searchno = 1
+    Treatment = Drug
+    Batch = 1
+
+    #+END_SRC
+    Here we have added =Treatment= and =Batch= labels for each entry. These will
+    be used as labels in the =cluster= subcommand.
+
+    Finally, the =pca= subcommand needs an additional specification for marking
+    the samples on the plot. Continuing with the above example, we can add this
+    to our config file:
+
+    #+BEGIN_SRC
+    [__PCA__]
+    color  = Treatment
+    marker = Batch
+    #+END_SRC
+    Now the different treatments will be represented in different colors and
+    different batches will be represented as different shapes in the PCA plot.
+
+    Note that the metadata can be specified with any desired name as long as it
+    is consistently used for all experiments (case sensitive).
+
+** =cluster= Subcommand
+   #+BEGIN_SRC
+    Usage: correlationplot [OPTIONS]
+
+    Options:
+      --col-cluster / --no-col-cluster
+                                      Cluster columns via hierarchical clustering.
+                                      Note this is overridden by specifying
+                                      `nclusters`  [default: True]
+      --gene-symbols                  Show Gene Symbols on clustermap  [default:
+                                      False]
+      --geneids PATH                  Optional list of geneids to subset by.
+                                      Should have 1 geneid per line.
+      --highlight-geneids PATH        Optional list of geneids to highlight by.
+                                      Should have 1 geneid per line.
+      --nclusters TEXT                If specified by an integer, use that number
+                                      of clusters via k-means clustering. If
+                                      specified as `auto`, will try to find the
+                                      optimal number of clusters
+      --row-cluster / --no-row-cluster
+                                      Cluster rows via hierarchical clustering
+                                      [default: True]
+      --seed TEXT                     seed for kmeans clustering
+      --show-metadata                 Show metadata on clustermap if present
+                                      [default: False]
+      --standard-scale [None|0|1]     [default: None]
+      --z-score [None|0|1]            [default: 0]
+      --help                          Show this message and exit.
+
+
+   #+END_SRC
+
+   After calling the main command, the =cluster= subcommand is specified.:
+   #+BEGIN_SRC sh
+   correlationplot ./example.config cluster
+   #+END_SRC
+   By default, this command clusters samples and gene products via hierarchical
+   clustering and produces the resulting heatmap. Alternatively, the command can
+   be clustered via K-means or DBSCAN if specified.
+   K-means clustering can be used by specifying =--nclusters= as the
+   number of desired clusters or =auto=. If =auto= is specified, the optimal
+   number of clusters will be estimated by using the number of clusters with the
+   highest silhouette score (see
+   [[https://en.wikipedia.org/wiki/Silhouette_(clustering)]] for more information).
+   A plot of average silhouette scores across the various number of clusters
+   used is produced when =auto= is specified. This plot should be examined to
+   check for the case where multiple numbers of clusters have similar silhouette scores.
+   KMeans clustering returns a heatmap with the gene products grouped by the
+   resulting clusters. It also exports the data annotated with the corresponding
+   clusters, as well as a silhouette analysis plot for each cluster.
+
+   DBSCAN similarly returns a heatmap with the gene products annotated by
+   cluster. Black indicates data that does not fall into any of the observed clusters.
+   It also exports the data annotated with the cluster information as well as a
+   silhouette analysis plot.

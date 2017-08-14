@@ -143,7 +143,6 @@ def validate_seed(ctx, param, value):
 
 
 
-
 @click.group(chain=True)
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
@@ -234,6 +233,8 @@ def export(ctx, level):
               Should have 1 geneid per line. """)
 @click.option('--nclusters', default=None, callback=validate_cluster_number, show_default=True,
               help="""If specified by an integer, use that number of clusters via k-means clustering. If specified as `auto`, will try to find the optimal number of clusters""")
+@click.option('--dbscan', default=False, is_flag=True, show_default=True,
+              help="""Use DBSCAN algorithm to find and cluster data. Cannot be used with nclusters specification""")
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster rows via hierarchical clustering")
 @click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
@@ -246,8 +247,11 @@ def export(ctx, level):
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, nclusters, row_cluster,
+def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, nclusters, row_cluster,
             seed, show_metadata, standard_scale, z_score):
+
+    if nclusters is not None and dbscan:
+        raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
 
     data_obj = ctx.obj['data_obj']
     data_obj.set_highlight_gids(highlight_geneids)
@@ -262,7 +266,9 @@ def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, ncluster
                          row_cluster=row_cluster, col_cluster=col_cluster,
                          metadata=data_obj.config if show_metadata else None,
                          col_data = data_obj.col_metadata,
-                         nclusters=nclusters
+                         nclusters=nclusters,
+                         dbscan=dbscan
+
     )
 
     g = result['clustermap']['clustergrid']
@@ -272,9 +278,13 @@ def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, ncluster
                            outpath=data_obj.outpath )
 
     kmeans_res = result.get('kmeans')
+    dbscan_res = result.get('dbscan')
     if kmeans_res is not None:
         kmeans_clusters = kmeans_res['nclusters']
         outname = outname_func('clustermap_{}clusters'.format(kmeans_clusters))
+    elif dbscan_res is not None:
+        dbscan_clusters = dbscan_res['nclusters']
+        outname = outname_func('clustermap_{}clusters'.format(dbscan_clusters))
     else:
         outname = outname_func('clustermap')
 
@@ -299,6 +309,18 @@ def cluster(ctx, col_cluster, geneids, gene_symbols, highlight_geneids, ncluster
         fig = kmeans_res['silhouette'].get('fig')
         if fig is not None:
             outname = outname_func('{}clusters_silhouette'.format(kmeans_clusters))
+            save_multiple(fig, outname, '.png')
+
+    if dbscan_res is not None:
+        dbscan_data = dbscan_res['data']
+
+        outname = os.path.abspath(outname_func('{}clusters_labels'.format(dbscan_clusters))+'.tab')
+        dbscan_data.to_csv(outname, index=True, sep='\t')
+        print('Saved:', outname)
+
+        fig = dbscan_res['silhouette'].get('fig')
+        if fig is not None:
+            outname = outname_func('{}clusters_silhouette'.format(dbscan_clusters))
             save_multiple(fig, outname, '.png')
 
 
