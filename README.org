@@ -30,9 +30,9 @@
 
 * Using the Tools
 
-  `correlationplot` is a suite of tools which do different things with the
+  =correlationplot= is a suite of tools which do different things with the
   data. Each tool is specified by the user at the command line after the base
-  `correlationplot` command (see below for examples).
+  =correlationplot= command (see below for examples).
   The following tools are available:
 
   - cluster :: Cluster the data via either hierarchical or K-means clustering and
@@ -50,7 +50,7 @@
    normalization and how many =non-zero= observations are to be permitted per
    observation.
 
-   #+BEGIN_SRC sh
+   #+BEGIN_SRC
     Usage: correlationplot [OPTIONS] EXPERIMENT_FILE COMMAND1 [ARGS]... [COMMAND2
                           [ARGS]...]...
 
@@ -185,3 +185,31 @@
    cluster. Black indicates data that does not fall into any of the observed clusters.
    It also exports the data annotated with the cluster information as well as a
    silhouette analysis plot.
+
+** =pca= Subcommand
+   Run this subcommand:
+   #+BEGIN_SRC
+   correlationplot ./example.config pca
+
+   #+END_SRC
+
+** =scatter= Subcommand
+   Run this subcommand:
+   #+BEGIN_SRC
+   correlationplot ./example.config scatter
+
+   #+END_SRC
+
+** =export= Subcommand
+   Run this subcommand:
+   #+BEGIN_SRC
+   correlationplot ./example.config export
+
+   #+END_SRC
+
+* Chaining Subcommands
+  Multiple subcommands can be chained together if multiple subcommands are to be run:
+  #+BEGIN_SRC
+  correlationplot --non-zeros 4 --name example ./example.config cluster --nclusters auto export --level area
+  #+END_SRC
+  Notice that the optional arguments are specified for each command and subcommand.
