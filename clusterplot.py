@@ -186,7 +186,12 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
     # figheight = min(len(data) / 6, 100)
     figheight = 12
-    figwidth  = len(data.columns) / 2
+    min_figwidth = 4
+    if col_colors is not None and not col_colors.empty:
+        for _ in range(1, len(col_colors.columns)):
+            min_figwidth += 1  # make room for more labels in legend after 2 labels
+
+    figwidth  = max( len(data.columns) / 2, min_figwidth )
     # if col_colors is not None:
     #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
 
@@ -287,9 +292,12 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
 
     if col_colors is not None:
-        widths = _calculate_box_sizes( col_colors.nunique() )
+        col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()
+        # widths = _calculate_box_sizes( col_colors.nunique() )
+        widths = _calculate_box_sizes( col_label_lengths )
         col_colors_t = col_colors.T
-        bboxes = [(x, 1.02, 1, .2) for x in widths]
+        bbox_y0 = 1.24 if col_cluster else .8
+        bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
         legends = list()
         for bbox, ix in zip(bboxes, col_colors_t.index):
@@ -303,12 +311,34 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                 handles.append(handle)
                 labels.append(n)
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
-                                              loc='lower left', ncol=len(col_names) // 2,
+                                              loc='upper left', ncol=len(col_names) // 2,
                                               title=col_name
             )
             legends.append(leg)
             g.ax_col_dendrogram.add_artist(leg)
             extra_artists = legends
+
+
+    # make sure there is enough room on the right side for labels
+    if col_colors is not None and not col_colors.empty:
+
+        width, height = g.fig.get_size_inches()
+
+        longest_label = max(len(x) for x in col_colors.columns) + 2  # add a little padding
+        char_width = (430/1000) # approx via from https://www.math.utah.edu/~beebe/fonts/afm-widths.html
+        longest_length = longest_label * char_width
+        inch_shift = longest_length * 12/72  # 72 pts in an inch
+
+        shift = 1 - (inch_shift / width)
+
+        g.gs.update(right=shift)  # add some room on the right so everything fits
+
+    # top = g.gs.top
+    # bottom = g.gs.bottom
+    # right = g.gs.right
+    # left = g.gs.left
+
+
 
     retval['clustermap'] = dict(clustergrid=g, extra_artists=extra_artists)
 
