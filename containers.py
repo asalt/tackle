@@ -129,6 +129,12 @@ class Data:
             self.set_area_dfs()
         return self._areas_log_shifted
 
+    @property
+    def mask(self):
+        if self._mask is None:
+            self.set_area_dfs()
+        return self._mask
+
 
     @staticmethod
     def clean_input(raw):
@@ -306,6 +312,7 @@ class Data:
         # self.areas = self.panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
         self._areas = self.df_filtered.loc[ idx[:, 'iBAQ_dstrAdj'], : ]
         self._areas.index = self._areas.index.droplevel(1)  # don't need the second index
+        self._mask = self._areas.applymap(np.isnan)
         if len(self.areas) == 0:
             raise ValueError('No data')
 
@@ -314,9 +321,13 @@ class Data:
             self._areas = self._areas / sum_
             # self.areas /= self.areas.sum(0)
 
-        self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        # fillna with the mean value. This prevents skewing of normalization such as
+        # z score. The NAN values are held in the self.mask dataframe
+        self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
         minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
+
         self._areas_log_shifted = self._areas_log + shift_val
 
     def make_plot(self, pltname):

@@ -267,8 +267,8 @@ def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, 
                          metadata=data_obj.config if show_metadata else None,
                          col_data = data_obj.col_metadata,
                          nclusters=nclusters,
-                         dbscan=dbscan
-
+                         dbscan=dbscan,
+                         mask=data_obj.mask
     )
 
     g = result['clustermap']['clustergrid']

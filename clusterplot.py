@@ -1,5 +1,5 @@
-import matplotlib
-matplotlib.use('Agg')
+import matplotlib as mpl
+mpl.use('Agg')
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -139,7 +139,7 @@ def calc_kmeans(data, nclusters, seed=None):
 
 
 def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
-                nclusters=None, gene_symbols=None, z_score=None, standard_scale=None,
+                nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 row_cluster=True, seed=None, col_cluster=True, metadata=None, col_data=None):
     """
     :nclusters: None, 'auto', or positive integer
@@ -195,13 +195,13 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     # if col_colors is not None:
     #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
 
-    if nclusters is not None or dbscan:
-        if z_score is not None:
-            data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
-        else:
-            data_t = data
+    # if nclusters is not None or dbscan:
+    if z_score is not None:
+        data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
+    else:
+        data_t = data
 
-        row_cluster = False
+    row_cluster = False
 
     if nclusters is not None:
 
@@ -211,13 +211,16 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         clusters = pd.Series(data=kmeans.labels_, index=data.index)
         cluster_order = clusters.sort_values().index
 
-        plot_data = data.loc[cluster_order]
+        # plot_data = data.loc[cluster_order]
+        plot_data = data_t.loc[cluster_order]
 
         cmap = iter(sb.color_palette('hls', n_colors=max(6, kmeans.n_clusters)))
         cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(kmeans.n_clusters)}
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
-        cluster_data = data_t.assign(Cluster=clusters)
+        cluster_data = data_t.copy()
+        cluster_data[mask] = np.NAN
+        cluster_data = cluster_data.assign(Cluster=clusters)
         cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
         if row_colors is None:
@@ -266,16 +269,34 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         plot_data = data
 
 
+    cmap_name = 'YlOrRd' if z_score is None else 'RdBu_r'
+    cmap = mpl.cm.get_cmap(cmap_name)
+    robust = False
+    if z_score is not None:  # adapted from seaborn.matrix.ClusterMap
+        center = 0
+        vmin = np.percentile(plot_data, 2) if robust else plot_data.min().min()
+        vmax = np.percentile(plot_data, 98) if robust else plot_data.max().max()
+
+        vrange = max(vmax - center, center - vmin)
+
+        normlize = mpl.colors.Normalize(center - vrange, center + vrange)
+        cmin, cmax = normlize([vmin, vmax])
+        cc = np.linspace(cmin, cmax, 256)
+        cmap = mpl.colors.ListedColormap(cmap(cc))
+
+    cmap.set_bad(color='gray')
+
 
     g = sb.clustermap(plot_data,
                       row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                       col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                       yticklabels=False if not gene_symbols else True,
-                      z_score=z_score, standard_scale=standard_scale,
+                      # z_score=z_score, standard_scale=standard_scale,
                       figsize=(figwidth, figheight),
                       row_cluster=row_cluster, col_cluster=col_cluster,
-                      cmap = 'YlOrRd' if z_score is None else 'RdBu_r',
-                      center = 0 if z_score is not None else None
+                      cmap=cmap,
+                      mask=mask.loc[plot_data.index],
+                      # center = 0 if z_score is not None else None
     )
     if gene_symbols:
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
@@ -307,11 +328,11 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()
             for n, c in zip(col_names, label_colors):
-                handle = matplotlib.patches.Patch(color=c,)
+                handle = mpl.patches.Patch(color=c,)
                 handles.append(handle)
                 labels.append(n)
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
-                                              loc='upper left', ncol=len(col_names) // 2,
+                                              loc='upper left', ncol=max(len(col_names) // 3, 1),
                                               title=col_name
             )
             legends.append(leg)
