@@ -1,12 +1,17 @@
-import matplotlib
-matplotlib.use('Agg')
+import matplotlib as mpl
+mpl.use('Agg')
 
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from matplotlib.offsetbox import AnchoredText
+from matplotlib.ticker import MaxNLocator
+from matplotlib.colors import rgb2hex
 
 import numpy as np
 import pandas as pd
 import seaborn as sb
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.metrics import silhouette_samples, silhouette_score
 
 from utils import *
 
@@ -32,10 +37,117 @@ def _calculate_box_sizes(size_vector):
     start = [0, *cumsum][:-1]
     return start
 
+def plot_silhouette_scores(scores, start, end):
 
-def clusterplot(ibaqs_log_shifted, highlight_gids=None, highlight_gid_names=None,
-                gid_symbol=None, gene_symbols=None, z_score=None, standard_scale=None, row_cluster=True,
-                col_cluster=True, metadata=None, col_data=None):
+    fig, ax = plt.subplots()
+    ax.plot( range(start, end+1), scores, marker='o' )
+
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_ylabel('Silhouette Score')
+    ax.set_xlabel('Number of Clusters')
+
+    return fig, ax
+
+
+def calc_optimal_clusters(data, start=2, end=20):
+    best_score = -np.inf
+    best_cluster = None
+
+    scores = list()
+
+    for i in range(start, end+1):
+        kmeans = KMeans(n_clusters=i).fit(data)
+
+        score = silhouette_score(data, kmeans.labels_)
+
+        scores.append(score)
+
+        if score > best_score:
+            best_score = score
+            best_cluster = i
+
+    fig, ax = plot_silhouette_scores(scores, start, end)
+
+    return best_cluster, fig, ax
+
+def silhouette_plot(data, labels):
+
+    fig, ax = plt.subplots()
+    n_clusters = len(set(labels))
+
+    # ax.set_xlim([-0.1, 1])
+    ax.set_ylim([0, len(data) + (n_clusters + 1) * 10])
+
+    silhouette_avg = silhouette_score(data, labels)
+    sample_silhouette_values = silhouette_samples(data, labels)
+
+    y_lower = 10
+
+    cmap = iter(sb.color_palette('hls', n_colors=max(6, n_clusters)))
+    cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(n_clusters)}
+
+
+    for i in reversed(range(n_clusters)):
+        ith_cluster_silhouette_values = sample_silhouette_values[labels == i]
+
+        ith_cluster_silhouette_values.sort()
+
+        size_cluster_i = ith_cluster_silhouette_values.shape[0]
+        y_upper = y_lower + size_cluster_i
+
+        color = cmap_mapping[i]
+        ax.fill_betweenx(np.arange(y_lower, y_upper),
+                          0, ith_cluster_silhouette_values,
+                          facecolor=color, edgecolor=color, alpha=0.7)
+
+        # Label the silhouette plots with their cluster numbers at the middle
+        ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+
+        y_lower = y_upper + 10  # 10 for the 0 samples
+
+    ax.set_title('Silhouette Plot for the Various Clusters')
+    ax.set_xlabel("Silhouette Coefficient Values")
+    ax.set_ylabel("Cluster Label")
+    ax.set_yticks([])  # Clear the yaxis labels / ticks
+
+    # The vertical line for average silhouette score of all the values
+    ax.axvline(x=silhouette_avg, color="red", linestyle="--")
+    sb.despine(fig=fig, left=True, bottom=True)
+
+    return fig, ax
+
+
+def calc_kmeans(data, nclusters, seed=None):
+
+    autofig, autoax = None, None
+    if nclusters == 'auto':
+        nclusters, autofig, autoax = calc_optimal_clusters(data)
+
+    kmeans = KMeans(n_clusters=nclusters, random_state=seed).fit(data)
+
+    fig, ax = silhouette_plot(data, kmeans.labels_)
+
+
+    ret = {'nclusters': nclusters, 'auto': {'fig': autofig, 'ax': autoax},
+           'silhouette': {'fig': fig, 'ax': ax},
+           'kmeans': kmeans,
+           'nclusters': nclusters
+    }
+
+    return ret
+
+
+
+def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
+                nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
+                show_missing_values=True,
+                row_cluster=True, seed=None, col_cluster=True, metadata=None, col_data=None):
+    """
+    :nclusters: None, 'auto', or positive integer
+
+    """
+    retval = dict()
+
     row_colors = None
     extra_artists = None
     if highlight_gids:
@@ -45,9 +157,9 @@ def clusterplot(ibaqs_log_shifted, highlight_gids=None, highlight_gid_names=None
         for ix, hgid in enumerate(highlight_gids):
             color = cmap[ix]
             highlights = {gid: color for gid in hgid}
-            colors = [highlights.get(x, (1., 1., 1.)) for x in ibaqs_log_shifted.index]
-            # colors = ibaqs_log_shifted.index.map( lambda x: highlights.get(x, 'white') )
-            colors_df = pd.Series(colors, index=ibaqs_log_shifted.index).to_frame(highlight_gid_names[ix])
+            colors = [highlights.get(x, (1., 1., 1.)) for x in data.index]
+            # colors = data.index.map( lambda x: highlights.get(x, 'white') )
+            colors_df = pd.Series(colors, index=data.index).to_frame(highlight_gid_names[ix])
             colors_dfs.append(colors_df)
         row_colors = pd.concat(colors_dfs,axis=1)
         # row_colors.columns = highlight_gid_names
@@ -68,22 +180,125 @@ def clusterplot(ibaqs_log_shifted, highlight_gids=None, highlight_gid_names=None
 
 
     if gene_symbols:
-        clustermap_symbols = [gid_symbol.get(x, '?') for x in ibaqs_log_shifted.index]
-        ibaqs_log_shifted.index = clustermap_symbols
+        clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
+        data.index = clustermap_symbols
         if row_colors is not None:
             row_colors.index = clustermap_symbols
 
-    # figheight = min(len(ibaqs_log_shifted) / 6, 100)
+    # figheight = min(len(data) / 6, 100)
     figheight = 12
-    figwidth  = len(ibaqs_log_shifted.columns) / 2
-    g = sb.clustermap(ibaqs_log_shifted, row_colors=row_colors,
-                      col_colors=col_colors,
+    min_figwidth = 4
+    if col_colors is not None and not col_colors.empty:
+        for _ in range(1, len(col_colors.columns)):
+            min_figwidth += 1  # make room for more labels in legend after 2 labels
+
+    figwidth  = max( len(data.columns) / 2, min_figwidth )
+    # if col_colors is not None:
+    #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
+
+    # if nclusters is not None or dbscan:
+    if z_score is not None:
+        data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
+    else:
+        data_t = data
+
+    row_cluster = False
+
+    if nclusters is not None:
+
+
+        kmeans_result = calc_kmeans(data_t, nclusters, seed)
+        kmeans = kmeans_result['kmeans']
+        clusters = pd.Series(data=kmeans.labels_, index=data.index)
+        cluster_order = clusters.sort_values().index
+
+        # plot_data = data.loc[cluster_order]
+        plot_data = data_t.loc[cluster_order]
+
+        cmap = iter(sb.color_palette('hls', n_colors=max(6, kmeans.n_clusters)))
+        cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(kmeans.n_clusters)}
+        cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
+
+        cluster_data = data_t.copy()
+        if show_missing_values:
+            cluster_data[mask] = np.NAN
+        cluster_data = cluster_data.assign(Cluster=clusters)
+        cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
+
+        if row_colors is None:
+            row_colors = cluster_colors
+        else:
+            row_colors = pd.concat([row_colors, cluster_colors])
+
+        kmeans_result['data'] = cluster_data
+        retval['kmeans'] = kmeans_result
+
+
+    elif dbscan:
+        db = DBSCAN().fit(data_t)
+        clusters = pd.Series(data=db.labels_, index=data.index)
+        n_clusters = len(set(db.labels_)) - (1 if -1 in db.labels_ else 0)
+        if n_clusters == 0:
+            raise ValueError('No clusters found!')
+        cluster_order = clusters.sort_values().index
+
+        plot_data = data.loc[cluster_order]
+
+        cmap = iter(sb.color_palette('hls', n_colors=max(6, n_clusters)))
+        cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(n_clusters)}
+        cmap_mapping[-1] = 'k'
+        cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
+
+        cluster_data = data_t.assign(Cluster=clusters)
+        cluster_data['silhouette_score'] = silhouette_samples(data_t, db.labels_)
+        cluster_data.loc[cluster_data.Cluster == -1, 'silhouette_score'] = np.nan
+
+        if row_colors is None:
+            row_colors = cluster_colors
+        else:
+            row_colors = pd.concat([row_colors, cluster_colors])
+
+        valid_gids = clusters.where(lambda x: x != -1).dropna().index
+        fig, ax = silhouette_plot(data.loc[valid_gids],
+                                  clusters.loc[valid_gids].values)
+
+        retval['dbscan'] = {'nclusters': n_clusters,
+                            'silhouette': {'fig': fig, 'ax': ax},
+                            'data' : cluster_data
+        }
+
+    else:
+        plot_data = data
+
+
+    cmap_name = 'YlOrRd' if z_score is None else 'RdBu_r'
+    cmap = mpl.cm.get_cmap(cmap_name)
+    robust = False
+    if z_score is not None:  # adapted from seaborn.matrix.ClusterMap
+        center = 0
+        vmin = np.percentile(plot_data, 2) if robust else plot_data.min().min()
+        vmax = np.percentile(plot_data, 98) if robust else plot_data.max().max()
+
+        vrange = max(vmax - center, center - vmin)
+
+        normlize = mpl.colors.Normalize(center - vrange, center + vrange)
+        cmin, cmax = normlize([vmin, vmax])
+        cc = np.linspace(cmin, cmax, 256)
+        cmap = mpl.colors.ListedColormap(cmap(cc))
+
+    cmap.set_bad(color='gray')
+
+
+    g = sb.clustermap(plot_data,
+                      row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
+                      col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                       yticklabels=False if not gene_symbols else True,
-                      z_score=z_score, standard_scale=standard_scale,
+                      # z_score=z_score, standard_scale=standard_scale,
                       figsize=(figwidth, figheight),
                       row_cluster=row_cluster, col_cluster=col_cluster,
-                      cmap = 'YlOrRd' if z_score is None else 'RdBu_r',
-                      center = 0 if z_score is not None else None
+                      cmap=cmap,
+                      mask=mask.loc[plot_data.index] if show_missing_values else None,
+                      # center = 0 if z_score is not None else None
     )
     if gene_symbols:
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
@@ -100,9 +315,12 @@ def clusterplot(ibaqs_log_shifted, highlight_gids=None, highlight_gid_names=None
 
 
     if col_colors is not None:
-        widths = _calculate_box_sizes( col_colors.nunique() )
+        col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()
+        # widths = _calculate_box_sizes( col_colors.nunique() )
+        widths = _calculate_box_sizes( col_label_lengths )
         col_colors_t = col_colors.T
-        bboxes = [(x, 1.02, 1, .2) for x in widths]
+        bbox_y0 = 1.24 if col_cluster else .8
+        bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
         legends = list()
         for bbox, ix in zip(bboxes, col_colors_t.index):
@@ -112,14 +330,40 @@ def clusterplot(ibaqs_log_shifted, highlight_gids=None, highlight_gid_names=None
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()
             for n, c in zip(col_names, label_colors):
-                handle = matplotlib.patches.Patch(color=c,)
+                handle = mpl.patches.Patch(color=c,)
                 handles.append(handle)
                 labels.append(n)
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
-                                              loc='lower left', ncol=len(col_names) // 2,
+                                              loc='upper left', ncol=max(len(col_names) // 3, 1),
                                               title=col_name
             )
             legends.append(leg)
             g.ax_col_dendrogram.add_artist(leg)
             extra_artists = legends
-    return g, extra_artists
+
+
+    # make sure there is enough room on the right side for labels
+    if col_colors is not None and not col_colors.empty:
+
+        width, height = g.fig.get_size_inches()
+
+        longest_label = max(len(x) for x in col_colors.columns) + 2  # add a little padding
+        char_width = (430/1000) # approx via from https://www.math.utah.edu/~beebe/fonts/afm-widths.html
+        longest_length = longest_label * char_width
+        inch_shift = longest_length * 12/72  # 72 pts in an inch
+
+        shift = 1 - (inch_shift / width)
+
+        g.gs.update(right=shift)  # add some room on the right so everything fits
+
+    # top = g.gs.top
+    # bottom = g.gs.bottom
+    # right = g.gs.right
+    # left = g.gs.left
+
+
+
+    retval['clustermap'] = dict(clustergrid=g, extra_artists=extra_artists)
+
+    return retval
+    # return g, extra_artists

@@ -254,7 +254,7 @@ def save_multiple(fig, filename, *exts, verbose=True, dpi=300, **save_kwargs):
     """save a figure to a specific file multiple
     times with different extensions"""
     for ext in exts:
-        out = filename+ext
+        out = os.path.abspath(filename+ext)
         if verbose:
             print("Saving", out, '...', end='', flush=True)
         fig.savefig(out, dpi=dpi, **save_kwargs)
@@ -345,6 +345,8 @@ def fillna_meta(df, index_col):
     """
     Fill NANs across rows
     """
+    if index_col not in df.index.get_level_values(1).unique():
+        return
     selection = df.loc[idx[:, index_col], :]
     df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
                                     .fillna(method='bfill', axis=1)
@@ -362,13 +364,24 @@ def parse_metadata(metadata):
 
 
 def filter_and_assign(df, name, funcats=None, geneid_subset=None):
+    """Filter by funcats and geneid_subset (if given)
+       remove NAN GeneIDs"""
     if funcats:
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
     if geneid_subset:
         df = df.loc[geneid_subset]
-    return df
+    valid_ixs = (x for x in df.index if not np.isnan(x))
+    return df.loc[valid_ixs]
 
-def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.'):
+def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.', **kwargs):
     colors = 'colors_only' if colors_only else 'annotated'
-    fname = '{}_{}_{}_{}_{}less_non_zeros'.format(name, plottype, taxon, colors, non_zeros)
+
+    kwarg_values = list()
+    for key, value in kwargs.items():
+        s = '{}_{}'.format(key, value)
+        kwarg_values.append(s)
+    kwarg_string = '_'.join(kwarg_values)
+
+    '{}'.format(kwargs)
+    fname = '{}_{}_{}_{}_{}less_non_zeros_{}'.format(name, plottype, taxon, colors, non_zeros, kwarg_string)
     return os.path.join(outpath, fname)

@@ -12,7 +12,10 @@ package_version = calculate_version('main.py')
 setup(
     name='correlation-plotter',
     version=package_version,
-    py_modules=['main', 'utils', 'clusterplot', 'scatterplot', 'pcaplot'],
+    author = 'Alex Saltzman',
+    author_email = 'a.saltzman920@gmail.com',
+    description = 'CLI-based data filtering and plotting tools for proteomics data at BCM',
+    py_modules=['main', 'utils', 'clusterplot', 'scatterplot', 'pcaplot', 'containers'],
     install_requires=[
         'Click',
     ],

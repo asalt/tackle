@@ -47,10 +47,14 @@ class Data:
                  standard_scale='None',
                  stat='pearson',
                  taxon='all',
-                 z_score=0,
+                 z_score='0',
                  export_data=None,
                  ifot=False,):
         "docstring"
+
+        if experiment_file is None:
+            raise ValueError('Must specify valid experiment_file')
+
         self.additional_info   = additional_info
         self.col_cluster       = col_cluster
         self.colors_only       = colors_only
@@ -103,10 +107,34 @@ class Data:
         self.filter_data()
 
         # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
-        self.areas, self.areas_log, self.areas_log_shifted = (None, ) * 3
-        self.set_area_dfs()
+        self._areas, self._areas_log, self._areas_log_shifted = (None, ) * 3
 
-        self.perform_data_export()
+        # self.perform_data_export()
+
+    @property
+    def areas(self):
+        if self._areas is None:
+            self.set_area_dfs()
+        return self._areas
+
+    @property
+    def areas_log(self):
+        if self._areas_log is None:
+            self.set_area_dfs()
+        return self._areas_log
+
+    @property
+    def areas_log_shifted(self):
+        if self._areas_log_shifted is None:
+            self.set_area_dfs()
+        return self._areas_log_shifted
+
+    @property
+    def mask(self):
+        if self._mask is None:
+            self.set_area_dfs()
+        return self._mask
+
 
     @staticmethod
     def clean_input(raw):
@@ -282,20 +310,25 @@ class Data:
 
     def set_area_dfs(self):
         # self.areas = self.panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
-        self.areas = self.df_filtered.loc[ idx[:, 'iBAQ_dstrAdj'], : ]
-        self.areas.index = self.areas.index.droplevel(1)  # don't need the second index
+        self._areas = self.df_filtered.loc[ idx[:, 'iBAQ_dstrAdj'], : ]
+        self._areas.index = self._areas.index.droplevel(1)  # don't need the second index
+        self._mask = self._areas.applymap(np.isnan)
         if len(self.areas) == 0:
             raise ValueError('No data')
 
         if self.ifot is True:
-            sum_ = self.areas.sum(0)
-            self.areas = self.areas / sum_
+            sum_ = self._areas.sum(0)
+            self._areas = self._areas / sum_
             # self.areas /= self.areas.sum(0)
 
-        self.areas_log = np.log10(self.areas.fillna(0)+1e-10)
-        minval = self.areas_log.min().min()
+        self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        # fillna with the mean value. This prevents skewing of normalization such as
+        # z score. The NAN values are held in the self.mask dataframe
+        # self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
+        minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
-        self.areas_log_shifted = self.areas_log + shift_val
+
+        self._areas_log_shifted = self._areas_log + shift_val
 
     def make_plot(self, pltname):
         if 'all' in self.plots:
@@ -304,16 +337,17 @@ class Data:
             return True
         return False
 
-    def perform_data_export(self):
-        if self.export_data is None:
-            return
+    def perform_data_export(self, level='all'):
+        # if self.export_data is None:
+        #     return
 
         fname = '{}_data_{}_{}_less_non_zeros.tab'.format(self.export_data,
                                                           self.outpath_name,
                                                           self.non_zeros,)
-        outname = os.path.join(self.outpath, fname)
-        if self.export_data == 'all':
+        outname = os.path.abspath(os.path.join(self.outpath, fname))
+        # if self.export_data == 'all':
+        if level == 'all':
             self.df_filtered.to_csv(outname, sep='\t')
-        elif self.export_data == 'area':
+        elif level == 'area':
             self.areas_log_shifted.to_csv(outname, sep='\t')
         print('Exported', fname)
