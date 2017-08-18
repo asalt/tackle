@@ -27,7 +27,7 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-__version__ = '0.31'
+__version__ = '0.32'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -244,11 +244,13 @@ def export(ctx, level):
               help="""Show metadata on clustermap if present""")
 @click.option('--standard-scale', type=click.Choice(['None', '0', '1']),
               default='None', show_default=True)
+@click.option('--show-missing-values/--hide-missing-values', default=True, is_flag=True, show_default=True,
+              help="""Whether or not to show missing values on the cluster plot and missing values""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
 def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, nclusters, row_cluster,
-            seed, show_metadata, standard_scale, z_score):
+            seed, show_metadata, standard_scale, show_missing_values, z_score):
 
     if nclusters is not None and dbscan:
         raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
@@ -268,14 +270,16 @@ def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, 
                          col_data = data_obj.col_metadata,
                          nclusters=nclusters,
                          dbscan=dbscan,
+                         show_missing_values=show_missing_values,
                          mask=data_obj.mask
     )
 
     g = result['clustermap']['clustergrid']
     extra_artists = result['clustermap']['extra_artists']
+    missing_values = 'masked' if show_missing_values else 'unmasked'
     outname_func = partial(get_outname, name=data_obj.outpath_name,
                            taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                           outpath=data_obj.outpath )
+                           outpath=data_obj.outpath, missing_values=missing_values)
 
     kmeans_res = result.get('kmeans')
     dbscan_res = result.get('dbscan')
@@ -298,7 +302,7 @@ def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, 
     if kmeans_res is not None:
         kmeans_data = kmeans_res['data']
         outname = os.path.abspath(outname_func('{}clusters_labels'.format(kmeans_clusters))+'.tab')
-        kmeans_data.to_csv(outname, index=True, sep='\t')
+        kmeans_data.to_csv(outname, index=True, sep='\t', na_rep='NaN')
         print('Saved:', outname)
 
         fig = kmeans_res['auto'].get('fig')

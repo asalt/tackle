@@ -140,6 +140,7 @@ def calc_kmeans(data, nclusters, seed=None):
 
 def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
+                show_missing_values=True,
                 row_cluster=True, seed=None, col_cluster=True, metadata=None, col_data=None):
     """
     :nclusters: None, 'auto', or positive integer
@@ -219,7 +220,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
         cluster_data = data_t.copy()
-        cluster_data[mask] = np.NAN
+        if show_missing_values:
+            cluster_data[mask] = np.NAN
         cluster_data = cluster_data.assign(Cluster=clusters)
         cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
@@ -295,7 +297,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                       figsize=(figwidth, figheight),
                       row_cluster=row_cluster, col_cluster=col_cluster,
                       cmap=cmap,
-                      mask=mask.loc[plot_data.index],
+                      mask=mask.loc[plot_data.index] if show_missing_values else None,
                       # center = 0 if z_score is not None else None
     )
     if gene_symbols:

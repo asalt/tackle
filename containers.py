@@ -321,10 +321,10 @@ class Data:
             self._areas = self._areas / sum_
             # self.areas /= self.areas.sum(0)
 
-        # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
-        self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
+        # self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
         minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
 
