@@ -202,7 +202,6 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     else:
         data_t = data
 
-    row_cluster = False
 
     if nclusters is not None:
 
@@ -242,7 +241,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
             raise ValueError('No clusters found!')
         cluster_order = clusters.sort_values().index
 
-        plot_data = data.loc[cluster_order]
+        plot_data = data_t.loc[cluster_order]
 
         cmap = iter(sb.color_palette('hls', n_colors=max(6, n_clusters)))
         cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(n_clusters)}
@@ -268,7 +267,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         }
 
     else:
-        plot_data = data
+        plot_data = data_t
 
 
     cmap_name = 'YlOrRd' if z_score is None else 'RdBu_r'
