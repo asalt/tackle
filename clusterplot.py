@@ -101,7 +101,7 @@ def silhouette_plot(data, labels):
                           facecolor=color, edgecolor=color, alpha=0.7)
 
         # Label the silhouette plots with their cluster numbers at the middle
-        ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+        ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i+1))
 
         y_lower = y_upper + 10  # 10 for the 0 samples
 
@@ -226,7 +226,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         cluster_data = data_t.copy()
         if show_missing_values:
             cluster_data[mask] = np.NAN
-        cluster_data = cluster_data.assign(Cluster=clusters)
+        cluster_data = cluster_data.assign(Cluster=clusters+1)
         cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
         if row_colors is None:
@@ -253,7 +253,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         cmap_mapping[-1] = 'k'
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
-        cluster_data = data_t.assign(Cluster=clusters)
+        cluster_data = data_t.assign(Cluster=clusters+1)
         cluster_data['silhouette_score'] = silhouette_samples(data_t, db.labels_)
         cluster_data.loc[cluster_data.Cluster == -1, 'silhouette_score'] = np.nan
 
