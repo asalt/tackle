@@ -226,6 +226,8 @@ def export(ctx, level):
               default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
               Should have 1 geneid per line. """)
+@click.option('--max-autoclusters', default=30, show_default=True, help="""Max number of clusters to try
+when `auto` is set for `--nclusters`""")
 @click.option('--nclusters', default=None, callback=validate_cluster_number, show_default=True,
               help="""If specified by an integer, use that number of clusters via k-means clustering. If specified as `auto`, will try to find the optimal number of clusters""")
 @click.option('--dbscan', default=False, is_flag=True, show_default=True,
@@ -244,8 +246,8 @@ def export(ctx, level):
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, nclusters, row_cluster,
-            seed, show_metadata, standard_scale, show_missing_values, z_score):
+def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, max_autoclusters, nclusters,
+            row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score):
 
     if nclusters is not None and dbscan:
         raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
@@ -265,6 +267,7 @@ def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, nclusters
                          col_data = data_obj.col_metadata,
                          nclusters=nclusters,
                          dbscan=dbscan,
+                         max_autoclusters=max_autoclusters,
                          show_missing_values=show_missing_values,
                          mask=data_obj.mask
     )

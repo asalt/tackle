@@ -117,11 +117,11 @@ def silhouette_plot(data, labels):
     return fig, ax
 
 
-def calc_kmeans(data, nclusters, seed=None):
+def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
     autofig, autoax = None, None
     if nclusters == 'auto':
-        nclusters, autofig, autoax = calc_optimal_clusters(data)
+        nclusters, autofig, autoax = calc_optimal_clusters(data, end=max_autoclusters)
 
     kmeans = KMeans(n_clusters=nclusters, random_state=seed).fit(data)
 
@@ -140,8 +140,8 @@ def calc_kmeans(data, nclusters, seed=None):
 
 def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
-                show_missing_values=True,
-                row_cluster=True, seed=None, col_cluster=True, metadata=None, col_data=None):
+                show_missing_values=True, max_autoclusters=30, row_cluster=True,
+                seed=None, col_cluster=True, metadata=None, col_data=None):
     """
     :nclusters: None, 'auto', or positive integer
 
@@ -211,7 +211,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     if nclusters is not None:
 
 
-        kmeans_result = calc_kmeans(data_t, nclusters, seed)
+        kmeans_result = calc_kmeans(data_t, nclusters, seed, max_autoclusters)
         kmeans = kmeans_result['kmeans']
         clusters = pd.Series(data=kmeans.labels_, index=data.index)
         cluster_order = clusters.sort_values().index
