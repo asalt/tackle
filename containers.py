@@ -40,7 +40,7 @@ class Data:
                  experiment_file=None, funcats=None,
                  gene_symbols=False, geneids=None,
                  highlight_geneids=None,
-                 name=None, zeros=0,
+                 name=None, non_zeros=0,
                  plots=('all', ),
                  row_cluster=True, shade_correlation=True,
                  show_metadata=False,
@@ -64,7 +64,7 @@ class Data:
         self.gene_symbols      = gene_symbols
         self.geneids           = geneids
         self.highlight_geneids = highlight_geneids
-        self.zeros             = zeros
+        self.non_zeros         = non_zeros
         self.plots             = plots
         self.row_cluster       = row_cluster
         self.shade_correlation = shade_correlation
@@ -193,7 +193,8 @@ class Data:
             else:
                 highlight_gid_names.append(ix)
 
-        self.highlight_gids = highlight_gid_names
+        # self.highlight_gids = highlight_gid_names
+        self.highlight_gids = highlight_gids
         self.highlight_gid_names = highlight_gid_names
 
 
@@ -301,7 +302,7 @@ class Data:
             filter_func = partial(filter_taxon, taxon=taxon_filter)
 
         df_filtered = (self.data.pipe(filter_observations, 'iBAQ_dstrAdj',
-                                      self.zeros)
+                                      self.non_zeros)
                        .pipe(filter_sra, SRA='S')
                        .pipe(filter_func)
         )
@@ -341,9 +342,9 @@ class Data:
         # if self.export_data is None:
         #     return
 
-        fname = '{}_data_{}_{}_less_zeros.tab'.format(self.export_data,
+        fname = '{}_data_{}_{}_more_zeros.tab'.format(self.export_data,
                                                           self.outpath_name,
-                                                          self.zeros)
+                                                          self.non_zeros)
         outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
         if level == 'all':

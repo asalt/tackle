@@ -373,7 +373,7 @@ def filter_and_assign(df, name, funcats=None, geneid_subset=None):
     valid_ixs = (x for x in df.index if not np.isnan(x))
     return df.loc[valid_ixs]
 
-def get_outname(plottype: str, name, taxon, zeros, colors_only,  outpath='.', **kwargs):
+def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.', **kwargs):
     colors = 'colors_only' if colors_only else 'annotated'
 
     kwarg_values = list()
@@ -383,5 +383,5 @@ def get_outname(plottype: str, name, taxon, zeros, colors_only,  outpath='.', **
     kwarg_string = '_'.join(kwarg_values)
 
     '{}'.format(kwargs)
-    fname = '{}_{}_{}_{}_{}less_zeros_{}'.format(name, plottype, taxon, colors, zeros, kwarg_string)
+    fname = '{}_{}_{}_{}_{}more_zeros_{}'.format(name, plottype, taxon, colors, non_zeros, kwarg_string)
     return os.path.join(outpath, fname)

@@ -45,11 +45,6 @@ TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
 
 
-# def run(records, NON_ZEROS=0, stat='spearman', taxon='all', data_dir=None, OUTPATH='../figures',
-#         funcats=None, geneid_subset=None, highlight_gids=None, highlight_gid_names=None,
-#         colors_only=False, gene_symbols=False, col_cluster=True, row_cluster=True,
-#         show_metadata=False, shade_correlation=True, z_score=0, plots=('all',),
-#         labeled_meta=None):
 def run(data_obj):
 
 
@@ -58,7 +53,7 @@ def run(data_obj):
         g = scatterplot(data_obj.areas_log_shifted, stat=data_obj.stat,
                         colors_only=data_obj.colors_only,
                         shade_correlation=data_obj.shade_correlation)
-        outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon, zeros=data_obj.zeros,
+        outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon, non_zeros=data_obj.non_zeros,
                               colors_only=data_obj.colors_only, outpath=data_obj.outpath)
         save_multiple(g, outname, '.png', dpi=96)
 
@@ -76,7 +71,7 @@ def run(data_obj):
                                        col_data = data_obj.col_metadata
         )
         outname = get_outname('clustermap', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                              zeros=data_obj.zeros,
+                              non_zeros=data_obj.non_zeros,
                               colors_only=data_obj.colors_only, outpath=data_obj.outpath)
         print(outname)
 
@@ -90,7 +85,7 @@ def run(data_obj):
     if data_obj.make_plot('pca'):
         fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
         outname = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                              zeros=data_obj.zeros,
+                              non_zeros=data_obj.non_zeros,
                               colors_only=data_obj.colors_only, outpath=data_obj.outpath,
         )
         save_multiple(fig, outname, '.png')
@@ -158,16 +153,15 @@ def validate_seed(ctx, param, value):
               help='An optional name for the analysis that will place all results in a subfolder.')
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
               default='all', show_default=True)
-@click.option('--zeros', default=0, show_default=True,
-              help='Minimum number of zeros allowed for each gene product across samples.')
+@click.option('--non-zeros', default=0, show_default=True,
+              help='Minimum number of non zeros allowed for each gene product across samples.')
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, data_dir, funcats, ifot, name, taxon, zeros, experiment_file):
+def main(ctx, additional_info, data_dir, funcats, ifot, name, taxon, non_zeros, experiment_file):
 
     if ctx.obj is None:
         ctx.obj = dict()
-
 
 
     analysis_name = get_file_name(experiment_file)
@@ -180,7 +174,7 @@ def main(ctx, additional_info, data_dir, funcats, ifot, name, taxon, zeros, expe
     params = context.params
 
     data_obj = Data(additional_info=additional_info, data_dir=data_dir, funcats=funcats, ifot=ifot,
-                    name=name, zeros=zeros, taxon=taxon, experiment_file=experiment_file)
+                    name=name, non_zeros=non_zeros, taxon=taxon, experiment_file=experiment_file)
 
     cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     with open(os.path.join(data_obj.outpath, cf), 'w') as f:
@@ -204,7 +198,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
                     colors_only=colors_only, shade_correlation=shade_correlation)
 
     outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          zeros=data_obj.zeros, colors_only=colors_only,
+                          non_zeros=data_obj.non_zeros, colors_only=colors_only,
                           outpath=data_obj.outpath)
     save_multiple(g, outname, '.png', dpi=96)
 
@@ -278,7 +272,7 @@ def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, 
     extra_artists = result['clustermap']['extra_artists']
     missing_values = 'masked' if show_missing_values else 'unmasked'
     outname_func = partial(get_outname, name=data_obj.outpath_name,
-                           taxon=data_obj.taxon, zeros=data_obj.zeros, colors_only=data_obj.colors_only,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
                            outpath=data_obj.outpath, missing_values=missing_values)
 
     kmeans_res = result.get('kmeans')
@@ -337,7 +331,7 @@ def pca(ctx):
 
     fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
     outname = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                            zeros=data_obj.zeros,
+                            non_zeros=data_obj.non_zeros,
                             colors_only=data_obj.colors_only, outpath=data_obj.outpath,
     )
     save_multiple(fig, outname, '.png')
@@ -377,8 +371,8 @@ def pca(ctx):
 #               default=('all',), show_default=True)
 # @click.option('-n', '--name', type=str, default='',
 #               help='An optional name for the analysis that will place all results in a subfolder.')
-# @click.option('--non-zeros', default=0, show_default=True,
-#               help='Minimum number of non-zeros allowed across samples.')
+# @click.option('--non-non_zeros', default=0, show_default=True,
+#               help='Minimum number of non-non_zeros allowed across samples.')
 # @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
 #               help="Cluster rows")
 # @click.option('--stat', type=click.Choice(['pearson', 'spearman']),
@@ -394,7 +388,7 @@ def pca(ctx):
 #               default='0', show_default=True)
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 # def main(additional_info, data_dir, colors_only, export_data, gene_symbols, geneids,
-#          highlight_geneids, funcats, ifot, stat, taxon, plots, name, zeros, experiment_file,
+#          highlight_geneids, funcats, ifot, stat, taxon, plots, name, non_zeros, experiment_file,
 #          col_cluster, row_cluster, standard_scale, show_metadata, shade_correlation, z_score):
 
 #     analysis_name = get_file_name(experiment_file)
@@ -466,7 +460,7 @@ def pca(ctx):
 #     # experiment_file
 #     run(data_obj)
 
-#     # run(data, ZEROS=zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
+#     # run(data, NON_ZEROS=non_zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
 #     #     funcats=funcats, geneid_subset=geneid_subset, highlight_gids=highlight_gids, plots=plots,
 #     #     highlight_gid_names=highlight_gid_names, colors_only=colors_only, gene_symbols=gene_symbols,
 #     #     col_cluster=col_cluster, row_cluster=row_cluster, show_metadata=show_metadata,
