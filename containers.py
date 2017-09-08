@@ -171,9 +171,9 @@ class Data:
         if geneids is None:
             self.geneid_subset = None
             return
-        geneid_subset = parse_gid_file(geneids)
-        if len(geneid_subset) == 0:
-            warn('Non geneids found in file {}'.format(geneids))
+        self.geneid_subset = parse_gid_file(geneids)
+        if len(self.geneid_subset) == 0:
+            warn('No geneids found in file {}'.format(geneids))
 
     def set_highlight_gids(self, highlight_geneids):
         if highlight_geneids is None:

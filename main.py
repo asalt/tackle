@@ -147,6 +147,10 @@ def validate_seed(ctx, param, value):
 @click.option('--funcats', type=str, default=None, show_default=True,
               help="""Optional gene subset based on funcat or funcats,
               regular expression allowed. """)
+@click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True,
+              help="""Optional list of geneids to subset by.
+              Should have 1 geneid per line. """)
 @click.option('--iFOT', default=False, show_default=True, is_flag=True,
               help='Calculate iFOT (divide by total input per experiment)')
 @click.option('-n', '--name', type=str, default='',
@@ -158,7 +162,7 @@ def validate_seed(ctx, param, value):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, data_dir, funcats, ifot, name, taxon, non_zeros, experiment_file):
+def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, non_zeros, experiment_file):
 
     if ctx.obj is None:
         ctx.obj = dict()
@@ -173,8 +177,9 @@ def main(ctx, additional_info, data_dir, funcats, ifot, name, taxon, non_zeros, 
     context = click.get_current_context()
     params = context.params
 
-    data_obj = Data(additional_info=additional_info, data_dir=data_dir, funcats=funcats, ifot=ifot,
-                    name=name, non_zeros=non_zeros, taxon=taxon, experiment_file=experiment_file)
+    data_obj = Data(additional_info=additional_info, data_dir=data_dir, funcats=funcats,
+                    geneids=geneids, ifot=ifot, name=name, non_zeros=non_zeros, taxon=taxon,
+                    experiment_file=experiment_file)
 
     cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     with open(os.path.join(data_obj.outpath, cf), 'w') as f:
@@ -217,10 +222,6 @@ def export(ctx, level):
               Note this is overridden by specifying `nclusters`""")
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
               help="Show Gene Symbols on clustermap")
-@click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
-              default=None, show_default=True,
-              help="""Optional list of geneids to subset by.
-              Should have 1 geneid per line. """)
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
@@ -243,7 +244,7 @@ def export(ctx, level):
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, dbscan, geneids, gene_symbols, highlight_geneids, nclusters, row_cluster,
+def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, nclusters, row_cluster,
             seed, show_metadata, standard_scale, show_missing_values, z_score):
 
     if nclusters is not None and dbscan:
