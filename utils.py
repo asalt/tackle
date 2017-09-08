@@ -383,5 +383,5 @@ def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.'
     kwarg_string = '_'.join(kwarg_values)
 
     '{}'.format(kwargs)
-    fname = '{}_{}_{}_{}_{}more_zeros_{}'.format(name, plottype, taxon, colors, non_zeros, kwarg_string)
+    fname = '{}_{}_{}_{}_{}more_nonzero_{}'.format(name, plottype, taxon, colors, non_zeros, kwarg_string)
     return os.path.join(outpath, fname)
