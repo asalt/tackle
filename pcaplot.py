@@ -104,9 +104,15 @@ def pcaplot(X, metadata=None, col_data=None):
         marker_label = pca_params.get('marker')
     else:
         marker_label = None
+
+    my_markers = ('o', 'v', 's', 'd', '*', 'X', 'P', 'h', '<', 'H', 'D', '>', 'p', '^', )
+
     if marker_label:
-        marker_mapper = [ markers.MarkerStyle.filled_markers[ix]
-                          for ix in df[marker_label].cat.codes ]
+        try:
+            marker_mapper = [ my_markers[ix]
+                              for ix in df[marker_label].cat.codes ]
+        except IndexError:
+            raise TooManyCategories('Not enough marker shapes')
     else:
         marker_mapper = [ 'o' for _ in df.index ]
     df['_marker'] = marker_mapper

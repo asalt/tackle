@@ -385,3 +385,6 @@ def get_outname(plottype: str, name, taxon, non_zeros, colors_only,  outpath='.'
     '{}'.format(kwargs)
     fname = '{}_{}_{}_{}_{}more_nonzero_{}'.format(name, plottype, taxon, colors, non_zeros, kwarg_string)
     return os.path.join(outpath, fname)
+
+class TooManyCategories(Exception):
+    pass
