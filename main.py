@@ -141,7 +141,7 @@ def validate_seed(ctx, param, value):
 @click.group(chain=True)
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
-@click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
+@click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
 @click.option('--funcats', type=str, default=None, show_default=True,
@@ -163,6 +163,9 @@ def validate_seed(ctx, param, value):
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, non_zeros, experiment_file):
+
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
 
     if ctx.obj is None:
         ctx.obj = dict()
