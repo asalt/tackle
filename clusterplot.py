@@ -148,16 +148,21 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     """
     retval = dict()
 
+    if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
+        row_cluster = False
+
     row_colors = None
     extra_artists = None
     if highlight_gids:
 
-        cmap = sb.color_palette('hls', n_colors=max(6, len(highlight_gids)))
+        cmap = [rgb2hex(x) for x in
+                sb.color_palette('hls', n_colors=max(6, len(highlight_gids)))
+        ]
         colors_dfs = list()
         for ix, hgid in enumerate(highlight_gids):
             color = cmap[ix]
             highlights = {gid: color for gid in hgid}
-            colors = [highlights.get(x, (1., 1., 1.)) for x in data.index]
+            colors = [highlights.get(x, '#ffffff') for x in data.index]
             # colors = data.index.map( lambda x: highlights.get(x, 'white') )
             colors_df = pd.Series(colors, index=data.index).to_frame(highlight_gid_names[ix])
             colors_dfs.append(colors_df)
@@ -172,12 +177,12 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                                   index=col_data.index)
 
         for info in col_data.index:
-            cmap = iter(sb.color_palette('hls', n_colors=max(6, col_data.loc[info].nunique())))
+            cmap = iter(rgb2hex(x) for x in
+                        sb.color_palette('hls', n_colors=max(6, col_data.loc[info].nunique())))
             mapping = {val : next(cmap) for val in col_data.loc[info].unique()}
             colors = col_data.loc[info].map(mapping)
             col_colors.loc[info] = colors
         col_colors = col_colors.T
-
 
     if gene_symbols:
         clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
@@ -214,8 +219,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         # plot_data = data.loc[cluster_order]
         plot_data = data_t.loc[cluster_order]
 
-        cmap = iter(sb.color_palette('hls', n_colors=max(6, kmeans.n_clusters)))
-        cmap_mapping = {val : rgb2hex(next(cmap)) for val in range(kmeans.n_clusters)}
+        cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=max(6, kmeans.n_clusters)))
+        cmap_mapping = {val : next(cmap) for val in range(kmeans.n_clusters)}
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
         cluster_data = data_t.copy()
@@ -227,7 +232,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         if row_colors is None:
             row_colors = cluster_colors
         else:
-            row_colors = pd.concat([row_colors, cluster_colors])
+            row_colors = pd.concat([cluster_colors, row_colors], axis=1)
 
         kmeans_result['data'] = cluster_data
         retval['kmeans'] = kmeans_result
