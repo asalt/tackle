@@ -6,6 +6,7 @@ import re
 import configparser
 import operator as op
 from collections import OrderedDict, defaultdict
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
@@ -45,17 +46,37 @@ STEP = .2
 #     )
 #     return panel.loc[:, indices, :]
 
-def filter_observations(df, column, threshold):
+def filter_observations(df, column, threshold, subgroup, metadata):
 
-    mask = (df.loc[ idx[:, column], :].fillna(0)
-            .where(lambda x : x != 0)
-            .count(1)
-            .where(lambda x: x >= threshold)
-            .dropna())
+    if subgroup is None:
 
-    gids = mask.index.get_level_values(0)
+        mask = (df.loc[ idx[:, column], :].fillna(0)
+                .where(lambda x : x != 0)
+                .count(1)
+                .where(lambda x: x >= threshold)
+                .dropna())
 
-    return df.loc[ gids.values ]
+        gids = mask.index.get_level_values(0)
+
+        return df.loc[ gids.values ]
+
+    else:
+
+        all_gids = set()
+
+        for sample, grp in metadata.T.groupby(subgroup):
+            columns = grp.index
+            mask = (df.loc[ idx[:, column], columns].fillna(0)
+                    .where(lambda x : x != 0)
+                    .count(1)
+                    .where(lambda x: x >= threshold)
+                    .dropna())
+
+            gids = mask.index.get_level_values(0)
+            all_gids |= set(gids)
+
+        return df.loc[ idx[tuple(all_gids), :], : ]
+
 
 
 def filter_sra(df, SRA='S'):
@@ -273,6 +294,7 @@ def make_config(path='.'):
         config.write(cf)
         cf.write('#runno and searchno are optional, default to 1\n')
 
+@lru_cache()
 def read_config(configfile, enforce=True):
     """reads config file and returns the data.
     Needs to have recno at a minimum.

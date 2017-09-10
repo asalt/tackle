@@ -9,6 +9,7 @@ from datetime import datetime
 import operator as op
 from collections import OrderedDict
 from functools import partial
+import copy
 
 import numpy as np
 import pandas as pd
@@ -136,6 +137,26 @@ def validate_seed(ctx, param, value):
     else:
         raise click.BadParameter('Must be an integer or `None`')
 
+def validate_subgroup(value, experiment_file):
+    if value is None:
+        return None
+    config = read_config(experiment_file)
+    config = copy.deepcopy(config)  # because we're about to change it
+    for x in config.keys():
+        if x.startswith('__'):
+            config.pop(x)
+    count = 0
+    for v in config.values():
+        ret = v.get(value)
+        if ret is not None:
+            count += 1
+
+    if count == 0:
+        raise click.BadParameter('{} is not annotated in the config file'.format(value))
+    if count < len(config):
+        raise click.BadParameter('{} is not annotated for all experiments in the config file'.format(value))
+
+    return value
 
 
 @click.group(chain=True)
@@ -159,10 +180,15 @@ def validate_seed(ctx, param, value):
               default='all', show_default=True)
 @click.option('--non-zeros', default=0, show_default=True,
               help='Minimum number of non zeros allowed for each gene product across samples.')
+@click.option('--nonzero-subgroup', type=str, default=None)
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, non_zeros, experiment_file):
+def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, non_zeros,
+         nonzero_subgroup, experiment_file):
+
+    validate_subgroup(nonzero_subgroup, experiment_file)
+
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
@@ -181,8 +207,8 @@ def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, no
     params = context.params
 
     data_obj = Data(additional_info=additional_info, data_dir=data_dir, funcats=funcats,
-                    geneids=geneids, ifot=ifot, name=name, non_zeros=non_zeros, taxon=taxon,
-                    experiment_file=experiment_file)
+                    geneids=geneids, ifot=ifot, name=name, non_zeros=non_zeros,
+                    nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file)
 
     cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     with open(os.path.join(data_obj.outpath, cf), 'w') as f:

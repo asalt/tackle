@@ -41,6 +41,7 @@ class Data:
                  gene_symbols=False, geneids=None,
                  highlight_geneids=None,
                  name=None, non_zeros=0,
+                 nonzero_subgroup=None,
                  plots=('all', ),
                  row_cluster=True, shade_correlation=True,
                  show_metadata=False,
@@ -65,6 +66,7 @@ class Data:
         self.geneids           = geneids
         self.highlight_geneids = highlight_geneids
         self.non_zeros         = non_zeros
+        self.nonzero_subgroup  = nonzero_subgroup
         self.plots             = plots
         self.row_cluster       = row_cluster
         self.shade_correlation = shade_correlation
@@ -302,7 +304,7 @@ class Data:
             filter_func = partial(filter_taxon, taxon=taxon_filter)
 
         df_filtered = (self.data.pipe(filter_observations, 'iBAQ_dstrAdj',
-                                      self.non_zeros)
+                                      self.non_zeros, self.nonzero_subgroup, self.col_metadata)
                        .pipe(filter_sra, SRA='S')
                        .pipe(filter_func)
         )
