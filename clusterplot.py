@@ -184,9 +184,11 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
             col_colors.loc[info] = colors
         col_colors = col_colors.T
 
-    if gene_symbols:
+    if gene_symbols:  # change index to symbols
+        assert all(data.index == mask.index)
         clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
         data.index = clustermap_symbols
+        mask.index = clustermap_symbols
         if row_colors is not None:
             row_colors.index = clustermap_symbols
 
@@ -291,7 +293,6 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         cmap = mpl.colors.ListedColormap(cmap(cc))
 
     cmap.set_bad(color='gray')
-
 
     g = sb.clustermap(plot_data,
                       row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
