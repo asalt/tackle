@@ -28,7 +28,7 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-__version__ = '0.34'
+__version__ = '0.35'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
