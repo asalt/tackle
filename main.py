@@ -174,6 +174,10 @@ def validate_subgroup(value, experiment_file):
               Should have 1 geneid per line. """)
 @click.option('--iFOT', default=False, show_default=True, is_flag=True,
               help='Calculate iFOT (divide by total input per experiment)')
+@click.option('--iFOT-KI', default=False, show_default=True, is_flag=True,
+              help='Calculate iFOT based on kinases')
+@click.option('--iFOT-TF', default=False, show_default=True, is_flag=True,
+              help='Calculate iFOT based on transcription factors')
 @click.option('-n', '--name', type=str, default='',
               help='An optional name for the analysis that will place all results in a subfolder.')
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
@@ -184,8 +188,11 @@ def validate_subgroup(value, experiment_file):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, non_zeros,
-         nonzero_subgroup, experiment_file):
+def main(ctx, additional_info, data_dir, funcats, geneids, ifot, ifot_ki, ifot_tf, name, taxon,
+         non_zeros, nonzero_subgroup, experiment_file):
+
+    if ifot + ifot_ki + ifot_tf > 1:
+        raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI` and `iFOT-TF`')
 
     validate_subgroup(nonzero_subgroup, experiment_file)
 
@@ -207,12 +214,13 @@ def main(ctx, additional_info, data_dir, funcats, geneids, ifot, name, taxon, no
     params = context.params
 
     data_obj = Data(additional_info=additional_info, data_dir=data_dir, funcats=funcats,
-                    geneids=geneids, ifot=ifot, name=name, non_zeros=non_zeros,
-                    nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file)
+                    geneids=geneids, ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name,
+                    non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
+                    experiment_file=experiment_file)
 
-    cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
-    with open(os.path.join(data_obj.outpath, cf), 'w') as f:
-        json.dump(params, f)
+    # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
+    # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
+    #     json.dump(params, f)
 
     ctx.obj['data_obj'] = data_obj
 
@@ -265,7 +273,7 @@ when `auto` is set for `--nclusters`""")
               help="Cluster rows via hierarchical clustering")
 @click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
               show_default=True)
-@click.option('--show-metadata', default=False, show_default=True,
+@click.option('--show-metadata/--hide-metadata', default=True, show_default=True,
               is_flag=True,
               help="""Show metadata on clustermap if present""")
 @click.option('--standard-scale', type=click.Choice(['None', '0', '1']),
@@ -285,15 +293,14 @@ def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, max_autoc
     data_obj.set_highlight_gids(highlight_geneids)
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
-
     result = clusterplot(data_obj.areas_log_shifted, highlight_gids=data_obj.highlight_gids,
                          highlight_gid_names=data_obj.highlight_gid_names,
                          gid_symbol=data_obj.gid_symbol,
                          gene_symbols=gene_symbols, z_score=data_obj.z_score,
                          standard_scale=data_obj.standard_scale,
                          row_cluster=row_cluster, col_cluster=col_cluster,
-                         metadata=data_obj.config if show_metadata else None,
-                         col_data = data_obj.col_metadata,
+                         # metadata=data_obj.config if show_metadata else None,
+                         col_data = data_obj.col_metadata if show_metadata else None,
                          nclusters=nclusters,
                          dbscan=dbscan,
                          max_autoclusters=max_autoclusters,

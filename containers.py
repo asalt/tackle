@@ -50,7 +50,7 @@ class Data:
                  taxon='all',
                  z_score='0',
                  export_data=None,
-                 ifot=False,):
+                 ifot=False, ifot_ki=False, ifot_tf=False):
         "docstring"
 
         if experiment_file is None:
@@ -77,6 +77,8 @@ class Data:
         self.z_score           = self.clean_input(z_score)
         self.export_data       = None if export_data == 'None' else export_data
         self.ifot              = ifot
+        self.ifot_ki           = ifot_ki
+        self.ifot_tf           = ifot_tf
         self.base_dir          = base_dir
 
         self.outpath           = None
@@ -207,7 +209,8 @@ class Data:
             if key.isdigit():
                 df = (exp.df[ exp.df.EXPLabelFLAG == int(key) ]
                       .set_index(['GeneID'])
-                      .pipe(filter_and_assign, value, funcats, geneid_subset)
+                      # .pipe(filter_and_assign, value, funcats, geneid_subset)
+                      .pipe(assign_cols, value)
                 )
                 labels[value] = df
 
@@ -254,7 +257,10 @@ class Data:
             if labeltype == 'TMT' or labeltype == 'iTRAQ':
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
             else:
-                df = filter_and_assign(exp.df, name, self.funcats, self.geneid_subset)
+                df = filter_and_assign(exp.df, name, self.funcats, self.geneid_subset,
+                                       self.ifot, self.ifot_ki, self.ifot_tf
+                )
+                # df = assign_cols(exp.df, name)
                 exps[name] = df.set_index(df.index.astype(int))
 
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
@@ -308,6 +314,7 @@ class Data:
                        .pipe(filter_sra, SRA='S')
                        .pipe(filter_func)
         )
+        df_filtered.index.names = ['GeneID', 'Metric']
         self.df_filtered = df_filtered
 
 
@@ -319,10 +326,28 @@ class Data:
         if len(self.areas) == 0:
             raise ValueError('No data')
 
-        if self.ifot is True:
-            sum_ = self._areas.sum(0)
-            self._areas = self._areas / sum_
-            # self.areas /= self.areas.sum(0)
+        # if self.ifot is True:
+        #     sum_ = self._areas.sum(0)
+        #     self._areas = self._areas / sum_
+        #     # self.areas /= self.areas.sum(0)
+
+        # elif self.ifot_ki is True:
+        #     gids = self.df_filtered.pipe(filter_funcats, 'KI').index.get_level_values(0)
+        #     sum_ = self._areas.loc[gids].sum(0)
+        #     self._areas = self._areas / sum_
+
+        # elif self.ifot_tf is True:
+        #     gids = self.df_filtered.pipe(filter_funcats, 'TF')
+        #     sum_ = self._areas.loc[gids].sum(0)
+        #     self._areas = self._areas / sum_
+
+        gids = set(self._areas.index)
+        if self.funcats:
+            gids &= set(self.df_filtered.pipe(filter_funcats, self.funcats).index.get_level_values(0))
+        if self.geneid_subset:
+            gids &= set(self.geneid_subset)
+
+        gids = tuple(gids)
 
         self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
         # fillna with the mean value. This prevents skewing of normalization such as
@@ -344,13 +369,13 @@ class Data:
         # if self.export_data is None:
         #     return
 
-        fname = '{}_data_{}_{}_more_zeros.tab'.format(self.export_data,
-                                                          self.outpath_name,
-                                                          self.non_zeros)
+        fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
+                                                      self.outpath_name,
+                                                      self.non_zeros)
         outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
         if level == 'all':
             self.df_filtered.to_csv(outname, sep='\t')
         elif level == 'area':
             self.areas_log_shifted.to_csv(outname, sep='\t')
-        print('Exported', fname)
+        print('Exported', outname)

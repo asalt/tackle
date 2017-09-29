@@ -90,6 +90,17 @@ def filter_sra(df, SRA='S'):
 
     return df.loc[ gids.values ]
 
+def filter_funcats(df_long, funcats):
+
+    mask = (df_long.loc[ idx[:, 'FunCats'], df_long.columns[0] ].str.contains(funcats)
+            .where(lambda x: x)
+            .dropna()
+    )
+    gids = mask.index.get_level_values(0)
+    return df_long.loc[gids.values]
+
+
+
 # def filter_taxon(panel, taxon=9606):
 #     indices = ((panel.minor_xs('TaxonID') == taxon)
 #                .any(1)
@@ -385,13 +396,39 @@ def parse_metadata(metadata):
     return col_data
 
 
-def filter_and_assign(df, name, funcats=None, geneid_subset=None):
+def filter_and_assign(df, name, funcats=None, geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False):
     """Filter by funcats and geneid_subset (if given)
        remove NAN GeneIDs"""
-    if funcats:
+
+    if ifot:
+        sum_ = df['iBAQ_dstrAdj'].sum()
+    elif ifot_ki:
+        sum_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
+    elif ifot_tf:
+        sum_ = df.loc[df['FunCats'].fillna('').str.contains('TF'), 'iBAQ_dstrAdj'].sum()
+    else:
+        sum_ = 1
+    if sum_ == 0:
+        error = '{} has a sum of 0 when trying to normalize, aborting'.format(name)
+        print(error)
+        raise click.Abort()
+        # sum_ = 1
+    df['iBAQ_dstrAdj'] /= sum_
+
+    if funcats:  # do this after possible normalization
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
-    if geneid_subset:
+    if geneid_subset:  # do this at the end
         df = df.loc[geneid_subset]
+    valid_ixs = (x for x in df.index if not np.isnan(x))
+    return df.loc[valid_ixs]
+
+def assign_cols(df, name):
+    """Filter by funcats and geneid_subset (if given)
+       remove NAN GeneIDs"""
+    # if funcats:
+    #     df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
+    # if geneid_subset:
+    #     df = df.loc[geneid_subset]
     valid_ixs = (x for x in df.index if not np.isnan(x))
     return df.loc[valid_ixs]
 
