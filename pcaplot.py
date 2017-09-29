@@ -27,7 +27,6 @@ def pcaplot(X, metadata=None, col_data=None):
     """
     looks for __PCA__ section in input config.ini file
     """
-    # print(len(X))
 
     # if metadata is not None:
     if col_data is not None:
@@ -93,7 +92,11 @@ def pcaplot(X, metadata=None, col_data=None):
         n_colors = 1
         color_label = None
 
-    colors = sb.color_palette('tab10', n_colors=max(10, n_colors))
+    if n_colors <= 10:
+        colors = sb.color_palette('tab10', n_colors=10)
+    else:
+        colors = sb.color_palette('cubehelix', n_colors=n_colors)
+
     if color_label is not None:
         color_mapper = [ colors[ix] for ix in df[color_label].cat.codes ]
     else:
