@@ -192,16 +192,6 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         if row_colors is not None:
             row_colors.index = clustermap_symbols
 
-    # figheight = min(len(data) / 6, 100)
-    figheight = 12
-    min_figwidth = 4
-    if col_colors is not None and not col_colors.empty:
-        for _ in range(1, len(col_colors.columns)):
-            min_figwidth += 1  # make room for more labels in legend after 2 labels
-
-    figwidth  = max( len(data.columns) / 2, min_figwidth )
-    # if col_colors is not None:
-    #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
 
     # if nclusters is not None or dbscan:
     if z_score is not None:
@@ -294,6 +284,22 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
     cmap.set_bad(color='gray')
 
+    # figheight = min(len(data) / 6, 100)
+    figheight = 12
+
+    # if gene_symbols:  # make sure there is enough room for the symbols
+    #     figheight = (9/72) * len(plot_data)
+    #     print(figheight)
+
+    min_figwidth = 4
+    if col_colors is not None and not col_colors.empty:
+        for _ in range(1, len(col_colors.columns)):
+            min_figwidth += 1  # make room for more labels in legend after 2 labels
+
+    figwidth  = max( min( len(data.columns) / 2, 8), min_figwidth )
+    # if col_colors is not None:
+    #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
+
     g = sb.clustermap(plot_data,
                       row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                       col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
@@ -308,7 +314,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     if gene_symbols:
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
             tick.set_rotation(0)
-            tick.set_size(tick.get_size()*.4)
+            # tick.set_size(tick.get_size()*.4)
+            tick.set_size(7)
     for tick in g.ax_heatmap.xaxis.get_ticklabels():
         tick.set_rotation(90)
     if g.ax_row_colors:
@@ -352,7 +359,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
         width, height = g.fig.get_size_inches()
 
-        longest_label = max(len(x) for x in col_colors.columns) + 2  # add a little padding
+        longest_label = max(len(x) for x in col_colors.columns) + 3  # add a little padding
         char_width = (430/1000) # approx via from https://www.math.utah.edu/~beebe/fonts/afm-widths.html
         longest_length = longest_label * char_width
         inch_shift = longest_length * 12/72  # 72 pts in an inch
