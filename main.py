@@ -257,6 +257,11 @@ def export(ctx, level):
 @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
+@click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
+              help='''Optionally specify the figuresize (width, height) in inches
+              If not specified, tries to use a reasonable default depending on the number of
+              samples.
+              ''')
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
               help="Show Gene Symbols on clustermap")
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
@@ -283,8 +288,12 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, max_autoclusters, nclusters,
-            row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score):
+def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, max_autoclusters,
+            nclusters, row_cluster, seed, show_metadata, standard_scale, show_missing_values,
+            z_score):
+
+    if not figsize:  # returns empty tuple if not specified
+        figsize = None
 
     if nclusters is not None and dbscan:
         raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
@@ -305,7 +314,8 @@ def cluster(ctx, col_cluster, dbscan, gene_symbols, highlight_geneids, max_autoc
                          dbscan=dbscan,
                          max_autoclusters=max_autoclusters,
                          show_missing_values=show_missing_values,
-                         mask=data_obj.mask
+                         mask=data_obj.mask,
+                         figsize=figsize
     )
 
     g = result['clustermap']['clustergrid']

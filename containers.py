@@ -11,6 +11,7 @@ from warnings import warn
 import numpy as np
 import pandas as pd
 from scipy import stats
+from seaborn.matrix import ClusterGrid
 
 from utils import *
 
@@ -379,3 +380,24 @@ class Data:
         elif level == 'area':
             self.areas_log_shifted.to_csv(outname, sep='\t')
         print('Exported', outname)
+
+
+class MyClusterGrid(ClusterGrid):
+
+    def __init__(self, *args, heatmap_height_ratio=.8, **kwargs):
+        self.heatmap_height_ratio = heatmap_height_ratio
+        super().__init__(*args, **kwargs)
+
+        # self.gs.tight_layout(self.fig)
+        # self.gs.update(wspace=.025, hspace=.025)
+        # self.fig.subplots_adjust(wspace=0, hspace=0)
+
+    def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
+
+        ratios = ClusterGrid.dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05)
+
+        if axis == 0:  # calculating height ratios
+            ratios[-1] = self.heatmap_height_ratio
+
+        print(axis, ':', ratios)
+        return ratios

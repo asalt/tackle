@@ -357,7 +357,7 @@ def parse_gid_file(gids):
                 gid_out.append(gid)
             except ValueError:
                 pass
-    return gid_out
+    return set(gid_out)
 
 def get_file_name(full_file):
     fname, ext = os.path.splitext(full_file)

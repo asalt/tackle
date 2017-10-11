@@ -14,6 +14,7 @@ from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_samples, silhouette_score
 
 from utils import *
+from containers import MyClusterGrid
 
 rc = {'font.family': 'serif',
       'font.serif': ['Times', 'Palatino', 'serif']}
@@ -141,7 +142,7 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
-                seed=None, col_cluster=True, metadata=None, col_data=None):
+                seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None):
     """
     :nclusters: None, 'auto', or positive integer
 
@@ -286,32 +287,80 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     cmap.set_bad(color='gray')
 
     # figheight = min(len(data) / 6, 100)
-    figheight = 12
+    heatmap_height_ratio = .8
 
-    # if gene_symbols:  # make sure there is enough room for the symbols
-    #     figheight = (9/72) * len(plot_data)
-    #     print(figheight)
+    if figsize is None:
 
-    min_figwidth = 4
-    if col_colors is not None and not col_colors.empty:
-        for _ in range(1, len(col_colors.columns)):
-            min_figwidth += 1  # make room for more labels in legend after 2 labels
+        figheight = 12
+        heatmap_height_ratio = .8  # this is the default from Seaborn
+        if gene_symbols:  # make sure there is enough room for the symbols
+            figheight = (9/72) * len(plot_data)
 
-    figwidth  = max( min( len(data.columns) / 2, 8), min_figwidth )
-    # if col_colors is not None:
-    #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
+        min_figwidth = 4
+        if col_colors is not None and not col_colors.empty:
+            for _ in range(1, len(col_colors.columns)):
+                min_figwidth += 1  # make room for more labels in legend after 2 labels
 
-    g = sb.clustermap(plot_data,
-                      row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
-                      col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
-                      yticklabels=False if not gene_symbols else True,
-                      # z_score=z_score, standard_scale=standard_scale,
-                      figsize=(figwidth, figheight),
-                      row_cluster=row_cluster, col_cluster=col_cluster,
-                      cmap=cmap,
-                      mask=mask.loc[plot_data.index] if show_missing_values else None,
-                      # center = 0 if z_score is not None else None
+        figwidth  = max( min( len(data.columns) / 2, 8), min_figwidth )
+        # if col_colors is not None:
+        #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
+        figsize = (figwidth, figheight)
+
+    if gene_symbols:  # make sure there is enough room for the symbols
+        heatmap_height_ratio = max(.8, .8 * (.2*(figheight-12)) )
+        print(figheight, heatmap_height_ratio)
+
+    plotter = MyClusterGrid(plot_data,
+                            figsize=figsize,
+                            row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
+                            col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
+                            mask=mask.loc[plot_data.index] if show_missing_values else None,
+                            heatmap_height_ratio=heatmap_height_ratio
     )
+
+    g = plotter.plot(method='average', metric='euclidean',
+                     row_cluster=row_cluster, col_cluster=col_cluster,
+                     row_linkage=None, col_linkage=None,
+                     colorbar_kws=None,
+                     cmap=cmap,
+                     yticklabels=False if not gene_symbols else True
+    )
+
+    # sp_params = g.gs.get_subplot_params()
+    g.fig.subplots_adjust(hspace=0.01, wspace=0.01, left=1/figwidth,
+                          right=1-1./figwidth, bottom=1/figheight, top=.9-1/figheight)
+
+    # g.fig.subplots_adjust(hspace=0.01, wspace=0.01, left=1/figwidth,
+    #                       right=1-2./figwidth, bottom=.4)
+
+    # g.gs.tight_layout(g.fig, rect=(sp_params.left, sp_params.bottom, sp_params.right, sp_params.top), h_pad=0.01, w_pad=.01)
+    # g.gs.tight_layout(g.fig, rect=(0, sp_params.left, 1, .95), h_pad=.01, w_pad=.01)
+    # g.gs.tight_layout(g.fig, h_pad=.01, w_pad=.01)
+
+    # g.fig.subplots_adjust(b)
+
+    # if figsize[0] >= 16:
+    #     bottom, top = .05, .95
+    #     if figsize[0] >= 22:
+    #         bottom, top = .03, .97
+    #     elif figsize[0] >= 32:
+    #         bottom, top = .02, .98
+    #     elif figsize[0] >= 42:
+    #         bottom, top = .01, .99
+    #     g.fig.subplots_adjust(bottom=bottom, top=top)
+
+    # g = sb.clustermap(plot_data,
+    #                   row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
+    #                   col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
+    #                   yticklabels=False if not gene_symbols else True,
+    #                   # z_score=z_score, standard_scale=standard_scale,
+    #                   figsize=figsize,
+    #                   row_cluster=row_cluster, col_cluster=col_cluster,
+    #                   cmap=cmap,
+    #                   mask=mask.loc[plot_data.index] if show_missing_values else None,
+    #                   # center = 0 if z_score is not None else None
+    # )
+
     if gene_symbols:
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
             tick.set_rotation(0)
@@ -332,7 +381,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         # widths = _calculate_box_sizes( col_colors.nunique() )
         widths = _calculate_box_sizes( col_label_lengths )
         col_colors_t = col_colors.T
-        bbox_y0 = 1.24 if col_cluster else .8
+        bbox_y0 = 1.44 if col_cluster else .8
         bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
         legends = list()
