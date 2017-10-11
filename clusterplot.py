@@ -217,7 +217,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
         cluster_data = data_t.copy()
         if show_missing_values:
-            cluster_data[mask] = np.NAN
+            # cluster_data[mask] = np.NAN
+            cluster_data[mask] = 0
         cluster_data = cluster_data.assign(Cluster=clusters+1)
         cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
