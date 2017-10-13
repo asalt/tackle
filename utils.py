@@ -285,11 +285,22 @@ def scatter(x, y, ax, xymin, xymax, **kwargs):
 def save_multiple(fig, filename, *exts, verbose=True, dpi=300, **save_kwargs):
     """save a figure to a specific file multiple
     times with different extensions"""
+    # rasterized = True
+    rasterized = False
+    # if 'rasterized' in save_kwargs:
+    #     rasterized = save_kwargs.pop('rasterized')
+
     for ext in exts:
         out = os.path.abspath(filename+ext)
+
+        if ext == '.pdf':
+            rasterized=True
+        else:
+            rasterized=False
+
         if verbose:
             print("Saving", out, '...', end='', flush=True)
-        fig.savefig(out, dpi=dpi, **save_kwargs)
+        fig.savefig(out, dpi=dpi, rasterized=rasterized, **save_kwargs)
         if verbose:
             print('done.', flush=True)
 

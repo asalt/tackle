@@ -287,14 +287,21 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     cmap.set_bad(color='gray')
 
     # figheight = min(len(data) / 6, 100)
-    heatmap_height_ratio = .8
+    heatmap_height_ratio = .8  # this is the default (seaborn). Needs to be increased when figs are very long
+
+    FONTSIZE = 7
 
     if figsize is None:
 
         figheight = 12
         heatmap_height_ratio = .8  # this is the default from Seaborn
+
         if gene_symbols:  # make sure there is enough room for the symbols
-            figheight = (9/72) * len(plot_data)
+            figheight = max((8/72) * len(plot_data), 12)
+            if figheight > 218: # maximum figheight in inches
+                FONTSIZE = max(218 / figheight, 6)
+                figheight = 218
+
 
         min_figwidth = 4
         if col_colors is not None and not col_colors.empty:
@@ -308,14 +315,21 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
     if gene_symbols:  # make sure there is enough room for the symbols
         heatmap_height_ratio = max(.8, .8 * (.2*(figheight-12)) )
-        print(figheight, heatmap_height_ratio)
+        # print(figheight, heatmap_height_ratio)
+    dendrogram_width_ratio = None
+    if figheight > 12:
+        dendrogram_width_ratio  = .16 + max(0,
+                                            (.1*np.log10(figwidth))*(figwidth-12)
+        )
 
+    # a minimal subclass of seaborn ClusterGrid for scaling.
     plotter = MyClusterGrid(plot_data,
                             figsize=figsize,
                             row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                             mask=mask.loc[plot_data.index] if show_missing_values else None,
-                            heatmap_height_ratio=heatmap_height_ratio
+                            heatmap_height_ratio=heatmap_height_ratio,
+                            dendrogram_width_ratio=dendrogram_width_ratio
     )
 
     g = plotter.plot(method='average', metric='euclidean',
@@ -325,29 +339,17 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                      cmap=cmap,
                      yticklabels=False if not gene_symbols else True
     )
+    if figheight <= 12:
+        hspace =.01
+        wspace = .01
+    else:
+        hspace = .01 / (22*figheight)
+        wspace = .01
 
-    # sp_params = g.gs.get_subplot_params()
-    g.fig.subplots_adjust(hspace=0.01, wspace=0.01, left=1/figwidth,
-                          right=1-1./figwidth, bottom=1/figheight, top=.9-1/figheight)
-
-    # g.fig.subplots_adjust(hspace=0.01, wspace=0.01, left=1/figwidth,
-    #                       right=1-2./figwidth, bottom=.4)
-
-    # g.gs.tight_layout(g.fig, rect=(sp_params.left, sp_params.bottom, sp_params.right, sp_params.top), h_pad=0.01, w_pad=.01)
-    # g.gs.tight_layout(g.fig, rect=(0, sp_params.left, 1, .95), h_pad=.01, w_pad=.01)
-    # g.gs.tight_layout(g.fig, h_pad=.01, w_pad=.01)
-
-    # g.fig.subplots_adjust(b)
-
-    # if figsize[0] >= 16:
-    #     bottom, top = .05, .95
-    #     if figsize[0] >= 22:
-    #         bottom, top = .03, .97
-    #     elif figsize[0] >= 32:
-    #         bottom, top = .02, .98
-    #     elif figsize[0] >= 42:
-    #         bottom, top = .01, .99
-    #     g.fig.subplots_adjust(bottom=bottom, top=top)
+    g.fig.subplots_adjust(hspace=hspace, wspace=wspace,
+                          left=.5/figwidth, right=1-1./figwidth,
+                          bottom=1/figheight, top=1-(1.4/figheight)
+    )
 
     # g = sb.clustermap(plot_data,
     #                   row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
@@ -365,7 +367,13 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         for tick in g.ax_heatmap.yaxis.get_ticklabels():
             tick.set_rotation(0)
             # tick.set_size(tick.get_size()*.4)
-            tick.set_size(7)
+            txt = tick.get_text()
+            if len(txt) > 7 and len(txt) < 9:
+                tick.set_size(FONTSIZE-1)
+            elif len(txt) >= 9:
+                tick.set_size(FONTSIZE-3)
+            else:
+                tick.set_size(FONTSIZE)
     for tick in g.ax_heatmap.xaxis.get_ticklabels():
         tick.set_rotation(90)
     if g.ax_row_colors:

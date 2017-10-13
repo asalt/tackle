@@ -28,7 +28,7 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-__version__ = '0.35'
+__version__ = '0.36'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -165,6 +165,8 @@ def validate_subgroup(value, experiment_file):
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
+@click.option('--file-format', type=click.Choice(('.png', '.pdf', '.svg')), default=('.png',),
+              show_default=True, multiple=True, help='File format for any plots')
 @click.option('--funcats', type=str, default=None, show_default=True,
               help="""Optional gene subset based on funcat or funcats,
               regular expression allowed. """)
@@ -188,8 +190,8 @@ def validate_subgroup(value, experiment_file):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, data_dir, funcats, geneids, ifot, ifot_ki, ifot_tf, name, taxon,
-         non_zeros, nonzero_subgroup, experiment_file):
+def main(ctx, additional_info, data_dir, file_format, funcats, geneids, ifot, ifot_ki, ifot_tf,
+         name, taxon, non_zeros, nonzero_subgroup, experiment_file):
 
     if ifot + ifot_ki + ifot_tf > 1:
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI` and `iFOT-TF`')
@@ -202,6 +204,8 @@ def main(ctx, additional_info, data_dir, funcats, geneids, ifot, ifot_ki, ifot_t
 
     if ctx.obj is None:
         ctx.obj = dict()
+
+    ctx.obj['file_fmts'] = file_format
 
 
     analysis_name = get_file_name(experiment_file)
@@ -235,6 +239,7 @@ def main(ctx, additional_info, data_dir, funcats, geneids, ifot, ifot_ki, ifot_t
 def scatter(ctx, colors_only, shade_correlation, stat):
 
     data_obj = ctx.obj['data_obj']
+    file_fmts = ctx.obj['file_fmts']
 
     g = scatterplot(data_obj.areas_log_shifted, stat=stat,
                     colors_only=colors_only, shade_correlation=shade_correlation)
@@ -242,7 +247,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=colors_only,
                           outpath=data_obj.outpath)
-    save_multiple(g, outname, '.png', dpi=96)
+    save_multiple(g, outname, *file_fmts, dpi=96)
 
 @main.command('export')
 @click.option('--level', type=click.Choice(['all', 'area']), default='area',
@@ -340,7 +345,9 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
     if extra_artists is not None:
         bbox_inches=None
         # extra_artists=None
-    save_multiple(g, outname, '.png', bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
+    # save_multiple(g, outname, '.png', bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
+    file_fmts = ctx.obj['file_fmts']
+    save_multiple(g, outname, *file_fmts, bbox_extra_artists=extra_artists, bbox_inches=bbox_inches)
 
 
     if kmeans_res is not None:
@@ -352,12 +359,12 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
         fig = kmeans_res['auto'].get('fig')
         if fig is not None:
             outname = outname_func('cluster_optimized_results')
-            save_multiple(fig, outname, '.png')
+            save_multiple(fig, outname, *file_fmts)
 
         fig = kmeans_res['silhouette'].get('fig')
         if fig is not None:
             outname = outname_func('{}clusters_silhouette'.format(kmeans_clusters))
-            save_multiple(fig, outname, '.png')
+            save_multiple(fig, outname, *file_fmts)
 
     if dbscan_res is not None:
         dbscan_data = dbscan_res['data']
@@ -369,7 +376,7 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
         fig = dbscan_res['silhouette'].get('fig')
         if fig is not None:
             outname = outname_func('{}clusters_silhouette'.format(dbscan_clusters))
-            save_multiple(fig, outname, '.png')
+            save_multiple(fig, outname, *file_fmts)
 
 
 
@@ -384,7 +391,8 @@ def pca(ctx):
                             non_zeros=data_obj.non_zeros,
                             colors_only=data_obj.colors_only, outpath=data_obj.outpath,
     )
-    save_multiple(fig, outname, '.png')
+    file_fmts = ctx.obj['file_fmts']
+    save_multiple(fig, outname, *file_fmts)
 
 
 

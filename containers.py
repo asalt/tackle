@@ -384,20 +384,26 @@ class Data:
 
 class MyClusterGrid(ClusterGrid):
 
-    def __init__(self, *args, heatmap_height_ratio=.8, **kwargs):
+    def __init__(self, *args, heatmap_height_ratio=.8,
+                 dendrogram_width_ratio=.16, **kwargs):
         self.heatmap_height_ratio = heatmap_height_ratio
+        self.dendrogram_width_ratio = dendrogram_width_ratio
         super().__init__(*args, **kwargs)
 
-        # self.gs.tight_layout(self.fig)
-        # self.gs.update(wspace=.025, hspace=.025)
-        # self.fig.subplots_adjust(wspace=0, hspace=0)
-
     def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
-
+        # need to adjust the heatmap height ratio for long figures
+        # such that it fills up more of the given room
         ratios = ClusterGrid.dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05)
 
         if axis == 0:  # calculating height ratios
             ratios[-1] = self.heatmap_height_ratio
 
-        print(axis, ':', ratios)
+            if self.dendrogram_width_ratio: #
+                ratios[0] = self.dendrogram_width_ratio
+
+        elif axis == 1 and self.dendrogram_width_ratio:  # calculating width ratios
+            ratios[1] = self.dendrogram_width_ratio
+            ratios[0] = self.dendrogram_width_ratio * .4
+
+        # print(axis, ':', ratios)
         return ratios
