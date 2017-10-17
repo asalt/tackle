@@ -383,6 +383,24 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
             for tick in ticks:
                 tick.set_size(tick.get_size()*scale)
 
+    if row_colors is not None and 'Cluster' in row_colors.columns:
+        # annotate cluster numbers
+        _positions = dict()
+        _lastpos = 0
+        for cluster, color in sorted(cmap_mapping.items(), reverse=False):
+            length = row_colors[ row_colors['Cluster'] == color ].pipe(len)
+            # _positions[cluster] = ( length+_lastpos ) // 2;
+            _positions[  _lastpos + ( length // 2 ) ] = cluster
+            _lastpos += length
+
+        g.ax_row_colors.set_yticks(np.arange(0, row_colors.pipe(len), 1))
+        _yticklabels = ['' if ix not in _positions
+                        else _positions[ix] + 1
+                        for ix, _ in enumerate(g.ax_row_colors.get_yticklabels())]
+        g.ax_row_colors.set_yticklabels(_yticklabels, fontsize=12)
+        g.ax_row_colors.tick_params(axis='y', pad=8)  # so not too close to spine
+        g.ax_row_colors.spines["left"].set_position(("axes", 0.0)) # green one
+
 
     if col_colors is not None:
         col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()
