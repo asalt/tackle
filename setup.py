@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 def calculate_version(inputfile):
     version_list =  [x.split('\'')[1] for x in open(inputfile, 'r')
@@ -8,10 +8,11 @@ def calculate_version(inputfile):
     else:
         return '1.0'
 
-package_version = calculate_version('main.py')
+package_version = calculate_version('./correlation_plotter/main.py')
 setup(
     name='correlation-plotter',
     version=package_version,
+    packages=find_packages(),
     author = 'Alex Saltzman',
     author_email = 'a.saltzman920@gmail.com',
     description = 'CLI-based data filtering and plotting tools for proteomics data at BCM',
@@ -21,6 +22,6 @@ setup(
     ],
     entry_points="""
     [console_scripts]
-    correlationplot=main:main
+    correlationplot=correlation_plotter.main:main
     """
 )
