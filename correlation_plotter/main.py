@@ -33,11 +33,11 @@ __version__ = '0.36'
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
 
-from scatterplot import scatterplot
-from clusterplot import clusterplot
-from pcaplot import pcaplot
-from utils import *
-from containers import Data
+from .scatterplot import scatterplot
+from .clusterplot import clusterplot
+from .pcaplot import pcaplot
+from .utils import *
+from .containers import Data
 # from cluster_to_plotly import cluster_to_plotly
 
 sys.setrecursionlimit(10000)
@@ -137,26 +137,89 @@ def validate_seed(ctx, param, value):
     else:
         raise click.BadParameter('Must be an integer or `None`')
 
-def validate_subgroup(value, experiment_file):
-    if value is None:
-        return None
+def validate_configfile(experiment_file, nonzero_subgroup=None):
     config = read_config(experiment_file)
     config = copy.deepcopy(config)  # because we're about to change it
-    for x in config.keys():
-        if x.startswith('__'):
-            config.pop(x)
+
+    config_len = len([x for x in config.keys()
+                      if not x.startswith('__')])
+
+    dunder_fields = dict(__PCA__   = ('color', 'marker'),
+                         __norm__  = ('label', 'group'),
+                         __batch__ = ('batch', ),
+    )
+
+    for entry in config.keys():
+        if entry.startswith('__'):
+            dunder = config.get(entry)
+            fields = dunder_fields.get(entry)
+            if fields is None:
+                continue
+            # validate each field
+            for field in fields:
+                count = 0
+                value = config[entry][field]  # value to tally
+
+                for k, v in config.items():
+                    if k in dunder_fields:
+                        continue
+                    ret = v.get(value)
+                    if ret is not None:
+                        count += 1
+
+                if count == 0:
+                    raise click.BadParameter("""Invalid entry for {}:
+                    {} is not annotated in the config file""".format(entry, value))
+                if count < config_len:
+                    raise click.BadParameter("""Invalid entry for {}:
+                    {} is not annotated for all experiments in the config file
+                    ({} / {} )""".format(entry, value, count, config_len
+                    ))
+
+    if '__norm__' in config.keys():
+        # need to do additional validation
+        norm_info = config.get('__norm__')
+        control = norm_info['control']
+        group   = norm_info['group']
+        label   = norm_info['label']
+        groups = set()
+        counter = 0
+        for k, v in config.items():
+            if k in dunder_fields:
+                continue
+            subgroup = v.get(group)
+            groups.add(subgroup)
+            ret = v.get(label)
+            if ret == control:
+                counter += 1
+        if counter != len(groups):
+            raise click.BadParameter("""
+            Invalid specification for `control` in the __norm__ specification.
+            Expected {} to be specified by {} a total of {} times
+            but is observed {} time(s).
+            """.format(control, label, len(groups), counter))
+
+    if nonzero_subgroup is None:
+        return
+
     count = 0
-    for v in config.values():
-        ret = v.get(value)
+    for k, v in config.items():
+        if k in dunder_fields:
+            continue
+        ret = v.get(nonzero_subgroup)
         if ret is not None:
             count += 1
 
     if count == 0:
-        raise click.BadParameter('{} is not annotated in the config file'.format(value))
-    if count < len(config):
-        raise click.BadParameter('{} is not annotated for all experiments in the config file'.format(value))
+        raise click.BadParameter("""{} is specified for nonzero subgroups but
+        is not annotated in the config file""".format(nonzero_subgroup))
+    if count < config_len:
+        raise click.BadParameter("""{} is specified for nonzero subgroups but
+        is not annotated for all experiments in the config file ({} / {})""".format(nonzero_subgroup,
+                                                                                    count, config_len
+        ))
 
-    return value
+    return
 
 
 @click.group(chain=True)
@@ -175,7 +238,7 @@ def validate_subgroup(value, experiment_file):
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
 @click.option('--iFOT', default=False, show_default=True, is_flag=True,
-              help='Calculate iFOT (divide by total input per experiment)')
+              help="""Calculate iFOT (divide by total input per experiment)""")
 @click.option('--iFOT-KI', default=False, show_default=True, is_flag=True,
               help='Calculate iFOT based on kinases')
 @click.option('--iFOT-TF', default=False, show_default=True, is_flag=True,
@@ -186,17 +249,21 @@ def validate_subgroup(value, experiment_file):
               default='all', show_default=True)
 @click.option('--non-zeros', default=0, show_default=True,
               help='Minimum number of non zeros allowed for each gene product across samples.')
-@click.option('--nonzero-subgroup', type=str, default=None)
+@click.option('--nonzero-subgroup', type=str, default=None, help='')
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, data_dir, file_format, funcats, geneids, ifot, ifot_ki, ifot_tf,
          name, taxon, non_zeros, nonzero_subgroup, experiment_file):
+    """
+    """
+         # name, taxon, non_zeros, experiment_file):
 
     if ifot + ifot_ki + ifot_tf > 1:
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI` and `iFOT-TF`')
 
-    validate_subgroup(nonzero_subgroup, experiment_file)
+    # validate_subgroup(nonzero_subgroup, experiment_file)
+    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup)
 
 
     if not os.path.exists(data_dir):
@@ -320,7 +387,8 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
                          max_autoclusters=max_autoclusters,
                          show_missing_values=show_missing_values,
                          mask=data_obj.mask,
-                         figsize=figsize
+                         figsize=figsize,
+                         normed=data_obj.normed,
     )
 
     g = result['clustermap']['clustergrid']

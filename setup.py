@@ -23,5 +23,6 @@ setup(
     entry_points="""
     [console_scripts]
     correlationplot=correlation_plotter.main:main
+    # correlationplot=main:main
     """
 )

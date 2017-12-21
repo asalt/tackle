@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.pipeline import Pipeline, make_pipeline
 
 
-from utils import *
+from .utils import *
 
 rc = {'font.family': 'serif',
       'font.serif': ['Times', 'Palatino', 'serif']}

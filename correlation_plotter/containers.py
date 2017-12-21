@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from seaborn.matrix import ClusterGrid
+from seaborn.matrix import _HeatMapper as HeatMapper
 
-from utils import *
+from .utils import *
 
 
 idx = pd.IndexSlice
@@ -51,7 +52,10 @@ class Data:
                  taxon='all',
                  z_score='0',
                  export_data=None,
-                 ifot=False, ifot_ki=False, ifot_tf=False):
+                 ifot=False, ifot_ki=False, ifot_tf=False,
+                 set_outpath=True,
+
+    ):
         "docstring"
 
         if experiment_file is None:
@@ -85,10 +89,16 @@ class Data:
         self.outpath           = None
         self.analysis_name     = None
 
+        self.normed            = False
 
         self.set_analysis_name(experiment_file)
-        self.set_outpath(base_dir, self.analysis_name, name)
-        self.outpath_name = os.path.split(self.outpath)[-1]
+        if set_outpath:
+            self.set_outpath(base_dir, self.analysis_name, name)
+            self.outpath_name = os.path.split(self.outpath)[-1]
+        else:
+            self.outpath = None
+            self.outpath_name = None
+
 
         self.geneid_subset = None
         self.set_geneid_subset(geneids)
@@ -323,24 +333,51 @@ class Data:
         # self.areas = self.panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
         self._areas = self.df_filtered.loc[ idx[:, 'iBAQ_dstrAdj'], : ]
         self._areas.index = self._areas.index.droplevel(1)  # don't need the second index
+
+        # if specified, normalize by a specified control group
+        norm_info = self.config.get('__norm__')
+        if norm_info is not None:
+            self.normed = False
+            control = norm_info['control']
+            group   = norm_info['group']
+            label   = norm_info['label']
+            metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            areas = self._areas.copy()
+            ctrl_exps = list()
+            for ix, g in metadata.groupby(group):
+                ctrl_exp = g[ g[label] == control ].index[0] # should only be one
+                ctrl_exps.append(ctrl_exp)
+                # to_normalize = list(set(g.index) - set([ctrl_exp]))
+                to_normalize = g.index
+                areas.loc[:, to_normalize] = (self._areas[to_normalize]
+                                              .div(self._areas[ctrl_exp]
+                                                   .fillna(0) + 1e-20,
+                                                   axis='index')
+                )
+            # self._areas = (areas.drop(ctrl_exps, axis=1)
+            #                .where(lambda x: x!= 0)
+            #                .dropna(how='all')
+            # )
+            self._areas = areas
+
+        batch_info = self.config.get('__batch__')
+        if batch_info:
+            batch = batch_info.get('batch')
+            metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            areas = self._areas.copy()
+            for ix, g in metadata.groupby(batch):
+                meanvals = areas[g.index].mean(1)
+                areas.loc[:, g.index] = (self._areas[g.index]
+                                       .div(meanvals.fillna(0)+1e-20,
+                                            axis='index')
+                )
+
+            self._areas = areas
+
+
         self._mask = self._areas.applymap(np.isnan)
         if len(self.areas) == 0:
             raise ValueError('No data')
-
-        # if self.ifot is True:
-        #     sum_ = self._areas.sum(0)
-        #     self._areas = self._areas / sum_
-        #     # self.areas /= self.areas.sum(0)
-
-        # elif self.ifot_ki is True:
-        #     gids = self.df_filtered.pipe(filter_funcats, 'KI').index.get_level_values(0)
-        #     sum_ = self._areas.loc[gids].sum(0)
-        #     self._areas = self._areas / sum_
-
-        # elif self.ifot_tf is True:
-        #     gids = self.df_filtered.pipe(filter_funcats, 'TF')
-        #     sum_ = self._areas.loc[gids].sum(0)
-        #     self._areas = self._areas / sum_
 
         gids = set(self._areas.index)
         if self.funcats:
@@ -350,10 +387,15 @@ class Data:
 
         gids = tuple(gids)
 
+
         self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
         # self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
+        if norm_info is not None:  # do not shift the values
+            self._areas_log_shifted = self._areas_log
+            return
+
         minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
 
@@ -381,6 +423,45 @@ class Data:
             self.areas_log_shifted.to_csv(outname, sep='\t')
         print('Exported', outname)
 
+
+from six import string_types
+class MyHeatMapper(HeatMapper):
+
+    def _determine_cmap_params(self, plot_data, vmin, vmax,
+                               cmap, center, robust):
+        """Use some heuristics to set good defaults for colorbar and range."""
+        calc_data = plot_data.data[~np.isnan(plot_data.data)]
+        if vmin is None:
+            vmin = np.percentile(calc_data, 2) if robust else calc_data.min()
+            # vmin = np.percentile(calc_data, 20) if robust else calc_data.min()
+        if vmax is None:
+            vmax = np.percentile(calc_data, 98) if robust else calc_data.max()
+            # vmax = np.percentile(calc_data, 75) if robust else calc_data.max()
+        self.vmin, self.vmax = vmin, vmax
+
+        # Choose default colormaps if not provided
+        if cmap is None:
+            if center is None:
+                self.cmap = cm.rocket
+            else:
+                self.cmap = cm.icefire
+        elif isinstance(cmap, string_types):
+            self.cmap = mpl.cm.get_cmap(cmap)
+        elif isinstance(cmap, list):
+            self.cmap = mpl.colors.ListedColormap(cmap)
+        else:
+            self.cmap = cmap
+
+        # Recenter a divergent colormap
+        if center is not None:
+            vrange = max(vmax - center, center - vmin)
+            normlize = mpl.colors.Normalize(center - vrange, center + vrange)
+            cmin, cmax = normlize([vmin, vmax])
+            cc = np.linspace(cmin, cmax, 256)
+            self.cmap = mpl.colors.ListedColormap(self.cmap(cc))
+        self.cmap.set_bad(color='gray')
+
+sb.matrix._HeatMapper = MyHeatMapper
 
 class MyClusterGrid(ClusterGrid):
 

@@ -13,8 +13,8 @@ import seaborn as sb
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_samples, silhouette_score
 
-from utils import *
-from containers import MyClusterGrid
+from .utils import *
+from .containers import MyClusterGrid
 
 rc = {'font.family': 'serif',
       'font.serif': ['Times', 'Palatino', 'serif']}
@@ -142,7 +142,8 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
-                seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None):
+                seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
+                normed=False):
     """
     :nclusters: None, 'auto', or positive integer
 
@@ -202,7 +203,6 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
 
     if nclusters is not None:
-
 
         kmeans_result = calc_kmeans(data_t, nclusters, seed, max_autoclusters)
         kmeans = kmeans_result['kmeans']
@@ -269,22 +269,34 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         plot_data = data_t
 
 
-    cmap_name = 'YlOrRd' if z_score is None else 'RdBu_r'
-    cmap = mpl.cm.get_cmap(cmap_name)
+    cmap_name = 'YlOrRd' if (z_score is None and normed == False) else 'RdBu_r'
+    cmap = cmap_name
+    # cmap = mpl.cm.get_cmap(cmap_name)
+    # robust = True if normed == True else False
     robust = False
-    if z_score is not None:  # adapted from seaborn.matrix.ClusterMap
+    if (z_score is not None or normed==True):  # adapted from seaborn.matrix.ClusterMap
         center = 0
-        vmin = np.percentile(plot_data, 2) if robust else plot_data.min().min()
-        vmax = np.percentile(plot_data, 98) if robust else plot_data.max().max()
+        # vmin = np.percentile(plot_data, 2) if robust else plot_data.min().min()
+        # vmax = np.percentile(plot_data, 98) if robust else plot_data.max().max()
+    #     low, high = 2, 98
+        if normed:
+            robust = True
+    #         low, high = 30, 70
+    #     vmin = np.percentile(plot_data, low) if robust else plot_data.min().min()
+    #     vmax = np.percentile(plot_data, high) if robust else plot_data.max().max()
+    #     # maxval = max(abs(vmin), vmax)
+    #     # vmax = maxval
+    #     # vmin = -maxval
 
-        vrange = max(vmax - center, center - vmin)
+    #     vrange = max(vmax - center, center - vmin)
 
-        normlize = mpl.colors.Normalize(center - vrange, center + vrange)
-        cmin, cmax = normlize([vmin, vmax])
-        cc = np.linspace(cmin, cmax, 256)
-        cmap = mpl.colors.ListedColormap(cmap(cc))
+    #     normalize = mpl.colors.Normalize(center - vrange, center + vrange)
+    #     # cmin, cmax = normlize([vmin, vmax])
+    #     cmin, cmax = normalize([-vrange, vrange])
+    #     cc = np.linspace(cmin, cmax, 256)
+    #     cmap = mpl.colors.ListedColormap(cmap(cc))
 
-    cmap.set_bad(color='gray')
+    # cmap.set_bad(color='gray')
 
     # figheight = min(len(data) / 6, 100)
     heatmap_height_ratio = .8  # this is the default (seaborn). Needs to be increased when figs are very long
@@ -329,7 +341,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                             mask=mask.loc[plot_data.index] if show_missing_values else None,
                             heatmap_height_ratio=heatmap_height_ratio,
-                            dendrogram_width_ratio=dendrogram_width_ratio
+                            dendrogram_width_ratio=dendrogram_width_ratio,
     )
 
     g = plotter.plot(method='average', metric='euclidean',
@@ -337,7 +349,10 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                      row_linkage=None, col_linkage=None,
                      colorbar_kws=None,
                      cmap=cmap,
-                     yticklabels=False if not gene_symbols else True
+                     # cmap='RdBu_r',
+                     robust=True,
+                     yticklabels=False if not gene_symbols else True,
+                     center=0
     )
     if figheight <= 12:
         hspace =.01
