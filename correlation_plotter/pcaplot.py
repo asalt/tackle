@@ -68,7 +68,8 @@ def pcaplot(X, metadata=None, col_data=None):
 
     # no current support for multiple multiplexed samples
     try:
-        components = pd.DataFrame(data=V, columns=col_data.index)
+        # components = pd.DataFrame(data=V, columns=col_data.index)
+        components = pd.DataFrame(data=V, columns=X.columns)  # should be same as col_data.index except removal of (any) experiments  with no data
         df = col_data.join(components.T)
     except ValueError:
         components = pd.DataFrame(data=V, columns=col_data.columns)

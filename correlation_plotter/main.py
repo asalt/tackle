@@ -23,12 +23,18 @@ import seaborn as sb
 from seaborn.distributions import _freedman_diaconis_bins
 import click
 
-rc = {'font.family': 'serif',
-      'font.serif': ['Times', 'Palatino', 'serif']}
-sb.set_context('paper')
-sb.set_style('white', rc)
+# rc = {'font.family': 'serif',
+#       'font.serif': ['Times', 'Palatino', 'serif']}
+# sb.set_context('paper')
+# sb.set_style('white', rc)
 
-__version__ = '0.36'
+rc = {'font.family': 'sans-serif',}
+sb.set_context('notebook')
+sb.set_style('white', rc)
+sb.set_palette('muted')
+sb.set_color_codes()
+
+__version__ = '0.37'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)

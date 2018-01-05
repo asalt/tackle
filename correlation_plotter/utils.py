@@ -400,7 +400,9 @@ def fillna_meta(df, index_col):
 
 def parse_metadata(metadata):
     expids = ('recno', 'runno', 'searchno')
-    metadata_filtered = {k:v for k, v in metadata.items() if not k.startswith('__')}
+    metadata_filtered = OrderedDict([(k,v) for k, v in metadata.items()
+                                     if not k.startswith('__')
+    ])
     # col_data = pd.DataFrame.from_dict(metadata, orient='columns').filter(regex='^(?!__)')
     col_data = pd.DataFrame.from_dict(metadata_filtered, orient='columns')
     col_data = col_data.loc[[x for x in col_data.index if x not in expids]]

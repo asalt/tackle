@@ -420,7 +420,9 @@ class Data:
         if level == 'all':
             self.df_filtered.to_csv(outname, sep='\t')
         elif level == 'area':
-            self.areas_log_shifted.to_csv(outname, sep='\t')
+            export = self.areas_log_shifted.copy()
+            export[self.mask] = np.NaN
+            export.to_csv(outname, sep='\t')
         print('Exported', outname)
 
 

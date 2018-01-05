@@ -16,12 +16,13 @@ from sklearn.metrics import silhouette_samples, silhouette_score
 from .utils import *
 from .containers import MyClusterGrid
 
-rc = {'font.family': 'serif',
-      'font.serif': ['Times', 'Palatino', 'serif']}
-sb.set_context('paper')
-sb.set_style('white', rc)
+rc = {'font.family': 'sans-serif',}
+      # 'font.serif': ['Times', 'Palatino', 'serif']}
+sb.set_context('notebook')
 sb.set_palette('muted')
 sb.set_color_codes()
+sb.set_style('white', rc)
+# mpl.rcParams.update(rc)
 
 def _calculate_box_sizes(size_vector):
     """
@@ -148,7 +149,15 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     :nclusters: None, 'auto', or positive integer
 
     """
+
+    rc = {'font.family': 'sans-serif',}
+    sb.set_context('notebook')
+    sb.set_palette('muted')
+    sb.set_color_codes()
+    sb.set_style('white', rc)
+
     retval = dict()
+
 
     if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
         row_cluster = False
@@ -268,7 +277,6 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     else:
         plot_data = data_t
 
-
     cmap_name = 'YlOrRd' if (z_score is None and normed == False) else 'RdBu_r'
     cmap = cmap_name
     # cmap = mpl.cm.get_cmap(cmap_name)
@@ -344,7 +352,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                             dendrogram_width_ratio=dendrogram_width_ratio,
     )
 
-    g = plotter.plot(method='average', metric='euclidean',
+    g = plotter.plot(method='ward', metric='euclidean',
                      row_cluster=row_cluster, col_cluster=col_cluster,
                      row_linkage=None, col_linkage=None,
                      colorbar_kws=None,
@@ -352,7 +360,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                      # cmap='RdBu_r',
                      robust=True,
                      yticklabels=False if not gene_symbols else True,
-                     center=0
+                     center=0 if cmap != 'YlOrRd' else None,
+                     vmax=plot_data.max().max() if cmap == 'YlOrRd' else None
     )
     if figheight <= 12:
         hspace =.01
@@ -415,7 +424,6 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         g.ax_row_colors.set_yticklabels(_yticklabels, fontsize=12)
         g.ax_row_colors.tick_params(axis='y', pad=8)  # so not too close to spine
         g.ax_row_colors.spines["left"].set_position(("axes", 0.0)) # green one
-
 
     if col_colors is not None:
         col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sb
 
-from utils import *
+from .utils import *
 
 rc = {'font.family': 'serif',
       'font.serif': ['Times', 'Palatino', 'serif']}
