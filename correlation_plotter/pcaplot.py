@@ -15,6 +15,7 @@ from sklearn.preprocessing import StandardScaler, normalize
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.pipeline import Pipeline, make_pipeline
 
+from adjustText import adjust_text
 
 from .utils import *
 
@@ -28,6 +29,12 @@ def pcaplot(X, metadata=None, col_data=None):
     looks for __PCA__ section in input config.ini file
     """
 
+    rc = {'font.family': 'sans-serif',}
+    sb.set_context('notebook')
+    sb.set_palette('muted')
+    sb.set_color_codes()
+    sb.set_style('white', rc)
+
     # if metadata is not None:
     if col_data is not None:
         # col_data = parse_metadata(metadata).T
@@ -38,6 +45,9 @@ def pcaplot(X, metadata=None, col_data=None):
     col_data = col_data.drop(to_drop, axis=1)
 
     pca_params = metadata.get('__PCA__')
+    annot_text = pca_params.get('annot')
+    if annot_text is not None:
+        annot_text = True if 'true' in annot_text.lower() else False
 
     # l2 normalization down genes
     # X_normed = pd.DataFrame(data=normalize(X, axis=0), columns=X.columns, index=X.index)
@@ -126,11 +136,16 @@ def pcaplot(X, metadata=None, col_data=None):
     color_handles, color_labels   = list(), list()
     marker_handles, marker_labels = list(), list()
 
+    texts = list()
+
     fig, ax = plt.subplots()
     for name, row in df.iterrows():  # plot first and second components
         color  = row['_color']
         marker = row['_marker']
         ax.scatter( row[0], row[1], color=color, marker=marker )
+
+        if annot_text:
+            texts.append( ax.text(row[0], row[1], row.name, size=6 ) )
 
         if color_label:
             name = row[color_label]
@@ -145,6 +160,11 @@ def pcaplot(X, metadata=None, col_data=None):
                 marker_handle = plt.Line2D((0, 1), (0, 0), color='gray', marker=marker,
                                            linestyle='')
                 marker_handles.append(marker_handle)
+
+    if annot_text:
+        res = adjust_text(texts, arrowprops=dict(arrowstyle="-", color='grey', lw=0.5),
+                          force_points=0.1, expand_text=(1.2, 1.2), expand_points=(1.4, 1.4)
+        )
 
     legends = list()
     if color_label:
