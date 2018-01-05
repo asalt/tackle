@@ -436,7 +436,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         legends = list()
         for bbox, ix in zip(bboxes, col_colors_t.index):
             col_name        = ix
-            col_labels      = col_data.loc[ix].sort_values().drop_duplicates()
+            col_labels      = col_data.loc[ix].drop_duplicates()
             col_names       = col_labels.values
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()
