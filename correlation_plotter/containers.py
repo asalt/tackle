@@ -468,15 +468,19 @@ sb.matrix._HeatMapper = MyHeatMapper
 class MyClusterGrid(ClusterGrid):
 
     def __init__(self, *args, heatmap_height_ratio=.8,
-                 dendrogram_width_ratio=.16, **kwargs):
+                 dendrogram_width_ratio=.16, heatmap_width_ratio=.8, **kwargs):
         self.heatmap_height_ratio = heatmap_height_ratio
         self.dendrogram_width_ratio = dendrogram_width_ratio
+        self.heatmap_width_ratio=heatmap_width_ratio
+
         super().__init__(*args, **kwargs)
 
     def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
-        # need to adjust the heatmap height ratio for long figures
-        # such that it fills up more of the given room
-        ratios = ClusterGrid.dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05)
+        """need to adjust the heatmap height ratio for long figures
+        such that it fills up more of the given room heatmap.
+        heatmap_width_ratio is set at .8, default. Tweak to add room for labels
+        """
+        ratios = ClusterGrid.dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=side_colors_ratio)
 
         if axis == 0:  # calculating height ratios
             ratios[-1] = self.heatmap_height_ratio
@@ -485,8 +489,10 @@ class MyClusterGrid(ClusterGrid):
                 ratios[0] = self.dendrogram_width_ratio
 
         elif axis == 1 and self.dendrogram_width_ratio:  # calculating width ratios
-            ratios[1] = self.dendrogram_width_ratio
             ratios[0] = self.dendrogram_width_ratio * .4
+            ratios[1] = self.dendrogram_width_ratio
+        elif axis ==  1:
+            ratios[-1] = self.heatmap_width_ratio
 
         # print(axis, ':', ratios)
         return ratios

@@ -54,6 +54,7 @@ def pcaplot(X, metadata=None, col_data=None):
 
 
     X_centered = X.sub(X.mean(1), axis='index')
+
     U, s, V = np.linalg.svd(X_centered)
 
     eigen = s**2

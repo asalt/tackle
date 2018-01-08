@@ -309,7 +309,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     # figheight = min(len(data) / 6, 100)
     heatmap_height_ratio = .8  # this is the default (seaborn). Needs to be increased when figs are very long
 
-    FONTSIZE = 7
+    FONTSIZE = 10
 
     if figsize is None:
 
@@ -327,16 +327,23 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         if col_colors is not None and not col_colors.empty:
             for _ in range(1, len(col_colors.columns)):
                 min_figwidth += 1  # make room for more labels in legend after 2 labels
+        if gene_symbols:
+            min_figwidth += 1 # for labels?
 
         figwidth  = max( min( len(data.columns) / 2, 8), min_figwidth )
         # if col_colors is not None:
         #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
         figsize = (figwidth, figheight)
 
+    dendrogram_width_ratio = None
+    heatmap_width_ratio = .8  # default
     if gene_symbols:  # make sure there is enough room for the symbols
         heatmap_height_ratio = max(.8, .8 * (.2*(figheight-12)) )
+        # heatmap_width_ratio = 1.7
+        # dendrogram_width_ratio = .06
         # print(figheight, heatmap_height_ratio)
-    dendrogram_width_ratio = None
+        pass
+
     if figheight > 12:
         dendrogram_width_ratio  = .16 + max(0,
                                             (.1*np.log10(figwidth))*(figwidth-12)
@@ -350,6 +357,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                             mask=mask.loc[plot_data.index] if show_missing_values else None,
                             heatmap_height_ratio=heatmap_height_ratio,
                             dendrogram_width_ratio=dendrogram_width_ratio,
+                            heatmap_width_ratio=heatmap_width_ratio
     )
 
     g = plotter.plot(method='ward', metric='euclidean',
@@ -361,7 +369,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                      robust=True,
                      yticklabels=False if not gene_symbols else True,
                      center=0 if cmap != 'YlOrRd' else None,
-                     vmax=plot_data.max().max() if cmap == 'YlOrRd' else None
+                     vmax=plot_data.max().max() if cmap == 'YlOrRd' else None,
+                     rasterized=True,
     )
     if figheight <= 12:
         hspace =.01
@@ -374,6 +383,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                           left=.5/figwidth, right=1-1./figwidth,
                           bottom=1/figheight, top=1-(1.4/figheight)
     )
+
 
     # g = sb.clustermap(plot_data,
     #                   row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
@@ -398,6 +408,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                 tick.set_size(FONTSIZE-3)
             else:
                 tick.set_size(FONTSIZE)
+        g.ax_heatmap.tick_params(axis='y', which='major', pad=1)
     for tick in g.ax_heatmap.xaxis.get_ticklabels():
         tick.set_rotation(90)
     if g.ax_row_colors:
@@ -458,7 +469,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
         width, height = g.fig.get_size_inches()
 
-        longest_label = max(len(x) for x in col_colors.columns) + 3  # add a little padding
+        longest_label = max(len(x) for x in col_colors.columns) + 6  # add a little padding
         char_width = (430/1000) # approx via from https://www.math.utah.edu/~beebe/fonts/afm-widths.html
         longest_length = longest_label * char_width
         inch_shift = longest_length * 12/72  # 72 pts in an inch
@@ -467,11 +478,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
         g.gs.update(right=shift)  # add some room on the right so everything fits
 
-    # top = g.gs.top
-    # bottom = g.gs.bottom
-    # right = g.gs.right
-    # left = g.gs.left
-
+    g.ax_heatmap.yaxis.set_label('')
 
 
     retval['clustermap'] = dict(clustergrid=g, extra_artists=extra_artists)

@@ -33,14 +33,14 @@ def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_corr
     #  adjust the spacing between subplots
     hspace = g.fig.subplotpars.hspace
     wspace = g.fig.subplotpars.wspace
-    g.fig.subplots_adjust(hspace=hspace*.1, wspace=wspace*.1, right=.8, bottom=.2,
-                          left=.2, top=.8)
+    g.fig.subplots_adjust(hspace=hspace*.1, wspace=wspace*.1, right=.9, bottom=.1,
+                          left=.1, top=.9)
     # g.fig.suptitle(outpath_name.replace('_', ' '))
     # cbar_ax = g.fig.add_axes([.85, .15, .05, .7])
-    cbar_ax = g.fig.add_axes([.85, .15, .05, .65])
+    cbar_ax = g.fig.add_axes([.95, .15, .05, .85])
     plot_cbar(cbar_ax)
     # range_ax = g.fig.add_axes([.25, .05, .65, .05])
-    range_ax = g.fig.add_axes([.20, .06, .50, .06])
+    range_ax = g.fig.add_axes([.10, .06, .50, .06])
     range_ax.set_xlim((xymin, xymax))
     props = dict(color='black', linewidth=2, markeredgewidth=2)
     with sb.plotting_context(context='notebook', font_scale=1.4):
