@@ -112,7 +112,7 @@ def filter_funcats(df_long, funcats):
 
 def filter_taxon(df, taxon=9606):
     mask = df.loc[ idx[:, ('TaxonID')], : ] == 9606
-    gids = mask.index.get_level_values(0)
+    gids = mask[mask].dropna().index.get_level_values(0)
     return df.loc[ gids.values ]
 
 def pearson_r(x, y):
@@ -404,7 +404,8 @@ def parse_metadata(metadata):
                                      if not k.startswith('__')
     ])
     # col_data = pd.DataFrame.from_dict(metadata, orient='columns').filter(regex='^(?!__)')
-    col_data = pd.DataFrame.from_dict(metadata_filtered, orient='columns')
+    # col_data = pd.DataFrame.from_dict(metadata_filtered, orient='columns')
+    col_data = pd.DataFrame(metadata_filtered, columns=metadata_filtered.keys())
     col_data = col_data.loc[[x for x in col_data.index if x not in expids]]
     return col_data
 
