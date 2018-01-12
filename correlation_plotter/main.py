@@ -34,7 +34,7 @@ sb.set_style('white', rc)
 sb.set_palette('muted')
 sb.set_color_codes()
 
-__version__ = '0.37'
+__version__ = '0.38'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)

@@ -24,5 +24,9 @@ setup(
     [console_scripts]
     correlationplot=correlation_plotter.main:main
     # correlationplot=main:main
-    """
+    """,
+
+    package_data={'': ['R/*.r', 'R/*.R']},
+    include_package_data=True
+
 )

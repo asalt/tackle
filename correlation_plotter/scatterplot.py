@@ -31,6 +31,7 @@ def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_corr
         r_source = robjects.r['source']
         r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
                               'R', 'scatter.R')
+        print(r_file)
         r_source(r_file)
         grdevices = importr('grDevices')
         Rscatterplot = robjects.r['scattermat']
