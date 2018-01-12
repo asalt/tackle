@@ -15,7 +15,39 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_correlation=True):
+def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_correlation=True, outname='name'):
+
+    try:
+        from rpy2.robjects import r
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+        _viaR = True
+    except ModuleNotFoundError:
+        _viaR = False
+
+    if _viaR:
+        pandas2ri.activate()
+        r_source = robjects.r['source']
+        r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                              'R', 'scatter.R')
+        r_source(r_file)
+        grdevices = importr('grDevices')
+        Rscatterplot = robjects.r['scattermat']
+
+        plt_size = ibaqs_log_shifted.shape[1] * .75
+
+        print("Saving", outname, '...', end='', flush=True)
+        grdevices.png(file=outname, width=plt_size, height=plt_size,
+                      units='in', res=300)
+        Rscatterplot(ibaqs_log_shifted.replace(0, np.NaN), method=stat,
+                     interactive=False
+        )
+        grdevices.dev_off()
+        print('done.', flush=True)
+
+        return None
+
 
     # xymin = 0
     xymin = np.floor(ibaqs_log_shifted[ibaqs_log_shifted > 0].min().min())
@@ -37,10 +69,10 @@ def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_corr
                           left=.1, top=.9)
     # g.fig.suptitle(outpath_name.replace('_', ' '))
     # cbar_ax = g.fig.add_axes([.85, .15, .05, .7])
-    cbar_ax = g.fig.add_axes([.95, .15, .05, .85])
-    plot_cbar(cbar_ax)
-    # range_ax = g.fig.add_axes([.25, .05, .65, .05])
-    range_ax = g.fig.add_axes([.10, .06, .50, .06])
+    # cbar_ax = g.fig.add_axes([.95, .15, .05, .85])
+    # plot_cbar(cbar_ax)
+    range_ax = g.fig.add_axes([.25, .05, .65, .05])
+    # range_ax = g.fig.add_axes([.10, .06, .50, .06])
     range_ax.set_xlim((xymin, xymax))
     props = dict(color='black', linewidth=2, markeredgewidth=2)
     with sb.plotting_context(context='notebook', font_scale=1.4):

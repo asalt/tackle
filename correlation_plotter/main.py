@@ -314,12 +314,15 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     data_obj = ctx.obj['data_obj']
     file_fmts = ctx.obj['file_fmts']
 
-    g = scatterplot(data_obj.areas_log_shifted, stat=stat,
-                    colors_only=colors_only, shade_correlation=shade_correlation)
-
     outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=colors_only,
                           outpath=data_obj.outpath)
+    g = scatterplot(data_obj.areas_log_shifted, stat=stat,
+                    colors_only=colors_only, shade_correlation=shade_correlation,
+                    outname=outname+file_fmts[0])
+    if g is None: # plotted and saved via R
+        return
+
     save_multiple(g, outname, *file_fmts, dpi=96)
 
 @main.command('export')
