@@ -309,7 +309,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     # figheight = min(len(data) / 6, 100)
     heatmap_height_ratio = .8  # this is the default (seaborn). Needs to be increased when figs are very long
 
-    FONTSIZE = 10
+    FONTSIZE = 8
 
     if figsize is None:
 
@@ -317,7 +317,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
         heatmap_height_ratio = .8  # this is the default from Seaborn
 
         if gene_symbols:  # make sure there is enough room for the symbols
-            figheight = max((8/72) * len(plot_data), 12)
+            figheight = max(((FONTSIZE+2)/72) * len(plot_data), 12)
             if figheight > 218: # maximum figheight in inches
                 FONTSIZE = max(218 / figheight, 6)
                 figheight = 218
