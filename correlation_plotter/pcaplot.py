@@ -35,9 +35,7 @@ def pcaplot(X, metadata=None, col_data=None):
     sb.set_color_codes()
     sb.set_style('white', rc)
 
-    # if metadata is not None:
     if col_data is not None:
-        # col_data = parse_metadata(metadata).T
         col_data = col_data.T
         for col in col_data:
             col_data[col] = pd.Categorical(col_data[col])
@@ -49,10 +47,6 @@ def pcaplot(X, metadata=None, col_data=None):
     if annot_text is not None:
         annot_text = True if 'true' in annot_text.lower() else False
 
-    # l2 normalization down genes
-    # X_normed = pd.DataFrame(data=normalize(X, axis=0), columns=X.columns, index=X.index)
-
-
     X_centered = X.sub(X.mean(1), axis='index')
 
     U, s, V = np.linalg.svd(X_centered)
@@ -61,26 +55,10 @@ def pcaplot(X, metadata=None, col_data=None):
     sumvariance = np.cumsum(eigen)
     sumvariance /= sumvariance[-1]
 
-    # X_scaled = StandardScaler(with_mean=True, with_std=True).fit_transform(X.T).T
-
-    # X_scaled = StandardScaler(with_mean=True, with_std=True).fit_transform(X_normed.T).T
-
-    # pca = PCA(n_components=min(100, len(X))).fit(X.T)
-    # pca = PCA(n_components=min(100, len(X))).fit(X_scaled.T)
-
-    # pca = TruncatedSVD(min(100, len(X))).fit(X.T)
-    # pca = TruncatedSVD(min(100, len(X))).fit(X_scaled.T)
-
-    # pca = PCA().fit(X)
-
-    # components_ is array of [n_components, n_features]
-    # components = pd.DataFrame(data=pca.components_[:, 0:8], columns=col_data.index)
-    # var1, var2, *rest = pca.explained_variance_ratio_
-
     # no current support for multiple multiplexed samples
+    components = pd.DataFrame(data=V, columns=X.columns)  # should be same as col_data.index except removal of (any) experiments  with no data
     try:
         # components = pd.DataFrame(data=V, columns=col_data.index)
-        components = pd.DataFrame(data=V, columns=X.columns)  # should be same as col_data.index except removal of (any) experiments  with no data
         df = col_data.join(components.T)
     except ValueError:
         components = pd.DataFrame(data=V, columns=col_data.columns)
@@ -90,7 +68,8 @@ def pcaplot(X, metadata=None, col_data=None):
         # df = col_data.T.join(components.T)
         pca_params = dict(color = 'color')
 
-    var1, var2, *rest = [x/s.sum() for x in s]
+    # var1, var2, *rest = [x/s.sum() for x in s]
+    var1, var2, *rest = s**2 / (s**2).sum()
 
 
     if pca_params is not None and 'color' in pca_params:
