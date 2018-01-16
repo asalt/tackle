@@ -15,7 +15,10 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_correlation=True, outname='name'):
+def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False, shade_correlation=True, outname='name'):
+
+    if mask is None:
+
 
     try:
         from rpy2.robjects import r
@@ -31,7 +34,6 @@ def scatterplot(ibaqs_log_shifted, stat='pearson', colors_only=False, shade_corr
         r_source = robjects.r['source']
         r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
                               'R', 'scatter.R')
-        print(r_file)
         r_source(r_file)
         grdevices = importr('grDevices')
         Rscatterplot = robjects.r['scattermat']

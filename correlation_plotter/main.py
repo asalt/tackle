@@ -143,7 +143,7 @@ def validate_seed(ctx, param, value):
     else:
         raise click.BadParameter('Must be an integer or `None`')
 
-def validate_configfile(experiment_file, nonzero_subgroup=None):
+def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None):
     config = read_config(experiment_file)
     config = copy.deepcopy(config)  # because we're about to change it
 
@@ -205,25 +205,27 @@ def validate_configfile(experiment_file, nonzero_subgroup=None):
             but is observed {} time(s).
             """.format(control, label, len(groups), counter))
 
-    if nonzero_subgroup is None:
-        return
+    def check_group(name):
+        count = 0
+        for k, v in config.items():
+            if k in dunder_fields:
+                continue
+            ret = v.get(nonzero_subgroup)
+            if ret is not None:
+                count += 1
 
-    count = 0
-    for k, v in config.items():
-        if k in dunder_fields:
-            continue
-        ret = v.get(nonzero_subgroup)
-        if ret is not None:
-            count += 1
-
-    if count == 0:
-        raise click.BadParameter("""{} is specified for nonzero subgroups but
-        is not annotated in the config file""".format(nonzero_subgroup))
-    if count < config_len:
-        raise click.BadParameter("""{} is specified for nonzero subgroups but
-        is not annotated for all experiments in the config file ({} / {})""".format(nonzero_subgroup,
-                                                                                    count, config_len
-        ))
+        if count == 0:
+            raise click.BadParameter("""{} is specified for nonzero subgroups but
+            is not annotated in the config file""".format(nonzero_subgroup))
+        if count < config_len:
+            raise click.BadParameter("""{} is specified for nonzero subgroups but
+            is not annotated for all experiments in the config file ({} / {})""".format(nonzero_subgroup,
+                                                                                        count, config_len
+            ))
+    if nonzero_subgroup is not None:
+        check_group(nonzero_subgroup)
+    if batch is not None:
+        check_group(batch)
 
     return
 
@@ -231,6 +233,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None):
 @click.group(chain=True)
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
+@click.option('--batch', type=str, default=None, help='Metadata entry to group experiments for batch correction via ComBat (Requires rpy2, R, and sva installations)')
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
@@ -259,7 +262,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, data_dir, file_format, funcats, geneids, ifot, ifot_ki, ifot_tf,
+def main(ctx, additional_info, batch, data_dir, file_format, funcats, geneids, ifot, ifot_ki, ifot_tf,
          name, taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
     """
@@ -269,7 +272,7 @@ def main(ctx, additional_info, data_dir, file_format, funcats, geneids, ifot, if
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI` and `iFOT-TF`')
 
     # validate_subgroup(nonzero_subgroup, experiment_file)
-    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup)
+    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch)
 
 
     if not os.path.exists(data_dir):
@@ -290,7 +293,7 @@ def main(ctx, additional_info, data_dir, file_format, funcats, geneids, ifot, if
     context = click.get_current_context()
     params = context.params
 
-    data_obj = Data(additional_info=additional_info, data_dir=data_dir, funcats=funcats,
+    data_obj = Data(additional_info=additional_info, batch=batch, data_dir=data_dir, funcats=funcats,
                     geneids=geneids, ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name,
                     non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
                     experiment_file=experiment_file)
@@ -314,10 +317,15 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     data_obj = ctx.obj['data_obj']
     file_fmts = ctx.obj['file_fmts']
 
+    _ = data_obj.areas_log_shifted
     outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=colors_only,
+                          batch=data_obj.batch_applied,
                           outpath=data_obj.outpath)
-    g = scatterplot(data_obj.areas_log_shifted, stat=stat,
+
+    X = data_obj.areas_log_shifted.copy()
+    X[data_obj.mask] = np.NaN
+    g = scatterplot(X, stat=stat,
                     colors_only=colors_only, shade_correlation=shade_correlation,
                     outname=outname+file_fmts[0])
     if g is None: # plotted and saved via R
@@ -405,7 +413,7 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
     missing_values = 'masked' if show_missing_values else 'unmasked'
     outname_func = partial(get_outname, name=data_obj.outpath_name,
                            taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                           outpath=data_obj.outpath, missing_values=missing_values)
+                           outpath=data_obj.outpath, missing_values=missing_values, batch=data_obj.batch_applied)
 
     kmeans_res = result.get('kmeans')
     dbscan_res = result.get('dbscan')
@@ -465,7 +473,7 @@ def pca(ctx):
 
     fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
     outname = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                            non_zeros=data_obj.non_zeros,
+                            non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
                             colors_only=data_obj.colors_only, outpath=data_obj.outpath,
     )
     file_fmts = ctx.obj['file_fmts']

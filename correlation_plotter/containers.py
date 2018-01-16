@@ -36,7 +36,7 @@ def join_and_create_path(*strings, verbose=True):
 
 class Data:
 
-    def __init__(self, additional_info=None, col_cluster=True,
+    def __init__(self, additional_info=None, batch=None, col_cluster=True,
                  colors_only=False, data_dir='./data',
                  base_dir='./results',
                  experiment_file=None, funcats=None,
@@ -62,6 +62,7 @@ class Data:
             raise ValueError('Must specify valid experiment_file')
 
         self.additional_info   = additional_info
+        self.batch             = batch
         self.col_cluster       = col_cluster
         self.colors_only       = colors_only
         self.data_dir          = data_dir
@@ -90,6 +91,7 @@ class Data:
         self.analysis_name     = None
 
         self.normed            = False
+        self.batch_applied     = None  # set to the batch (only) upon successful batch correction
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -149,6 +151,12 @@ class Data:
         if self._mask is None:
             self.set_area_dfs()
         return self._mask
+
+    @property
+    def zeros(self):
+        if self._zeros is None:
+            self.set_area_dfs()
+        return self._zeros
 
 
     @staticmethod
@@ -376,6 +384,7 @@ class Data:
 
 
         self._mask = self._areas.applymap(np.isnan)
+        self._zeros = self._areas == 0
         if len(self.areas) == 0:
             raise ValueError('No data')
 
@@ -400,6 +409,37 @@ class Data:
         shift_val = np.ceil(np.abs(minval))
 
         self._areas_log_shifted = self._areas_log + shift_val
+        if self.batch:
+            # try batch normalization via ComBat
+
+            try:
+                from rpy2.rinterface import RRuntimeError
+            except Exception as e:
+                RRuntimeError = type('RRuntimeError', (Exception,), {})
+            try:
+                from rpy2.robjects import r
+                from rpy2.robjects.packages import importr
+                sva = importr('sva')
+            except ModuleNotFoundError as e:
+                print('Failure in rpy2 import and load', e, sep='\n')
+            except RRuntimeError as e:
+                print('sva is not installed', e, sep='\n')
+
+            from rpy2.robjects import pandas2ri
+            pandas2ri.activate()
+
+            pheno = self.col_metadata.T
+            r.assign('pheno', pheno)
+            mod = r('model.matrix(~1, pheno)')
+            # r.assign('batch', 'pheno${}'.format(self.batch))
+            batch = pheno[self.batch]
+            res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
+                             mod=mod, par_prior=True, mean_only=False)
+            self._areas_log_shifted = pandas2ri.converter.ri2py(res)
+            self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
+            self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
+            self.batch_applied = self.batch
+
 
     def make_plot(self, pltname):
         if 'all' in self.plots:
