@@ -1,9 +1,9 @@
 library(graphics)
 
 #' adapted from PerformanceAnalytics::chart.Correlation
-scattermat <- function (x, histogram = FALSE, interactive=TRUE,
-                        method = c("pearson", "kendall",
-                                                         "spearman"), ...)
+scattermat <- function(x, histogram = FALSE, interactive=TRUE,
+                       method = c("pearson", "kendall",
+                                  "spearman"), ...)
 {
 
   nrows <- dim(x)[2]
@@ -62,7 +62,8 @@ scattermat <- function (x, histogram = FALSE, interactive=TRUE,
             diag.panel = hist.panel, method = method, pch=16, col='#22222288',
             ## cex.labels = colnames(x),
             ...)
-  else pairs(x, gap = 0, lower.panel = panel.smooth, upper.panel = panel.cor,
+  ## else pairs(x, gap = 0, lower.panel = panel.smooth, upper.panel = panel.cor,
+  else pairs(x, gap = 0, smooth = FALSE, upper.panel = panel.cor,
               method = method, pch=16, col='#22222288',
               ## cex.labels = colnames(x),
               ...)

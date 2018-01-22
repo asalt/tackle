@@ -15,10 +15,9 @@ rc = {'font.family': 'serif',
 sb.set_context('paper')
 sb.set_style('white', rc)
 
-def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False, shade_correlation=True, outname='name'):
-
-    if mask is None:
-
+def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False, shade_correlation=True, outname='name',
+                file_fmts=None,
+):
 
     try:
         from rpy2.robjects import r
@@ -39,15 +38,27 @@ def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False,
         Rscatterplot = robjects.r['scattermat']
 
         plt_size = ibaqs_log_shifted.shape[1] * .75
+        if file_fmts is None:
+            file_fmts = ('.png',)
+        gr_devices = {'.png': grdevices.png,
+                      '.pdf': grdevices.pdf,
+                      '.svg': grdevices.svg}
+        gr_kws = {'.png': dict(width=plt_size, height=plt_size, units='in', res=300),
+                  '.pdf': dict(width=plt_size, height=plt_size,),
+                  '.svg': dict(width=plt_size, height=plt_size,)
+        }
+        for file_fmt in file_fmts:
 
-        print("Saving", outname, '...', end='', flush=True)
-        grdevices.png(file=outname, width=plt_size, height=plt_size,
-                      units='in', res=300)
-        Rscatterplot(ibaqs_log_shifted.replace(0, np.NaN), method=stat,
-                     interactive=False
-        )
-        grdevices.dev_off()
-        print('done.', flush=True)
+            out = outname + file_fmt
+            grdevice = gr_devices[file_fmt]
+            gr_kw = gr_kws[file_fmt]
+            print("Saving", out, '...', end='', flush=True)
+            grdevice(file=out, **gr_kw)
+            Rscatterplot(ibaqs_log_shifted, method=stat,
+                        interactive=False
+            )
+            grdevices.dev_off()
+            print('done.', flush=True)
 
         return None
 

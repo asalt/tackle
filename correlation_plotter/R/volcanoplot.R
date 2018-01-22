@@ -1,0 +1,75 @@
+# Load packages
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(ggthemes))
+suppressMessages(library(ggrepel))
+
+## library(ggplot2)
+library(graphics)
+
+# Install ggrepel package if needed
+# install.packages("ggrepel")
+
+makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
+                        size = .7, color = grey(.5))
+{
+  suppressMessages(
+    require(grid)
+  )
+  pushViewport(viewport())
+  grid.text(label = footnoteText ,
+            x = unit(1,"npc") - unit(2, "mm"),
+            y = unit(2, "mm"),
+            just = c("right", "bottom"),
+            gp = gpar(cex = size, col = color))
+  popViewport()
+}
+
+volcanoplot <- function(X, max_labels = 35,
+                        pch = 16, cex = 0.35,
+                        ...){
+
+
+
+  X <- mutate(X, Sig = ifelse(X$qValue < 0.05 & abs(X[, 'log2_Fold_Change']) > 2, "FDR<0.05", "N.S."))
+  ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
+
+  qvalues <- X[, 'qValue']
+  stretch <- min( qvalues[ qvalues > 0 ] ) / 2
+  X[, 'qValue'] <- X[, 'qValue'] + stretch
+  pvalues <- X[, 'pValue']
+  stretch <- min( pvalues[ pvalues > 0 ] ) / 2
+  X[, 'pValue'] <- X[, 'pValue'] + stretch
+
+  to_label <- head(order( abs(X[, 'log2_Fold_Change']), X[, 'qValue'], decreasing = c(TRUE, FALSE) ),
+                   max_labels
+                   )
+
+  X[, 'label'] <- FALSE  # new column
+  X[to_label, 'label'] <- TRUE  # label these
+  X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
+
+  ymax <- max(-log10(X[, 'pValue'])) * 1.05
+
+  p = ggplot(X, aes(log2_Fold_Change, -log10(pValue))) +
+    theme_base() +
+    geom_point(aes(col = Sig), size = 1, cex = cex, show.legend = FALSE) +
+    scale_color_manual(values = c("red", "black")) +
+    geom_text_repel(data = filter( X, qValue < 0.05 & label == TRUE ),
+                    aes(label = GeneSymbol), cex = 1, min.segment.length = .05,
+                    point.padding = 1e-6,
+                    box.padding = .1,
+                    segment.size = .35, segment.alpha = .4
+                    ) +
+    labs(x = expression(paste('log'[2], ' Fold Change')), y = expression(paste('-log'[10], ' pValue'))) +
+    ylim(0, ymax)
+
+  print(p)
+  ratio_sig <- paste0( dim( filter(X, Sig == 'FDR<0.05') )[1], '/', dim(X)[1] )
+
+  footnote <- paste( ratio_sig, 'sig. with 4 F.C.' )
+  write(footnote, stdout())
+  makeFootnote( footnote, size = .5 )
+
+
+}

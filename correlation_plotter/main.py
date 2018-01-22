@@ -143,7 +143,7 @@ def validate_seed(ctx, param, value):
     else:
         raise click.BadParameter('Must be an integer or `None`')
 
-def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None):
+def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, group=None):
     config = read_config(experiment_file)
     config = copy.deepcopy(config)  # because we're about to change it
 
@@ -205,27 +205,30 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None):
             but is observed {} time(s).
             """.format(control, label, len(groups), counter))
 
-    def check_group(name):
+    def check_group(name, name_str):
         count = 0
         for k, v in config.items():
             if k in dunder_fields:
                 continue
-            ret = v.get(nonzero_subgroup)
+            ret = v.get(name)
             if ret is not None:
                 count += 1
 
         if count == 0:
-            raise click.BadParameter("""{} is specified for nonzero subgroups but
-            is not annotated in the config file""".format(nonzero_subgroup))
+            raise click.BadParameter("""{} is specified for {} but
+            is not annotated in the config file""".format(name, name_str))
         if count < config_len:
-            raise click.BadParameter("""{} is specified for nonzero subgroups but
-            is not annotated for all experiments in the config file ({} / {})""".format(nonzero_subgroup,
+            raise click.BadParameter("""{} is specified for {} but
+            is not annotated for all experiments in the config file ({} / {})""".format(name, name_str,
                                                                                         count, config_len
             ))
+
     if nonzero_subgroup is not None:
-        check_group(nonzero_subgroup)
+        check_group(nonzero_subgroup, 'nonzero_subgroup')
     if batch is not None:
-        check_group(batch)
+        check_group(batch, 'batch')
+    if group is not None:
+        check_group(group, 'group')
 
     return
 
@@ -234,6 +237,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None):
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
 @click.option('--batch', type=str, default=None, help='Metadata entry to group experiments for batch correction via ComBat (Requires rpy2, R, and sva installations)')
+@click.option('--batch-nonparametric', is_flag=True, default=False, help='Use nonparametric method for batch correction with ComBat (only used if --batch is also specified)')
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
@@ -246,6 +250,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None):
               default=None, show_default=True,
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
+@click.option('--group', type=str, default=None, help='Metadata entry to calculate p-values for differential across (Requires rpy2, R, and sva installations)')
 @click.option('--iFOT', default=False, show_default=True, is_flag=True,
               help="""Calculate iFOT (divide by total input per experiment)""")
 @click.option('--iFOT-KI', default=False, show_default=True, is_flag=True,
@@ -262,8 +267,8 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, data_dir, file_format, funcats, geneids, ifot, ifot_ki, ifot_tf,
-         name, taxon, non_zeros, nonzero_subgroup, experiment_file):
+def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format, funcats, geneids,
+         group, ifot, ifot_ki, ifot_tf, name, taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
     """
          # name, taxon, non_zeros, experiment_file):
@@ -272,7 +277,7 @@ def main(ctx, additional_info, batch, data_dir, file_format, funcats, geneids, i
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI` and `iFOT-TF`')
 
     # validate_subgroup(nonzero_subgroup, experiment_file)
-    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch)
+    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group)
 
 
     if not os.path.exists(data_dir):
@@ -293,10 +298,11 @@ def main(ctx, additional_info, batch, data_dir, file_format, funcats, geneids, i
     context = click.get_current_context()
     params = context.params
 
-    data_obj = Data(additional_info=additional_info, batch=batch, data_dir=data_dir, funcats=funcats,
-                    geneids=geneids, ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name,
-                    non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
-                    experiment_file=experiment_file)
+    data_obj = Data(additional_info=additional_info, batch=batch, batch_nonparametric=batch_nonparametric,
+                    data_dir=data_dir,
+                    funcats=funcats, geneids=geneids, group=group, ifot=ifot, ifot_ki=ifot_ki,
+                    ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
+                    nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file)
 
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
@@ -321,13 +327,18 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     outname = get_outname('scatter', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=colors_only,
                           batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                           outpath=data_obj.outpath)
 
     X = data_obj.areas_log_shifted.copy()
-    X[data_obj.mask] = np.NaN
-    g = scatterplot(X, stat=stat,
+    to_mask = (data_obj.mask | (data_obj.areas_log==-10))
+    X[to_mask] = np.NaN
+    g = scatterplot(X.replace(0, np.NaN), stat=stat,
                     colors_only=colors_only, shade_correlation=shade_correlation,
-                    outname=outname+file_fmts[0])
+                    Outname=outname,
+                    file_fmts=file_fmts,
+                    mask=data_obj.mask
+    )
     if g is None: # plotted and saved via R
         return
 
@@ -357,6 +368,11 @@ def export(ctx, level):
               default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
               Should have 1 geneid per line. """)
+@click.option('--linkage', type=click.Choice(['single', 'complete', 'average', 'weighted', 'centroid',
+                                              'median', 'ward']),
+              default='ward', show_default=True,
+              help='linkage method for hierarchical clustering'
+)
 @click.option('--max-autoclusters', default=30, show_default=True, help="""Max number of clusters to try
 when `auto` is set for `--nclusters`""")
 @click.option('--nclusters', default=None, callback=validate_cluster_number, show_default=True,
@@ -377,7 +393,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, max_autoclusters,
+def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, linkage, max_autoclusters,
             nclusters, row_cluster, seed, show_metadata, standard_scale, show_missing_values,
             z_score):
 
@@ -406,6 +422,7 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
                          mask=data_obj.mask,
                          figsize=figsize,
                          normed=data_obj.normed,
+                         linkage=linkage
     )
 
     g = result['clustermap']['clustergrid']
@@ -413,7 +430,9 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
     missing_values = 'masked' if show_missing_values else 'unmasked'
     outname_func = partial(get_outname, name=data_obj.outpath_name,
                            taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                           outpath=data_obj.outpath, missing_values=missing_values, batch=data_obj.batch_applied)
+                           batch=data_obj.batch_applied,
+                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                           outpath=data_obj.outpath, missing_values=missing_values)
 
     kmeans_res = result.get('kmeans')
     dbscan_res = result.get('dbscan')
@@ -473,12 +492,119 @@ def pca(ctx):
 
     fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
     outname = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                            non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
-                            colors_only=data_obj.colors_only, outpath=data_obj.outpath,
+                          non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          colors_only=data_obj.colors_only, outpath=data_obj.outpath,
     )
     file_fmts = ctx.obj['file_fmts']
     save_multiple(fig, outname, *file_fmts)
 
+@main.command('volcano')
+@click.option('-n', '--number', type=int, default=35, show_default=True,
+              help='Maximum number of significant genes to highlight (annotate) in plot'
+)
+@click.pass_context
+def volcano(ctx, number):
+    """
+    Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
+    """
+
+    data_obj = ctx.obj['data_obj']
+
+    group = data_obj.group #
+    if group is None:
+        print('Must supply a group value.')
+        return
+
+    if data_obj.col_metadata.loc[group].nunique() != 2:
+        print('Error in volcanoplot, number of groups must be exactly 2.')
+        return
+    if data_obj.col_metadata.loc[group].value_counts().min() < 3:
+        print('Each group must have at least 3 replicates.')
+        return
+
+    groups = dict()
+    for grp in data_obj.col_metadata.loc[group].unique():
+        samples = ((data_obj.col_metadata.loc[group] == grp)
+                   .where(lambda x: x)
+                   .dropna()
+                   .index
+        )
+        groups[grp] = samples
+
+    group0, group1 = data_obj.col_metadata.loc[group].values[[0, -1]]
+    samples0, samples1 = groups[group0], groups[group1]
+
+
+    values = data_obj.areas_log_shifted
+
+    qvals   = data_obj.qvalues
+
+    log2_fc = ((values[samples1].mean(1) - values[samples0].mean(1))
+               .apply(lambda x: np.power(10, x))
+               # .pipe(np.power, 10)
+               .pipe(np.log2)
+    )
+    log2_fc.name = 'log2_Fold_Change'
+
+    df = qvals.join(log2_fc.to_frame())
+    df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+    df.index.name = 'GeneID'
+
+    outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          outpath=data_obj.outpath)
+
+    out = outname + '.tab'
+    print("Saving", out, '...', end='', flush=True)
+    df.to_csv(out, sep='\t')
+    print('done', flush=True)
+
+    try:
+        from rpy2.robjects import r
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+        _viaR = True
+    except ModuleNotFoundError:
+        _viaR = False
+
+    if _viaR:
+
+        pandas2ri.activate()
+        r_source = robjects.r['source']
+        r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                              'R', 'volcanoplot.R')
+        r_source(r_file)
+        Rvolcanoplot = robjects.r['volcanoplot']
+
+        file_fmts = ctx.obj['file_fmts']
+        grdevices = importr('grDevices')
+        gr_devices = {'.png': grdevices.png,
+                      '.pdf': grdevices.pdf,
+                      '.svg': grdevices.svg}
+        gr_kws = {'.png': dict(width=5, height=5, units='in', res=300),
+                  '.pdf': dict(width=5, height=5,),
+                  '.svg': dict(width=5, height=5,)
+        }
+        for file_fmt in file_fmts:
+
+            grdevice = gr_devices[file_fmt]
+            gr_kw = gr_kws[file_fmt]
+            out = outname + file_fmt
+            print("Saving", out, '...', end='', flush=True)
+
+            grdevice(file=out, **gr_kw)
+
+            Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number)
+
+            grdevices.dev_off()
+            print('done.', flush=True)
+
+    else:
+        print('Must install rpy2')
 
 
 # @click.command()

@@ -36,11 +36,14 @@ def join_and_create_path(*strings, verbose=True):
 
 class Data:
 
-    def __init__(self, additional_info=None, batch=None, col_cluster=True,
+    def __init__(self, additional_info=None, batch=None,
+                 batch_nonparametric=False,
+                 col_cluster=True,
                  colors_only=False, data_dir='./data',
                  base_dir='./results',
                  experiment_file=None, funcats=None,
                  gene_symbols=False, geneids=None,
+                 group=None,
                  highlight_geneids=None,
                  name=None, non_zeros=0,
                  nonzero_subgroup=None,
@@ -61,37 +64,39 @@ class Data:
         if experiment_file is None:
             raise ValueError('Must specify valid experiment_file')
 
-        self.additional_info   = additional_info
-        self.batch             = batch
-        self.col_cluster       = col_cluster
-        self.colors_only       = colors_only
-        self.data_dir          = data_dir
-        self.experiment_file   = experiment_file
-        self.funcats           = funcats
-        self.gene_symbols      = gene_symbols
-        self.geneids           = geneids
-        self.highlight_geneids = highlight_geneids
-        self.non_zeros         = non_zeros
-        self.nonzero_subgroup  = nonzero_subgroup
-        self.plots             = plots
-        self.row_cluster       = row_cluster
-        self.shade_correlation = shade_correlation
-        self.show_metadata     = show_metadata
-        self.stat              = stat
-        self.taxon             = taxon
-        self.standard_scale    = self.clean_input(standard_scale)
-        self.z_score           = self.clean_input(z_score)
-        self.export_data       = None if export_data == 'None' else export_data
-        self.ifot              = ifot
-        self.ifot_ki           = ifot_ki
-        self.ifot_tf           = ifot_tf
-        self.base_dir          = base_dir
+        self.additional_info     = additional_info
+        self.batch               = batch
+        self.batch_nonparametric = batch_nonparametric
+        self.col_cluster         = col_cluster
+        self.colors_only         = colors_only
+        self.data_dir            = data_dir
+        self.experiment_file     = experiment_file
+        self.funcats             = funcats
+        self.gene_symbols        = gene_symbols
+        self.geneids             = geneids
+        self.group               = group
+        self.highlight_geneids   = highlight_geneids
+        self.non_zeros           = non_zeros
+        self.nonzero_subgroup    = nonzero_subgroup
+        self.plots               = plots
+        self.row_cluster         = row_cluster
+        self.shade_correlation   = shade_correlation
+        self.show_metadata       = show_metadata
+        self.stat                = stat
+        self.taxon               = taxon
+        self.standard_scale      = self.clean_input(standard_scale)
+        self.z_score             = self.clean_input(z_score)
+        self.export_data         = None if export_data == 'None' else export_data
+        self.ifot                = ifot
+        self.ifot_ki             = ifot_ki
+        self.ifot_tf             = ifot_tf
+        self.base_dir            = base_dir
 
-        self.outpath           = None
-        self.analysis_name     = None
+        self.outpath             = None
+        self.analysis_name       = None
 
-        self.normed            = False
-        self.batch_applied     = None  # set to the batch (only) upon successful batch correction
+        self.normed              = False
+        self.batch_applied       = None  # set to the batch (only) upon successful batch correction
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -126,6 +131,7 @@ class Data:
         # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
         self._areas, self._areas_log, self._areas_log_shifted = (None, ) * 3
 
+        self._qvalues = None
         # self.perform_data_export()
 
     @property
@@ -157,6 +163,12 @@ class Data:
         if self._zeros is None:
             self.set_area_dfs()
         return self._zeros
+
+    @property
+    def qvalues(self):
+        if self._qvalues is None:
+            self.calc_qvals()
+        return self._qvalues
 
 
     @staticmethod
@@ -409,37 +421,124 @@ class Data:
         shift_val = np.ceil(np.abs(minval))
 
         self._areas_log_shifted = self._areas_log + shift_val
-        if self.batch:
+
+        if self.batch is not None:
             # try batch normalization via ComBat
+            self.batch_normalize()
 
-            try:
-                from rpy2.rinterface import RRuntimeError
-            except Exception as e:
-                RRuntimeError = type('RRuntimeError', (Exception,), {})
-            try:
-                from rpy2.robjects import r
-                from rpy2.robjects.packages import importr
-                sva = importr('sva')
-            except ModuleNotFoundError as e:
-                print('Failure in rpy2 import and load', e, sep='\n')
-            except RRuntimeError as e:
-                print('sva is not installed', e, sep='\n')
 
-            from rpy2.robjects import pandas2ri
-            pandas2ri.activate()
+        # if self.group is not None:
+        #     self.calc_qvals()
 
-            pheno = self.col_metadata.T
-            r.assign('pheno', pheno)
+
+    def batch_normalize(self):
+
+        try:
+            from rpy2.rinterface import RRuntimeError
+        except Exception as e:
+            RRuntimeError = type('RRuntimeError', (Exception,), {})
+        try:
+            from rpy2.robjects import r
+            from rpy2.robjects.packages import importr
+            sva = importr('sva')
+        except ModuleNotFoundError as e:
+            print('Failure in rpy2 import and load', e, sep='\n')
+            return
+        except RRuntimeError as e:
+            print('sva is not installed', e, sep='\n')
+            return
+
+        from rpy2.robjects import pandas2ri
+        pandas2ri.activate()
+        grdevices = importr('grDevices')
+
+        pheno = self.col_metadata.T
+        r.assign('pheno', pheno)
+
+        if self.group is not None:
+            r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.group))
+            mod = r['mod']
+            self.batch_applied = self.batch + '_Cov_{}'.format(self.group)
+        else:
             mod = r('model.matrix(~1, pheno)')
-            # r.assign('batch', 'pheno${}'.format(self.batch))
-            batch = pheno[self.batch]
-            res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
-                             mod=mod, par_prior=True, mean_only=False)
-            self._areas_log_shifted = pandas2ri.converter.ri2py(res)
-            self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
-            self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
-            self.batch_applied = self.batch
+            self.batch_applied = self.batch + '_noCov'
+        # r.assign('batch', 'pheno${}'.format(self.batch))
+        batch = pheno[self.batch]
+        # res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
+        #                  mod=mod, par_prior=True, mean_only=False)
 
+        if not self.batch_nonparametric:
+            plot_prior = True
+            outname = get_outname('Combat_prior_plots', name=self.outpath_name, taxon=self.taxon,
+                                  non_zeros=self.non_zeros, colors_only=self.colors_only,
+                                  batch=self.batch_applied,
+                                  batch_method = 'parametric' if not self.batch_nonparametric else 'nonparametric',
+            outpath=self.outpath)
+            grdevices.png(file=outname+'.png', width=5, height=5, units='in', res=300)
+        else:
+            plot_prior = False
+
+        res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
+                         mod=mod, par_prior=not self.batch_nonparametric, mean_only=False, prior_plots=plot_prior)
+
+        if plot_prior:
+            grdevices.dev_off()
+
+        df = pandas2ri.ri2py(res)
+        nas = sum(df.isnull().any(1))
+        if nas > 0:
+            print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
+
+        self._areas_log_shifted = df.dropna(how='any')
+        self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
+        self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
+
+    def calc_qvals(self):
+        try:
+            from rpy2.rinterface import RRuntimeError
+        except Exception as e:
+            RRuntimeError = type('RRuntimeError', (Exception,), {})
+        try:
+            from rpy2.robjects import r
+            from rpy2.robjects.packages import importr
+            sva = importr('sva')
+        except ModuleNotFoundError as e:
+            print('Failure in rpy2 import and load', e, sep='\n')
+            return
+        except RRuntimeError as e:
+            print('sva is not installed', e, sep='\n')
+            return
+        from rpy2.robjects import pandas2ri
+        pandas2ri.activate()
+        r_source = r['source']
+        r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                              'R', 'pvalue_batch.R')
+        r_source(r_file)
+
+        pheno = self.col_metadata.T
+        r.assign('pheno', pheno)
+        r('mod0 <- model.matrix(~1, pheno)')
+        r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.group))
+        r.assign('edata', self.areas_log_shifted.fillna(0))
+        if self.batch is not None:
+            r.assign('nbatch', pheno[self.batch].nunique())
+        else:
+            r.assign('nbatch', 0)
+
+        pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, nbatch)')
+        # pvalues = r('f.pvalue(as.matrix(edata), mod, mod0)')
+
+        p_adjust = r['p.adjust']
+
+        # pvalues = f_pvalue(self.areas_log_shifted.fillna(0), mod, mod0)
+        qvalues = p_adjust(pvalues, method='BH')
+        qvalues = pd.DataFrame(index=self.areas_log_shifted.index,
+                               data=np.array([pvalues, pandas2ri.ri2py(qvalues)]).T,
+                               columns=['pValue', 'qValue']
+        ).sort_values(by='pValue')
+        # qvalues.name = 'q_value'
+
+        self._qvalues = qvalues
 
     def make_plot(self, pltname):
         if 'all' in self.plots:
@@ -452,10 +551,17 @@ class Data:
         # if self.export_data is None:
         #     return
 
-        fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
-                                                      self.outpath_name,
-                                                      self.non_zeros)
-        outname = os.path.abspath(os.path.join(self.outpath, fname))
+        # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
+        #                                               self.outpath_name,
+        #                                               self.non_zeros)
+
+        outname = get_outname('data_{}'.format(level), name=self.outpath_name, taxon=self.taxon,
+                              non_zeros=self.non_zeros, colors_only=self.colors_only,
+                              batch=self.batch_applied,
+                              batch_method = 'parametric' if not self.batch_nonparametric else 'nonparametric',
+                              outpath=self.outpath) + '.tab'
+
+        # outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
         if level == 'all':
             self.df_filtered.to_csv(outname, sep='\t')

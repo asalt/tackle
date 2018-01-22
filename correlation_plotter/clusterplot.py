@@ -144,7 +144,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
-                normed=False):
+                normed=False, linkage='average'):
     """
     :nclusters: None, 'auto', or positive integer
 
@@ -360,7 +360,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                             heatmap_width_ratio=heatmap_width_ratio
     )
 
-    g = plotter.plot(method='ward', metric='euclidean',
+    g = plotter.plot(method=linkage, metric='euclidean',
                      row_cluster=row_cluster, col_cluster=col_cluster,
                      row_linkage=None, col_linkage=None,
                      colorbar_kws=None,
