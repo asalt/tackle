@@ -17,6 +17,7 @@ from scipy import stats
 
 import matplotlib
 matplotlib.use('Agg')
+from matplotlib import gridspec
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
 import seaborn as sb
@@ -34,7 +35,7 @@ sb.set_style('white', rc)
 sb.set_palette('muted')
 sb.set_color_codes()
 
-__version__ = '0.38'
+__version__ = '0.39'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -259,6 +260,9 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
               help='Calculate iFOT based on transcription factors')
 @click.option('-n', '--name', type=str, default='',
               help='An optional name for the analysis that will place all results in a subfolder.')
+@click.option('--result-dir', type=click.Path(exists=False, file_okay=False),
+              default='./results', show_default=True,
+              help='Base directory to store results. Will be created if does not exist.')
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
               default='all', show_default=True)
 @click.option('--non-zeros', default=0, show_default=True,
@@ -268,7 +272,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format, funcats, geneids,
-         group, ifot, ifot_ki, ifot_tf, name, taxon, non_zeros, nonzero_subgroup, experiment_file):
+         group, ifot, ifot_ki, ifot_tf, name, result_dir, taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
     """
          # name, taxon, non_zeros, experiment_file):
@@ -279,9 +283,17 @@ def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format
     # validate_subgroup(nonzero_subgroup, experiment_file)
     validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group)
 
+    metrics, metrics_after_filter = False, False
+    if 'metrics' in sys.argv:  #know this ahead of time, accumulate metrics during data load
+        metrics = True
+        if '--after-filter' in sys.argv:
+            metrics_after_filter = True #
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
+
+    if not os.path.exists(result_dir):
+        os.mkdir(result_dir)
 
     if ctx.obj is None:
         ctx.obj = dict()
@@ -299,10 +311,12 @@ def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format
     params = context.params
 
     data_obj = Data(additional_info=additional_info, batch=batch, batch_nonparametric=batch_nonparametric,
-                    data_dir=data_dir,
+                    data_dir=data_dir, base_dir=result_dir,
                     funcats=funcats, geneids=geneids, group=group, ifot=ifot, ifot_ki=ifot_ki,
                     ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
-                    nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file)
+                    nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file,
+                    metrics=metrics, metrics_after_filter=metrics_after_filter
+    )
 
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
@@ -335,7 +349,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     X[to_mask] = np.NaN
     g = scatterplot(X.replace(0, np.NaN), stat=stat,
                     colors_only=colors_only, shade_correlation=shade_correlation,
-                    Outname=outname,
+                    outname=outname,
                     file_fmts=file_fmts,
                     mask=data_obj.mask
     )
@@ -499,6 +513,167 @@ def pca(ctx):
     file_fmts = ctx.obj['file_fmts']
     save_multiple(fig, outname, *file_fmts)
 
+@main.command('metrics')
+@click.option('--full', is_flag=True, default=False,
+              help='Calculate more metrics, requires PSMs data'
+)
+@click.option('--before-filter/--after-filter', default=True, is_flag=True, show_default=True,
+              help="Whether or not to show metrics before or after filtering")
+@click.pass_context
+def metrics(ctx, full, before_filter):
+
+    rc = {'font.family': 'sans-serif',
+          "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
+                              "Bitstream Vera Sans", "sans-serif"],
+          'legend.frameon': True,
+    }
+
+    sb.set_context('notebook')
+    sb.set_palette('muted')
+    sb.set_color_codes()
+    sb.set_style('white', rc)
+
+    data_obj = ctx.obj['data_obj']
+    file_fmts = ctx.obj['file_fmts']
+
+    data = data_obj.metric_values
+
+    if before_filter:
+        kws = dict(before='filter')
+    else:
+        kws = dict(after='filter')
+
+    outname = get_outname('metrics', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          outpath=data_obj.outpath,
+                          **kws
+    )
+
+    sra = pd.DataFrame(data=[data[n]['SRA'] for n in data.keys()], index=data.keys())
+    gpg = pd.DataFrame(data=[data[n]['GPGroups'] for n in data.keys()], index=data.keys())
+    psms = pd.DataFrame(data=[data[n]['PSMs'] for n in data.keys()], index=data.keys())
+    peptides = pd.DataFrame(data=[data[n]['Peptides'] for n in data.keys()], index=data.keys())
+    area = OrderedDict((n, data[n]['Area']) for n in data.keys())
+
+    frames = list()
+    for name, value in area.items():
+        frame = pd.Series(value).to_frame('AreaSum_dstrAdj').multiply(1e9).apply(np.log10)
+        frame['Name'] = name
+        frames.append(frame)
+    area_df = pd.concat(frames)
+
+    # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
+
+    green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
+
+    # fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12,8), sharex=True, sharey=False)
+    fig = plt.figure(figsize=(18,10))
+    gs = gridspec.GridSpec(2,3)
+
+    ax_sra  = fig.add_subplot(gs[0, 0])
+    ax_gpg  = fig.add_subplot(gs[0, 1])
+    ax_psms = fig.add_subplot(gs[1, 0])
+    ax_pept = fig.add_subplot(gs[1, 1])
+    ax_area = fig.add_subplot(gs[0:, 2])
+
+    sra[['S', 'R', 'A']].plot.bar(stacked=True, ax=ax_sra, color=[green, yellow, red], title='SRA')
+    gpg.plot.bar(ax=ax_gpg, legend=False, title='Gene Product Groups')
+    psms[['Total', 'u2g']].plot.bar(stacked=False, ax=ax_psms, title='PSMs', width=.75)
+    peptides[['Total', 'u2g', 'Strict', 'Strict_u2g']].plot.bar(stacked=False, ax=ax_pept, title='Peptides',
+                                                                width=.8)
+    plt.setp(ax_sra.get_xticklabels(), visible=False)
+    plt.setp(ax_gpg.get_xticklabels(), visible=False)
+
+    sb.violinplot(y='Name', x='AreaSum_dstrAdj', data=area_df, ax=ax_area)
+    ax_area.yaxis.tick_right()
+    ax_area.set_ylabel('')
+    ax_area.set_xlabel('log$_{10}$ AreaSum dstrAdj')
+    # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=90 )
+    plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=0 )
+
+    FONTSIZE = 10
+    ncols = {0: 1, 2:2, 3:1}
+    for ix, ax in enumerate((ax_sra, ax_gpg, ax_psms, ax_pept,)):
+        ax.yaxis.grid(True, lw=.25, color='grey', ls=':')
+        for tick in ax.xaxis.get_ticklabels():
+            txt = tick.get_text()
+            newsize = FONTSIZE
+
+            if len(txt) > 7 and len(txt) <= 9:
+                newsize -= 1
+            if len(txt) >= 10 and len(txt) < 13:
+                newsize -= 1
+            elif len(txt) >= 13:
+                newsize -= 1
+            tick.set_size(newsize)
+        sb.despine(ax=ax)
+        if ix == 1:
+            continue  #  no legend for gpgroups
+        ax.legend(loc='best', ncol=ncols[ix])
+
+    sb.despine(ax=ax_area, right=False, top=True, left=True, bottom=False)
+    ax_area.xaxis.grid(True, lw=.25, color='grey', ls=':')
+
+    fig.subplots_adjust(hspace=.15, top=.95, left=.1, right=.9)
+    save_multiple(fig, outname, *file_fmts)
+
+    if full:  # also plot info from PSMs
+        return # not done
+        config = data_obj.config
+        data_dir = data_obj.data_dir
+
+        psms = OrderedDict()
+        for name, record in config.items():
+            if name.startswith('__'):
+                continue
+            recno = record.get('recno')
+            runno = record.get('runno')
+            searchno = record.get('searcno')
+            df = ispec.PSMs(recno, runno, searchno, data_dir=data_dir).df.query('oriFLAG==1')
+
+            df.index = pd.to_timedelta( df.RTmin, unit='m' )
+
+            psms[name] = df
+
+
+
+        nrows = len(psms)
+
+        m = max([ pd.Timedelta(df.RTmin.max(), unit='m') for df in psms.values() ])
+
+        fig = plt.figure(figsize=(12, 8))
+        gs = gridspec.GridSpec(nrows, 3, width_ratios=(3,1,3), left=.1, right=.9, bottom=.1, top=.9)
+        # plot IDs/min over time
+        prev_ax = None
+        for ix, (name, df) in enumerate(psms.items()):
+            if prev_ax:
+                # ax = fig.add_subplot(gs[ix, 0], sharex=prev_ax, sharey=prev_ax)
+                ax = fig.add_subplot(gs[ix, 0],  sharey=prev_ax)
+            else:
+                ax = fig.add_subplot(gs[ix, 0])
+            # df.index = pd.to_timedelta( df.RTmin, unit='m' )
+            df.loc[m] = np.NaN
+            g = df.groupby([ pd.Grouper(freq='Min'), ])
+            g.size().plot(ax=ax)
+            label_ax = fig.add_subplot(gs[ix, 1])
+            label_ax.annotate(name, xy=(0.5, 0.5), xycoords='axes fraction',
+                              va='center', ha='center', size=12
+            )
+            sb.despine(ax=label_ax, left=True, bottom=True)
+            plt.setp(label_ax.get_xticklabels(), visible=False)
+            plt.setp(label_ax.get_yticklabels(), visible=False)
+            ax.xaxis.grid(True, lw=.25, color='grey', ls=':')
+            if ix < nrows-1:
+                plt.setp(ax.get_xticklabels(), visible=False)
+                ax.set_xlabel('')
+            sb.despine(ax=ax)
+            prev_ax = ax
+
+
+
+
 @main.command('volcano')
 @click.option('-n', '--number', type=int, default=35, show_default=True,
               help='Maximum number of significant genes to highlight (annotate) in plot'
@@ -549,6 +724,7 @@ def volcano(ctx, number):
 
     df = qvals.join(log2_fc.to_frame())
     df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+    df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
     df.index.name = 'GeneID'
 
     outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
@@ -605,136 +781,6 @@ def volcano(ctx, number):
 
     else:
         print('Must install rpy2')
-
-
-# @click.command()
-# @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
-#               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
-# @click.option('--data-dir', type=click.Path(exists=True, file_okay=False),
-#               default='./data/', show_default=True,
-#               help='optional location to store and read e2g files')
-# @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
-#               help="Cluster columns")
-# @click.option('--export-data', type=click.Choice(['None', 'all', 'area']), default=None,
-#               help="""Export data table of the filtered list of gene products used for plotting""")
-# @click.option('--shade-correlation/--no-shade-correlation', default=True, is_flag=True,
-#               show_default=True, help="")
-# @click.option('--colors-only', default=False, is_flag=True, show_default=True,
-#               help="Only plot colors on correlationplot, no datapoints")
-# @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
-#               help="Show Gene Symbols on clustermap")
-# @click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
-#               default=None, show_default=True,
-#               help="""Optional list of geneids to subset by.
-#               Should have 1 geneid per line. """)
-# @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
-#               default=None, show_default=True, multiple=True,
-#               help="""Optional list of geneids to highlight by.
-#               Should have 1 geneid per line. """)
-# @click.option('--funcats', type=str, default=None, show_default=True,
-#               help="""Optional gene subset based on funcat or funcats,
-#               regular expression allowed. """)
-# @click.option('--iFOT', default=False, show_default=True, is_flag=True,
-#               help='Calculate iFOT (divide by total input per experiment)')
-# @click.option('--plots', type=click.Choice(['none', 'scatter', 'cluster', 'pca', 'all']), multiple=True,
-#               default=('all',), show_default=True)
-# @click.option('-n', '--name', type=str, default='',
-#               help='An optional name for the analysis that will place all results in a subfolder.')
-# @click.option('--non-non_zeros', default=0, show_default=True,
-#               help='Minimum number of non-non_zeros allowed across samples.')
-# @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
-#               help="Cluster rows")
-# @click.option('--stat', type=click.Choice(['pearson', 'spearman']),
-#               default='spearman', show_default=True)
-# @click.option('--standard-scale', type=click.Choice(['None', '0', '1']),
-#               default='None', show_default=True)
-# @click.option('--show-metadata', default=False, show_default=True,
-#               is_flag=True,
-#               help="""Show metadata on clustermap if present""")
-# @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
-#               default='all', show_default=True)
-# @click.option('--z-score', type=click.Choice(['None', '0', '1']),
-#               default='0', show_default=True)
-# @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
-# def main(additional_info, data_dir, colors_only, export_data, gene_symbols, geneids,
-#          highlight_geneids, funcats, ifot, stat, taxon, plots, name, non_zeros, experiment_file,
-#          col_cluster, row_cluster, standard_scale, show_metadata, shade_correlation, z_score):
-
-#     analysis_name = get_file_name(experiment_file)
-#     if analysis_name is None:
-#         print('Error parsing configfile name.')
-#         analysis_name = 'Unnamed'
-
-#     # OUTPATH = os.path.join('../figures/', analysis_name)
-#     # if not os.path.exists(OUTPATH):
-#     #     os.mkdir(OUTPATH)
-#     # if name:
-#     #     OUTPATH = os.path.join(OUTPATH, name)
-#     #     if not os.path.exists(OUTPATH):
-#     #         os.mkdir(OUTPATH)
-
-#     now = datetime.now()
-#     context = click.get_current_context()
-#     params = context.params
-
-#     data_obj = Data(**params)
-
-#     cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
-#     with open(os.path.join(data_obj.outpath, cf), 'w') as f:
-#         json.dump(params, f)
-
-
-#     fname, ext = os.path.splitext(experiment_file)
-
-#     geneid_subset=None
-#     if geneids:
-#         geneid_subset = parse_gid_file(geneids)
-#         if len(geneid_subset) == 0:
-#             print('Non geneids found in file {}'.format(geneids))
-
-#     highlight_gids = None
-#     highlight_gid_names = None
-#     if highlight_geneids:
-#         highlight_gids = list()
-#         highlight_gid_names = list()
-
-#         for ix, h_gid in enumerate(highlight_geneids):
-#             highlight_gid = parse_gid_file(h_gid)
-#             highlight_gids.append(highlight_gid)
-#             h_gid_name = get_file_name(h_gid)
-#             if h_gid_name:
-#                 highlight_gid_names.append(h_gid_name)
-#             else:
-#                 highlight_gid_names.append(ix)
-
-#         if len(highlight_gids) == 0:
-#             print('Non geneids found in file {}'.format(highlight_geneids))
-
-
-
-#     data = read_config(experiment_file)
-#     if additional_info:
-#         labeled_meta = read_config(additional_info, enforce=False)
-#     else:
-#         labeled_meta = None
-
-#     if len(data) == 0:
-#         raise ValueError('No items in configfile.')
-
-#     if z_score == 'None':
-#         z_score = None
-#     else:
-#         z_score = int(z_score)
-
-#     # experiment_file
-#     run(data_obj)
-
-#     # run(data, NON_ZEROS=non_zeros, stat=stat, taxon=taxon, data_dir=data_dir, OUTPATH=OUTPATH,
-#     #     funcats=funcats, geneid_subset=geneid_subset, highlight_gids=highlight_gids, plots=plots,
-#     #     highlight_gid_names=highlight_gid_names, colors_only=colors_only, gene_symbols=gene_symbols,
-#     #     col_cluster=col_cluster, row_cluster=row_cluster, show_metadata=show_metadata,
-#     #     shade_correlation=shade_correlation, z_score=z_score, labeled_meta=labeled_meta
-#     # )
 
 
 if __name__ == '__main__':

@@ -207,6 +207,9 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     # if nclusters is not None or dbscan:
     if z_score is not None:
         data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
+        # data[ data < 0] = 0
+        # data_t = sb.matrix.ClusterGrid.z_score(data.replace(0, np.NAN), z_score)
+        # data_t = data_t.fillna(data_t.min().min())
     else:
         data_t = data
 

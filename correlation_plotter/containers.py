@@ -7,6 +7,7 @@ import operator as op
 from collections import OrderedDict
 from functools import partial
 from warnings import warn
+from matplotlib import cm
 
 import numpy as np
 import pandas as pd
@@ -57,6 +58,7 @@ class Data:
                  export_data=None,
                  ifot=False, ifot_ki=False, ifot_tf=False,
                  set_outpath=True,
+                 metrics=False, metrics_after_filter=False,
 
     ):
         "docstring"
@@ -64,39 +66,43 @@ class Data:
         if experiment_file is None:
             raise ValueError('Must specify valid experiment_file')
 
-        self.additional_info     = additional_info
-        self.batch               = batch
-        self.batch_nonparametric = batch_nonparametric
-        self.col_cluster         = col_cluster
-        self.colors_only         = colors_only
-        self.data_dir            = data_dir
-        self.experiment_file     = experiment_file
-        self.funcats             = funcats
-        self.gene_symbols        = gene_symbols
-        self.geneids             = geneids
-        self.group               = group
-        self.highlight_geneids   = highlight_geneids
-        self.non_zeros           = non_zeros
-        self.nonzero_subgroup    = nonzero_subgroup
-        self.plots               = plots
-        self.row_cluster         = row_cluster
-        self.shade_correlation   = shade_correlation
-        self.show_metadata       = show_metadata
-        self.stat                = stat
-        self.taxon               = taxon
-        self.standard_scale      = self.clean_input(standard_scale)
-        self.z_score             = self.clean_input(z_score)
-        self.export_data         = None if export_data == 'None' else export_data
-        self.ifot                = ifot
-        self.ifot_ki             = ifot_ki
-        self.ifot_tf             = ifot_tf
-        self.base_dir            = base_dir
+        self.additional_info      = additional_info
+        self.batch                = batch
+        self.batch_nonparametric  = batch_nonparametric
+        self.col_cluster          = col_cluster
+        self.colors_only          = colors_only
+        self.data_dir             = data_dir
+        self.experiment_file      = experiment_file
+        self.funcats              = funcats
+        self.gene_symbols         = gene_symbols
+        self.geneids              = geneids
+        self.group                = group
+        self.highlight_geneids    = highlight_geneids
+        self.non_zeros            = non_zeros
+        self.nonzero_subgroup     = nonzero_subgroup
+        self.plots                = plots
+        self.row_cluster          = row_cluster
+        self.shade_correlation    = shade_correlation
+        self.show_metadata        = show_metadata
+        self.stat                 = stat
+        self.taxon                = taxon
+        self.standard_scale       = self.clean_input(standard_scale)
+        self.z_score              = self.clean_input(z_score)
+        self.export_data          = None if export_data == 'None' else export_data
+        self.ifot                 = ifot
+        self.ifot_ki              = ifot_ki
+        self.ifot_tf              = ifot_tf
+        self.base_dir             = base_dir
+        self.metrics              = metrics
+        self.metrics_after_filter = metrics_after_filter
+        self._metric_values       = None
 
-        self.outpath             = None
-        self.analysis_name       = None
+        self.outpath              = None
+        self.analysis_name        = None
 
-        self.normed              = False
-        self.batch_applied       = None  # set to the batch (only) upon successful batch correction
+        self.normed               = False
+        self.batch_applied        = None  # set to the batch (only) upon successful batch correction
+        self.gid_funcat_mapping   = None  # loaded with data
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -169,6 +175,10 @@ class Data:
         if self._qvalues is None:
             self.calc_qvals()
         return self._qvalues
+
+    @property
+    def metric_values(self):
+        return self._metric_values
 
 
     @staticmethod
@@ -244,6 +254,8 @@ class Data:
                       .pipe(assign_cols, value)
                 )
                 labels[value] = df
+                if self.metrics and not self.metrics_after_filter:
+                    self._update_metrics(df, name)
 
         if self.labeled_meta and not all(v in self.labeled_meta for v in labels.keys()):
             warn('Mismatch between `labeled_meta` and input labels')
@@ -267,9 +279,34 @@ class Data:
 
         return exps
 
+    def _update_metrics(self, df, name):
+        if self.metric_values is None:
+            self._metric_values = DefaultOrderedDict(lambda : defaultdict(None) )
+
+        sra = df.SRA.value_counts().to_dict()
+        gpg = df.GPGroup.nunique()
+        psms = {'Total': df.PSMs.sum(),
+                'u2g':   df.PSMs_u2g.sum(),
+        }
+        peptides = {'Total':     df.PeptideCount.sum(),
+                   'u2g':        df.PeptideCount_u2g.sum(),
+                   'Strict':     df.PeptideCount_S.sum(),
+                   'Strict_u2g': df.PeptideCount_S_u2g.sum(),
+        }
+
+        self._metric_values[name]['SRA']      = sra
+        self._metric_values[name]['GPGroups'] = gpg
+        self._metric_values[name]['PSMs']     = psms
+        self._metric_values[name]['Peptides'] = peptides
+        self._metric_values[name]['Area']     = df.AreaSum_dstrAdj.where(lambda x: x > 0 ).dropna().values
+        # self._metric_values[name]['GeneIDs']  = exp.df.GeneID.unique()
+
+
+
     def load_data(self):
 
         exps = OrderedDict()
+        gid_funcat_mapping = dict()
         config = self.config
         col_metadata = None
 
@@ -282,6 +319,14 @@ class Data:
             runno = record.get('runno')
             searchno = record.get('searcno')
             exp = ispec.E2G(recno, runno, searchno, data_dir=self.data_dir)
+
+            if self.metrics and not self.metrics_after_filter:
+                self._update_metrics(exp.df, name)
+
+            exp.df['GeneID'] = exp.df['GeneID'].astype(int)
+            funcats_dict = exp.df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
+            gid_funcat_mapping.update(funcats_dict)
+
             if len(exp) == 0:
                 print('No data in {!r}'.format(exp))
                 continue
@@ -292,7 +337,11 @@ class Data:
                                        self.ifot, self.ifot_ki, self.ifot_tf
                 )
                 # df = assign_cols(exp.df, name)
+                if self.metrics and self.metrics_after_filter:
+                    self._update_metrics(df, name)
                 exps[name] = df.set_index(df.index.astype(int))
+
+        self.gid_funcat_mapping = gid_funcat_mapping
 
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
@@ -410,6 +459,7 @@ class Data:
 
 
         self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        self._areas_log.index.name = 'GeneID'
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
         # self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
@@ -421,6 +471,7 @@ class Data:
         shift_val = np.ceil(np.abs(minval))
 
         self._areas_log_shifted = self._areas_log + shift_val
+        self._areas_log_shifted.index.name = 'GeneID'
 
         if self.batch is not None:
             # try batch normalization via ComBat
@@ -489,9 +540,20 @@ class Data:
         if nas > 0:
             print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
 
+        df.index = df.index.astype(int)
+        df.columns = self._areas_log.columns
+        # reassign mask - ComBat can impute some NA values
+        thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min() * .9
+        new_mask = (df[ self.mask ] < thresh)
+        new_mask.columns = self._areas_log.columns
+        self._mask = new_mask
+
+
         self._areas_log_shifted = df.dropna(how='any')
         self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
         self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
+
+        self._areas_log_shifted.index.name = 'GeneID'
 
     def calc_qvals(self):
         try:

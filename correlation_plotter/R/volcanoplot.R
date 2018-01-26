@@ -68,7 +68,7 @@ volcanoplot <- function(X, max_labels = 35,
   ratio_sig <- paste0( dim( filter(X, Sig == 'FDR<0.05') )[1], '/', dim(X)[1] )
 
   footnote <- paste( ratio_sig, 'sig. with 4 F.C.' )
-  write(footnote, stdout())
+  ## write(footnote, stdout())
   makeFootnote( footnote, size = .5 )
 
 
