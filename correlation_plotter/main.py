@@ -164,6 +164,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
                 continue
             # validate each field
             for field in fields:
+                if field not in config[entry]: continue #
                 count = 0
                 value = config[entry][field]  # value to tally
 

@@ -23,6 +23,13 @@ idx = pd.IndexSlice
 TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
 
+def maybe_int(x):
+    try:
+        return int(x)
+    except ValueError:
+        warn('Value {} cannot be converted to int'.format(x))
+        return x
+
 def join_and_create_path(*strings, verbose=True):
     """Joins strings and returns resulting path.
     Creates path if does not exist
@@ -319,11 +326,14 @@ class Data:
             runno = record.get('runno')
             searchno = record.get('searcno')
             exp = ispec.E2G(recno, runno, searchno, data_dir=self.data_dir)
+            if exp.df.empty:
+                raise ValueError('No data for {!r}'.format(exp))
 
             if self.metrics and not self.metrics_after_filter:
                 self._update_metrics(exp.df, name)
 
-            exp.df['GeneID'] = exp.df['GeneID'].astype(int)
+            # exp.df['GeneID'] = exp.df['GeneID'].astype(int)
+            exp.df['GeneID'] = exp.df['GeneID'].apply(int)
             funcats_dict = exp.df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
 
@@ -339,7 +349,8 @@ class Data:
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter:
                     self._update_metrics(df, name)
-                exps[name] = df.set_index(df.index.astype(int))
+                # exps[name] = df.set_index(df.index.astype(int))
+                exps[name] = df.set_index([maybe_int(x) for x in df.index])
 
         self.gid_funcat_mapping = gid_funcat_mapping
 
@@ -403,31 +414,6 @@ class Data:
         self._areas = self.df_filtered.loc[ idx[:, 'iBAQ_dstrAdj'], : ]
         self._areas.index = self._areas.index.droplevel(1)  # don't need the second index
 
-        # if specified, normalize by a specified control group
-        norm_info = self.config.get('__norm__')
-        if norm_info is not None:
-            self.normed = False
-            control = norm_info['control']
-            group   = norm_info['group']
-            label   = norm_info['label']
-            metadata = self.col_metadata.T  # rows are experiments, cols are metadata
-            areas = self._areas.copy()
-            ctrl_exps = list()
-            for ix, g in metadata.groupby(group):
-                ctrl_exp = g[ g[label] == control ].index[0] # should only be one
-                ctrl_exps.append(ctrl_exp)
-                # to_normalize = list(set(g.index) - set([ctrl_exp]))
-                to_normalize = g.index
-                areas.loc[:, to_normalize] = (self._areas[to_normalize]
-                                              .div(self._areas[ctrl_exp]
-                                                   .fillna(0) + 1e-20,
-                                                   axis='index')
-                )
-            # self._areas = (areas.drop(ctrl_exps, axis=1)
-            #                .where(lambda x: x!= 0)
-            #                .dropna(how='all')
-            # )
-            self._areas = areas
 
         batch_info = self.config.get('__batch__')
         if batch_info:
@@ -463,9 +449,10 @@ class Data:
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
         # self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
-        if norm_info is not None:  # do not shift the values
-            self._areas_log_shifted = self._areas_log
-            return
+
+        # if norm_info is not None:  # do not shift the values
+        #     self._areas_log_shifted = self._areas_log
+        #     return
 
         minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
@@ -477,6 +464,32 @@ class Data:
             # try batch normalization via ComBat
             self.batch_normalize()
 
+
+        # if specified, normalize by a specified control group
+        norm_info = self.config.get('__norm__')
+        if norm_info is not None:
+            self.normed = False
+            control = norm_info['control']
+            group   = norm_info['group']
+            label   = norm_info['label']
+            metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            areas = self._areas_log_shifted.copy()
+            ctrl_exps = list()
+            for ix, g in metadata.groupby(group):
+                ctrl_exp = g[ g[label] == control ].index[0] # should only be one
+                ctrl_exps.append(ctrl_exp)
+                # to_normalize = list(set(g.index) - set([ctrl_exp]))
+                to_normalize = g.index
+                areas.loc[:, to_normalize] = (self._areas_log_shifted[to_normalize]
+                                              .sub(self._areas_log_shifted[ctrl_exp]
+                                                   .fillna(0) + 1e-20,
+                                                   axis='index')
+                )
+            # self._areas = (areas.drop(ctrl_exps, axis=1)
+            #                .where(lambda x: x!= 0)
+            #                .dropna(how='all')
+            # )
+            self._areas_log_shifted = areas
 
         # if self.group is not None:
         #     self.calc_qvals()
@@ -540,7 +553,8 @@ class Data:
         if nas > 0:
             print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
 
-        df.index = df.index.astype(int)
+        # df.index = df.index.astype(int)
+        df.index = [maybe_int(x) for x in df.index]
         df.columns = self._areas_log.columns
         # reassign mask - ComBat can impute some NA values
         thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min() * .9
@@ -551,7 +565,9 @@ class Data:
 
         self._areas_log_shifted = df.dropna(how='any')
         self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
-        self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
+        # self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
+
+        self._areas_log_shifted.index = [maybe_int(x) for x in self._areas_log_shifted.index]
 
         self._areas_log_shifted.index.name = 'GeneID'
 
