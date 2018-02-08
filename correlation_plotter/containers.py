@@ -333,7 +333,7 @@ class Data:
                 self._update_metrics(exp.df, name)
 
             # exp.df['GeneID'] = exp.df['GeneID'].astype(int)
-            exp.df['GeneID'] = exp.df['GeneID'].apply(int)
+            exp.df['GeneID'] = exp.df['GeneID'].apply(maybe_int)
             funcats_dict = exp.df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
 
@@ -350,7 +350,8 @@ class Data:
                 if self.metrics and self.metrics_after_filter:
                     self._update_metrics(df, name)
                 # exps[name] = df.set_index(df.index.astype(int))
-                exps[name] = df.set_index([maybe_int(x) for x in df.index])
+                df.index = [maybe_int(x) for x in df.index]
+                exps[name] = df
 
         self.gid_funcat_mapping = gid_funcat_mapping
 
