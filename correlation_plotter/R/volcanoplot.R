@@ -11,7 +11,7 @@ library(graphics)
 # install.packages("ggrepel")
 
 makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
-                        size = .7, color = grey(.5))
+                        size = 1.0, color = grey(.5))
 {
   suppressMessages(
     require(grid)
@@ -25,19 +25,22 @@ makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
   popViewport()
 }
 
+# :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
                         pch = 16, cex = 0.35,
+                        fc_cutoff = 4, label_cex = 1,
+                        show_all = FALSE,
                         ...){
 
 
 
-  X <- mutate(X, Sig = ifelse(X$qValue < 0.05 & abs(X[, 'log2_Fold_Change']) > 2, "FDR<0.05", "N.S."))
+  X <- mutate(X, Sig = ifelse(X$qValue < 0.05 & abs(X[, 'log2_Fold_Change']) > fc_cutoff, "FDR<0.05", "N.S."))
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
 
-  qvalues <- X[, 'qValue']
+  qvalues <- X[, 'qValue'][ !is.na( X[, 'qValue'] ) ]
   stretch <- min( qvalues[ qvalues > 0 ] ) / 2
   X[, 'qValue'] <- X[, 'qValue'] + stretch
-  pvalues <- X[, 'pValue']
+  pvalues <- X[, 'pValue'][ !is.na( X[, 'pValue'] ) ]
   stretch <- min( pvalues[ pvalues > 0 ] ) / 2
   X[, 'pValue'] <- X[, 'pValue'] + stretch
 
@@ -47,27 +50,32 @@ volcanoplot <- function(X, max_labels = 35,
 
   X[, 'label'] <- FALSE  # new column
   X[to_label, 'label'] <- TRUE  # label these
-  X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
+  if (show_all == FALSE){
+    X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
+  }
 
   ymax <- max(-log10(X[, 'pValue'])) * 1.05
 
   p = ggplot(X, aes(log2_Fold_Change, -log10(pValue))) +
     theme_base() +
-    geom_point(aes(col = Sig), size = 1, cex = cex, show.legend = FALSE) +
+    geom_point(aes(col = Sig), size = 1, cex = cex, show.legend = FALSE, pch=pch) +
     scale_color_manual(values = c("red", "black")) +
-    geom_text_repel(data = filter( X, qValue < 0.05 & label == TRUE ),
-                    aes(label = GeneSymbol), cex = 1, min.segment.length = .05,
+    geom_text_repel(data = filter( X, label == TRUE ),
+                    aes(label = GeneSymbol),  min.segment.length = .05,
                     point.padding = 1e-6,
-                    box.padding = .1,
+                    box.padding = .1, cex = label_cex,
                     segment.size = .35, segment.alpha = .4
                     ) +
     labs(x = expression(paste('log'[2], ' Fold Change')), y = expression(paste('-log'[10], ' pValue'))) +
     ylim(0, ymax)
 
+  ## print(label_fontsize)
   print(p)
+  print(X %>% filter(Sig=='FDR<0.05') %>% dim)
+  print(X %>% dim)
   ratio_sig <- paste0( dim( filter(X, Sig == 'FDR<0.05') )[1], '/', dim(X)[1] )
 
-  footnote <- paste( ratio_sig, 'sig. with 4 F.C.' )
+  footnote <- paste( ratio_sig, 'sig. with', 2**fc_cutoff, 'F.C.' )
   ## write(footnote, stdout())
   makeFootnote( footnote, size = .5 )
 
