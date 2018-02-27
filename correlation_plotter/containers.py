@@ -65,7 +65,7 @@ class Data:
                  export_data=None,
                  ifot=False, ifot_ki=False, ifot_tf=False,
                  set_outpath=True,
-                 metrics=False, metrics_after_filter=False,
+                 metrics=False, metrics_after_filter=True,
 
     ):
         "docstring"

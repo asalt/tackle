@@ -10,6 +10,8 @@ import operator as op
 from collections import OrderedDict
 from functools import partial
 import copy
+from tempfile import NamedTemporaryFile
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -284,7 +286,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format
     # validate_subgroup(nonzero_subgroup, experiment_file)
     validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group)
 
-    metrics, metrics_after_filter = False, False
+    metrics, metrics_after_filter = False, True
     if 'metrics' in sys.argv:  #know this ahead of time, accumulate metrics during data load
         metrics = True
         if '--after-filter' in sys.argv:
@@ -500,19 +502,36 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, highlight_geneids, 
 
 
 @main.command('pca')
+@click.option('--annotate', default=False, show_default=True, is_flag=True,
+              help="Annotate points on PC plot")
+@click.option('--max-pc', default=2, show_default=True,
+              help='Maximum PC to plot. Plots all combinations up to this number.')
 @click.pass_context
-def pca(ctx):
+def pca(ctx, annotate, max_pc):
 
     data_obj = ctx.obj['data_obj']
 
-    fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
-    outname = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
-                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          colors_only=data_obj.colors_only, outpath=data_obj.outpath,
+    # # fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
+
+    figs = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata,
+                   annotate=annotate, max_pc=max_pc)
+
+    # outname_func = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
+    #                            non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
+    #                            batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+    #                            colors_only=data_obj.colors_only, outpath=data_obj.outpath,
+    # )
+
+    outname_func = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
+                           non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
+                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                           colors_only=data_obj.colors_only, outpath=data_obj.outpath,
     )
+
     file_fmts = ctx.obj['file_fmts']
-    save_multiple(fig, outname, *file_fmts)
+    for name, fig in figs.items():
+        outname = outname_func(name)
+        save_multiple(fig, outname, *file_fmts)
 
 @main.command('metrics')
 @click.option('--full', is_flag=True, default=False,
@@ -529,7 +548,7 @@ def metrics(ctx, full, before_filter):
           'legend.frameon': True,
     }
 
-    sb.set_context('notebook')
+    sb.set_context('talk')
     sb.set_palette('muted')
     sb.set_color_codes()
     sb.set_style('white', rc)
@@ -676,11 +695,17 @@ def metrics(ctx, full, before_filter):
 
 
 @main.command('volcano')
+@click.option('-f', '--foldchange', type=int, default=2, show_default=True,
+              help='log2 fold change cutoff'
+)
 @click.option('-n', '--number', type=int, default=35, show_default=True,
               help='Maximum number of significant genes to highlight (annotate) in plot'
 )
+@click.option('-s', '--scale', type=float, default=1.2, show_default=True,
+              help='To what extent to scale the labels'
+)
 @click.pass_context
-def volcano(ctx, number):
+def volcano(ctx, foldchange, number, scale):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
@@ -775,13 +800,153 @@ def volcano(ctx, number):
 
             grdevice(file=out, **gr_kw)
 
-            Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number)
+            Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number,
+                         fc_cutoff=foldchange, label_cex=scale)
 
             grdevices.dev_off()
             print('done.', flush=True)
 
     else:
         print('Must install rpy2')
+
+
+@main.command('gsea')
+@click.option('--collapse', type=bool, default=False, show_default=True)
+@click.option('--geneset', type=click.Choice(('hallmark', 'curated.CGP', 'curated.CP', 'curated.BIOCARTA')),
+              default='hallmark', show_default=True
+)
+@click.option('--metric', type=click.Choice(('Signal2Noise', 'tTest', 'Cosine', 'Euclidean', 'Manhatten',
+                                             'Pearson', 'Ratio_of_Classes', 'Diff_of_Classes')),
+              default='Signal2Noise', show_default=True)
+@click.option('--mode', type=click.Choice(('Max_probe', 'Median_of_probes')),
+              default='Max_probe', show_default=True)
+@click.option('--norm', type=click.Choice(('meandiv', 'None')), default='meandiv', show_default=True)
+@click.option('--number-of-permutations', default=1000, show_default=True)
+@click.option('--permute', type=click.Choice(('phenotype', 'gene_set')), default='phenotype',
+              show_default=True,
+)
+@click.option('--plot-top-x', default=20, show_default=True)
+@click.option('--rnd-type', type=click.Choice(('no_balance', 'equalize_and_balance')),
+              default='no_balance', show_default=True)
+@click.option('--scoring-scheme', type=click.Choice(('weighted', 'classic', 'weighted_p2', 'weighted_p1.5')),
+              default='weighted', show_default=True)
+@click.option('--set-max', default=500, show_default=True)
+@click.option('--set-min', default=15, show_default=True)
+@click.option('--sort', type=click.Choice(('real', 'abs')), default='real', show_default=True)
+@click.pass_context
+def gsea(ctx, collapse, geneset, metric, mode, number_of_permutations, norm, permute, plot_top_x, rnd_type,
+         scoring_scheme, sort, set_max, set_min):
+    """
+    Run GSEA on specified groups
+    """
+    data_obj = ctx.obj['data_obj']
+
+    group = data_obj.group #
+
+    # expression = data_obj.areas_log_shifted.copy().fillna(0)
+    expression = data_obj.areas_log_shifted.copy().fillna('na')
+    expression.index.name = 'NAME'
+
+    pheno = data_obj.col_metadata
+
+
+    nsamples = len(pheno.columns)
+    ngroups  = pheno.loc[group].nunique()
+    groups   = pheno.loc[group].unique()
+    # pheno_indicator = dict()
+    # for ix, grp in enumerate(groups):
+    #     pheno_indicator[grp] = ix
+    # classes  = list(map(str, [pheno_indicator[grp] for grp in pheno.loc[group]]))
+    classes = [grp.replace(' ', '_') for grp in pheno.loc[group]]
+
+    cls_comparison = ''
+    if ngroups == 2:  # reverse it
+        cls_comparison = '#{1}_versus_{0}'.format(*groups)
+
+
+    namegen = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
+                      non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                      batch=data_obj.batch_applied,
+                      batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                      outpath=data_obj.outpath)
+
+    outname = namegen('gsea')
+    outdir = os.path.abspath(os.path.join(data_obj.outpath, 'gsea'))
+    report_name = os.path.split(outname)[-1]
+
+    # param_file = os.path.abspath(namegen('gsea_params') + '.txt')
+    param_file = namegen('gsea_params') + '.txt'
+
+    gsea_jar = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                            'GSEA', 'gsea-3.0.jar')
+
+    geneset_mapping = dict(hallmark='h.all.v6.1.entrez.gmt',
+                           go_biological='c5.bp.v6.1.entrez.gmt'
+    )
+    # change later for all options
+    geneset_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                                'GSEA', 'genesets', 'c5.bp.v6.1.entrez.gmt')
+
+    collapse = 'true' if collapse else 'false'
+
+
+    with NamedTemporaryFile(suffix='.txt') as f, NamedTemporaryFile(mode='w', suffix='.cls') as g:
+        expression.to_csv(f.name, sep='\t')
+    # with open('./results/gsea/kip_dda_kinases_pheno.cls', 'w') as g:
+        g.write('{} {} 1\n'.format(nsamples, ngroups))
+        g.write('# {}\n'.format(' '.join(groups)))
+        # g.write('{}\n'.format(' '.join(classes)))
+        g.write('{}\n'.format(' '.join(pheno.loc[group])))
+        g.file.flush()
+
+        # rpt_name\t{rpt_name}
+        params = """
+        collapse\t{collapse}
+        metric\t{metric}
+        mode\t{mode}
+        norm\t{norm}
+        order\tdescending
+        include_only_symbols\tfalse
+        permute\t{permute}
+        plot_top_x\t{plot_top_x}
+        rnd_type\t{rnd_type}
+        set_max\t{set_max}
+        set_min\t{set_min}
+        nperm\t{nperm}
+        res\t{res}
+        cls\t{cls}{cls_comparison}
+        gmx\t{gmx}
+        out\t{outdir}
+        rpt_label\t{rpt_label}
+        gui\tfalse
+        """.format(collapse=collapse, metric=metric, mode=mode, norm=norm, permute=permute,
+                   rnd_type=rnd_type, scoring_scheme=scoring_scheme, sort=sort, set_max=set_max,
+                   set_min=set_min, nperm=number_of_permutations, plot_top_x=plot_top_x,
+                   cls_comparison=cls_comparison,
+                   # rpt_name=report_name,
+                   res=os.path.abspath(f.name), cls=os.path.abspath(g.name),
+                   gmx=os.path.abspath(geneset_file), outdir=outdir, rpt_label=report_name )
+        with open(param_file, 'w') as f:
+            f.write(params)
+
+
+        res = subprocess.run(['java', '-Xmx8192m', '-cp', gsea_jar, 'xtools.gsea.Gsea',
+                              '-param_file', param_file,
+        ],
+                             # stdout=subprocess.PIPE
+        )
+
+        res.check_returncode()
+
+    folders = [os.path.abspath(os.path.join(outdir, f)) for f in os.listdir(outdir) if ('Gsea' in f)]
+    folders.sort(key=os.path.getmtime)
+
+    new_folder = folders[-1]
+    index = os.path.join(new_folder, 'index.html')
+
+    import webbrowser
+    webbrowser.open(index)
+
 
 
 if __name__ == '__main__':

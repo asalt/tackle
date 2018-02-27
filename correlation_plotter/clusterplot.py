@@ -16,7 +16,8 @@ from sklearn.metrics import silhouette_samples, silhouette_score
 from .utils import *
 from .containers import MyClusterGrid
 
-rc = {'font.family': 'sans-serif',}
+rc = {'font.family': 'sans-serif',
+      'text.usetex': False}
       # 'font.serif': ['Times', 'Palatino', 'serif']}
 sb.set_context('notebook')
 sb.set_palette('muted')
@@ -24,7 +25,7 @@ sb.set_color_codes()
 sb.set_style('white', rc)
 # mpl.rcParams.update(rc)
 
-def _calculate_box_sizes(size_vector):
+def _calculate_box_sizes(size_vector, start_pos=0, end_pos=1):
     """
     returns optimal box widths for
     different number of labels
@@ -35,8 +36,9 @@ def _calculate_box_sizes(size_vector):
     """
     size_vector = np.array(size_vector)
     sizes = size_vector / size_vector.sum()
-    cumsum = np.cumsum(sizes)
-    start = [0, *cumsum][:-1]
+    cumsum = np.cumsum(sizes) * end_pos
+    start = [start_pos, *cumsum][:-1]
+    print(start)
     return start
 
 def plot_silhouette_scores(scores, start, end):
@@ -150,13 +152,19 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
 
     """
 
-    rc = {'font.family': 'sans-serif',}
+    rc = {'font.family': 'sans-serif',
+          "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
+                              "Bitstream Vera Sans", "sans-serif"],
+    }
+
     sb.set_context('notebook')
     sb.set_palette('muted')
     sb.set_color_codes()
     sb.set_style('white', rc)
 
     retval = dict()
+    data = data.copy()
+    mask = mask.copy()
 
 
     if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
@@ -442,7 +450,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     if col_colors is not None:
         col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
-        widths = _calculate_box_sizes( col_label_lengths )
+        widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
         col_colors_t = col_colors.T
         bbox_y0 = 1.44 if col_cluster else .8
         bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
@@ -459,7 +467,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                 handles.append(handle)
                 labels.append(n)
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
-                                              loc='upper left', ncol=max(len(col_names) // 3, 1),
+                                              loc='upper left', ncol=max(len(col_names) // 4, 1),
                                               title=col_name
             )
             legends.append(leg)
