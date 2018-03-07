@@ -1,7 +1,7 @@
 library(graphics)
-
+## library(raster)
 #' adapted from PerformanceAnalytics::chart.Correlation
-scattermat <- function(x, histogram = FALSE, interactive=TRUE,
+scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
                        method = c("pearson", "kendall",
                                   "spearman"), ...)
 {
@@ -44,9 +44,40 @@ scattermat <- function(x, histogram = FALSE, interactive=TRUE,
       names(u) <- c("xleft", "xright", "ybottom", "ytop")
       do.call(rect, c(col = bgcolor, as.list(u)))
       text( 0.5, 0.5, txt, cex = cex )
-      text( 0.5, 0.5, txt, cex = cex )
+      ## text( 0.5, 0.5, txt, cex = cex )
 
       }
+
+
+  diag.panel = function(x, ...){
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    u <- par('usr')
+    names(usr) <- c("xleft", "xright", "ybottom", "ytop")
+    txt <- paste('n=', length( x[!is.na(x)] ), sep='')
+    cex <- 0.5/strwidth(txt)
+    text( 0.5, 0.4, txt, cex = cex )
+  }
+
+  ## text.panel = function(x, ...){
+  text.panel = function(xlp, ylp, txt, cex, font, ...){
+    usr <- par("usr")
+    on.exit(par(usr))
+    ## cex <- 0.7/strwidth(txt)
+    text( 0.5, 0.6, txt, cex = cex )
+  }
+
+  lower.panel = function(x, y, col = 'grey', smooth = FALSE, xmin = NULL, xmax = NULL, method = 'pearson', ...){
+    ## usr <- par("usr")
+    ## on.exit(par(usr))
+    ## r <- raster()
+
+    points(x, y, col = '#4878cf66', xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
+    abline(0, 1, col = '#444444bb', lty = 2, lwd = 2)
+
+  }
+
   f <- function(t) {
       dnorm(t, mean = mean(x), sd = sd.xts(x))
   }
@@ -57,14 +88,23 @@ scattermat <- function(x, histogram = FALSE, interactive=TRUE,
       lines(density(x, na.rm = TRUE), col = "red", lwd = 1)
       ## rug(x)
   }
+
+  xmin <- NULL; xmax <- NULL
+  if (square){
+    xmin <- floor( min( x[!is.na(x)] ) )
+    xmax <- ceiling( max( x[!is.na(x)] ) )
+  }
+
   if (histogram)
       pairs(x, gap = 0, lower.panel = panel.smooth, upper.panel = panel.cor,
             diag.panel = hist.panel, method = method, pch=16, col='#22222288',
             ## cex.labels = colnames(x),
             ...)
   ## else pairs(x, gap = 0, lower.panel = panel.smooth, upper.panel = panel.cor,
-  else pairs(x, gap = 0, smooth = FALSE, upper.panel = panel.cor,
-              method = method, pch=16, col='#22222288',
+  else pairs(x, gap = 0, smooth = FALSE, upper.panel = panel.cor, lower.panel = lower.panel,
+             method = method, pch=16, col='#22222288', diag.panel = diag.panel,
+             text.panel = text.panel, xmin = xmin, xmax = xmax,
+             xlim = c(xmin, xmax), ylim = c(xmin, xmax),
               ## cex.labels = colnames(x),
               ...)
 }
