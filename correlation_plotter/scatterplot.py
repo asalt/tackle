@@ -12,7 +12,7 @@ from .utils import *
 
 rc = {'font.family': 'serif',
       'font.serif': ['Times', 'Palatino', 'serif']}
-sb.set_context('paper')
+sb.set_context('paper', font_scale=.8)
 sb.set_style('white', rc)
 
 def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False, shade_correlation=True, outname='name',
@@ -38,8 +38,9 @@ def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False,
         Rscatterplot = robjects.r['scattermat']
 
         plt_size = ibaqs_log_shifted.shape[1] * .75
-        if file_fmts is None:
-            file_fmts = ('.png',)
+        # if file_fmts is None:
+        #     file_fmts = ('.png',)
+        file_fmts = ('.png',)
         gr_devices = {'.png': grdevices.png,
                       '.pdf': grdevices.pdf,
                       '.svg': grdevices.svg}

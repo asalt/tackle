@@ -50,9 +50,11 @@ class Data:
                  colors_only=False, data_dir='./data',
                  base_dir='./results',
                  experiment_file=None, funcats=None,
+                 funcats_inverse=None,
                  gene_symbols=False, geneids=None,
                  group=None,
                  highlight_geneids=None,
+                 ignore_geneids=None,
                  name=None, non_zeros=0,
                  nonzero_subgroup=None,
                  plots=('all', ),
@@ -81,8 +83,10 @@ class Data:
         self.data_dir             = data_dir
         self.experiment_file      = experiment_file
         self.funcats              = funcats
+        self.funcats_inverse      = funcats_inverse
         self.gene_symbols         = gene_symbols
         self.geneids              = geneids
+        self.ignore_geneids      = ignore_geneids
         self.group                = group
         self.highlight_geneids    = highlight_geneids
         self.non_zeros            = non_zeros
@@ -120,8 +124,9 @@ class Data:
             self.outpath_name = None
 
 
-        self.geneid_subset = None
-        self.set_geneid_subset(geneids)
+        # self.geneid_subset = None
+        self.geneid_subset = self.set_geneid_subset(geneids)
+        self.ignore_geneid_subset = self.set_geneid_subset(ignore_geneids)
 
         self.highlight_gids, self.highlight_gid_names = None, None
         self.set_highlight_gids(highlight_geneids)
@@ -221,11 +226,14 @@ class Data:
 
     def set_geneid_subset(self, geneids):
         if geneids is None:
-            self.geneid_subset = None
-            return
-        self.geneid_subset = parse_gid_file(geneids)
-        if len(self.geneid_subset) == 0:
+            return None
+            # self.geneid_subset = None
+            # return
+        # self.geneid_subset = parse_gid_file(geneids)
+        geneid_subset = parse_gid_file(geneids)
+        if len(geneid_subset) == 0:
             warn('No geneids found in file {}'.format(geneids))
+        return geneid_subset
 
     def set_highlight_gids(self, highlight_geneids):
         if highlight_geneids is None:
@@ -343,9 +351,9 @@ class Data:
             if labeltype == 'TMT' or labeltype == 'iTRAQ':
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
             else:
-                df = filter_and_assign(exp.df, name, self.funcats, self.geneid_subset,
-                                       self.ifot, self.ifot_ki, self.ifot_tf
-                )
+                df = filter_and_assign(exp.df, name, self.funcats, self.funcats_inverse,
+                                       self.geneid_subset, self.ignore_geneid_subset, self.ifot,
+                                       self.ifot_ki, self.ifot_tf )
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter:
                     self._update_metrics(df, name)
@@ -443,9 +451,10 @@ class Data:
             gids &= set(self.geneid_subset)
 
         gids = tuple(gids)
+        self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
 
-
-        self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
+        self._areas_log = np.log10(self._areas.replace(0, np.NAN).fillna(self.minval/2))
         self._areas_log.index.name = 'GeneID'
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
@@ -457,6 +466,7 @@ class Data:
 
         minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
+        self.minval_log = minval
 
         self._areas_log_shifted = self._areas_log + shift_val
         self._areas_log_shifted.index.name = 'GeneID'

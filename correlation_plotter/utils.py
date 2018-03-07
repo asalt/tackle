@@ -46,7 +46,10 @@ STEP = .2
 #     )
 #     return panel.loc[:, indices, :]
 
-def filter_observations(df, column, threshold, subgroup, metadata):
+def filter_observations(df, column, threshold, subgroup=None, metadata=None):
+
+    if subgroup is None and metadata is not None:
+        raise ValueError('Must provide metadata if specifying subgroup')
 
     if subgroup is None:
 
@@ -410,7 +413,8 @@ def parse_metadata(metadata):
     return col_data
 
 
-def filter_and_assign(df, name, funcats=None, geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False):
+def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subset=None,
+                      ignored_geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False):
     """Filter by funcats and geneid_subset (if given)
        remove NAN GeneIDs"""
 
@@ -431,8 +435,13 @@ def filter_and_assign(df, name, funcats=None, geneid_subset=None, ifot=False, if
 
     if funcats:  # do this after possible normalization
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
+    if funcats_inverse:  # do this after possible normalization
+        df = df[~df['FunCats'].fillna('').str.contains(funcats_inverse, case=False)]
     if geneid_subset:  # do this at the end
         df = df.loc[geneid_subset]
+    if ignored_geneid_subset:
+        tokeep = set(df.index) - set(ignored_geneid_subset)
+        df = df.loc[tokeep]
     valid_ixs = (x for x in df.index if not np.isnan(x))
     return df.loc[valid_ixs]
 

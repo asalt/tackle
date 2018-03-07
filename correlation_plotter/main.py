@@ -250,11 +250,16 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 @click.option('--funcats', type=str, default=None, show_default=True,
               help="""Optional gene subset based on funcat or funcats,
               regular expression allowed. """)
+@click.option('--funcats-inverse', type=str, default=None, show_default=True,
+              help="""Optional gene filtering based on funcat or funcats, regular expression allowed. """)
 @click.option('--geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True,
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
 @click.option('--group', type=str, default=None, help='Metadata entry to calculate p-values for differential across (Requires rpy2, R, and sva installations)')
+@click.option('--ignore-geneids', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True,
+              help="""Optional list of geneids to ignore. Should have 1 geneid per line. """)
 @click.option('--iFOT', default=False, show_default=True, is_flag=True,
               help="""Calculate iFOT (divide by total input per experiment)""")
 @click.option('--iFOT-KI', default=False, show_default=True, is_flag=True,
@@ -274,8 +279,9 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format, funcats, geneids,
-         group, ifot, ifot_ki, ifot_tf, name, result_dir, taxon, non_zeros, nonzero_subgroup, experiment_file):
+def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format, funcats,
+         funcats_inverse, geneids, group, ignore_geneids, ifot, ifot_ki, ifot_tf, name, result_dir,
+         taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
     """
          # name, taxon, non_zeros, experiment_file):
@@ -313,13 +319,13 @@ def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format
     context = click.get_current_context()
     params = context.params
 
-    data_obj = Data(additional_info=additional_info, batch=batch, batch_nonparametric=batch_nonparametric,
-                    data_dir=data_dir, base_dir=result_dir,
-                    funcats=funcats, geneids=geneids, group=group, ifot=ifot, ifot_ki=ifot_ki,
-                    ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
+    data_obj = Data(additional_info=additional_info, batch=batch,
+                    batch_nonparametric=batch_nonparametric, data_dir=data_dir, base_dir=result_dir,
+                    funcats=funcats, funcats_inverse=funcats_inverse, geneids=geneids, group=group,
+                    ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
                     nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file,
-                    metrics=metrics, metrics_after_filter=metrics_after_filter
-    )
+                    metrics=metrics, metrics_after_filter=metrics_after_filter,
+                    ignore_geneids=ignore_geneids )
 
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
@@ -348,7 +354,8 @@ def scatter(ctx, colors_only, shade_correlation, stat):
                           outpath=data_obj.outpath)
 
     X = data_obj.areas_log_shifted.copy()
-    to_mask = (data_obj.mask | (data_obj.areas_log==-10))
+    # to_mask = (data_obj.mask | (data_obj.areas_log==-10))
+    to_mask = (data_obj.mask | (data_obj.areas_log==data_obj.minval_log))
     X[to_mask] = np.NaN
     g = scatterplot(X.replace(0, np.NaN), stat=stat,
                     colors_only=colors_only, shade_correlation=shade_correlation,
