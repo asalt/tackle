@@ -48,7 +48,7 @@ STEP = .2
 
 def filter_observations(df, column, threshold, subgroup=None, metadata=None):
 
-    if subgroup is None and metadata is not None:
+    if subgroup is not None and metadata is None:
         raise ValueError('Must provide metadata if specifying subgroup')
 
     if subgroup is None:
