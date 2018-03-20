@@ -201,9 +201,10 @@ class PCAplot:
 
         if annotate == False:
             pca_params = metadata.get('__PCA__')
-            warnings.warn("""Specifying annotation in config file is depreciated,
-            it can now be specified as a command line option `--annotate`""", DeprecationWarning)
-            params_annotate = pca_params.get('annot')
+            if pca_params is not None:
+                warnings.warn("""Specifying annotation in config file is depreciated,
+                it can now be specified as a command line option `--annotate`""", DeprecationWarning)
+                params_annotate = pca_params.get('annot')
             if params_annotate is not None:
                 annotate = True if 'true' in params_annotate.lower() else False
             self.annotate = annotate
@@ -348,11 +349,16 @@ class PCAplot:
 
         fig, ax = plt.subplots()
 
-        ax.scatter( range( 1, len(self.vars)+1 ), self.vars, c='#333333' )
+        VARMAX = 12  # don't plot more than 12 here, not necessary
+        varmax = min([VARMAX, len(self.vars)])
+
+        # ax.scatter( range( 1, len(self.vars)+1 ), self.vars, c='#333333' )
+        ax.scatter( range( 1, varmax+1 ), self.vars[:varmax], c='#333333' )
         ax.grid(axis='y')
         ax.set_xlabel('Principal Component')
         for f in (ax.set_xticks, ax.set_xticklabels):
-            f( range(1, len(self.vars)+1) )
+            # f( range(1, len(self.vars)+1) )
+            f( range(1, varmax+1) )
         ax.set_ylabel('Variance')
 
         sb.despine(ax=ax, trim=True)

@@ -146,7 +146,9 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
-                normed=False, linkage='average'):
+                normed=False, linkage='average',
+                gene_symbol_fontsize=8
+):
     """
     :nclusters: None, 'auto', or positive integer
 
@@ -320,7 +322,7 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     # figheight = min(len(data) / 6, 100)
     heatmap_height_ratio = .8  # this is the default (seaborn). Needs to be increased when figs are very long
 
-    FONTSIZE = 8
+    FONTSIZE = gene_symbol_fontsize # default 8
 
     if figsize is None:
 
