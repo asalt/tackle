@@ -365,6 +365,10 @@ class Data:
 
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
+        _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats',
+                 'SRA']
+        # import ipdb; ipdb.set_trace()
+        # stacked_data = [ df[_cols].stack() for df in exps.values() ]
         stacked_data = [ df.stack() for df in exps.values() ]
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
         # self.panel = pd.Panel(exps)
@@ -636,7 +640,7 @@ class Data:
             return True
         return False
 
-    def perform_data_export(self, level='all'):
+    def perform_data_export(self, level='all', genesymbols=False):
         # if self.export_data is None:
         #     return
 
@@ -657,6 +661,8 @@ class Data:
         elif level == 'area':
             export = self.areas_log_shifted.copy()
             export[self.mask] = np.NaN
+            if genesymbols:
+                export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
             export.to_csv(outname, sep='\t')
         print('Exported', outname)
 
