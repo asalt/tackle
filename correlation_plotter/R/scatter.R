@@ -3,8 +3,14 @@ library(graphics)
 #' adapted from PerformanceAnalytics::chart.Correlation
 scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
                        method = c("pearson", "kendall",
-                                  "spearman"), ...)
+                                  "spearman"), colnames = NULL,
+                       ...
+                       )
 {
+
+  if (!is.null(colnames)){
+    names(x) <- colnames
+  }
 
   nrows <- dim(x)[2]
   plt_size <- nrows * .75
@@ -56,8 +62,10 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
     u <- par('usr')
     names(usr) <- c("xleft", "xright", "ybottom", "ytop")
     txt <- paste('n=', length( x[!is.na(x)] ), sep='')
+    ## cex <- 0.7/strwidth(txt)
     cex <- 0.5/strwidth(txt)
-    text( 0.5, 0.4, txt, cex = cex )
+    ## text( 0.5, 0.4, txt, cex = cex )
+    text( 0.5, 0.5, txt, cex = cex, pos = 1 ) # text below center
   }
 
   ## text.panel = function(x, ...){
@@ -65,7 +73,8 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
     usr <- par("usr")
     on.exit(par(usr))
     ## cex <- 0.7/strwidth(txt)
-    text( 0.5, 0.6, txt, cex = cex )
+    ## text( 0.5, 0.6, txt, cex = cex )
+    text( 0.5, 0.5, txt, cex = cex, pos = 3 ) # text above center
   }
 
   lower.panel = function(x, y, col = 'grey', smooth = FALSE, xmin = NULL, xmax = NULL, method = 'pearson', ...){
