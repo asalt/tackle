@@ -384,6 +384,7 @@ def export(ctx, level, genesymbols):
 @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
+@click.option('--cmap', default=None, show_default=True)
 @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
               help='''Optionally specify the figuresize (width, height) in inches
               If not specified, tries to use a reasonable default depending on the number of
@@ -422,7 +423,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_fontsize, highlight_geneids, linkage, max_autoclusters,
+def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_fontsize, highlight_geneids, linkage, max_autoclusters,
             nclusters, row_cluster, seed, show_metadata, standard_scale, show_missing_values,
             z_score):
 
@@ -436,7 +437,9 @@ def cluster(ctx, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_fontsiz
     data_obj.set_highlight_gids(highlight_geneids)
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
-    result = clusterplot(data_obj.areas_log_shifted, highlight_gids=data_obj.highlight_gids,
+    result = clusterplot(data_obj.areas_log_shifted,
+                         cmap_name=cmap,
+                         highlight_gids=data_obj.highlight_gids,
                          highlight_gid_names=data_obj.highlight_gid_names,
                          gid_symbol=data_obj.gid_symbol,
                          gene_symbols=gene_symbols, z_score=data_obj.z_score,
@@ -752,6 +755,8 @@ def volcano(ctx, foldchange, number, scale):
 
     group0, group1 = data_obj.col_metadata.loc[group].values[[0, -1]]
     samples0, samples1 = groups[group0], groups[group1]
+    print(group0, group1)
+    print(samples0, samples1)
 
 
     values = data_obj.areas_log_shifted
@@ -832,7 +837,9 @@ def volcano(ctx, foldchange, number, scale):
 @click.option('--collapse', type=bool, default=False, show_default=True)
 @click.option('--geneset', type=click.Choice(('hallmark', 'go_biological', 'curated.CP.all',
                                               'curated.CP.KEGG', 'oncogenic', 'curated.CP.BioCarta',
-                                              'curated.CP.Reactome', 'curated.CGP')),
+                                              'curated.CP.Reactome', 'curated.CGP',
+                                              'go.All', 'go.Bio', 'go.Cell', 'go.Molecular'
+)),
               default=('hallmark',), show_default=True, multiple=True
 )
 @click.option('--metric', type=click.Choice(('Signal2Noise', 'tTest', 'Cosine', 'Euclidean', 'Manhatten',
@@ -906,6 +913,10 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
                        'curated.CP.KEGG': 'c2.cp.kegg.v6.1.entrez.gmt',
                        'curated.CP.Reactome': 'c2.cp.reactome.v6.1.entrez.gmt',
                        'oncogenic': 'c6.all.v6.1.entrez.gmt',
+                       'go.All': 'c5.all.v6.1.entrez.gmt',
+                       'go.Bio': 'c5.bp.v6.1.entrez.gmt',
+                       'go.Cell': 'c5.cc.v6.1.entrez.gmt',
+                       'go.Molecular': 'c5.mf.v6.1.entrez.gmt'
                        # : 'msigdb.v6.1.entrez.gmt',
     }
     # get most recent, sort by name and take last
@@ -1025,7 +1036,7 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 
         cmap = mpl.cm.Reds_r
         bounds = np.linspace(0, 1, 21)
-        norm = mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
+        cnorm = mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
         powernorm = mpl.colors.PowerNorm(.5, vmin=0, vmax=1)
 
         gsea_sig = pd.DataFrame()
@@ -1043,14 +1054,14 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
             # return
 
         gsea_sig['color'] = gsea_sig['FWER p-val'].apply(lambda x:
-                                mpl.colors.to_hex( cmap(norm(powernorm(x))) )
+                                mpl.colors.to_hex( cmap(cnorm(powernorm(x))) )
         )
         import textwrap
         gsea_sig.index = gsea_sig.index +  ['*' if x<.25 else '' for x in gsea_sig['FWER p-val'] ]
         gsea_sig.index = gsea_sig.index.map(lambda x: textwrap.fill(x.replace('_', ' '),
                                                                     14,
                                                                     break_long_words=False) )
-
+        # print(gsea_sig[['FWER p-val', 'NES', 'color']])
 
         # mpl.colors.Normalize(vmin=1.,vmax=1.)
 
@@ -1068,7 +1079,7 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         # gsea_sig['NES_group1'].fillna(0).plot.barh(colormap=cmap, ax=ax1)
         # ax1.set_yticklabels(())
 
-        gradient = np.apply_along_axis(lambda x: norm(powernorm(x)), 0, np.linspace(0, 1, 256))
+        gradient = np.apply_along_axis(lambda x: cnorm(powernorm(x)), 0, np.linspace(0, 1, 256))
         gradient = np.vstack((gradient, gradient))
         cax.imshow(gradient, aspect='auto', cmap=cmap)
         cax.set_yticklabels(())
@@ -1082,6 +1093,7 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         ax0.set_ylabel('')
         ax0.set_xlabel('NES')
 
+        # plt.tight_layout()
         fig = plt.gcf()
         gs.tight_layout(fig)
         # fig.tight_layout()

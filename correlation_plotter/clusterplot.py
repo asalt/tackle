@@ -142,7 +142,7 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
 
 
-def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
+def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
@@ -290,7 +290,8 @@ def clusterplot(data, dbscan=False, highlight_gids=None, highlight_gid_names=Non
     else:
         plot_data = data_t
 
-    cmap_name = 'YlOrRd' if (z_score is None and normed == False) else 'RdBu_r'
+    if cmap_name is None:
+        cmap_name = 'YlOrRd' if (z_score is None and normed == False) else 'RdBu_r'
     cmap = cmap_name
     # cmap = mpl.cm.get_cmap(cmap_name)
     # robust = True if normed == True else False
