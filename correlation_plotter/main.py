@@ -243,6 +243,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
 @click.option('--batch', type=str, default=None, help='Metadata entry to group experiments for batch correction via ComBat (Requires rpy2, R, and sva installations)')
 @click.option('--batch-nonparametric', is_flag=True, default=False, help='Use nonparametric method for batch correction with ComBat (only used if --batch is also specified)')
+@click.option('--batch-noimputation', is_flag=True, default=False, help='Leave original missing values after batch correction')
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
@@ -280,7 +281,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format, funcats,
+def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, data_dir, file_format, funcats,
          funcats_inverse, geneids, group, ignore_geneids, ifot, ifot_ki, ifot_tf, name, result_dir,
          taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
@@ -321,12 +322,20 @@ def main(ctx, additional_info, batch, batch_nonparametric, data_dir, file_format
     params = context.params
 
     data_obj = Data(additional_info=additional_info, batch=batch,
-                    batch_nonparametric=batch_nonparametric, data_dir=data_dir, base_dir=result_dir,
-                    funcats=funcats, funcats_inverse=funcats_inverse, geneids=geneids, group=group,
-                    ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
+                    batch_nonparametric=batch_nonparametric, batch_noimputation=batch_noimputation,
+                    data_dir=data_dir, base_dir=result_dir, funcats=funcats,
+                    funcats_inverse=funcats_inverse, geneids=geneids, group=group, ifot=ifot,
+                    ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
                     nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file,
                     metrics=metrics, metrics_after_filter=metrics_after_filter,
                     ignore_geneids=ignore_geneids )
+
+    outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          outpath=data_obj.outpath)+'\tab'
+    data_obj.col_metadata.to_csv(outname, sep='\t')
 
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
@@ -356,9 +365,10 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 
     X = data_obj.areas_log_shifted.copy()
     # to_mask = (data_obj.mask | (data_obj.areas_log==-10))
-    to_mask = (data_obj.mask | (data_obj.areas_log==data_obj.minval_log))
+    to_mask = (data_obj.mask | (data_obj.areas_log==data_obj.minval_log)).dropna(1)
     X[to_mask] = np.NaN
-    g = scatterplot(X.replace(0, np.NaN), stat=stat,
+    # g = scatterplot(X.replace(0, np.NaN), stat=stat,
+    g = scatterplot(X, stat=stat,
                     colors_only=colors_only, shade_correlation=shade_correlation,
                     outname=outname,
                     file_fmts=file_fmts,
@@ -437,6 +447,10 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
     data_obj.set_highlight_gids(highlight_geneids)
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
+
+    col_meta = data_obj.col_metadata
+    _expids = ('recno', 'runno', 'searchno')
+    col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
     result = clusterplot(data_obj.areas_log_shifted,
                          cmap_name=cmap,
                          highlight_gids=data_obj.highlight_gids,
@@ -446,7 +460,7 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
                          standard_scale=data_obj.standard_scale,
                          row_cluster=row_cluster, col_cluster=col_cluster,
                          # metadata=data_obj.config if show_metadata else None,
-                         col_data = data_obj.col_metadata if show_metadata else None,
+                         col_data = col_meta if show_metadata else None,
                          nclusters=nclusters,
                          dbscan=dbscan,
                          max_autoclusters=max_autoclusters,
