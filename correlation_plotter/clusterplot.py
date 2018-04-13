@@ -12,9 +12,10 @@ import pandas as pd
 import seaborn as sb
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_samples, silhouette_score
+from scipy.cluster import hierarchy
 
 from .utils import *
-from .containers import MyClusterGrid
+from .containers import MyClusterGrid, GeneMapper
 
 rc = {'font.family': 'sans-serif',
       'text.usetex': False}
@@ -198,8 +199,14 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
                                   index=col_data.index)
 
         for info in col_data.index:
+            n_colors=max(10, col_data.loc[info].nunique())
+            if n_colors <= 10:
+                colors = sb.color_palette('tab10', n_colors=n_colors)
+            else:
+                # colors = sb.color_palette('cubehelix', n_colors=n_colors)
+                colors = sb.cubehelix_palette(n_colors, start=.1, rot=.75)
             cmap = iter(rgb2hex(x) for x in
-                        sb.color_palette('hls', n_colors=max(6, col_data.loc[info].nunique())))
+                        colors)
             mapping = {val : next(cmap) for val in col_data.loc[info].unique()}
             colors = col_data.loc[info].map(mapping)
             col_colors.loc[info] = colors
@@ -230,9 +237,20 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         kmeans = kmeans_result['kmeans']
         clusters = pd.Series(data=kmeans.labels_, index=data.index)
         cluster_order = clusters.sort_values().index
+        # order the kmeans clusters via hierachical clustering for visual display
+        _d = dict()
+        for c in clusters.unique():
+            sel = data_t.loc[ clusters[clusters==c].index ]
+            _d[c] = sel.mean() # or median, or mean/std, or some variation
+        _df = pd.DataFrame(_d).T
+        _linkage = hierarchy.linkage(_df, method='single', optimal_ordering=True)
+        _dend = hierarchy.dendrogram(_linkage)
+        _order = _dend['leaves']
+        cluster_order = _df.iloc[_order].index
+        clusters_categorical = pd.Series(pd.Categorical(clusters, categories=cluster_order, ordered=True),
+                                         index=clusters.index).sort_values()
 
-        # plot_data = data.loc[cluster_order]
-        plot_data = data_t.loc[cluster_order]
+        plot_data = data_t.loc[clusters_categorical.index]
 
         cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=max(6, kmeans.n_clusters)))
         cmap_mapping = {val : next(cmap) for val in range(kmeans.n_clusters)}
@@ -245,12 +263,17 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         cluster_data = cluster_data.assign(Cluster=clusters+1)
         cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
+        _genemapper = GeneMapper()
+        cluster_data['GeneSymbol'] = cluster_data.index.map(lambda x: gid_symbol.get(x,
+                                                                      _genemapper.symbol.get(x, '?')
+        ))
+
         if row_colors is None:
             row_colors = cluster_colors
         else:
             row_colors = pd.concat([cluster_colors, row_colors], axis=1)
 
-        kmeans_result['data'] = cluster_data
+        kmeans_result['data'] = cluster_data.loc[clusters_categorical.index]
         retval['kmeans'] = kmeans_result
 
 
@@ -344,7 +367,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         if gene_symbols:
             min_figwidth += 1 # for labels?
 
-        figwidth  = max( min( len(data.columns) / 2, 8), min_figwidth )
+        # figwidth  = max( min( len(data.columns) / 2, 8), min_figwidth )
+        figwidth  = max( min( len(data.columns) / 2, 16), min_figwidth )
         # if col_colors is not None:
         #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
         figsize = (figwidth, figheight)
@@ -369,9 +393,9 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
                             row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                             mask=mask.loc[plot_data.index] if show_missing_values else None,
-                            heatmap_height_ratio=heatmap_height_ratio,
-                            dendrogram_width_ratio=dendrogram_width_ratio,
-                            heatmap_width_ratio=heatmap_width_ratio
+                            # heatmap_height_ratio=heatmap_height_ratio,
+                            # dendrogram_width_ratio=dendrogram_width_ratio,
+                            # heatmap_width_ratio=heatmap_width_ratio,
     )
 
     g = plotter.plot(method=linkage, metric='euclidean',
@@ -385,6 +409,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
                      center=0 if cmap != 'YlOrRd' else None,
                      vmax=plot_data.max().max() if cmap == 'YlOrRd' else None,
                      rasterized=True,
+                     xticklabels=plot_data.columns
     )
     if figheight <= 12:
         hspace =.01
@@ -425,6 +450,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         g.ax_heatmap.tick_params(axis='y', which='major', pad=1)
     for tick in g.ax_heatmap.xaxis.get_ticklabels():
         tick.set_rotation(90)
+        if len(tick.get_text()) > 10:
+            tick.set_size(tick.get_size()*.75)
     if g.ax_row_colors:
         ticks = g.ax_row_colors.xaxis.get_ticklabels()
         if len(ticks) > 1:
@@ -453,9 +480,11 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
     if col_colors is not None:
         col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
-        widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
+        # widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
+        widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.2 )
         col_colors_t = col_colors.T
-        bbox_y0 = 1.44 if col_cluster else .8
+        # bbox_y0 = 1.44 if col_cluster else .8
+        bbox_y0 = 2.24 if col_cluster else .8
         bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
         legends = list()
@@ -469,8 +498,13 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
                 handle = mpl.patches.Patch(color=c,)
                 handles.append(handle)
                 labels.append(n)
+            if len(col_names) <= 20:
+                ncols = max(len(col_names) // 4, 1)
+            else:
+                ncols = max(len(col_names) // 8, 1)
+
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
-                                              loc='upper left', ncol=max(len(col_names) // 4, 1),
+                                              loc='upper left', ncol=ncols,
                                               title=col_name
             )
             legends.append(leg)

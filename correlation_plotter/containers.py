@@ -7,13 +7,14 @@ import operator as op
 from collections import OrderedDict
 from functools import partial
 from warnings import warn
-from matplotlib import cm
+from matplotlib import cm, gridspec
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 from seaborn.matrix import ClusterGrid
 from seaborn.matrix import _HeatMapper as HeatMapper
+from seaborn.matrix import _matrix_mask
 
 from .utils import *
 
@@ -22,6 +23,28 @@ idx = pd.IndexSlice
 
 TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
+
+
+LABEL_MAPPER = {'none': 0,  # hard coded number IDs for labels
+                '126': 1260,
+                '127C': 1270,
+                '127N': 1271,
+                '128C': 1280,
+                '128N': 1281,
+                '129C': 1290,
+                '129N': 1291,
+                '130C': 1300,
+                '130N': 1301,
+                '131': 1310,
+                '113': 113,
+                '114': 114,
+                '115': 115,
+                '116': 116,
+                '117': 117,
+                '118': 118,
+                '119': 119,
+                '121': 121,
+}
 
 def maybe_int(x):
     try:
@@ -41,11 +64,40 @@ def join_and_create_path(*strings, verbose=True):
             print('Created new directory: {}'.format(os.path.abspath(path)))
     return path
 
+class GeneMapper:
+    def __init__(self):
+        self.file = os.path.join( os.path.split(os.path.abspath(__file__))[0],
+                                  'data', 'genetable_hsmmgg.tab'
+        )
+        self._df = None
+        self._symbol = None
+        self._funcat = None
+
+    @property
+    def df(self):
+        if self._df is None:
+            self._df = pd.read_table(self.file, index_col='GeneID')
+        return self._df
+
+    @property
+    def symbol(self):
+        if self._symbol is None:
+            self._symbol = self.df['GeneSymbol'].to_dict()
+        return self._symbol
+
+    @property
+    def funcat(self):
+        if self._funcat is None:
+            self._funcat = self.df['FunCats'].to_dict()
+        return self._funcat
+
+_genemapper = GeneMapper()
 
 class Data:
 
     def __init__(self, additional_info=None, batch=None,
                  batch_nonparametric=False,
+                 batch_noimputation=False,
                  col_cluster=True,
                  colors_only=False, data_dir='./data',
                  base_dir='./results',
@@ -78,6 +130,7 @@ class Data:
         self.additional_info      = additional_info
         self.batch                = batch
         self.batch_nonparametric  = batch_nonparametric
+        self.batch_noimputation   = batch_noimputation
         self.col_cluster          = col_cluster
         self.colors_only          = colors_only
         self.data_dir             = data_dir
@@ -86,7 +139,7 @@ class Data:
         self.funcats_inverse      = funcats_inverse
         self.gene_symbols         = gene_symbols
         self.geneids              = geneids
-        self.ignore_geneids      = ignore_geneids
+        self.ignore_geneids       = ignore_geneids
         self.group                = group
         self.highlight_geneids    = highlight_geneids
         self.non_zeros            = non_zeros
@@ -329,31 +382,38 @@ class Data:
             # print('Loading', record)
             if name.startswith('__'):
                 continue
-            labeltype = config[name].get('__LABELTYPE__', 'LF')
+            labeltype = config[name].get('__LABELTYPE__', 'LF') # depreciated
             recno = record.get('recno')
             runno = record.get('runno')
             searchno = record.get('searcno')
+            label = record.get('label')
+            labelquery = LABEL_MAPPER.get(label, 0)
             exp = ispec.E2G(recno, runno, searchno, data_dir=self.data_dir)
-            if exp.df.empty:
-                raise ValueError('No data for {!r}'.format(exp))
+            df = exp.df.query('EXPLabelFLAG==@labelquery').copy()
+
+            if not df.index.name == 'GeneID':
+                df.index = df.GeneID
+
+            if df.empty:
+                warn('No data for {!r}, skipping'.format(exp))
+                continue
+                # raise ValueError('No data for {!r}'.format(exp))
+
 
             if self.metrics and not self.metrics_after_filter:
-                self._update_metrics(exp.df, name)
+                self._update_metrics(df, name)
 
             # exp.df['GeneID'] = exp.df['GeneID'].astype(int)
-            exp.df['GeneID'] = exp.df['GeneID'].apply(maybe_int)
-            funcats_dict = exp.df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
+            df['GeneID'] = df['GeneID'].apply(maybe_int)
+            funcats_dict = df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
 
-            if len(exp) == 0:
-                print('No data in {!r}'.format(exp))
-                continue
-            if labeltype == 'TMT' or labeltype == 'iTRAQ':
+            if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
             else:
-                df = filter_and_assign(exp.df, name, self.funcats, self.funcats_inverse,
+                df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
                                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
-                                       self.ifot_ki, self.ifot_tf )
+                                       self.ifot_ki, self.ifot_tf)
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter:
                     self._update_metrics(df, name)
@@ -365,9 +425,7 @@ class Data:
 
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
-        _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats',
-                 'SRA']
-        # import ipdb; ipdb.set_trace()
+        # _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA']
         # stacked_data = [ df[_cols].stack() for df in exps.values() ]
         stacked_data = [ df.stack() for df in exps.values() ]
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
@@ -398,9 +456,12 @@ class Data:
     @property
     def gid_symbol(self):
         if self._gid_symbol is None:
-            sel = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
-            sel.index = sel.index.droplevel(1)
-            self._gid_symbol = sel.to_dict()
+            try:
+                sel = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
+                sel.index = sel.index.droplevel(1)
+                self._gid_symbol = sel.to_dict()
+            except KeyError:
+                return dict()
             # self._gid_symbol = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
             # self._gid_symbol = self.panel.iloc[0]['GeneSymbol'].to_dict()
         return self._gid_symbol
@@ -475,15 +536,10 @@ class Data:
         self._areas_log_shifted = self._areas_log + shift_val
         self._areas_log_shifted.index.name = 'GeneID'
 
-        if self.batch is not None:
-            # try batch normalization via ComBat
-            self.batch_normalize()
-
 
         # if specified, normalize by a specified control group
         norm_info = self.config.get('__norm__')
         if norm_info is not None:
-            self.normed = False
             control = norm_info['control']
             group   = norm_info['group']
             label   = norm_info['label']
@@ -500,11 +556,25 @@ class Data:
                                                    .fillna(0) + 1e-20,
                                                    axis='index')
                 )
-            # self._areas = (areas.drop(ctrl_exps, axis=1)
-            #                .where(lambda x: x!= 0)
-            #                .dropna(how='all')
-            # )
-            self._areas_log_shifted = areas
+            self._areas = (areas.drop(ctrl_exps, axis=1)
+                           .where(lambda x: x!= 0)
+                           .dropna(how='all')
+            )
+            self.minval_log = self._areas.replace(0, np.NAN).stack().dropna().min()
+            finite = self._areas.pipe(np.isfinite)
+            maxval_log = self._areas[ finite ].stack().dropna().max()
+            self._areas_log_shifted = (self._areas.fillna(self.minval_log/2)
+                                       .replace(np.inf, maxval_log*1.5)
+            )
+            sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
+            sample_ixs  = [x for x in self.col_metadata.index if x != label]
+            self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
+            self._mask = self.mask[sample_cols]
+            self.normed = True
+
+        if self.batch is not None:
+            # try batch normalization via ComBat
+            self.batch_normalize()
 
         # if self.group is not None:
         #     self.calc_qvals()
@@ -545,7 +615,6 @@ class Data:
         batch = pheno[self.batch]
         # res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
         #                  mod=mod, par_prior=True, mean_only=False)
-
         if not self.batch_nonparametric:
             plot_prior = True
             outname = get_outname('Combat_prior_plots', name=self.outpath_name, taxon=self.taxon,
@@ -570,16 +639,20 @@ class Data:
 
         # df.index = df.index.astype(int)
         df.index = [maybe_int(x) for x in df.index]
-        df.columns = self._areas_log.columns
+        df.columns = self._areas_log_shifted.columns
         # reassign mask - ComBat can impute some NA values
-        thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min() * .9
-        new_mask = (df[ self.mask ] < thresh)
-        new_mask.columns = self._areas_log.columns
-        self._mask = new_mask
+        # TODO: resolve this for normed data
+        if not self.normed:
+            if not self.batch_noimputation:  # else leave old mask
+                thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min() * .9
+                new_mask = (df[ self.mask ] < thresh)
+                new_mask.columns = self._areas_log_shifted.columns
+                self._mask = new_mask
 
 
         self._areas_log_shifted = df.dropna(how='any')
-        self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
+        # self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
+        self._areas_log_shifted.columns = self._areas.columns  # r changes certain characters in column names
         # self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
 
         self._areas_log_shifted.index = [maybe_int(x) for x in self._areas_log_shifted.index]
@@ -661,9 +734,15 @@ class Data:
         elif level == 'area':
             export = self.areas_log_shifted.copy()
             export[self.mask] = np.NaN
+            order = export.columns
             if genesymbols:
-                export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
-            export.to_csv(outname, sep='\t')
+                # export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
+                export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x,
+                                                                      _genemapper.symbol.get(x, '?')
+                ))
+                order = ['GeneSymbol']  # index column is GeneID, add GeneSymbol
+                order += [x for x in export.columns if x not in order]
+            export[order].to_csv(outname, sep='\t')
         print('Exported', outname)
 
 
@@ -708,32 +787,144 @@ sb.matrix._HeatMapper = MyHeatMapper
 
 class MyClusterGrid(ClusterGrid):
 
-    def __init__(self, *args, heatmap_height_ratio=.8,
-                 dendrogram_width_ratio=.16, heatmap_width_ratio=.8, **kwargs):
-        self.heatmap_height_ratio = heatmap_height_ratio
-        self.dendrogram_width_ratio = dendrogram_width_ratio
-        self.heatmap_width_ratio=heatmap_width_ratio
+    # def __init__(self, *args, heatmap_height_ratio=.8,
+    #              dendrogram_width_ratio=.16, heatmap_width_ratio=.8,
+    #              expected_size_dendrogram=1.0, expected_size_colors=0.25:
+    #              **kwargs):
+    def __init__(self, data, pivot_kws=None, z_score=None, standard_scale=None,
+                 figsize=None, row_colors=None, col_colors=None, mask=None,
+                 expected_size_dendrogram=1.0,
+                 expected_size_colors=0.25):
+        """Grid object for organizing clustered heatmap input on to axes"""
 
-        super().__init__(*args, **kwargs)
+        if isinstance(data, pd.DataFrame):
+            self.data = data
+        else:
+            self.data = pd.DataFrame(data)
 
-    def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
-        """need to adjust the heatmap height ratio for long figures
-        such that it fills up more of the given room heatmap.
-        heatmap_width_ratio is set at .8, default. Tweak to add room for labels
+        self.data2d = self.format_data(self.data, pivot_kws, z_score,
+                                       standard_scale)
+
+        self.mask = _matrix_mask(self.data2d, mask)
+
+        self.expected_size_dendrogram = expected_size_dendrogram
+        self.expected_size_side_colors = expected_size_colors
+
+        if figsize is None:
+            width, height = 10, 10
+            figsize = (width, height)
+        self.fig = plt.figure(figsize=figsize)
+
+        self.row_colors, self.row_color_labels = \
+            self._preprocess_colors(data, row_colors, axis=0)
+        self.col_colors, self.col_color_labels = \
+            self._preprocess_colors(data, col_colors, axis=1)
+
+        width_ratios = self.dim_ratios(self.row_colors,
+                                       figsize=figsize,
+                                       axis=0)
+        height_ratios = self.dim_ratios(self.col_colors,
+                                        figsize=figsize,
+                                        axis=1)
+        nrows = 3 if self.col_colors is None else 4
+        ncols = 3 if self.row_colors is None else 4
+        self.gs = gridspec.GridSpec(nrows, ncols, wspace=0.01, hspace=0.01,
+                                    width_ratios=width_ratios,
+                                    height_ratios=height_ratios)
+
+        self.ax_row_dendrogram = self.fig.add_subplot(self.gs[nrows - 1, 0:2])
+        self.ax_col_dendrogram = self.fig.add_subplot(self.gs[0:2, ncols - 1])
+        self.ax_row_dendrogram.set_axis_off()
+        self.ax_col_dendrogram.set_axis_off()
+
+        self.ax_row_colors = None
+        self.ax_col_colors = None
+
+        if self.row_colors is not None:
+            self.ax_row_colors = self.fig.add_subplot(
+                self.gs[nrows - 1, ncols - 2])
+        if self.col_colors is not None:
+            self.ax_col_colors = self.fig.add_subplot(
+                self.gs[nrows - 2, ncols - 1])
+
+        self.ax_heatmap = self.fig.add_subplot(self.gs[nrows - 1, ncols - 1])
+
+        # colorbar for scale to left corner
+        if self.col_colors is not None:
+            cbar_max = 3
+        else:
+            cbar_max = 2
+
+        self.cax = self.fig.add_subplot(self.gs[0:cbar_max, 0])
+
+        self.dendrogram_row = None
+        self.dendrogram_col = None
+        # self.heatmap_height_ratio = heatmap_height_ratio
+        # self.dendrogram_width_ratio = dendrogram_width_ratio
+        # self.heatmap_width_ratio=heatmap_width_ratio
+
+        # super().__init__(*args, **kwargs)
+    def dim_ratios(self, side_colors, axis, figsize):
+        """Get the proportions of the figure taken up by each axes
         """
-        ratios = ClusterGrid.dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=side_colors_ratio)
+        figdim = figsize[axis]
 
-        if axis == 0:  # calculating height ratios
-            ratios[-1] = self.heatmap_height_ratio
+        expected_size_for_dendrogram = self.expected_size_dendrogram  # Inches
+        expected_size_for_side_colors = self.expected_size_side_colors  # Inches
 
-            if self.dendrogram_width_ratio: #
-                ratios[0] = self.dendrogram_width_ratio
+        # Get resizing proportion of this figure for the dendrogram and
+        # colorbar, so only the heatmap gets bigger but the dendrogram stays
+        # the same size.
+        dendrogram = expected_size_for_dendrogram / figdim
 
-        elif axis == 1 and self.dendrogram_width_ratio:  # calculating width ratios
-            ratios[0] = self.dendrogram_width_ratio * .4
-            ratios[1] = self.dendrogram_width_ratio
-        elif axis ==  1:
-            ratios[-1] = self.heatmap_width_ratio
+        # add the colorbar
+        colorbar_width = .8 * dendrogram
+        colorbar_height = .2 * dendrogram
+        if axis == 1:
+            ratios = [colorbar_width, colorbar_height]
+        else:
+            ratios = [colorbar_height, colorbar_width]
 
-        # print(axis, ':', ratios)
+        if side_colors is not None:
+            colors_shape = np.asarray(side_colors).shape
+            # This happens when a series or a list is passed
+            if len(colors_shape) <= 2:
+                n_colors = 1
+            # And this happens when a dataframe is passed, the first dimension is number of colors
+            else:
+                n_colors = colors_shape[0]
+
+            # Multiply side colors size by the number of colors
+            expected_size_for_side_colors = n_colors * expected_size_for_side_colors
+
+            side_colors_ratio = expected_size_for_side_colors / figdim
+
+            # Add room for the colors
+            ratios += [side_colors_ratio]
+
+        # Add the ratio for the heatmap itself
+        ratios.append(1 - sum(ratios))
+
         return ratios
+
+    # def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
+    #     """need to adjust the heatmap height ratio for long figures
+    #     such that it fills up more of the given room heatmap.
+    #     heatmap_width_ratio is set at .8, default. Tweak to add room for labels
+    #     """
+    #     ratios = ClusterGrid.dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=side_colors_ratio)
+
+    #     if axis == 0:  # calculating height ratios
+    #         ratios[-1] = self.heatmap_height_ratio
+
+    #         if self.dendrogram_width_ratio: #
+    #             ratios[0] = self.dendrogram_width_ratio
+
+    #     elif axis == 1 and self.dendrogram_width_ratio:  # calculating width ratios
+    #         ratios[0] = self.dendrogram_width_ratio * .4
+    #         ratios[1] = self.dendrogram_width_ratio
+    #     elif axis ==  1:
+    #         ratios[-1] = self.heatmap_width_ratio
+
+    #     # print(axis, ':', ratios)
+    #     return ratios
