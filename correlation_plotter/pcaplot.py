@@ -289,8 +289,19 @@ class PCAplot:
         color_handles, color_labels   = list(), list()
         marker_handles, marker_labels = list(), list()
         texts = list()
+        maxcols = 1
+        for label in (color_label, marker_label):
+            try:
+                ncols = np.ceil( df[label].nunique()/5 )
+                maxcols = max([ maxcols, ncols ])
+            except ValueError:
+                pass
 
-        fig, ax = plt.subplots()
+        figsize = [6.4, 4.8]
+        # figsize[1] += 1.4*(maxcols-1)
+
+
+        fig, ax = plt.subplots(figsize=figsize)
         for name, row in df.iterrows():  # plot first and second components
             color  = row['_color']
             marker = row['_marker']
@@ -303,7 +314,11 @@ class PCAplot:
                 name = row[color_label]
                 if name not in color_labels:
                     color_labels.append(name)
-                    color_handle = matplotlib.patches.Patch(color=color)
+                    # color_handle = matplotlib.patches.Patch(color=color)
+                    color_handle = matplotlib.patches.Rectangle((0., 0.),   # (x,y)
+                                                                0.5,          # width
+                                                                0.5, color=color
+                    )
                     color_handles.append(color_handle)
             if marker_label:
                 name = row[marker_label]
@@ -319,15 +334,26 @@ class PCAplot:
             )
 
         legends = list()
+        maxcol = 1
         if color_label:
+            ncol = 1
+            # if len(color_labels) > 5:
+            #     ncol += 1
             leg1 = ax.legend(color_handles, color_labels, title=color_label, bbox_to_anchor=(1.04, 1),
-                            loc='upper left',
+                             loc='upper left', ncol=ncol, labelspacing=.2,
                             borderaxespad=0)
             legends.append(leg1)
+            maxcol = max([maxcol, ncol])
         if marker_label:
+            ncol = 1
+            # if len(marker_labels) > 5:
+            #     ncol += 1
             leg2 = ax.legend(marker_handles, marker_labels, loc='lower left', title=marker_label,
-                            bbox_to_anchor=(1.04, 0), borderaxespad=0)
+                             bbox_to_anchor=(1.04, 0), borderaxespad=0, ncol=ncol,
+                             labelspacing=.2
+            )
             legends.append(leg2)
+            maxcol = max([maxcol, ncol])
 
         var1, var2 = self.vars[x-1], self.vars[y-1]
         ax.set_xlabel('PC{} ({:.2%})'.format(x, var1))
@@ -338,7 +364,10 @@ class PCAplot:
 
         ax.axhline(color='grey')
         ax.axvline(color='grey')
-        fig.tight_layout(rect=[0,0,0.75,1])
+        right = .75
+        if maxcol < 1:
+            right -= .25
+        fig.tight_layout(rect=[0,0,.75,1])
 
 
         return fig, ax
