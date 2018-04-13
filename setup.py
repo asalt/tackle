@@ -26,7 +26,7 @@ setup(
     # correlationplot=main:main
     """,
 
-    package_data={'': ['R/*.r', 'R/*.R', 'GSEA/*.jar', 'GSEA/*.gmt', 'data/*.data', 'data/*txt]},
+    package_data={'': ['R/*.r', 'R/*.R', 'GSEA/*.jar', 'GSEA/*.gmt', 'data/*.data', 'data/*txt']},
     include_package_data=True
 
 )
