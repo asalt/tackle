@@ -1,6 +1,5 @@
 *.sqlite3
 *.log
-*geneignore.txt
 *.aux
 *.pdf
 *.gz

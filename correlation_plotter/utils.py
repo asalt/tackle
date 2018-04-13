@@ -332,10 +332,10 @@ def read_config(configfile, enforce=True):
         config.read_file(f)
 
     sections = config.sections()  # retains order
-    FIELDS = ('recno', 'runno', 'searchno',)
+    FIELDS = ('recno', 'runno', 'searchno', 'label')
 
 
-    data = defaultdict(lambda : dict(runno=1, searchno=1))  # does not retain order (no guarantee)
+    data = defaultdict(lambda : dict(runno=1, searchno=1, label='none'))  # does not retain order (no guarantee)
     for section_key in sections:
         section = config[section_key]
         other_fields = set(section.keys()) - set(FIELDS)
@@ -402,7 +402,8 @@ def fillna_meta(df, index_col):
 
 
 def parse_metadata(metadata):
-    expids = ('recno', 'runno', 'searchno')
+    # expids = ('recno', 'runno', 'searchno')
+    expids = tuple()
     metadata_filtered = OrderedDict([(k,v) for k, v in metadata.items()
                                      if not k.startswith('__')
     ])
@@ -413,13 +414,31 @@ def parse_metadata(metadata):
     return col_data
 
 
+class iFOT:
+    def __init__(self):
+        self.file = os.path.join( os.path.split(os.path.abspath(__file__))[0],
+                                  'data', 'geneignore.txt'
+        )
+        self._to_ignore = None
+    @property
+    def to_ignore(self):
+        if self._to_ignore is None:
+            self._to_ignore = pd.read_table(self.file, comment='#', header=None, names=['GeneID'])['GeneID']
+            # a pandas.Series
+        return self._to_ignore
+    def filter(self, genes):
+        return [g for g in genes if g not in self.to_ignore]
+ifot_normalizer = iFOT()
+
+
+
 def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subset=None,
                       ignored_geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False):
     """Filter by funcats and geneid_subset (if given)
        remove NAN GeneIDs"""
 
-    if ifot:
-        sum_ = df['iBAQ_dstrAdj'].sum()
+    if ifot: # normalize by ifot but without keratins
+        sum_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].sum()
     elif ifot_ki:
         sum_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
     elif ifot_tf:
