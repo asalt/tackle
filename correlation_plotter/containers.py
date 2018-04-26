@@ -117,7 +117,7 @@ class Data:
                  taxon='all',
                  z_score='0',
                  export_data=None,
-                 ifot=False, ifot_ki=False, ifot_tf=False,
+                 ifot=False, ifot_ki=False, ifot_tf=False, median=False,
                  set_outpath=True,
                  metrics=False, metrics_after_filter=True,
 
@@ -156,6 +156,7 @@ class Data:
         self.ifot                 = ifot
         self.ifot_ki              = ifot_ki
         self.ifot_tf              = ifot_tf
+        self.median               = median
         self.base_dir             = base_dir
         self.metrics              = metrics
         self.metrics_after_filter = metrics_after_filter
@@ -413,7 +414,7 @@ class Data:
             else:
                 df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
                                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
-                                       self.ifot_ki, self.ifot_tf)
+                                       self.ifot_ki, self.ifot_tf, self.median)
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter:
                     self._update_metrics(df, name)
