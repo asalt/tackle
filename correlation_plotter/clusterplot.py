@@ -195,6 +195,11 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
     # if metadata is not None:
     if col_data is not None:
         # col_data = parse_metadata(metadata)
+        col_data = col_data.copy()
+        if 'label' in col_data.index:
+            if col_data.loc['label'].nunique() == 1:
+                col_data = col_data.loc[col_data.index.drop('label')]
+
         col_colors = pd.DataFrame(columns=col_data.columns,
                                   index=col_data.index)
 
@@ -484,7 +489,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.2 )
         col_colors_t = col_colors.T
         # bbox_y0 = 1.44 if col_cluster else .8
-        bbox_y0 = 2.24 if col_cluster else .8
+        bbox_y0 = 2.16 if col_cluster else 1.2
         bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
         legends = list()
