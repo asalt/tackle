@@ -339,8 +339,12 @@ class PCAplot:
             ncol = 1
             # if len(color_labels) > 5:
             #     ncol += 1
+            fontsize = 12
+            longest_label = max(len(x) for x in color_labels)
+            if longest_label > 12:
+                fontsize=8
             leg1 = ax.legend(color_handles, color_labels, title=color_label, bbox_to_anchor=(1.04, 1),
-                             loc='upper left', ncol=ncol, labelspacing=.2,
+                             loc='upper left', ncol=ncol, labelspacing=.2, fontsize=fontsize,
                             borderaxespad=0)
             legends.append(leg1)
             maxcol = max([maxcol, ncol])
