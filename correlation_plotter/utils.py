@@ -427,7 +427,15 @@ class iFOT:
             # a pandas.Series
         return self._to_ignore
     def filter(self, genes):
-        return [g for g in genes if g not in self.to_ignore]
+        return [g for g in genes if (self.bool_real(g) and g not in self.to_ignore)]
+    @staticmethod
+    def bool_real(x):
+        flag = True
+        try:
+            flag = np.isfinite(x)
+        except TypeError:
+            pass
+        return flag and bool(x)
 ifot_normalizer = iFOT()
 
 
