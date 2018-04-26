@@ -1,0 +1,8 @@
+numpy
+pandas
+matplotlib=2.1.1
+seaborn
+rpy2
+click
+sklearn
+adjustText

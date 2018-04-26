@@ -1,0 +1,7 @@
+# these need to be installed within the R environment
+ggplot2
+dplyr
+ggrepel
+ggthemes
+bioconductor
+sva # via bioconductor
