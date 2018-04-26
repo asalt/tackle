@@ -30,11 +30,17 @@ volcanoplot <- function(X, max_labels = 35,
                         pch = 16, cex = 0.35,
                         fc_cutoff = 4, label_cex = 1,
                         show_all = FALSE,
+                        group0 = '', group1 = '',
                         ...){
 
 
 
   X <- mutate(X, Sig = ifelse(X$qValue < 0.05 & abs(X[, 'log2_Fold_Change']) > fc_cutoff, "FDR<0.05", "N.S."))
+  X[ , 'usd' ] = 'black'
+  X[ (X$qValue < .05 & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
+  X[ (X$qValue < .05 & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
+  X[, 'usd'] <- as.factor(X[, 'usd'])
+
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
 
   qvalues <- X[, 'qValue'][ !is.na( X[, 'qValue'] ) ]
@@ -55,29 +61,36 @@ volcanoplot <- function(X, max_labels = 35,
   }
 
   ymax <- max(-log10(X[, 'pValue'])) * 1.05
+  xmax <- max((X[, 'log2_Fold_Change']))
 
-  p = ggplot(X, aes(log2_Fold_Change, -log10(pValue))) +
+  ratio_sig <- paste0( dim( filter(X, Sig == 'FDR<0.05') )[1], '/', dim(X)[1] )
+  footnote <- paste( ratio_sig, 'sig. with', 2**fc_cutoff, 'F.C.' )
+
+  p = ggplot(X, aes(log2_Fold_Change, -log10(pValue), col=usd)) +
     theme_base() +
-    geom_point(aes(col = Sig), size = 1, cex = cex, show.legend = FALSE, pch=pch) +
-    scale_color_manual(values = c("red", "black")) +
+    geom_point(size = 1, cex = cex, show.legend = FALSE, pch=pch) +
+    scale_colour_identity() +
     geom_text_repel(data = filter( X, label == TRUE ),
                     aes(label = GeneSymbol),  min.segment.length = .05,
                     point.padding = 1e-6,
                     box.padding = .1, cex = label_cex,
                     segment.size = .35, segment.alpha = .4
                     ) +
-    labs(x = expression(paste('log'[2], ' Fold Change')), y = expression(paste('-log'[10], ' pValue'))) +
+    annotate("text",  c(-xmax, xmax), c(ymax*.95, ymax*.98), label = c(group0, group1),
+             hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
+    labs(x = expression(paste('log'[2], ' Fold Change')),
+         y = expression(paste('-log'[10], ' pValue')),
+         caption = footnote) +
+    theme(plot.caption = element_text(color = grey(.5), size=10 )) +
     ylim(0, ymax)
 
-  ## print(label_fontsize)
   print(p)
-  print(X %>% filter(Sig=='FDR<0.05') %>% dim)
-  print(X %>% dim)
-  ratio_sig <- paste0( dim( filter(X, Sig == 'FDR<0.05') )[1], '/', dim(X)[1] )
 
-  footnote <- paste( ratio_sig, 'sig. with', 2**fc_cutoff, 'F.C.' )
-  ## write(footnote, stdout())
-  makeFootnote( footnote, size = .5 )
+  ## print(X %>% filter(Sig=='FDR<0.05') %>% dim)
+  ## print(X %>% dim)
+
+  ## footnote <- paste( ratio_sig, 'sig. with', 2**fc_cutoff, 'F.C.' )
+  ## makeFootnote( footnote, size = .5 )
 
 
 }

@@ -433,24 +433,26 @@ ifot_normalizer = iFOT()
 
 
 def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subset=None,
-                      ignored_geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False):
+                      ignored_geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False, median=False):
     """Filter by funcats and geneid_subset (if given)
        remove NAN GeneIDs"""
 
     if ifot: # normalize by ifot but without keratins
-        sum_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].sum()
+        norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].sum()
+    if median:
+        norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].median()
     elif ifot_ki:
-        sum_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
+        norm_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
     elif ifot_tf:
-        sum_ = df.loc[df['FunCats'].fillna('').str.contains('TF'), 'iBAQ_dstrAdj'].sum()
+        norm_ = df.loc[df['FunCats'].fillna('').str.contains('TF'), 'iBAQ_dstrAdj'].sum()
     else:
-        sum_ = 1
-    if sum_ == 0:
+        norm_ = 1
+    if norm_ == 0:
         error = '{} has a sum of 0 when trying to normalize, aborting'.format(name)
         print(error)
         raise click.Abort()
         # sum_ = 1
-    df['iBAQ_dstrAdj'] /= sum_
+    df['iBAQ_dstrAdj'] /= norm_
 
     if funcats:  # do this after possible normalization
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]

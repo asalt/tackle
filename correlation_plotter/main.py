@@ -268,6 +268,8 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
               help='Calculate iFOT based on kinases')
 @click.option('--iFOT-TF', default=False, show_default=True, is_flag=True,
               help='Calculate iFOT based on transcription factors')
+@click.option('--median', default=False, show_default=True, is_flag=True,
+              help='Normalize based on median sample expression value')
 @click.option('-n', '--name', type=str, default='',
               help='An optional name for the analysis that will place all results in a subfolder.')
 @click.option('--result-dir', type=click.Path(exists=False, file_okay=False),
@@ -282,14 +284,14 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, data_dir, file_format, funcats,
-         funcats_inverse, geneids, group, ignore_geneids, ifot, ifot_ki, ifot_tf, name, result_dir,
+         funcats_inverse, geneids, group, ignore_geneids, ifot, ifot_ki, ifot_tf, median, name, result_dir,
          taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
     """
          # name, taxon, non_zeros, experiment_file):
 
-    if ifot + ifot_ki + ifot_tf > 1:
-        raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI` and `iFOT-TF`')
+    if ifot + ifot_ki + ifot_tf + median> 1:
+        raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`')
 
     # validate_subgroup(nonzero_subgroup, experiment_file)
     validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group)
@@ -325,7 +327,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, d
                     batch_nonparametric=batch_nonparametric, batch_noimputation=batch_noimputation,
                     data_dir=data_dir, base_dir=result_dir, funcats=funcats,
                     funcats_inverse=funcats_inverse, geneids=geneids, group=group, ifot=ifot,
-                    ifot_ki=ifot_ki, ifot_tf=ifot_tf, name=name, non_zeros=non_zeros,
+                    ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name, non_zeros=non_zeros,
                     nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file,
                     metrics=metrics, metrics_after_filter=metrics_after_filter,
                     ignore_geneids=ignore_geneids )
@@ -334,7 +336,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, d
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
                           batch=data_obj.batch_applied,
                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          outpath=data_obj.outpath)+'\tab'
+                          outpath=data_obj.outpath)+'.tab'
     data_obj.col_metadata.to_csv(outname, sep='\t')
 
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
@@ -743,107 +745,10 @@ def volcano(ctx, foldchange, number, scale):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
-
-    data_obj = ctx.obj['data_obj']
-
-    group = data_obj.group #
-    if group is None:
-        print('Must supply a group value.')
-        return
-
-    if data_obj.col_metadata.loc[group].nunique() != 2:
-        print('Error in volcanoplot, number of groups must be exactly 2.')
-        return
-    if data_obj.col_metadata.loc[group].value_counts().min() < 3:
-        print('Each group must have at least 3 replicates.')
-        return
-
-    groups = dict()
-    for grp in data_obj.col_metadata.loc[group].unique():
-        samples = ((data_obj.col_metadata.loc[group] == grp)
-                   .where(lambda x: x)
-                   .dropna()
-                   .index
-        )
-        groups[grp] = samples
-
-    group0, group1 = data_obj.col_metadata.loc[group].values[[0, -1]]
-    samples0, samples1 = groups[group0], groups[group1]
-    print(group0, group1)
-    print(samples0, samples1)
+    from .volcanoplot import volcanoplot
+    volcanoplot(ctx, foldchange, number, scale)
 
 
-    values = data_obj.areas_log_shifted
-
-    qvals   = data_obj.qvalues
-
-    log2_fc = ((values[samples1].mean(1) - values[samples0].mean(1))
-               .apply(lambda x: np.power(10, x))
-               # .pipe(np.power, 10)
-               .pipe(np.log2)
-    )
-    log2_fc.name = 'log2_Fold_Change'
-
-    df = qvals.join(log2_fc.to_frame())
-    df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
-    df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
-    df.index.name = 'GeneID'
-
-    outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                          batch=data_obj.batch_applied,
-                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          outpath=data_obj.outpath)
-
-    out = outname + '.tab'
-    print("Saving", out, '...', end='', flush=True)
-    df.to_csv(out, sep='\t')
-    print('done', flush=True)
-
-    try:
-        from rpy2.robjects import r
-        import rpy2.robjects as robjects
-        from rpy2.robjects import pandas2ri
-        from rpy2.robjects.packages import importr
-        _viaR = True
-    except ModuleNotFoundError:
-        _viaR = False
-
-    if _viaR:
-
-        pandas2ri.activate()
-        r_source = robjects.r['source']
-        r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                              'R', 'volcanoplot.R')
-        r_source(r_file)
-        Rvolcanoplot = robjects.r['volcanoplot']
-
-        file_fmts = ctx.obj['file_fmts']
-        grdevices = importr('grDevices')
-        gr_devices = {'.png': grdevices.png,
-                      '.pdf': grdevices.pdf,
-                      '.svg': grdevices.svg}
-        gr_kws = {'.png': dict(width=5, height=5, units='in', res=300),
-                  '.pdf': dict(width=5, height=5,),
-                  '.svg': dict(width=5, height=5,)
-        }
-        for file_fmt in file_fmts:
-
-            grdevice = gr_devices[file_fmt]
-            gr_kw = gr_kws[file_fmt]
-            out = outname + file_fmt
-            print("Saving", out, '...', end='', flush=True)
-
-            grdevice(file=out, **gr_kw)
-
-            Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number,
-                         fc_cutoff=foldchange, label_cex=scale)
-
-            grdevices.dev_off()
-            print('done.', flush=True)
-
-    else:
-        print('Must install rpy2')
 
 
 @main.command('gsea')
