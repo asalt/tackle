@@ -639,7 +639,8 @@ class Data:
             print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
 
         # df.index = df.index.astype(int)
-        df.index = [maybe_int(x) for x in df.index]
+        df.index = self._areas_log_shifted.index
+        # df.index = [maybe_int(x) for x in df.index]
         df.columns = self._areas_log_shifted.columns
         # reassign mask - ComBat can impute some NA values
         # TODO: resolve this for normed data
