@@ -147,7 +147,7 @@ def validate_seed(ctx, param, value):
     else:
         raise click.BadParameter('Must be an integer or `None`')
 
-def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, group=None):
+def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, group=None, covariate=None):
     config = read_config(experiment_file)
     config = copy.deepcopy(config)  # because we're about to change it
 
@@ -234,6 +234,8 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
         check_group(batch, 'batch')
     if group is not None:
         check_group(group, 'group')
+    if covariate is not None:
+        check_group(covariate, 'covariate')
 
     return
 
@@ -244,6 +246,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 @click.option('--batch', type=str, default=None, help='Metadata entry to group experiments for batch correction via ComBat (Requires rpy2, R, and sva installations)')
 @click.option('--batch-nonparametric', is_flag=True, default=False, help='Use nonparametric method for batch correction with ComBat (only used if --batch is also specified)')
 @click.option('--batch-noimputation', is_flag=True, default=False, help='Leave original missing values after batch correction')
+@click.option('--covariate', type=str, default=None, help='Metadata entry to use as covariate for batch correction via ComBat')
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
@@ -283,7 +286,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, data_dir, file_format, funcats,
+def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, data_dir, file_format, funcats,
          funcats_inverse, geneids, group, ignore_geneids, ifot, ifot_ki, ifot_tf, median, name, result_dir,
          taxon, non_zeros, nonzero_subgroup, experiment_file):
     """
@@ -294,7 +297,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, d
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`')
 
     # validate_subgroup(nonzero_subgroup, experiment_file)
-    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group)
+    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group, covariate=covariate)
 
     metrics, metrics_after_filter = False, True
     if 'metrics' in sys.argv:  #know this ahead of time, accumulate metrics during data load
@@ -325,6 +328,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, d
 
     data_obj = Data(additional_info=additional_info, batch=batch,
                     batch_nonparametric=batch_nonparametric, batch_noimputation=batch_noimputation,
+                    covariate=covariate,
                     data_dir=data_dir, base_dir=result_dir, funcats=funcats,
                     funcats_inverse=funcats_inverse, geneids=geneids, group=group, ifot=ifot,
                     ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name, non_zeros=non_zeros,
