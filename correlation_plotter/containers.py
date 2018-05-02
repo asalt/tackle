@@ -689,7 +689,8 @@ class Data:
         r('mod0 <- model.matrix(~1, pheno)')
         r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.group))
         r.assign('edata', self.areas_log_shifted.fillna(0))
-        if self.batch is not None:
+
+        if self.covariate is not None:
             r.assign('nbatch', pheno[self.covariate].nunique())
         else:
             r.assign('nbatch', 0)
