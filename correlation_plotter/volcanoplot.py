@@ -28,7 +28,7 @@ def volcanoplot(ctx, foldchange, number, scale):
         )
         groups[grp] = samples
 
-    group0, group1 = data_obj.col_metadata.loc[group].values[[0, -1]]
+    group0, group1 = data_obj.col_metadata.loc[group].unique()[[0, -1]]
     samples0, samples1 = groups[group0], groups[group1]
     # print(group0, group1)
     # print(samples0, samples1)
