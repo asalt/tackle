@@ -72,6 +72,7 @@ class GeneMapper:
         self._df = None
         self._symbol = None
         self._funcat = None
+        self._description = None
 
     @property
     def df(self):
@@ -90,6 +91,12 @@ class GeneMapper:
         if self._funcat is None:
             self._funcat = self.df['FunCats'].to_dict()
         return self._funcat
+
+    @property
+    def description(self):
+        if self._description is None:
+            self._description = self.df['GeneDescription'].to_dict()
+        return self._description
 
 _genemapper = GeneMapper()
 
