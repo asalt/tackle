@@ -254,6 +254,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         cluster_order = _df.iloc[_order].index
         clusters_categorical = pd.Series(pd.Categorical(clusters, categories=cluster_order, ordered=True),
                                          index=clusters.index).sort_values()
+        cluster_order_remapping = {c: i for i, c in enumerate(cluster_order)}
+        clusters = clusters.map(cluster_order_remapping)
 
         plot_data = data_t.loc[clusters_categorical.index]
 
