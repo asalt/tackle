@@ -98,6 +98,7 @@ class Data:
     def __init__(self, additional_info=None, batch=None,
                  batch_nonparametric=False,
                  batch_noimputation=False,
+                 covariate=None,
                  col_cluster=True,
                  colors_only=False, data_dir='./data',
                  base_dir='./results',
@@ -131,6 +132,7 @@ class Data:
         self.batch                = batch
         self.batch_nonparametric  = batch_nonparametric
         self.batch_noimputation   = batch_noimputation
+        self.covariate            = covariate
         self.col_cluster          = col_cluster
         self.colors_only          = colors_only
         self.data_dir             = data_dir
@@ -605,8 +607,8 @@ class Data:
         pheno = self.col_metadata.T
         r.assign('pheno', pheno)
 
-        if self.group is not None:
-            r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.group))
+        if self.covariate is not None:
+            r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.covariate))
             mod = r['mod']
             self.batch_applied = self.batch + '_Cov_{}'.format(self.group)
         else:
@@ -626,7 +628,6 @@ class Data:
             grdevices.png(file=outname+'.png', width=5, height=5, units='in', res=300)
         else:
             plot_prior = False
-
         res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
                          mod=mod, par_prior=not self.batch_nonparametric, mean_only=False, prior_plots=plot_prior)
 
@@ -639,7 +640,8 @@ class Data:
             print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
 
         # df.index = df.index.astype(int)
-        df.index = [maybe_int(x) for x in df.index]
+        df.index = self._areas_log_shifted.index
+        # df.index = [maybe_int(x) for x in df.index]
         df.columns = self._areas_log_shifted.columns
         # reassign mask - ComBat can impute some NA values
         # TODO: resolve this for normed data
@@ -687,8 +689,9 @@ class Data:
         r('mod0 <- model.matrix(~1, pheno)')
         r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.group))
         r.assign('edata', self.areas_log_shifted.fillna(0))
-        if self.batch is not None:
-            r.assign('nbatch', pheno[self.batch].nunique())
+
+        if self.covariate is not None:
+            r.assign('nbatch', pheno[self.covariate].nunique())
         else:
             r.assign('nbatch', 0)
 
