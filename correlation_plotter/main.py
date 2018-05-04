@@ -147,7 +147,12 @@ def validate_seed(ctx, param, value):
     else:
         raise click.BadParameter('Must be an integer or `None`')
 
-def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, group=None, covariate=None):
+# def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, group=None, covariate=None, pairs=None):
+def validate_configfile(experiment_file, **kwargs):
+    """
+    :experiment_file: config file to validate metadata entries
+    :**kwargs: metadata entries to test
+    """
     config = read_config(experiment_file)
     config = copy.deepcopy(config)  # because we're about to change it
 
@@ -228,16 +233,19 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
                                                                                         count, config_len
             ))
 
-    if nonzero_subgroup is not None:
-        check_group(nonzero_subgroup, 'nonzero_subgroup')
-    if batch is not None:
-        check_group(batch, 'batch')
-    if group is not None:
-        check_group(group, 'group')
-    if covariate is not None:
-        check_group(covariate, 'covariate')
+    # if nonzero_subgroup is not None:
+    #     check_group(nonzero_subgroup, 'nonzero_subgroup')
+    # if batch is not None:
+    #     check_group(batch, 'batch')
+    # if group is not None:
+    #     check_group(group, 'group')
+    # if covariate is not None:
+    #     check_group(covariate, 'covariate')
+    for kw_name, value in kwargs.items():
+        if value is not None:
+            check_group(value, kw_name)
 
-    return
+    return  # all passed
 
 
 @click.group(chain=True)
@@ -262,6 +270,7 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
 @click.option('--group', type=str, default=None, help='Metadata entry to calculate p-values for differential across (Requires rpy2, R, and sva installations)')
+@click.option('--pairs', type=str, default=None, help='Metadata entry that indicates sample pairs for running pairwise statistical tests.')
 @click.option('--ignore-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True,
               help="""Optional list of geneids to ignore. Should have 1 geneid per line. """)
@@ -286,9 +295,10 @@ def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, grou
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, data_dir, file_format, funcats,
-         funcats_inverse, geneids, group, ignore_geneids, ifot, ifot_ki, ifot_tf, median, name, result_dir,
-         taxon, non_zeros, nonzero_subgroup, experiment_file):
+def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, data_dir,
+         file_format, funcats, funcats_inverse, geneids, group, pairs, ignore_geneids, ifot,
+         ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup,
+         experiment_file):
     """
     """
          # name, taxon, non_zeros, experiment_file):
@@ -297,7 +307,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`')
 
     # validate_subgroup(nonzero_subgroup, experiment_file)
-    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group, covariate=covariate)
+    validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group, covariate=covariate, pairs=pairs)
 
     metrics, metrics_after_filter = False, True
     if 'metrics' in sys.argv:  #know this ahead of time, accumulate metrics during data load
@@ -328,13 +338,12 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
 
     data_obj = Data(additional_info=additional_info, batch=batch,
                     batch_nonparametric=batch_nonparametric, batch_noimputation=batch_noimputation,
-                    covariate=covariate,
-                    data_dir=data_dir, base_dir=result_dir, funcats=funcats,
-                    funcats_inverse=funcats_inverse, geneids=geneids, group=group, ifot=ifot,
-                    ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name, non_zeros=non_zeros,
-                    nonzero_subgroup=nonzero_subgroup, taxon=taxon, experiment_file=experiment_file,
-                    metrics=metrics, metrics_after_filter=metrics_after_filter,
-                    ignore_geneids=ignore_geneids )
+                    covariate=covariate, data_dir=data_dir, base_dir=result_dir, funcats=funcats,
+                    funcats_inverse=funcats_inverse, geneids=geneids, group=group, pairs=pairs,
+                    ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name,
+                    non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
+                    experiment_file=experiment_file, metrics=metrics,
+                    metrics_after_filter=metrics_after_filter, ignore_geneids=ignore_geneids )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,

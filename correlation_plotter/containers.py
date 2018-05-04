@@ -105,7 +105,7 @@ class Data:
                  experiment_file=None, funcats=None,
                  funcats_inverse=None,
                  gene_symbols=False, geneids=None,
-                 group=None,
+                 group=None, pairs=None,
                  highlight_geneids=None,
                  ignore_geneids=None,
                  name=None, non_zeros=0,
@@ -143,6 +143,7 @@ class Data:
         self.geneids              = geneids
         self.ignore_geneids       = ignore_geneids
         self.group                = group
+        self.pairs                = pairs
         self.highlight_geneids    = highlight_geneids
         self.non_zeros            = non_zeros
         self.nonzero_subgroup     = nonzero_subgroup
@@ -663,6 +664,8 @@ class Data:
         self._areas_log_shifted.index.name = 'GeneID'
 
     def calc_qvals(self):
+        try: ModuleNotFoundError
+        except: ModuleNotFoundError = type('ModuleNotFoundError', (Exception,), {})
         try:
             from rpy2.rinterface import RRuntimeError
         except Exception as e:
@@ -691,12 +694,33 @@ class Data:
         r.assign('edata', self.areas_log_shifted.fillna(0))
 
         if self.covariate is not None:
-            r.assign('nbatch', pheno[self.covariate].nunique())
+            ncov = pheno[self.covariate].nunique()
+            r.assign('ncov', pheno[self.covariate].nunique())
         else:
-            r.assign('nbatch', 0)
+            r.assign('ncov', 0)
+            ncov = 0
 
-        pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, nbatch)')
-        # pvalues = r('f.pvalue(as.matrix(edata), mod, mod0)')
+        if not self.pairs:
+            pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, ncov)')
+        else: # ttest rel
+            from .ttest_rel_cov import ttest_rel_cov
+            groups = self.col_metadata.loc[self.group].unique()
+            # only have t-test implemented here
+            if len(groups) > 2:
+                raise NotImplementedError('Only have support for 2 groups')
+            group0, group1 = groups
+            meta_ordered = self.col_metadata.sort_index(by=[self.group, self.pairs], axis=1)
+            # better way to do this?
+            cols0 = (meta_ordered.T[self.group] == group0).apply(lambda x: x if x else np.nan).dropna().index
+            cols1 = (meta_ordered.T[self.group] == group1).apply(lambda x: x if x else np.nan).dropna().index
+            # self.
+            # t test on every gene set
+            def ttest_func(row):
+                t, p = ttest_rel_cov(row[cols0], row[cols1], ncov=ncov)
+                return p
+            pvalues = self.areas_log_shifted.apply(ttest_func, axis=1)
+
+
 
         p_adjust = r['p.adjust']
 
