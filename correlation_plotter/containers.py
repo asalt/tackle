@@ -636,13 +636,17 @@ class Data:
             grdevices.png(file=outname+'.png', width=5, height=5, units='in', res=300)
         else:
             plot_prior = False
-        res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
+        res = sva.ComBat(dat=self._areas_log_shifted.fillna(0).values, batch=batch,
                          mod=mod, par_prior=not self.batch_nonparametric, mean_only=False, prior_plots=plot_prior)
 
         if plot_prior:
             grdevices.dev_off()
 
-        df = pandas2ri.ri2py(res)
+        df = pd.DataFrame(index=self.areas_log_shifted.index,
+                          columns=self.areas_log_shifted.columns,
+                          data=pandas2ri.ri2py(res)
+        )
+        # df = pandas2ri.ri2py(res)
         nas = sum(df.isnull().any(1))
         if nas > 0:
             print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
@@ -691,7 +695,7 @@ class Data:
         pandas2ri.activate()
         r_source = r['source']
         r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                              'R', 'pvalue_batch.R')
+                              'R', 'pvalue_cov.R')
         r_source(r_file)
 
         pheno = self.col_metadata.T
