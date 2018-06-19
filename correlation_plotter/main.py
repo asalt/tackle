@@ -757,6 +757,9 @@ def metrics(ctx, full, before_filter, before_norm):
 @click.option('-f', '--foldchange', type=int, default=2, show_default=True,
               help='log2 fold change cutoff'
 )
+@click.option('-p', '--pvalue', type=float, default=.05, show_default=True,
+              help='Significance cutoff for (B.H. adjusted) pvalue'
+)
 @click.option('-n', '--number', type=int, default=35, show_default=True,
               help='Maximum number of significant genes to highlight (annotate) in plot'
 )
@@ -764,12 +767,12 @@ def metrics(ctx, full, before_filter, before_norm):
               help='To what extent to scale the labels'
 )
 @click.pass_context
-def volcano(ctx, foldchange, number, scale):
+def volcano(ctx, foldchange, pvalue, number, scale):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
-    volcanoplot(ctx, foldchange, number, scale)
+    volcanoplot(ctx, foldchange, pvalue, number, scale)
 
 
 

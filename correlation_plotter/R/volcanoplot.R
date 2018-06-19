@@ -28,17 +28,19 @@ makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
                         pch = 16, cex = 0.35,
-                        fc_cutoff = 4, label_cex = 1,
+                        fc_cutoff = 4, pvalue=.05, label_cex = 1,
                         show_all = FALSE,
                         group0 = '', group1 = '',
                         ...){
 
 
+  sig_filter_str <- paste0('FDR<', pvalue)
 
-  X <- mutate(X, Sig = ifelse(X$qValue < 0.05 & abs(X[, 'log2_Fold_Change']) > fc_cutoff, "FDR<0.05", "N.S."))
+  X <- mutate(X, Sig = ifelse(X$qValue < pvalue & abs(X[, 'log2_Fold_Change']) > fc_cutoff,
+                              sig_filter_str, "N.S."))
   X[ , 'usd' ] = 'black'
-  X[ (X$qValue < .05 & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
-  X[ (X$qValue < .05 & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
+  X[ (X$qValue < pvalue & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
+  X[ (X$qValue < pvalue & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
@@ -63,8 +65,8 @@ volcanoplot <- function(X, max_labels = 35,
   ymax <- max(-log10(X[, 'pValue'])) * 1.05
   xmax <- max((X[, 'log2_Fold_Change']))
 
-  ratio_sig <- paste0( dim( filter(X, Sig == 'FDR<0.05') )[1], '/', dim(X)[1] )
-  footnote <- paste( ratio_sig, 'sig. with', 2**fc_cutoff, 'F.C.' )
+  ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
+  footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  2**fc_cutoff, 'F.C.' )
 
   p = ggplot(X, aes(log2_Fold_Change, -log10(pValue), col=usd)) +
     theme_base() +
