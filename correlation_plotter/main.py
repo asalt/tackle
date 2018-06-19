@@ -270,6 +270,7 @@ def validate_configfile(experiment_file, **kwargs):
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
 @click.option('--group', type=str, default=None, help='Metadata entry to calculate p-values for differential across (Requires rpy2, R, and sva installations)')
+@click.option('--limma', default=False, is_flag=True, help='Use limma moderated t test.')
 @click.option('--pairs', type=str, default=None, help='Metadata entry that indicates sample pairs for running pairwise statistical tests.')
 @click.option('--ignore-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True,
@@ -296,7 +297,7 @@ def validate_configfile(experiment_file, **kwargs):
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, data_dir,
-         file_format, funcats, funcats_inverse, geneids, group, pairs, ignore_geneids, ifot,
+         file_format, funcats, funcats_inverse, geneids, group, limma, pairs, ignore_geneids, ifot,
          ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup,
          experiment_file):
     """
@@ -309,11 +310,13 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     # validate_subgroup(nonzero_subgroup, experiment_file)
     validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group, covariate=covariate, pairs=pairs)
 
-    metrics, metrics_after_filter = False, True
+    metrics, metrics_after_filter, metrics_unnormed_area = False, True, True
     if 'metrics' in sys.argv:  #know this ahead of time, accumulate metrics during data load
         metrics = True
         if '--after-filter' in sys.argv:
             metrics_after_filter = True #
+        if '--after-norm' in sys.argv:
+            metrics_unnormed_area = False
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
@@ -342,8 +345,9 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     funcats_inverse=funcats_inverse, geneids=geneids, group=group, pairs=pairs,
                     ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name,
                     non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
-                    experiment_file=experiment_file, metrics=metrics,
-                    metrics_after_filter=metrics_after_filter, ignore_geneids=ignore_geneids )
+                    experiment_file=experiment_file, metrics=metrics, limma=limma,
+                    metrics_after_filter=metrics_after_filter,
+                    metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
@@ -584,8 +588,10 @@ def pca(ctx, annotate, max_pc):
 )
 @click.option('--before-filter/--after-filter', default=True, is_flag=True, show_default=True,
               help="Whether or not to show metrics before or after filtering")
+@click.option('--before-norm/--after-norm', default=True, is_flag=True, show_default=True,
+              help="Whether or not to show area before or after normalization")
 @click.pass_context
-def metrics(ctx, full, before_filter):
+def metrics(ctx, full, before_filter, before_norm):
 
     rc = {'font.family': 'sans-serif',
           "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
@@ -623,8 +629,9 @@ def metrics(ctx, full, before_filter):
     area = OrderedDict((n, data[n]['Area']) for n in data.keys())
 
     frames = list()
+    area_name = 'AreaSum_dstrAdj' if before_norm else 'AreaSum_dstrAdj_normed'
     for name, value in area.items():
-        frame = pd.Series(value).to_frame('AreaSum_dstrAdj').multiply(1e9).apply(np.log10)
+        frame = pd.Series(value).to_frame(area_name).multiply(1e9).apply(np.log10)
         frame['Name'] = name
         frames.append(frame)
     area_df = pd.concat(frames)
@@ -651,10 +658,13 @@ def metrics(ctx, full, before_filter):
     plt.setp(ax_sra.get_xticklabels(), visible=False)
     plt.setp(ax_gpg.get_xticklabels(), visible=False)
 
-    sb.violinplot(y='Name', x='AreaSum_dstrAdj', data=area_df, ax=ax_area)
+    sb.violinplot(y='Name', x=area_name, data=area_df, ax=ax_area)
     ax_area.yaxis.tick_right()
     ax_area.set_ylabel('')
-    ax_area.set_xlabel('log$_{10}$ AreaSum dstrAdj')
+    if before_norm:
+        ax_area.set_xlabel('log$_{10}$ AreaSum dstrAdj')
+    else:
+        ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj normed')
     # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=90 )
     plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=0 )
 

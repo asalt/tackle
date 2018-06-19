@@ -113,6 +113,7 @@ class Data:
                  funcats_inverse=None,
                  gene_symbols=False, geneids=None,
                  group=None, pairs=None,
+                 limma=False,
                  highlight_geneids=None,
                  ignore_geneids=None,
                  name=None, non_zeros=0,
@@ -128,6 +129,7 @@ class Data:
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
                  set_outpath=True,
                  metrics=False, metrics_after_filter=True,
+                 metrics_unnormed_area=True,
 
     ):
         "docstring"
@@ -151,6 +153,7 @@ class Data:
         self.ignore_geneids       = ignore_geneids
         self.group                = group
         self.pairs                = pairs
+        self.limma                = limma
         self.highlight_geneids    = highlight_geneids
         self.non_zeros            = non_zeros
         self.nonzero_subgroup     = nonzero_subgroup
@@ -170,6 +173,7 @@ class Data:
         self.base_dir             = base_dir
         self.metrics              = metrics
         self.metrics_after_filter = metrics_after_filter
+        self.metrics_unnormed_area= metrics_unnormed_area
         self._metric_values       = None
 
         self.outpath              = None
@@ -377,7 +381,10 @@ class Data:
         self._metric_values[name]['GPGroups'] = gpg
         self._metric_values[name]['PSMs']     = psms
         self._metric_values[name]['Peptides'] = peptides
-        self._metric_values[name]['Area']     = df.AreaSum_dstrAdj.where(lambda x: x > 0 ).dropna().values
+        if self.metrics_unnormed_area:
+            self._metric_values[name]['Area']     = df.AreaSum_dstrAdj.where(lambda x: x > 0 ).dropna().values
+        elif not self.metrics_unnormed_area:
+            self._metric_values[name]['Area']     = df.iBAQ_dstrAdj.where(lambda x: x > 0 ).dropna().values
         # self._metric_values[name]['GeneIDs']  = exp.df.GeneID.unique()
 
 
@@ -711,8 +718,19 @@ class Data:
             r.assign('ncov', 0)
             ncov = 0
 
-        if not self.pairs:
+        if not self.pairs and not self.limma:  # standard t test
             pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, ncov)')
+        elif not self.pairs and self.limma:
+            importr('limma')
+            r('library(dplyr)')
+            results = r("""lmFit(as.matrix(edata), mod) %>%
+                       eBayes(robust=TRUE, trend=TRUE) %>%
+                       topTable(n=Inf, sort.by='none')
+            """)
+            pvalues = results['P.Value']
+            qvalues = results['adj.P.Val']
+
+
         else: # ttest rel
             from .ttest_rel_cov import ttest_rel_cov
             groups = self.col_metadata.loc[self.group].unique()
@@ -736,9 +754,13 @@ class Data:
         p_adjust = r['p.adjust']
 
         # pvalues = f_pvalue(self.areas_log_shifted.fillna(0), mod, mod0)
-        qvalues = p_adjust(pvalues, method='BH')
+        try:
+            qvalues # limma calculates this
+        except NameError:
+            qvalues = pandas2ri.ri2py( p_adjust(pvalues, method='BH') )
+
         qvalues = pd.DataFrame(index=self.areas_log_shifted.index,
-                               data=np.array([pvalues, pandas2ri.ri2py(qvalues)]).T,
+                               data=np.array([pvalues, qvalues]).T,
                                columns=['pValue', 'qValue']
         ).sort_values(by='pValue')
         # qvalues.name = 'q_value'
