@@ -757,7 +757,7 @@ def metrics(ctx, full, before_filter, before_norm):
 @click.option('-f', '--foldchange', type=int, default=2, show_default=True,
               help='log2 fold change cutoff'
 )
-@click.option('-p', '--pvalue', type=float, default=.05, show_default=True,
+@click.option('-s', '--sig', type=float, default=.05, show_default=True,
               help='Significance cutoff for (B.H. adjusted) pvalue'
 )
 @click.option('-n', '--number', type=int, default=35, show_default=True,
@@ -766,14 +766,16 @@ def metrics(ctx, full, before_filter, before_norm):
 @click.option('-s', '--scale', type=float, default=1.2, show_default=True,
               help='To what extent to scale the labels'
 )
+@click.option('--q-value/--p-value', default=True, is_flag=True, show_default=True,
+              help="Whether to plot qvalue or pvalue on volcano plot (does not change underlying data)")
 @click.pass_context
-def volcano(ctx, foldchange, pvalue, number, scale):
+def volcano(ctx, foldchange, sig, number, scale, q_value):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
-    volcanoplot(ctx, foldchange, pvalue, number, scale)
-
+    yaxis = 'qValue' if q_value else 'pValue'
+    volcanoplot(ctx, foldchange, sig, yaxis, number, scale)
 
 
 

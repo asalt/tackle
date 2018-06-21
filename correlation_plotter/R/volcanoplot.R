@@ -24,23 +24,25 @@ makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
             gp = gpar(cex = size, col = color))
   popViewport()
 }
+yaxis.choices <- c('pValue', 'qValue')
 
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
                         pch = 16, cex = 0.35,
-                        fc_cutoff = 4, pvalue=.05, label_cex = 1,
-                        show_all = FALSE,
+                        fc_cutoff = 4, sig = 0.05, label_cex = 1,
+                        show_all = FALSE, yaxis = yaxis.choices,
                         group0 = '', group1 = '',
                         ...){
 
+  ploty <- match.arg(yaxis, yaxis.choices)
 
-  sig_filter_str <- paste0('FDR<', pvalue)
+  sig_filter_str <- paste0('FDR<', sig)
 
-  X <- mutate(X, Sig = ifelse(X$qValue < pvalue & abs(X[, 'log2_Fold_Change']) > fc_cutoff,
+  X <- mutate(X, Sig = ifelse(X$qValue < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
                               sig_filter_str, "N.S."))
   X[ , 'usd' ] = 'black'
-  X[ (X$qValue < pvalue & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
-  X[ (X$qValue < pvalue & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
+  X[ (X$qValue < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
+  X[ (X$qValue < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
@@ -62,13 +64,15 @@ volcanoplot <- function(X, max_labels = 35,
     X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
   }
 
-  ymax <- max(-log10(X[, 'pValue'])) * 1.05
+  ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
+  ymax <- max(-log10(X[, ploty])) * 1.05
   xmax <- max((X[, 'log2_Fold_Change']))
 
   ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
   footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  2**fc_cutoff, 'F.C.' )
+  ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
-  p = ggplot(X, aes(log2_Fold_Change, -log10(pValue), col=usd)) +
+  p = ggplot(X, aes(log2_Fold_Change, -log10(get(ploty)), col=usd)) +
     theme_base() +
     geom_point(size = 1, cex = cex, show.legend = FALSE, pch=pch) +
     scale_colour_identity() +
@@ -81,9 +85,9 @@ volcanoplot <- function(X, max_labels = 35,
     annotate("text",  c(-xmax, xmax), c(ymax*.95, ymax*.98), label = c(group0, group1),
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),
-         y = expression(paste('-log'[10], ' pValue')),
+         y=ylabel_full,
          caption = footnote) +
-    theme(plot.caption = element_text(color = grey(.5), size=10 )) +
+    theme(plot.caption = element_text(color = grey(.5), size=10)) +
     ylim(0, ymax)
 
   print(p)

@@ -5,8 +5,11 @@ import numpy as np
 import pandas as pd
 from .utils import get_outname
 
-def volcanoplot(ctx, foldchange, pvalue, number, scale):
+def volcanoplot(ctx, foldchange, sig, yaxis, number, scale):
     data_obj = ctx.obj['data_obj']
+
+    if yaxis not in ('pValue', 'qValue'):
+        raise ValueError('Must choose between `pValue` and `qValue`')
 
     group = data_obj.group #
     if group is None:
@@ -105,7 +108,7 @@ def volcanoplot(ctx, foldchange, pvalue, number, scale):
             grdevice(file=out, **gr_kw)
 
             Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
-                         pvalue=pvalue, label_cex=scale, group0=group0, group1=group1)
+                         sig=sig, yaxis=yaxis, label_cex=scale, group0=group0, group1=group1)
 
             grdevices.dev_off()
             print('done.', flush=True)
