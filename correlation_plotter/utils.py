@@ -447,7 +447,7 @@ def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subse
 
     if ifot: # normalize by ifot but without keratins
         norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].sum()
-    if median:
+    elif median:
         norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].median()
     elif ifot_ki:
         norm_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
