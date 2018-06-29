@@ -39,6 +39,14 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
 
     values = data_obj.areas_log_shifted
     qvals   = data_obj.qvalues
+    from .utils import filter_observations
+    filtering = values.copy()
+    filtering.index = [filtering.index, ['area']*len(filtering)]
+    values_filtered = filter_observations(filtering, 'area',
+                                          data_obj.non_zeros, data_obj.nonzero_subgroup,
+                                          data_obj.col_metadata)
+    values = values_filtered.reset_index(level=1, drop=True)
+
 
     for group in itertools.combinations(data_obj.col_metadata.loc[group].unique(), 2):
         group0, group1 = group
