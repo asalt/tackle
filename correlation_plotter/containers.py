@@ -127,7 +127,7 @@ class Data:
                  z_score='0',
                  export_data=None,
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
-                 set_outpath=True,
+                 set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
                  metrics_unnormed_area=True,
 
@@ -188,8 +188,8 @@ class Data:
             self.set_outpath(base_dir, self.analysis_name, name)
             self.outpath_name = os.path.split(self.outpath)[-1]
         else:
-            self.outpath = None
-            self.outpath_name = None
+            self.outpath = outpath
+            self.outpath_name = outpath_name
 
 
         # self.geneid_subset = None
