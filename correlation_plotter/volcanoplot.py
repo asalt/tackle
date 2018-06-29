@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 from .utils import get_outname
 
-def volcanoplot(ctx, foldchange, sig, yaxis, number, scale):
+def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
+                yaxis='qValue', scale=1.2):
+
     data_obj = ctx.obj['data_obj']
 
     if yaxis not in ('pValue', 'qValue'):
@@ -57,16 +59,21 @@ def volcanoplot(ctx, foldchange, sig, yaxis, number, scale):
         df.index.name = 'GeneID'
 
         outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                            non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                            batch=data_obj.batch_applied,
-                            batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                            outpath=data_obj.outpath,
-                            group='{}_vs_{}'.format(group0, group1)
+                              non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                              batch=data_obj.batch_applied,
+                              batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                              outpath=data_obj.outpath,
+                              group='{}_vs_{}'.format(group0, group1),
         )
 
         out = outname + '.tab'
         print("Saving", out, '...', end='', flush=True)
-        df.to_csv(out, sep='\t')
+        export_data = df
+        if only_sig:
+            export_data = df.query('qValue < @sig')
+        if expression_data:
+            export_data = export_data.join(values)
+        export_data.to_csv(out, sep='\t')
         print('done', flush=True)
 
         try:

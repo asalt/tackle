@@ -757,25 +757,32 @@ def metrics(ctx, full, before_filter, before_norm):
 @click.option('-f', '--foldchange', type=int, default=2, show_default=True,
               help='log2 fold change cutoff'
 )
-@click.option('-s', '--sig', type=float, default=.05, show_default=True,
-              help='Significance cutoff for (B.H. adjusted) pvalue'
+@click.option('-e', '--expression-data', default=False, is_flag=True, show_default=True,
+              help='Include expression data for each sample in tabular output.'
 )
 @click.option('-n', '--number', type=int, default=35, show_default=True,
               help='Maximum number of significant genes to highlight (annotate) in plot'
 )
+@click.option('-o', '--only-sig', default=False, is_flag=True, show_default=True,
+              help='Only export genes that are significantly different (based on set cutoff)'
+)
 @click.option('-s', '--scale', type=float, default=1.2, show_default=True,
               help='To what extent to scale the labels'
+)
+@click.option('--sig', type=float, default=.05, show_default=True,
+              help='Significance cutoff for (B.H. adjusted) pvalue'
 )
 @click.option('--q-value/--p-value', default=True, is_flag=True, show_default=True,
               help="Whether to plot qvalue or pvalue on volcano plot (does not change underlying data)")
 @click.pass_context
-def volcano(ctx, foldchange, sig, number, scale, q_value):
+def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, q_value):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
     yaxis = 'qValue' if q_value else 'pValue'
-    volcanoplot(ctx, foldchange, sig, yaxis, number, scale)
+    volcanoplot(ctx, foldchange, expression_data, number=number, only_sig=only_sig, sig=sig,
+                yaxis=yaxis, scale=scale)
 
 
 
