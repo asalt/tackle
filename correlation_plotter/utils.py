@@ -47,6 +47,14 @@ STEP = .2
 #     return panel.loc[:, indices, :]
 
 def filter_observations(df, column, threshold, subgroup=None, metadata=None):
+    """
+    format is:
+                         Sample1  Sample2  Sample3 ..
+    GeneID column_name
+    a      PSMs          1        2         3
+    a      FunCats       DBTF     DBTF      DBTF
+    a      iBAQ_dstrAdj  1        1         NA
+    """
 
     if subgroup is not None and metadata is None:
         raise ValueError('Must provide metadata if specifying subgroup')
