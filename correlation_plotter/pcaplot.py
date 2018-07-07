@@ -21,173 +21,21 @@ from adjustText import adjust_text
 from .utils import *
 
 
-
-
-# def plot_pc(df, annot_text=False):
-
-#     texts = list()
-
-#     fig, ax = plt.subplots()
-#     for name, row in df.iterrows():  # plot first and second components
-#         color  = row['_color']
-#         marker = row['_marker']
-#         ax.scatter( row[0], row[1], color=color, marker=marker )
-
-#         if annot_text:
-#             texts.append( ax.text(row[0], row[1], row.name, size=6 ) )
-
-#         if color_label:
-#             name = row[color_label]
-#             if name not in color_labels:
-#                 color_labels.append(name)
-#                 color_handle = matplotlib.patches.Patch(color=color)
-#                 color_handles.append(color_handle)
-#         if marker_label:
-#             name = row[marker_label]
-#             if name not in marker_labels:
-#                 marker_labels.append(name)
-#                 marker_handle = plt.Line2D((0, 1), (0, 0), color='gray', marker=marker,
-#                                            linestyle='')
-#                 marker_handles.append(marker_handle)
-
-#     if annot_text:
-#         res = adjust_text(texts, arrowprops=dict(arrowstyle="-", color='grey', lw=0.5),
-#                           force_points=0.1, expand_text=(1.2, 1.2), expand_points=(1.4, 1.4)
-#         )
-
-#     legends = list()
-#     if color_label:
-#         leg1 = ax.legend(color_handles, color_labels, title=color_label, bbox_to_anchor=(1.04, 1),
-#                          loc='upper left',
-#                          borderaxespad=0)
-#         legends.append(leg1)
-#     if marker_label:
-#         leg2 = ax.legend(marker_handles, marker_labels, loc='lower left', title=marker_label,
-#                          bbox_to_anchor=(1.04, 0), borderaxespad=0)
-#         legends.append(leg2)
-
-#     ax.set_xlabel('PC1 ({:.2%})'.format(var1))
-#     ax.set_ylabel('PC2 ({:.2%})'.format(var2))
-
-#     for leg in legends:
-#         ax.add_artist(leg)
-
-#     ax.axhline(color='grey')
-#     ax.axvline(color='grey')
-#     fig.tight_layout(rect=[0,0,0.75,1])
-
-
-#     return fig, ax
-
-
-# def pcaplot(X, metadata=None, col_data=None):
-#     """
-#     looks for __PCA__ section in input config.ini file
-#     """
-
-#     rc = {'font.family': 'sans-serif',
-#           "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
-#                               "Bitstream Vera Sans", "sans-serif"],
-#     }
-
-#     sb.set_context('notebook')
-#     sb.set_palette('muted')
-#     sb.set_color_codes()
-#     sb.set_style('white', rc)
-
-#     if col_data is not None:
-#         col_data = col_data.T
-#         for col in col_data:
-#             col_data[col] = pd.Categorical(col_data[col])
-#     to_drop = [x for x in col_data.columns if x.startswith('_')]
-#     col_data = col_data.drop(to_drop, axis=1)
-
-#     pca_params = metadata.get('__PCA__')
-#     annot_text = pca_params.get('annot')
-#     if annot_text is not None:
-#         annot_text = True if 'true' in annot_text.lower() else False
-
-#     X_centered = X.sub(X.mean(1), axis='index')
-
-#     U, s, V = np.linalg.svd(X_centered)
-
-#     eigen = s**2
-#     sumvariance = np.cumsum(eigen)
-#     sumvariance /= sumvariance[-1]
-
-#     # no current support for multiple multiplexed samples
-#     components = pd.DataFrame(data=V, columns=X.columns)  # should be same as col_data.index except removal of (any) experiments  with no data
-#     try:
-#         # components = pd.DataFrame(data=V, columns=col_data.index)
-#         df = col_data.join(components.T)
-#     except ValueError:
-#         components = pd.DataFrame(data=V, columns=col_data.columns)
-#         mapping = col_data.to_dict(orient='records')[0]
-#         df = components.rename(columns=mapping).T
-#         df['color'] = pd.Categorical(df.index)
-#         # df = col_data.T.join(components.T)
-#         pca_params = dict(color = 'color')
-
-#     # var1, var2, *rest = [x/s.sum() for x in s]
-#     var1, var2, *rest = s**2 / (s**2).sum()
-
-
-#     if pca_params is not None and 'color' in pca_params:
-#         color_label = pca_params.get('color')
-#         try:
-#             n_colors = df[color_label].nunique()
-#         except KeyError:
-#             warnings.warn('The label {} is not in the metadata'.format(color_label))
-#             n_colors = 1
-#     else:
-#         n_colors = 1
-#         color_label = None
-
-#     if n_colors <= 10:
-#         colors = sb.color_palette('tab10', n_colors=10)
-#     else:
-#         colors = sb.color_palette('cubehelix', n_colors=n_colors)
-
-#     if color_label is not None:
-#         color_mapper = [ colors[ix] for ix in df[color_label].cat.codes ]
-#     else:
-#         color_mapper = [ colors[0] for _ in df.index ]
-#     df['_color'] = color_mapper
-
-#     if pca_params is not None:
-#         marker_label = pca_params.get('marker')
-#     else:
-#         marker_label = None
-
-#     my_markers = ('o', 'v', 's', 'd', '*', 'X', 'P', 'h', '<', 'H', 'D', '>', 'p', '^', )
-
-#     if marker_label:
-#         try:
-#             marker_mapper = [ my_markers[ix]
-#                               for ix in df[marker_label].cat.codes ]
-#         except IndexError:
-#             raise TooManyCategories('Not enough marker shapes')
-#     else:
-#         marker_mapper = [ 'o' for _ in df.index ]
-#     df['_marker'] = marker_mapper
-
-#     # shade_label  = pca_params.get('shade')
-
-#     color_handles, color_labels   = list(), list()
-#     marker_handles, marker_labels = list(), list()
-
-#     import ipdb; ipdb.set_trace()
-#     figs = dict()
-#     fig, ax = plot_pc(df, annot_text=annot_text)
-#     figs['pcaplot_1_2'] = fig
-
-#     return figs
-
 class PCAplot:
 
     markers = ('o', 'v', 's', 'd', '*', 'X', 'P', 'h', '<', 'H', 'D', '>', 'p', '^', )
 
     def __init__(self, X, metadata, col_data, annotate=False):
+        """
+        :X: DataFrame with columns as sample names and rows as GeneIDs. Index consists of GeneIDs
+        :metadata: Dictionary of dictionaries of this format:
+                   {'__PCA__': {'color': color_field, 'marker': marker_field}
+        :col_data: DataFrame with columns as sample names and rows as metadata. Index consists of
+                   metadata names:
+                                A     B      C      D
+                    treatment  ctrl  ctrl  treat  treat
+                    batch         0     1      0      1
+        """
         self.X = X
         self.metadata = metadata
         self.annotate = annotate
@@ -425,3 +273,11 @@ def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2):
     figs['pcaplot_variance'] = fig
 
     return figs
+
+pcaplot.__doc__ = PCAplot.__init__.__doc__ + """
+        :max_pc: maximum number of principal components to plot
+
+        returns
+        :figs: dict with keys indicating plotted principal components and values each a matplotlib.figure.Figure
+            which can be saved
+"""

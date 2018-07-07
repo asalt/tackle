@@ -13,7 +13,7 @@ import pandas as pd
 from scipy import stats
 
 import matplotlib as mpl
-mpl.use('Agg')
+# mpl.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredText
 import seaborn as sb
