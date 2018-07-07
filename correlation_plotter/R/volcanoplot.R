@@ -35,6 +35,8 @@ volcanoplot <- function(X, max_labels = 35,
                         ...){
 
   ploty <- match.arg(yaxis, yaxis.choices)
+  linear_fc_cutoff <- fc_cutoff
+  fc_cutoff <- log2(fc_cutoff)
 
   sig_filter_str <- paste0('FDR<', sig)
 
@@ -43,6 +45,7 @@ volcanoplot <- function(X, max_labels = 35,
   X[ , 'usd' ] = 'black'
   X[ (X$qValue < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   X[ (X$qValue < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
+  X[ X$highlight == TRUE, 'usd' ] = 'purple'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
@@ -60,6 +63,7 @@ volcanoplot <- function(X, max_labels = 35,
 
   X[, 'label'] <- FALSE  # new column
   X[to_label, 'label'] <- TRUE  # label these
+  X[ X$highlight == TRUE, 'label' ] <- TRUE # also label these no matter what
   if (show_all == FALSE){
     X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
   }
@@ -69,7 +73,7 @@ volcanoplot <- function(X, max_labels = 35,
   xmax <- max((X[, 'log2_Fold_Change']))
 
   ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
-  footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  2**fc_cutoff, 'F.C.' )
+  footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  linear_fc_cutoff, 'F.C.' )
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
   p = ggplot(X, aes(log2_Fold_Change, -log10(get(ploty)), col=usd)) +
@@ -82,7 +86,7 @@ volcanoplot <- function(X, max_labels = 35,
                     box.padding = .1, cex = label_cex,
                     segment.size = .35, segment.alpha = .4
                     ) +
-    annotate("text",  c(-xmax, xmax), c(ymax*.95, ymax*.98), label = c(group0, group1),
+    annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),
          y=ylabel_full,

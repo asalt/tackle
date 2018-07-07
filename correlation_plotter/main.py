@@ -754,8 +754,8 @@ def metrics(ctx, full, before_filter, before_norm):
 
 
 @main.command('volcano')
-@click.option('-f', '--foldchange', type=int, default=2, show_default=True,
-              help='log2 fold change cutoff'
+@click.option('-f', '--foldchange', type=int, default=4, show_default=True,
+              help='fold change cutoff'
 )
 @click.option('-e', '--expression-data', default=False, is_flag=True, show_default=True,
               help='Include expression data for each sample in tabular output.'
@@ -774,15 +774,18 @@ def metrics(ctx, full, before_filter, before_norm):
 )
 @click.option('--q-value/--p-value', default=True, is_flag=True, show_default=True,
               help="Whether to plot qvalue or pvalue on volcano plot (does not change underlying data)")
+@click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """)
 @click.pass_context
-def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, q_value):
+def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, q_value, highlight_geneids):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
     yaxis = 'qValue' if q_value else 'pValue'
     volcanoplot(ctx, foldchange, expression_data, number=number, only_sig=only_sig, sig=sig,
-                yaxis=yaxis, scale=scale)
+                yaxis=yaxis, scale=scale, highlight_geneids=highlight_geneids)
 
 
 

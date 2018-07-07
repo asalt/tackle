@@ -3,12 +3,17 @@ import itertools
 
 import numpy as np
 import pandas as pd
-from .utils import get_outname
+from .utils import get_outname, parse_gid_file
 
 def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
-                yaxis='qValue', scale=1.2):
+                yaxis='qValue', scale=1.2, highlight_geneids=None):
 
     data_obj = ctx.obj['data_obj']
+
+    gids_to_highlight = None
+    if highlight_geneids is not None:
+        gids_to_highlight = parse_gid_file(highlight_geneids)
+
 
     if yaxis not in ('pValue', 'qValue'):
         raise ValueError('Must choose between `pValue` and `qValue`')
@@ -65,6 +70,10 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
         df.index.name = 'GeneID'
+        df['highlight'] = False
+        if gids_to_highlight is not None:
+            df.loc[gids_to_highlight, 'highlight'] = True
+
 
         outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
                               non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
@@ -81,7 +90,8 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             export_data = df.query('qValue < @sig')
         if expression_data:
             export_data = export_data.join(values)
-        export_data.to_csv(out, sep='\t')
+        export_cols = [x for x in export_data.columns if x not in ('highlight', )]
+        export_data[export_cols].to_csv(out, sep='\t')
         print('done', flush=True)
 
         try:
