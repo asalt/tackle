@@ -217,6 +217,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
             col_colors.loc[info] = colors
         col_colors = col_colors.T
 
+    _geneids = data.index.copy()
     if gene_symbols:  # change index to symbols
         assert all(data.index == mask.index)
         clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
@@ -249,7 +250,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
             _d[c] = sel.mean() # or median, or mean/std, or some variation
         _df = pd.DataFrame(_d).T
         _linkage = hierarchy.linkage(_df, method='single', optimal_ordering=True)
-        _dend = hierarchy.dendrogram(_linkage)
+        _dend = hierarchy.dendrogram(_linkage, no_plot=True)
         _order = _dend['leaves']
         cluster_order = _df.iloc[_order].index
         clusters_categorical = pd.Series(pd.Categorical(clusters, categories=cluster_order, ordered=True),
@@ -271,9 +272,12 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
 
         _genemapper = GeneMapper()
-        cluster_data['GeneSymbol'] = cluster_data.index.map(lambda x: gid_symbol.get(x,
-                                                                      _genemapper.symbol.get(x, '?')
-        ))
+        if not gene_symbols:
+            cluster_data['GeneSymbol'] = cluster_data.index.map(lambda x: gid_symbol.get(x,
+                                                                        _genemapper.symbol.get(x, '?')
+            ))
+        elif gene_symbols:
+            cluster_data['GeneID'] = _geneids
 
         if row_colors is None:
             row_colors = cluster_colors
@@ -281,6 +285,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
             row_colors = pd.concat([cluster_colors, row_colors], axis=1)
 
         kmeans_result['data'] = cluster_data.loc[clusters_categorical.index]
+        if gene_symbols:
+            kmeans_result['data'].index.name = 'GeneSymbol'
         retval['kmeans'] = kmeans_result
 
 
