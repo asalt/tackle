@@ -1060,13 +1060,13 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 @main.command('bar')
 @click.option('--gene', type=int,
               default=None, show_default=True, multiple=True,
-              help="Gene to plot")
+              help="Gene to plot. Multiple allowed")
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""File of geneids to plot.
               Should have 1 geneid per line. """)
-@click.option('--average', type=str, default=None, help='Metadata entry to group data and plot average')
-@click.option('--color', type=str, default=None, help='Metadata entry to group color bars')
+@click.option('--average', type=str, default=None, help='Metadata entry to group data and plot average. Cannot be used with color')
+@click.option('--color', type=str, default=None, help='Metadata entry to group color bars. Cannot be used with average')
 @click.option('--cmap', default=None, show_default=True, help="""
 Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples/color/colormaps_reference.html.
 """)
@@ -1091,9 +1091,11 @@ def bar(ctx, average, color, cmap, gene, genefile, linear):
                       batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                       outpath=outpath,
     )
+    if color is not None and average is not None:
+        raise ValueError('Cannot specify color and average at the same time.')
 
     barplot(data_obj.areas_log_shifted, genes=gene, color=color, cmap=cmap, metadata=col_meta, average=average,
-            linear=linear, base_outfunc=outfunc, file_fmts=ctx.obj['file_fmts'] )
+            linear=linear, base_outfunc=outfunc, file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol)
 
 if __name__ == '__main__':
 
