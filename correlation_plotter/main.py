@@ -48,6 +48,7 @@ from .clusterplot import clusterplot
 from .pcaplot import pcaplot
 from .utils import *
 from .containers import Data
+from .barplot import barplot
 # from cluster_to_plotly import cluster_to_plotly
 
 sys.setrecursionlimit(10000)
@@ -1056,6 +1057,43 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         # fig.tight_layout()
         save_multiple(fig, outname, *file_fmts)
 
+@main.command('bar')
+@click.option('--gene', type=int,
+              default=None, show_default=True, multiple=True,
+              help="Gene to plot")
+@click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""File of geneids to plot.
+              Should have 1 geneid per line. """)
+@click.option('--average', type=str, default=None, help='Metadata entry to group data and plot average')
+@click.option('--color', type=str, default=None, help='Metadata entry to group color bars')
+@click.option('--cmap', default=None, show_default=True, help="""
+Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples/color/colormaps_reference.html.
+""")
+@click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
+@click.pass_context
+def bar(ctx, average, color, cmap, gene, genefile, linear):
+
+    data_obj = ctx.obj['data_obj']
+    col_meta = data_obj.col_metadata
+    if genefile:
+        gene = gene + parse_gid_file(genefile)
+    if len(gene) == 0:
+        raise ValueError("Must supply at least 1 gene")
+
+    outpath = os.path.join(data_obj.outpath, 'bar')
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+
+    outfunc = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
+                      non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                      batch=data_obj.batch_applied,
+                      batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                      outpath=outpath,
+    )
+
+    barplot(data_obj.areas_log_shifted, genes=gene, color=color, cmap=cmap, metadata=col_meta, average=average,
+            linear=linear, base_outfunc=outfunc, file_fmts=ctx.obj['file_fmts'] )
 
 if __name__ == '__main__':
 
