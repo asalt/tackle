@@ -446,7 +446,42 @@ class iFOT:
         return flag and bool(x)
 ifot_normalizer = iFOT()
 
+def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=False,
+              outcol=None):
 
+    if ifot: # normalize by ifot but without keratins
+        norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].sum()
+    elif median:
+        norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].median()
+    elif ifot_ki:
+        norm_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
+    elif ifot_tf:
+        norm_ = df.loc[df['FunCats'].fillna('').str.contains('TF'), 'iBAQ_dstrAdj'].sum()
+    else:
+        norm_ = 1
+    if norm_ == 0:
+        error = '{} has a sum of 0 when trying to normalize, aborting'.format(name)
+        print(error)
+        raise click.Abort()
+        # sum_ = 1
+    if outcol is None:
+        outcol = 'area'
+    df[outcol] = df['iBAQ_dstrAdj'] / norm_  # use generic 'area' name for all normalization procedures
+    return df
+
+def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignored_geneid_subset=None):
+
+    if funcats:  # do this after possible normalization
+        df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
+    if funcats_inverse:  # do this after possible normalization
+        df = df[~df['FunCats'].fillna('').str.contains(funcats_inverse, case=False)]
+    if geneid_subset:  # do this at the end
+        df = df.loc[geneid_subset]
+    if ignored_geneid_subset:
+        tokeep = set(df.index) - set(ignored_geneid_subset)
+        df = df.loc[tokeep]
+    valid_ixs = (x for x in df.index if not np.isnan(x))
+    return df.loc[valid_ixs]
 
 def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subset=None,
                       ignored_geneid_subset=None, ifot=False, ifot_ki=False, ifot_tf=False, median=False):
@@ -468,7 +503,7 @@ def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subse
         print(error)
         raise click.Abort()
         # sum_ = 1
-    df['iBAQ_dstrAdj'] /= norm_
+    df['area'] = df['iBAQ_dstrAdj'] / norm_  # use generic 'area' name for all normalization procedures
 
     if funcats:  # do this after possible normalization
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]

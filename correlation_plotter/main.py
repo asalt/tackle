@@ -319,6 +319,11 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
         if '--after-norm' in sys.argv:
             metrics_unnormed_area = False
 
+    export_all = False
+    if all(x in sys.argv for x in ('export', '--level', 'all')):
+        #know this ahead of time, calculate more things during data load
+        export_all = True
+
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
 
@@ -348,7 +353,9 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
                     experiment_file=experiment_file, metrics=metrics, limma=limma,
                     metrics_after_filter=metrics_after_filter,
-                    metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids )
+                    metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
+                    export_all=export_all
+    )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,

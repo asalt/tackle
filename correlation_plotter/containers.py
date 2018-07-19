@@ -16,6 +16,8 @@ from seaborn.matrix import ClusterGrid
 from seaborn.matrix import _HeatMapper as HeatMapper
 from seaborn.matrix import _matrix_mask
 
+z_score = ClusterGrid.z_score
+
 from .utils import *
 
 
@@ -125,7 +127,7 @@ class Data:
                  stat='pearson',
                  taxon='all',
                  z_score='0',
-                 export_data=None,
+                 export_all=False,
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
                  set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
@@ -165,7 +167,7 @@ class Data:
         self.taxon                = taxon
         self.standard_scale       = self.clean_input(standard_scale)
         self.z_score              = self.clean_input(z_score)
-        self.export_data          = None if export_data == 'None' else export_data
+        self.export_all           = export_all
         self.ifot                 = ifot
         self.ifot_ki              = ifot_ki
         self.ifot_tf              = ifot_tf
@@ -429,9 +431,20 @@ class Data:
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
             else:
-                df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
-                                       self.geneid_subset, self.ignore_geneid_subset, self.ifot,
-                                       self.ifot_ki, self.ifot_tf, self.median)
+                # df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
+                #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
+                #                        self.ifot_ki, self.ifot_tf, self.median)
+                df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
+                               median=self.median)
+                if self.export_all: # have to calculate more columns
+                    df = (df.pipe(normalize, ifot=True, outcol='iBAQ_dstrAdj_FOT')
+                          .pipe(normalize, median=True, outcol='iBAQ_dstrAdj_MED')
+                    )
+
+                df = genefilter(df, funcats=self.funcats, funcats_inverse=self.funcats_inverse,
+                                geneid_subset=self.geneid_subset,
+                                ignored_geneid_subset=self.ignore_geneid_subset)
+
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter:
                     self._update_metrics(df, name)
@@ -492,7 +505,7 @@ class Data:
         else:
             filter_func = partial(filter_taxon, taxon=taxon_filter)
 
-        df_filtered = (self.data.pipe(filter_observations, 'iBAQ_dstrAdj',
+        df_filtered = (self.data.pipe(filter_observations, 'area',
                                       self.non_zeros, self.nonzero_subgroup, self.col_metadata)
                        .pipe(filter_sra, SRA='S')
                        .pipe(filter_func)
@@ -503,7 +516,7 @@ class Data:
 
     def set_area_dfs(self):
         # self.areas = self.panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
-        self._areas = self.df_filtered.loc[ idx[:, 'iBAQ_dstrAdj'], : ]
+        self._areas = self.df_filtered.loc[ idx[:, 'area'], : ]
         self._areas.index = self._areas.index.droplevel(1)  # don't need the second index
 
 
@@ -590,15 +603,55 @@ class Data:
             self._mask = self.mask[sample_cols]
             self.normed = True
 
+        if self.export_all:
+            new_cols = list()
+            for col in 'iBAQ_dstrAdj', 'iBAQ_dstrAdj_FOT', 'iBAQ_dstrAdj_MED':
+                frame = self.df_filtered.loc[ idx[:, col], :]
+                minval = frame.replace(0, np.NAN).stack().dropna().min()
+                frame_log = np.log10(frame.replace(0, np.NAN).fillna(minval/2))
+                minval_log = frame_log.replace(0, np.NAN).stack().dropna().min()
+                shift_val = np.ceil(np.abs(minval_log))
+                frame_log = (frame_log.fillna(minval_log/2) + shift_val).reset_index()
+                frame_log['Metric'] = col+'_log10'
+                new_cols.append(frame_log.set_index(['GeneID', 'Metric']))
+
+                # self.df_filtered.loc[ idx[:, col+'_log'], :] = np.NAN
+                # self.data.loc[ idx[:, col+'_log'], :] = frame_log.values
+                # self.data.loc[ idx[frame_log.index.levels[0].values, col+'_log'], :] = frame_log.values
+            self.df_filtered = pd.concat([self.df_filtered, *new_cols])
+
         if self.batch is not None:
+            self._areas_log_shifted = self.batch_normalize(self.areas_log_shifted)
             # try batch normalization via ComBat
-            self.batch_normalize()
+            if self.export_all:  # batch normalize the other requested area columns
+                for col in 'iBAQ_dstrAdj', 'iBAQ_dstrAdj_FOT', 'iBAQ_dstrAdj_MED':
+                    frame = (self.df_filtered.loc[ idx[:, col+'_log10'], :].reset_index(level=1, drop=True)
+                             .astype(float)
+                    )
+                    # get rid of "Metric" index level, batch_normalize not expecting it
+                    res = self.batch_normalize(frame, prior_plot=False)
+                    self.df_filtered.loc[ idx[:, col+'_log10'], :] = res.values
+                    self.df_filtered.loc[ idx[:, col], :] = np.power(res, 10).values
+
+        if self.export_all:  # now calculate z scores for all these extra columns
+            new_cols = list()
+            for col in 'iBAQ_dstrAdj_log10', 'iBAQ_dstrAdj_FOT_log10', 'iBAQ_dstrAdj_MED_log10':
+                frame = self.df_filtered.loc[ idx[:, col], : ].apply(z_score, axis=1).reset_index()
+                frame['Metric'] = col+'_zscore'
+                new_cols.append(frame.set_index(['GeneID', 'Metric']))
+            self.df_filtered = pd.concat([self.df_filtered, *new_cols])
+
+                # new_cols.append(frame_log.set_index(['GeneID', 'Metric']))
+                    # self.data
 
         # if self.group is not None:
         #     self.calc_qvals()
 
 
-    def batch_normalize(self):
+    def batch_normalize(self, data, prior_plot=True):
+        """
+
+        """
 
         try:
             from rpy2.rinterface import RRuntimeError
@@ -633,7 +686,7 @@ class Data:
         batch = pheno[self.batch]
         # res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
         #                  mod=mod, par_prior=True, mean_only=False)
-        if not self.batch_nonparametric:
+        if not self.batch_nonparametric and prior_plot:
             plot_prior = True
             outname = get_outname('Combat_prior_plots', name=self.outpath_name, taxon=self.taxon,
                                   non_zeros=self.non_zeros, colors_only=self.colors_only,
@@ -643,14 +696,14 @@ class Data:
             grdevices.png(file=outname+'.png', width=5, height=5, units='in', res=300)
         else:
             plot_prior = False
-        res = sva.ComBat(dat=self._areas_log_shifted.fillna(0).values, batch=batch,
+        res = sva.ComBat(dat=data.values, batch=batch,
                          mod=mod, par_prior=not self.batch_nonparametric, mean_only=False, prior_plots=plot_prior)
 
         if plot_prior:
             grdevices.dev_off()
 
-        df = pd.DataFrame(index=self.areas_log_shifted.index,
-                          columns=self.areas_log_shifted.columns,
+        df = pd.DataFrame(index=data.index,
+                          columns=data.columns,
                           data=pandas2ri.ri2py(res)
         )
         # df = pandas2ri.ri2py(res)
@@ -659,9 +712,9 @@ class Data:
             print('{} Gene Product(s) became NAN after batch normalization, dropping'.format(nas))
 
         # df.index = df.index.astype(int)
-        df.index = self._areas_log_shifted.index
+        df.index = data.index
         # df.index = [maybe_int(x) for x in df.index]
-        df.columns = self._areas_log_shifted.columns
+        df.columns = data.columns
         # reassign mask - ComBat can impute some NA values
         # TODO: resolve this for normed data
         if not self.normed:
@@ -672,14 +725,17 @@ class Data:
                 self._mask = new_mask
 
 
-        self._areas_log_shifted = df.dropna(how='any')
+        # self._areas_log_shifted = df.dropna(how='any')
+        df = df.dropna(how='any')
         # self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
-        self._areas_log_shifted.columns = self._areas.columns  # r changes certain characters in column names
+        # self._areas_log_shifted.columns = self._areas.columns  # r changes certain characters in column names
+        df.columns = data.columns  # r changes certain characters in column names
         # self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
 
-        self._areas_log_shifted.index = [maybe_int(x) for x in self._areas_log_shifted.index]
+        df.index = [maybe_int(x) for x in df.index]
 
-        self._areas_log_shifted.index.name = 'GeneID'
+        df.index.name = 'GeneID'
+        return df
 
     def calc_qvals(self):
         try: ModuleNotFoundError
@@ -775,8 +831,6 @@ class Data:
         return False
 
     def perform_data_export(self, level='all', genesymbols=False):
-        # if self.export_data is None:
-        #     return
 
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
@@ -791,6 +845,7 @@ class Data:
         # outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
         if level == 'all':
+            self.areas_log_shifted # make sure it's created
             self.df_filtered.to_csv(outname, sep='\t')
         elif level == 'area':
             export = self.areas_log_shifted.copy()
