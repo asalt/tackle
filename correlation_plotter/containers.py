@@ -835,7 +835,6 @@ class Data:
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
         #                                               self.non_zeros)
-
         outname = get_outname('data_{}'.format(level), name=self.outpath_name, taxon=self.taxon,
                               non_zeros=self.non_zeros, colors_only=self.colors_only,
                               batch=self.batch_applied,
@@ -844,11 +843,42 @@ class Data:
 
         # outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
+        self.areas_log_shifted # make sure it's created
         if level == 'all':
-            self.areas_log_shifted # make sure it's created
-            self.df_filtered.to_csv(outname, sep='\t')
+            self.df_filtered.sort_index(level=[0,1]).to_csv(outname, sep='\t')
+        elif level == 'align':
+
+            export = self.df_filtered.sort_index(level=[0,1])
+            column_number_mapping = dict()
+            data = list()
+            cols = export.index.get_level_values(1).unique()
+            for ix, col in enumerate(export.columns, 1):
+                renamer = {x: '{}_{}'.format(x, ix) for x in cols}
+                subdf = (export.loc[idx[:, :], col].reset_index()
+                         .pivot(index='GeneID', columns='Metric', values=col)
+                         .rename(columns=renamer)
+                )
+                metadata = dict(self.config[col])
+                metadata['name'] = col
+                to_pop = [x for x in metadata if x not in ('recno', 'runno', 'searchno', 'label', 'name')]
+                for p in to_pop:
+                    metadata.pop(p)
+                column_number_mapping[ix] = metadata
+                data.append(subdf)
+            for_export = pd.concat(data, axis=1)
+            for_export.to_csv(outname, sep='\t')
+            meta_df = pd.DataFrame(column_number_mapping).T
+            outname = get_outname('metadata_{}'.format(level), name=self.outpath_name, taxon=self.taxon,
+                                non_zeros=self.non_zeros, colors_only=self.colors_only,
+                                batch=self.batch_applied,
+                                batch_method = 'parametric' if not self.batch_nonparametric else 'nonparametric',
+                                outpath=self.outpath) + '.tab'
+            meta_df.to_csv(outname, sep='\t')
+
+
         elif level == 'area':
             export = self.areas_log_shifted.copy()
+            export[self.areas == 0] = 0 # fill the zeros back
             export[self.mask] = np.NaN
             order = export.columns
             if genesymbols:

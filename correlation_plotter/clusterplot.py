@@ -39,7 +39,6 @@ def _calculate_box_sizes(size_vector, start_pos=0, end_pos=1):
     sizes = size_vector / size_vector.sum()
     cumsum = np.cumsum(sizes) * end_pos
     start = [start_pos, *cumsum][:-1]
-    print(start)
     return start
 
 def plot_silhouette_scores(scores, start, end):

@@ -45,6 +45,7 @@ sb.set_context('notebook', font_scale=1.4)
 
 from .scatterplot import scatterplot
 from .clusterplot import clusterplot
+from .metrics import make_metrics
 from .pcaplot import pcaplot
 from .utils import *
 from .containers import Data
@@ -320,7 +321,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
             metrics_unnormed_area = False
 
     export_all = False
-    if all(x in sys.argv for x in ('export', '--level', 'all')):
+    if all(x in sys.argv for x in ('export', '--level')) and any(x in sys.argv for x in ('all', 'align')):
         #know this ahead of time, calculate more things during data load
         export_all = True
 
@@ -367,6 +368,13 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
     #     json.dump(params, f)
+    outname = get_outname('context', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          outpath=data_obj.outpath)+'.tab'
+    param_df = pd.DataFrame(ctx.params, index=[analysis_name]).T
+    param_df.to_csv(outname, sep='\t')
 
     ctx.obj['data_obj'] = data_obj
 
@@ -407,8 +415,11 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     save_multiple(g, outname, *file_fmts, dpi=96)
 
 @main.command('export')
-@click.option('--level', type=click.Choice(['all', 'area']), default='area',
-              help="""Export data table of the filtered list of gene products used for plotting""")
+@click.option('--level', type=click.Choice(['all', 'align', 'area']), default='area',
+              help="""Export data table of the filtered list of gene products used for plotting
+              `all` returns all the data in long format
+              `align` returns all data formatted for import into align!
+              """)
 @click.option('--genesymbols', default=False, is_flag=True, show_default=True,
               help='Include GeneSymbols in data export when `level` is set to `area`')
 @click.pass_context
@@ -601,163 +612,10 @@ def pca(ctx, annotate, max_pc):
 @click.pass_context
 def metrics(ctx, full, before_filter, before_norm):
 
-    rc = {'font.family': 'sans-serif',
-          "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
-                              "Bitstream Vera Sans", "sans-serif"],
-          'legend.frameon': True,
-    }
-
-    sb.set_context('talk')
-    sb.set_palette('muted')
-    sb.set_color_codes()
-    sb.set_style('white', rc)
-
     data_obj = ctx.obj['data_obj']
     file_fmts = ctx.obj['file_fmts']
 
-    data = data_obj.metric_values
-
-    if before_filter:
-        kws = dict(before='filter')
-    else:
-        kws = dict(after='filter')
-
-    outname = get_outname('metrics', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                          batch=data_obj.batch_applied,
-                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          outpath=data_obj.outpath,
-                          **kws
-    )
-
-    sra = pd.DataFrame(data=[data[n]['SRA'] for n in data.keys()], index=data.keys())
-    gpg = pd.DataFrame(data=[data[n]['GPGroups'] for n in data.keys()], index=data.keys())
-    psms = pd.DataFrame(data=[data[n]['PSMs'] for n in data.keys()], index=data.keys())
-    peptides = pd.DataFrame(data=[data[n]['Peptides'] for n in data.keys()], index=data.keys())
-    area = OrderedDict((n, data[n]['Area']) for n in data.keys())
-
-    frames = list()
-    area_name = 'AreaSum_dstrAdj' if before_norm else 'AreaSum_dstrAdj_normed'
-    for name, value in area.items():
-        frame = pd.Series(value).to_frame(area_name).multiply(1e9).apply(np.log10)
-        frame['Name'] = name
-        frames.append(frame)
-    area_df = pd.concat(frames)
-
-    # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
-
-    green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
-
-    # fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12,8), sharex=True, sharey=False)
-    fig = plt.figure(figsize=(18,10))
-    gs = gridspec.GridSpec(2,3)
-
-    ax_sra  = fig.add_subplot(gs[0, 0])
-    ax_gpg  = fig.add_subplot(gs[0, 1])
-    ax_psms = fig.add_subplot(gs[1, 0])
-    ax_pept = fig.add_subplot(gs[1, 1])
-    ax_area = fig.add_subplot(gs[0:, 2])
-
-    sra[['S', 'R', 'A']].plot.bar(stacked=True, ax=ax_sra, color=[green, yellow, red], title='SRA')
-    gpg.plot.bar(ax=ax_gpg, legend=False, title='Gene Product Groups')
-    psms[['Total', 'u2g']].plot.bar(stacked=False, ax=ax_psms, title='PSMs', width=.75)
-    peptides[['Total', 'u2g', 'Strict', 'Strict_u2g']].plot.bar(stacked=False, ax=ax_pept, title='Peptides',
-                                                                width=.8)
-    plt.setp(ax_sra.get_xticklabels(), visible=False)
-    plt.setp(ax_gpg.get_xticklabels(), visible=False)
-
-    sb.violinplot(y='Name', x=area_name, data=area_df, ax=ax_area)
-    ax_area.yaxis.tick_right()
-    ax_area.set_ylabel('')
-    if before_norm:
-        ax_area.set_xlabel('log$_{10}$ AreaSum dstrAdj')
-    else:
-        ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj normed')
-    # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=90 )
-    plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=0 )
-
-    FONTSIZE = 10
-    ncols = {0: 1, 2:2, 3:1}
-    for ix, ax in enumerate((ax_sra, ax_gpg, ax_psms, ax_pept,)):
-        ax.yaxis.grid(True, lw=.25, color='grey', ls=':')
-        for tick in ax.xaxis.get_ticklabels():
-            txt = tick.get_text()
-            newsize = FONTSIZE
-            textlen = len(txt)
-
-            # resizing so labels fit, not best approach
-            if textlen > 7 and textlen <= 9:
-                newsize -= 1
-            if textlen >= 10 and textlen < 13:
-                newsize -= 1
-            elif textlen >= 13:
-                newsize -= 1
-            if len(data.keys()) >= 17:
-                newsize -= 2
-            tick.set_size(newsize)
-        sb.despine(ax=ax)
-        if ix == 1:
-            continue  #  no legend for gpgroups
-        ax.legend(loc='best', ncol=ncols[ix])
-
-    sb.despine(ax=ax_area, right=False, top=True, left=True, bottom=False)
-    ax_area.xaxis.grid(True, lw=.25, color='grey', ls=':')
-
-    fig.subplots_adjust(hspace=.15, top=.95, left=.1, right=.9)
-    save_multiple(fig, outname, *file_fmts)
-
-    if full:  # also plot info from PSMs
-        return # not done
-        config = data_obj.config
-        data_dir = data_obj.data_dir
-
-        psms = OrderedDict()
-        for name, record in config.items():
-            if name.startswith('__'):
-                continue
-            recno = record.get('recno')
-            runno = record.get('runno')
-            searchno = record.get('searcno')
-            df = ispec.PSMs(recno, runno, searchno, data_dir=data_dir).df.query('oriFLAG==1')
-
-            df.index = pd.to_timedelta( df.RTmin, unit='m' )
-
-            psms[name] = df
-
-
-
-        nrows = len(psms)
-
-        m = max([ pd.Timedelta(df.RTmin.max(), unit='m') for df in psms.values() ])
-
-        fig = plt.figure(figsize=(12, 8))
-        gs = gridspec.GridSpec(nrows, 3, width_ratios=(3,1,3), left=.1, right=.9, bottom=.1, top=.9)
-        # plot IDs/min over time
-        prev_ax = None
-        for ix, (name, df) in enumerate(psms.items()):
-            if prev_ax:
-                # ax = fig.add_subplot(gs[ix, 0], sharex=prev_ax, sharey=prev_ax)
-                ax = fig.add_subplot(gs[ix, 0],  sharey=prev_ax)
-            else:
-                ax = fig.add_subplot(gs[ix, 0])
-            # df.index = pd.to_timedelta( df.RTmin, unit='m' )
-            df.loc[m] = np.NaN
-            g = df.groupby([ pd.Grouper(freq='Min'), ])
-            g.size().plot(ax=ax)
-            label_ax = fig.add_subplot(gs[ix, 1])
-            label_ax.annotate(name, xy=(0.5, 0.5), xycoords='axes fraction',
-                              va='center', ha='center', size=12
-            )
-            sb.despine(ax=label_ax, left=True, bottom=True)
-            plt.setp(label_ax.get_xticklabels(), visible=False)
-            plt.setp(label_ax.get_yticklabels(), visible=False)
-            ax.xaxis.grid(True, lw=.25, color='grey', ls=':')
-            if ix < nrows-1:
-                plt.setp(ax.get_xticklabels(), visible=False)
-                ax.set_xlabel('')
-            sb.despine(ax=ax)
-            prev_ax = ax
-
+    make_metrics(data_obj, file_fmts, before_filter=before_filter, before_norm=before_norm, full=full)
 
 
 
