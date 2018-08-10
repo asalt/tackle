@@ -6,7 +6,7 @@ import pandas as pd
 from .utils import get_outname, parse_gid_file
 
 def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
-                yaxis='qValue', scale=1.2, highlight_geneids=None):
+                yaxis='pAdj', scale=1.2, highlight_geneids=None):
 
     data_obj = ctx.obj['data_obj']
 
@@ -15,8 +15,8 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         gids_to_highlight = parse_gid_file(highlight_geneids)
 
 
-    if yaxis not in ('pValue', 'qValue'):
-        raise ValueError('Must choose between `pValue` and `qValue`')
+    if yaxis not in ('pValue', 'pAdj'):
+        raise ValueError('Must choose between `pValue` and `pAdj`')
 
     group = data_obj.group #
     if group is None:
@@ -43,7 +43,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         groups[grp] = samples
 
     values = data_obj.areas_log_shifted
-    qvals   = data_obj.qvalues
+    padj   = data_obj.padj
     from .utils import filter_observations
     filtering = values.copy()
     filtering.index = [filtering.index, ['area']*len(filtering)]
@@ -66,7 +66,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         )
         log2_fc.name = 'log2_Fold_Change'
 
-        df = qvals.join(log2_fc.to_frame())
+        df = padj.join(log2_fc.to_frame())
         df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
         df.index.name = 'GeneID'

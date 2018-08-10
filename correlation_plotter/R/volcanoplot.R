@@ -24,7 +24,7 @@ makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
             gp = gpar(cex = size, col = color))
   popViewport()
 }
-yaxis.choices <- c('pValue', 'qValue')
+yaxis.choices <- c('pValue', 'pAdj')
 
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
@@ -40,24 +40,24 @@ volcanoplot <- function(X, max_labels = 35,
 
   sig_filter_str <- paste0('FDR<', sig)
 
-  X <- mutate(X, Sig = ifelse(X$qValue < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
+  X <- mutate(X, Sig = ifelse(X$pAdj < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
                               sig_filter_str, "N.S."))
   X[ , 'usd' ] = 'black'
-  X[ (X$qValue < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
-  X[ (X$qValue < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
+  X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
+  X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[ X$highlight == TRUE, 'usd' ] = 'purple'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
 
-  qvalues <- X[, 'qValue'][ !is.na( X[, 'qValue'] ) ]
-  stretch <- min( qvalues[ qvalues > 0 ] ) / 2
-  X[, 'qValue'] <- X[, 'qValue'] + stretch
+  pAdj <- X[, 'pAdj'][ !is.na( X[, 'pAdj'] ) ]
+  stretch <- min( pAdj[ pAdj > 0 ] ) / 2
+  X[, 'pAdj'] <- X[, 'pAdj'] + stretch
   pvalues <- X[, 'pValue'][ !is.na( X[, 'pValue'] ) ]
   stretch <- min( pvalues[ pvalues > 0 ] ) / 2
   X[, 'pValue'] <- X[, 'pValue'] + stretch
 
-  to_label <- head(order( abs(X[, 'log2_Fold_Change']), X[, 'qValue'], decreasing = c(TRUE, FALSE) ),
+  to_label <- head(order( abs(X[, 'log2_Fold_Change']), X[, 'pAdj'], decreasing = c(TRUE, FALSE) ),
                    max_labels
                    )
 
@@ -70,7 +70,7 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
   ymax <- max(-log10(X[, ploty])) * 1.05
-  xmax <- max((X[, 'log2_Fold_Change']))
+  xmax <- X[, 'log2_Fold_Change'] %>% abs %>% max
 
   ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
   footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  linear_fc_cutoff, 'F.C.' )

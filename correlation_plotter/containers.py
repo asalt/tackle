@@ -219,7 +219,7 @@ class Data:
         # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
         self._areas, self._areas_log, self._areas_log_shifted = (None, ) * 3
 
-        self._qvalues = None
+        self._padj = None
         # self.perform_data_export()
 
     @property
@@ -253,10 +253,10 @@ class Data:
         return self._zeros
 
     @property
-    def qvalues(self):
-        if self._qvalues is None:
-            self.calc_qvals()
-        return self._qvalues
+    def padj(self):
+        if self._padj is None:
+            self.calc_padj()
+        return self._padj
 
     @property
     def metric_values(self):
@@ -719,8 +719,8 @@ class Data:
         # TODO: resolve this for normed data
         if not self.normed:
             if not self.batch_noimputation:  # else leave old mask
-                thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min() * .9
-                new_mask = (df[ self.mask ] < thresh)
+                thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min()
+                new_mask = (df[ self.mask ] <= thresh)
                 new_mask.columns = self._areas_log_shifted.columns
                 self._mask = new_mask
 
@@ -737,7 +737,7 @@ class Data:
         df.index.name = 'GeneID'
         return df
 
-    def calc_qvals(self):
+    def calc_padj(self):
         try: ModuleNotFoundError
         except: ModuleNotFoundError = type('ModuleNotFoundError', (Exception,), {})
         try:
@@ -784,7 +784,7 @@ class Data:
                        topTable(n=Inf, sort.by='none')
             """)
             pvalues = results['P.Value']
-            qvalues = results['adj.P.Val']
+            padj    = results['adj.P.Val']
 
 
         else: # ttest rel
@@ -811,17 +811,17 @@ class Data:
 
         # pvalues = f_pvalue(self.areas_log_shifted.fillna(0), mod, mod0)
         try:
-            qvalues # limma calculates this
+            padj # limma calculates this
         except NameError:
-            qvalues = pandas2ri.ri2py( p_adjust(pvalues, method='BH') )
+            padj = pandas2ri.ri2py( p_adjust(pvalues, method='BH') )
 
-        qvalues = pd.DataFrame(index=self.areas_log_shifted.index,
-                               data=np.array([pvalues, qvalues]).T,
-                               columns=['pValue', 'qValue']
+        padj = pd.DataFrame(index=self.areas_log_shifted.index,
+                            data=np.array([pvalues, padj]).T,
+                            columns=['pValue', 'pAdj']
         ).sort_values(by='pValue')
         # qvalues.name = 'q_value'
 
-        self._qvalues = qvalues
+        self._padj = padj
 
     def make_plot(self, pltname):
         if 'all' in self.plots:

@@ -373,7 +373,9 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                           batch=data_obj.batch_applied,
                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                           outpath=data_obj.outpath)+'.tab'
-    param_df = pd.DataFrame(ctx.params, index=[analysis_name]).T
+    params = dict(ctx.params)
+    params['file_format'] = ' | '.join(params['file_format'])
+    param_df = pd.DataFrame(params, index=[analysis_name]).T
     param_df.to_csv(outname, sep='\t')
 
     ctx.obj['data_obj'] = data_obj
@@ -574,15 +576,19 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
               help="Annotate points on PC plot")
 @click.option('--max-pc', default=2, show_default=True,
               help='Maximum PC to plot. Plots all combinations up to this number.')
+@click.option('--color', default='', show_default=True, is_flag=False,
+              help="What meta entry to color PCA")
+@click.option('--marker', default='', show_default=True, is_flag=False,
+              help="What meta entry to mark PCA")
 @click.pass_context
-def pca(ctx, annotate, max_pc):
+def pca(ctx, annotate, max_pc, color, marker):
 
     data_obj = ctx.obj['data_obj']
 
     # # fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
 
-    figs = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata,
-                   annotate=annotate, max_pc=max_pc)
+    figs = pcaplot(data_obj.areas_log_shifted, metadata=data_obj.config, col_data=data_obj.col_metadata,
+                   annotate=annotate, max_pc=max_pc, color_label=color, marker_label=marker)
 
     # outname_func = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
     #                            non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
@@ -638,18 +644,18 @@ def metrics(ctx, full, before_filter, before_norm):
 @click.option('--sig', type=float, default=.05, show_default=True,
               help='Significance cutoff for (B.H. adjusted) pvalue'
 )
-@click.option('--q-value/--p-value', default=True, is_flag=True, show_default=True,
-              help="Whether to plot qvalue or pvalue on volcano plot (does not change underlying data)")
+@click.option('--p-adj/--p-value', default=True, is_flag=True, show_default=True,
+              help="Whether to plot padj or pvalue on volcano plot (does not change underlying data)")
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """)
 @click.pass_context
-def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, q_value, highlight_geneids):
+def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, p_adj, highlight_geneids):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
-    yaxis = 'qValue' if q_value else 'pValue'
+    yaxis = 'pAdj' if p_adj else 'pValue'
     volcanoplot(ctx, foldchange, expression_data, number=number, only_sig=only_sig, sig=sig,
                 yaxis=yaxis, scale=scale, highlight_geneids=highlight_geneids)
 
