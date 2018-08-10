@@ -25,7 +25,7 @@ class PCAplot:
 
     markers = ('o', 'v', 's', 'd', '*', 'X', 'P', 'h', '<', 'H', 'D', '>', 'p', '^', )
 
-    def __init__(self, X, metadata, col_data, annotate=False):
+    def __init__(self, X, color_label=None, marker_label=None, col_data=None, metadata=None, annotate=False):
         """
         :X: DataFrame with columns as sample names and rows as GeneIDs. Index consists of GeneIDs
         :metadata: Dictionary of dictionaries of this format:
@@ -39,6 +39,11 @@ class PCAplot:
         self.X = X
         self.metadata = metadata
         self.annotate = annotate
+        if metadata.get('__PCA__') is not None:
+            warnings.warn("""
+            Specifying __PCA__ in config file is depreciated. Specify color, marker, and annot at the command line
+            """
+            )
 
         if col_data is not None:
             col_data = col_data.T
@@ -46,6 +51,7 @@ class PCAplot:
                 col_data[col] = pd.Categorical(col_data[col])
         to_drop = [x for x in col_data.columns if x.startswith('_')]
         self.col_data = col_data.drop(to_drop, axis=1)
+        params_annotate = None
 
         if annotate == False:
             pca_params = metadata.get('__PCA__')
@@ -85,18 +91,25 @@ class PCAplot:
         # var1, var2, *rest = [x/s.sum() for x in s]
         # var1, var2, *rest = s**2 / (s**2).sum()
 
-        pca_params = metadata.get('__PCA__')
-        if pca_params is not None and 'color' in pca_params:
-            color_label = pca_params.get('color')
-            try:
-                n_colors = df[color_label].nunique()
-            except KeyError:
-                warnings.warn('The label {} is not in the metadata'.format(color_label))
-                n_colors = 1
+        if self.metadata:
+            pca_params = metadata.get('__PCA__')
+            if pca_params is not None and 'color' in pca_params:
+                color_label = pca_params.get('color')
+                try:
+                    n_colors = df[color_label].nunique()
+                except KeyError:
+                    warnings.warn('The label {} is not in the metadata'.format(color_label))
+                    n_colors = 1
+        if pca_params is not None:
+            marker_label = pca_params.get('marker')
+        else:
+            marker_label = None
+
+        self.color_label = color_label
+        if color_label:
+            n_colors = df[color_label].nunique()
         else:
             n_colors = 1
-            color_label = None
-        self.color_label = color_label
 
         if n_colors <= 10:
             colors = sb.color_palette('tab10', n_colors=10)
@@ -109,13 +122,9 @@ class PCAplot:
             color_mapper = [ colors[0] for _ in df.index ]
         df['_color'] = color_mapper
 
-        if pca_params is not None:
-            marker_label = pca_params.get('marker')
-        else:
-            marker_label = None
         self.marker_label = marker_label
 
-        if marker_label:
+        if self.marker_label:
             try:
                 marker_mapper = [ self.markers[ix]
                                   for ix in df[marker_label].cat.codes ]
@@ -246,8 +255,7 @@ class PCAplot:
         fig.tight_layout()
         return fig, ax
 
-def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2):
-
+def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None):
     rc = {'font.family': 'sans-serif',
         "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
                             "Bitstream Vera Sans", "sans-serif"],
@@ -255,8 +263,8 @@ def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2):
     }
     sb.set_context('talk')
     sb.set_style('white', rc)
-
-    pca = PCAplot(X, metadata, col_data, annotate=annotate)
+    pca = PCAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
+                  col_data=col_data, annotate=annotate)
 
     figs = dict()
 
