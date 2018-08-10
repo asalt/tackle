@@ -121,6 +121,23 @@ class Path_or_Subcommand(click.Path):
 
         return click.Path.convert(self, value, param, ctx)
 
+class int_or_ratio(click.ParamType):
+    name = 'integer'
+
+    def convert(self, value, param, ctx):
+        try:
+            float(value)
+        except ValueError:
+            self.fail('%s is not a valid integer or float' % value, param, ctx)
+        try:
+            return int(value)
+        except ValueError: # then float
+            val = float(value)
+            if val > 1:
+                self.fail('%s cannot be greater than 1 if specified as a float' % value, param, ctx)
+            return val
+
+
 def validate_cluster_number(ctx, param, value):
 
     if value == 'auto':
@@ -292,8 +309,11 @@ def validate_configfile(experiment_file, **kwargs):
               help='Base directory to store results. Will be created if does not exist.')
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
               default='all', show_default=True)
-@click.option('--non-zeros', default=0, show_default=True,
-              help='Minimum number of non zeros allowed for each gene product across samples.')
+@click.option('--non-zeros', default=0, show_default=True, type=int_or_ratio(),
+              help="""Minimum number of non zeros OR fraction of nonzeros allowed for each gene product
+              across samples. If a decimal is specified (e.g. 1.0), this indicates 100% of values are nonzero.
+              If an integer is specified (1), this indicates that 1 value is nonzero.
+              """)
 @click.option('--nonzero-subgroup', type=str, default=None, help='')
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))

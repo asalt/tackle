@@ -46,7 +46,7 @@ STEP = .2
 #     )
 #     return panel.loc[:, indices, :]
 
-def filter_observations(df, column, threshold, subgroup=None, metadata=None):
+def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None):
     """
     format is:
                          Sample1  Sample2  Sample3 ..
@@ -55,11 +55,15 @@ def filter_observations(df, column, threshold, subgroup=None, metadata=None):
     a      FunCats       DBTF     DBTF      DBTF
     a      iBAQ_dstrAdj  1        1         NA
     """
+    if isinstance(nonzero_value, int):
+        threshold = nonzero_value
 
     if subgroup is not None and metadata is None:
         raise ValueError('Must provide metadata if specifying subgroup')
 
     if subgroup is None:
+        if isinstance(nonzero_value, float): #then ratio of total
+            threshold = len(df.columns) * nonzero_value
 
         mask = (df.loc[ idx[:, column], :].fillna(0)
                 .where(lambda x : x != 0)
@@ -77,6 +81,10 @@ def filter_observations(df, column, threshold, subgroup=None, metadata=None):
 
         for sample, grp in metadata.T.groupby(subgroup):
             columns = grp.index
+
+            if isinstance(nonzero_value, float): #then ratio of total
+                threshold = len(columns) * nonzero_value
+
             mask = (df.loc[ idx[:, column], columns].fillna(0)
                     .where(lambda x : x != 0)
                     .count(1)
