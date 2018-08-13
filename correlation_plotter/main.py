@@ -155,6 +155,25 @@ def validate_cluster_number(ctx, param, value):
     else:
         raise click.BadParameter('must be one of `None`, `auto` or an integer')
 
+def validate_in_config(*entries, valid_entries=None):
+    import difflib
+    correct = list()
+    for entry in entries:
+        if entry not in  valid_entries:
+            closest_match = difflib.get_close_matches(entry, valid_entries, n=1, cutoff=.6)
+            if closest_match:
+                response2 = 'Did you  mean {}'.format(closest_match[0])
+            else:
+                response2 = ""
+            click.echo("""{} is not in the config file. {}
+            """.format(entry, response2))
+        else:
+            correct.append(entry)
+    return correct
+
+
+
+
 def validate_seed(ctx, param, value):
 
     if value == 'None' or value is None:
@@ -468,6 +487,12 @@ def export(ctx, level, genesymbols):
               default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
               Should have 1 geneid per line. """)
+@click.option('--legend-include', type=str, multiple=True,
+              help="""Specific entries in the config file to include in the legend.
+              (Default all are included)""")
+@click.option('--legend-exclude', type=str, multiple=True,
+              help="""Specific entries in the config file to ignore for the legend.
+              (Default all are included)""")
 @click.option('--linkage', type=click.Choice(['single', 'complete', 'average', 'weighted', 'centroid',
                                               'median', 'ward']),
               default='ward', show_default=True,
@@ -493,9 +518,9 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_fontsize, highlight_geneids, linkage, max_autoclusters,
-            nclusters, row_cluster, seed, show_metadata, standard_scale, show_missing_values,
-            z_score):
+def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_fontsize,
+            highlight_geneids, legend_include, legend_exclude, linkage, max_autoclusters, nclusters,
+            row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score):
 
     if not figsize:  # returns empty tuple if not specified
         figsize = None
@@ -510,6 +535,10 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
 
     col_meta = data_obj.col_metadata
     _expids = ('recno', 'runno', 'searchno')
+
+    valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.index)
+    legend_include = set(legend_include) & set(valid_entries)
+    legend_exclude = set(legend_exclude) & set(valid_entries)
     col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
     result = clusterplot(data_obj.areas_log_shifted,
                          cmap_name=cmap,
@@ -529,7 +558,9 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
                          figsize=figsize,
                          normed=data_obj.normed,
                          linkage=linkage,
-                         gene_symbol_fontsize=gene_symbol_fontsize
+                         gene_symbol_fontsize=gene_symbol_fontsize,
+                         legend_include=legend_include,
+                         legend_exclude=legend_exclude
     )
 
     g = result['clustermap']['clustergrid']

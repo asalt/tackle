@@ -147,7 +147,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
                 normed=False, linkage='average',
-                gene_symbol_fontsize=8
+                gene_symbol_fontsize=8, legend_include=None, legend_exclude=None
 ):
     """
     :nclusters: None, 'auto', or positive integer
@@ -192,9 +192,16 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
 
     col_colors = None
     # if metadata is not None:
+    if not legend_exclude:
+        legend_exclude = tuple()
+    if not legend_include and col_data is not None:
+        legend_include = col_data.index.tolist()
+
     if col_data is not None:
         # col_data = parse_metadata(metadata)
-        col_data = col_data.copy()
+        _legend_data = set(legend_include) - set(legend_exclude) if legend_include else col_data.index
+        _legend_data = sorted(_legend_data)
+        col_data = col_data.loc[_legend_data].copy()
         if 'label' in col_data.index:
             if col_data.loc['label'].nunique() == 1:
                 col_data = col_data.loc[col_data.index.drop('label')]
