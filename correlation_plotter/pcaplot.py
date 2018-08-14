@@ -148,6 +148,8 @@ class PCAplot:
         texts = list()
         maxcols = 1
         for label in (color_label, marker_label):
+            if not label:
+                pass
             try:
                 ncols = np.ceil( df[label].nunique()/5 )
                 maxcols = max([ maxcols, ncols ])
