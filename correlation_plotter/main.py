@@ -328,7 +328,7 @@ def validate_configfile(experiment_file, **kwargs):
               help='Base directory to store results. Will be created if does not exist.')
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
               default='all', show_default=True)
-@click.option('--non-zeros', default=0, show_default=True, type=int_or_ratio(),
+@click.option('--non-zeros', default=1, show_default=True, type=int_or_ratio(),
               help="""Minimum number of non zeros OR fraction of nonzeros allowed for each gene product
               across samples. If a decimal is specified (e.g. 1.0), this indicates 100% of values are nonzero.
               If an integer is specified (1), this indicates that 1 value is nonzero.
