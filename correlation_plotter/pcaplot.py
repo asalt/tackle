@@ -116,7 +116,7 @@ class PCAplot:
         else:
             colors = sb.color_palette('cubehelix', n_colors=n_colors)
 
-        if color_label is not None:
+        if color_label:
             color_mapper = [ colors[ix] for ix in df[color_label].cat.codes ]
         else:
             color_mapper = [ colors[0] for _ in df.index ]
