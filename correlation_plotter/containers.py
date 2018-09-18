@@ -764,7 +764,7 @@ class Data:
         pheno = self.col_metadata.T
         r.assign('pheno', pheno)
         r('mod0 <- model.matrix(~1, pheno)')
-        r('mod  <- model.matrix(~as.factor({}), pheno)'.format(self.group))
+        r('mod  <- model.matrix(~{}, pheno)'.format(self.group))
         r.assign('edata', self.areas_log_shifted.fillna(0))
 
         if self.covariate is not None:
@@ -782,10 +782,19 @@ class Data:
             results = r("""lmFit(as.matrix(edata), mod) %>%
                        eBayes(robust=TRUE, trend=TRUE) %>%
                        topTable(n=Inf, sort.by='none')
-            """)
+            """.format(self.group))
             pvalues = results['P.Value']
             padj    = results['adj.P.Val']
-
+        elif self.pairs and self.limma:
+            importr('limma')
+            r('library(dplyr)')
+            r('mod  <- model.matrix(~{}+{}, pheno)'.format(self.group, self.pairs))
+            results = r("""lmFit(as.matrix(edata), mod) %>%
+                       eBayes(robust=TRUE, trend=TRUE) %>%
+                       topTable(n=Inf, sort.by='none', coef="{}")
+            """.format(self.group+pheno[self.group].iloc[-1]))
+            pvalues = results['P.Value']
+            padj    = results['adj.P.Val']
 
         else: # ttest rel
             from .ttest_rel_cov import ttest_rel_cov
@@ -895,6 +904,9 @@ class Data:
 from six import string_types
 class MyHeatMapper(HeatMapper):
 
+    def _draw_data(self, ax, **kws):
+        return ax.pcolormesh(self.plot_data, **kws)
+
     def _determine_cmap_params(self, plot_data, vmin, vmax,
                                cmap, center, robust):
         """Use some heuristics to set good defaults for colorbar and range."""
@@ -929,7 +941,124 @@ class MyHeatMapper(HeatMapper):
             self.cmap = mpl.colors.ListedColormap(self.cmap(cc))
         self.cmap.set_bad(color='gray')
 
+    def plot(self, ax, cax, kws):
+        """Draw the heatmap on the provided Axes."""
+        # Remove all the Axes spines
+        despine(ax=ax, left=True, bottom=True)
+
+        # Draw the heatmap
+        mesh = self._draw_data(ax, vmin=self.vmin, vmax=self.vmax,
+                               cmap=self.cmap, **kws)
+
+        # Set the axis limits
+        ax.set(xlim=(0, self.data.shape[1]), ylim=(0, self.data.shape[0]))
+
+        # Possibly add a colorbar
+        if self.cbar:
+            cb = ax.figure.colorbar(mesh, cax, ax, **self.cbar_kws)
+            cb.outline.set_linewidth(0)
+            # If rasterized is passed to pcolormesh, also rasterize the
+            # colorbar to avoid white lines on the PDF rendering
+            if kws.get('rasterized', False):
+                cb.solids.set_rasterized(True)
+
+        # Add row and column labels
+        if isinstance(self.xticks, string_types) and self.xticks == "auto":
+            xticks, xticklabels = self._auto_ticks(ax, self.xticklabels, 0)
+        else:
+            xticks, xticklabels = self.xticks, self.xticklabels
+        if isinstance(self.yticks, string_types) and self.yticks == "auto":
+            yticks, yticklabels = self._auto_ticks(ax, self.yticklabels, 1)
+        else:
+            yticks, yticklabels = self.yticks, self.yticklabels
+
+        ax.set(xticks=xticks, yticks=yticks)
+        xtl = ax.set_xticklabels(xticklabels)
+        ytl = ax.set_yticklabels(yticklabels, rotation="vertical")
+
+        # Possibly rotate them if they overlap
+        ax.figure.draw(ax.figure.canvas.get_renderer())
+        if axis_ticklabels_overlap(xtl):
+            plt.setp(xtl, rotation="vertical")
+        if axis_ticklabels_overlap(ytl):
+            plt.setp(ytl, rotation="horizontal")
+
+        # Add the axis labels
+        ax.set(xlabel=self.xlabel, ylabel=self.ylabel)
+
+        # Annotate the cells with the formatted values
+        if self.annot:
+            self._annotate_heatmap(ax, hmap)
+        # Invert the y axis to show the plot in matrix form
+        ax.invert_yaxis()
+
 sb.matrix._HeatMapper = MyHeatMapper
+from seaborn import heatmap
+from seaborn import despine
+from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
+
+class _ScatterMapper(MyHeatMapper):
+    """
+    Draw a scattermap plot, similar to heatmap plot, but use scatter dots instead of heatmap
+    """
+
+    def __init__(self, data,
+                 marker, marker_size,
+                 vmin, vmax, cmap, center, robust, cbar, cbar_kws,
+                 xticklabels=True, yticklabels=True, mask=None):
+
+        super(_ScatterMapper, self).__init__(
+            data, vmin, vmax, cmap, center, robust, cbar=cbar, cbar_kws=cbar_kws,
+            xticklabels=xticklabels, yticklabels=yticklabels, mask=mask,
+            # Don't support annotation
+            annot=False, fmt=None, annot_kws=None,
+        )
+
+        self.marker = marker
+
+        if isinstance(marker_size, float) or isinstance(marker_size, int):
+            self.marker_size = marker_size
+        elif isinstance(marker_size, pd.DataFrame):
+            self.marker_size = marker_size.loc[self.data.index, self.data.columns].values
+        else:
+            self.marker_size = marker_size
+
+    def _draw_data(self, ax, **kws):
+
+        data = self.plot_data
+
+        range_y = np.arange(data.shape[0], dtype=int) + 0.5
+        range_x = np.arange(data.shape[1], dtype=int) + 0.45
+        x, y = np.meshgrid(range_x, range_y)
+        return ax.scatter(x, y,
+                          c=data,
+                          marker=self.marker,
+                          s=self.marker_size, **kws)
+
+def scattermap(data,
+               marker='o',
+               marker_size=100,
+               vmin=None, vmax=None, cmap=None, center=None, robust=False,
+               linewidths=0, linecolor="white",
+               cbar=True, cbar_kws=None, cbar_ax=None,
+               square=False, xticklabels="auto", yticklabels="auto",
+               mask=None, ax=None, **kwargs):
+
+    plotter = _ScatterMapper(data,
+                             marker, marker_size,
+                             vmin, vmax, cmap, center, robust,
+                             cbar, cbar_kws, xticklabels,
+                             yticklabels, mask)
+
+    # Add the pcolormesh kwargs here
+    kwargs["linewidths"] = linewidths
+    kwargs["edgecolor"] = linecolor
+    if ax is None:
+        ax = plt.gca()
+    if square:
+        ax.set_aspect("equal")
+    plotter.plot(ax, cbar_ax, kwargs)
+    return ax
 
 class MyClusterGrid(ClusterGrid):
 
@@ -1052,6 +1181,99 @@ class MyClusterGrid(ClusterGrid):
         ratios.append(1 - sum(ratios))
 
         return ratios
+
+    def plot(self, metric, method, colorbar_kws, row_cluster, col_cluster,
+             row_linkage, col_linkage, row_color_kws=None, col_color_kws=None, **kws):
+        colorbar_kws = {} if colorbar_kws is None else colorbar_kws
+        row_color_kws = {} if row_color_kws is None else row_color_kws
+        col_color_kws = {} if col_color_kws is None else col_color_kws
+        self.plot_dendrograms(row_cluster, col_cluster, metric, method,
+                              row_linkage=row_linkage, col_linkage=col_linkage)
+        try:
+            xind = self.dendrogram_col.reordered_ind
+        except AttributeError:
+            xind = np.arange(self.data2d.shape[1])
+        try:
+            yind = self.dendrogram_row.reordered_ind
+        except AttributeError:
+            yind = np.arange(self.data2d.shape[0])
+
+        self.plot_colors(xind, yind, row_color_kws, col_color_kws, **kws)
+        self.plot_matrix(colorbar_kws, xind, yind, **kws)
+        return self
+
+
+    def plot_colors(self, xind, yind, row_color_kws=None, col_color_kws=None, **kws):
+        """Plots color labels between the dendrogram and the heatmap
+
+        Parameters
+        ----------
+        heatmap_kws : dict
+            Keyword arguments heatmap
+        """
+        # Remove any custom colormap and centering
+        kws = kws.copy()
+        kws.pop('cmap', None)
+        kws.pop('center', None)
+        kws.pop('vmin', None)
+        kws.pop('vmax', None)
+        kws.pop('robust', None)
+        kws.pop('xticklabels', None)
+        kws.pop('yticklabels', None)
+
+        # Plot the row colors
+        if self.row_colors is not None:
+            matrix, cmap = self.color_list_to_matrix_and_cmap(
+                self.row_colors, yind, axis=0)
+
+            # Get row_color labels
+            if self.row_color_labels is not None:
+                row_color_labels = self.row_color_labels
+            else:
+                row_color_labels = False
+            row_color_kws = row_color_kws.copy()
+            for x in 'cmap', 'center', 'vmin', 'vmax', 'robust', 'xticklabels', 'yticklabels':
+                row_color_kws.pop(x, None)
+            full_kws = kws.copy()
+            full_kws.update(row_color_kws)
+
+            heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_row_colors,
+                    xticklabels=row_color_labels, yticklabels=False, **full_kws)
+
+            # Adjust rotation of labels
+            if row_color_labels is not False:
+                plt.setp(self.ax_row_colors.get_xticklabels(), rotation=90)
+        else:
+            despine(self.ax_row_colors, left=True, bottom=True)
+
+        # Plot the column colors
+        if self.col_colors is not None:
+            matrix, cmap = self.color_list_to_matrix_and_cmap(
+                self.col_colors, xind, axis=1)
+
+            # Get col_color labels
+            if self.col_color_labels is not None:
+                col_color_labels = self.col_color_labels
+            else:
+                col_color_labels = False
+
+            col_color_kws = col_color_kws.copy()
+            for x in 'cmap', 'center', 'vmin', 'vmax', 'robust', 'xticklabels', 'yticklabels':
+                col_color_kws.pop(x, None)
+            full_kws = kws.copy()
+            full_kws.update(col_color_kws)
+
+            heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,
+                    xticklabels=False, yticklabels=col_color_labels, **full_kws)
+            # scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=100,
+            #            xticklabels=False, yticklabels=col_color_labels, **kws)
+
+            # Adjust rotation of labels, place on right side
+            if col_color_labels is not False:
+                self.ax_col_colors.yaxis.tick_right()
+                plt.setp(self.ax_col_colors.get_yticklabels(), rotation=0)
+        else:
+            despine(self.ax_col_colors, left=True, bottom=True)
 
     # def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
     #     """need to adjust the heatmap height ratio for long figures
