@@ -57,6 +57,20 @@ sys.setrecursionlimit(10000)
 TAXON_MAPPER = {'human': 9606,
                 'mouse': 10090}
 
+from contextlib import contextmanager
+# workaround for windows
+@contextmanager
+def named_temp(*args, **kwargs):
+    f = NamedTemporaryFile(*args, delete=False, **kwargs)
+    try:
+        yield f
+    finally:
+        try:
+            os.unlink(f.name)
+        except OSError:
+            pass
+
+
 
 def run(data_obj):
 
@@ -844,14 +858,17 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         geneset_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
                                     'GSEA', 'genesets', f)
 
-        with NamedTemporaryFile(suffix='.txt') as f, NamedTemporaryFile(mode='w', suffix='.cls') as g:
+        # with NamedTemporaryFile(suffix='.txt') as f, NamedTemporaryFile(mode='w', suffix='.cls') as g:
+        with named_temp(suffix='.txt') as f, named_temp(mode='w', suffix='.cls') as g:
             expression.to_csv(f.name, sep='\t')
+            f.close() # windows compat
         # with open('./results/gsea/kip_dda_kinases_pheno.cls', 'w') as g:
             g.write('{} {} 1\n'.format(nsamples, ngroups))
             g.write('# {}\n'.format(' '.join(groups)))
             # g.write('{}\n'.format(' '.join(classes)))
             g.write('{}\n'.format(' '.join(pheno.loc[group])))
             g.file.flush()
+            g.close() # windows compat
 
             # rpt_name\t{rpt_name}
             params = """
