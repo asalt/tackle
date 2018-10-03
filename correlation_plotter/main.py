@@ -86,7 +86,7 @@ def run(data_obj):
         outname = get_outname('clustermap', name=data_obj.outpath_name, taxon=data_obj.taxon,
                               non_zeros=data_obj.non_zeros,
                               colors_only=data_obj.colors_only, outpath=data_obj.outpath)
-        print(outname)
+        # print(outname)
 
         bbox_inches='tight'
         if extra_artists is not None:
@@ -713,7 +713,7 @@ def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, p_ad
 
 
 @main.command('gsea')
-@click.option('--show-result/--no-show-result', default=True)
+@click.option('--show-result/--no-show-result', default=True, show_default=True)
 @click.option('--collapse', type=bool, default=False, show_default=True)
 @click.option('--geneset', type=click.Choice(('hallmark', 'go_biological', 'curated.CP.all',
                                               'curated.CP.KEGG', 'oncogenic', 'curated.CP.BioCarta',
@@ -740,15 +740,18 @@ def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, p_ad
 @click.option('--set-max', default=500, show_default=True)
 @click.option('--set-min', default=15, show_default=True)
 @click.option('--sort', type=click.Choice(('real', 'abs')), default='real', show_default=True)
+@click.option('-n', '--number', default=9999, help='Number of pathways to plot in output', show_default=True)
 @click.pass_context
 def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutations, norm, permute,
-         plot_top_x, rnd_type, scoring_scheme, sort, set_max, set_min):
+         plot_top_x, rnd_type, scoring_scheme, sort, set_max, set_min, number):
     """
     Run GSEA on specified groups
     """
     data_obj = ctx.obj['data_obj']
     file_fmts = ctx.obj['file_fmts']
 
+    plt.rc('font',**{'family':'sans-serif','sans-serif':["DejaVu Sans", "Arial", "Liberation Sans",
+                            "Bitstream Vera Sans", "sans-serif"]})
     group = data_obj.group #
 
     # expression = data_obj.areas_log_shifted.copy().fillna(0)
@@ -932,6 +935,9 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         if gsea_sig.empty:
             print('No gene sets to plot!')
             # return
+        tokeep = gsea_sig.NES.sort_values(ascending=False).head(number).index
+        idx = [x for x in gsea_sig.index if x in tokeep]
+        gsea_sig = gsea_sig.loc[idx]
 
         gsea_sig['color'] = gsea_sig['FWER p-val'].apply(lambda x:
                                 mpl.colors.to_hex( cmap(cnorm(powernorm(x))) )
@@ -939,20 +945,27 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         import textwrap
         gsea_sig.index = gsea_sig.index +  ['*' if x<.25 else '' for x in gsea_sig['FWER p-val'] ]
         gsea_sig.index = gsea_sig.index.map(lambda x: textwrap.fill(x.replace('_', ' '),
-                                                                    14,
+                                                                    24,
                                                                     break_long_words=False) )
         # print(gsea_sig[['FWER p-val', 'NES', 'color']])
 
         # mpl.colors.Normalize(vmin=1.,vmax=1.)
+        nes_range = gsea_sig.NES.max() + abs(gsea_sig.NES.min())
+        figwidth = np.round(nes_range*2.5, decimals=1)
 
+
+        figheight = max(4, min(gsea_sig.pipe(len) // 1.5, 14))
+        fig = plt.figure(figsize=(figwidth, figheight))
         gs = mpl.gridspec.GridSpec(2, 1,
                                    width_ratios=[1,],
                                    height_ratios=[19, 1],
-                                   hspace=.4
+                                   hspace=.4,
         )
-        ax0 = plt.subplot(gs[0])
+        # ax0 = plt.subplot(gs[0])
+        ax0 = fig.add_subplot(gs[0])
         # ax1 = plt.subplot(gs[1])
-        cax = plt.subplot(gs[1:])
+        # cax = plt.subplot(gs[1:])
+        cax = fig.add_subplot(gs[1:])
         gsea_sig['NES'].fillna(0).plot.barh(ax=ax0, color=gsea_sig.color, edgecolor='#222222',
                                             linewidth=2)
         ax0.axvline(color='#222222')
@@ -973,9 +986,24 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         ax0.set_ylabel('')
         ax0.set_xlabel('NES')
 
+        for tick in ax0.yaxis.get_ticklabels():
+            txt = tick.get_text()
+            if len(txt) > 20:
+                size = 8
+            elif len(txt) > 30:
+                size = 6
+            else:
+                size = 9
+            tick.set_size(size)
+
+
         # plt.tight_layout()
-        fig = plt.gcf()
-        gs.tight_layout(fig)
+        # fig = plt.gcf()
+        groups[0], groups[1]
+        ax0.text(0, 1.04, groups[0], transform=ax0.transAxes)
+        ax0.text(1, 1.04, groups[1], transform=ax0.transAxes, ha='right')
+        gs.tight_layout(fig, rect=(0, 0, 1, .96))
+        # fig.subplots_adjust(left=.4)
         # fig.tight_layout()
         save_multiple(fig, outname, *file_fmts)
 
