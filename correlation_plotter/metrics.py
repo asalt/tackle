@@ -60,6 +60,19 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
         frames.append(frame)
     area_df = pd.concat(frames)
 
+    to_export = pd.concat([sra[['S', 'R', 'A']], gpg.rename(columns={0: 'GPGroups'}),
+                           psms.rename(columns={x:x+'_psms' for x in psms.columns}),
+                           peptides.rename(columns={x:x+'_peptides' for x in psms.columns})
+    ], axis=1).astype(int)
+
+    export_name = get_outname('metrics', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                              non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                              batch=data_obj.batch_applied,
+                              batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                              outpath=data_obj.outpath,
+    )
+    to_export.to_csv(export_name+'.tab', sep='\t', index=True)
+
     # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
 
     green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
