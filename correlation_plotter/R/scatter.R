@@ -77,13 +77,20 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
     text( 0.5, 0.5, txt, cex = cex, pos = 3 ) # text above center
   }
 
-  lower.panel = function(x, y, col = 'grey', smooth = FALSE, xmin = NULL, xmax = NULL, method = 'pearson', ...){
+  lower.panel = function(x, y, col = 'grey', cex=.4, smooth = FALSE, xmin = NULL, xmax = NULL, method = 'pearson', ...){
     ## usr <- par("usr")
     ## on.exit(par(usr))
     ## r <- raster()
 
-    points(x, y, col = '#4878cf66', xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
-    abline(0, 1, col = '#444444bb', lty = 2, lwd = 2)
+    ## points(x, y, col = '#4878cf33', cex=cex, xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
+    ## smoothScatter(x, y, add = TRUE, nbin=64, xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
+    smoothScatter(x, y, add = TRUE, nrpoints = 0, nbin = 64, gap = 0.0,  ...)
+    ## (..., nbin=64,
+    ##   nrpoints = 0,
+    ##   add = TRUE), gap = 0.2, ylim = c(-5,5), xlim=c(-5,5)
+
+    ## abline(0, 1, col = '#444444bb', lty = 2, lwd = 2)
+    abline(0, 1, col = '#44444466', lty = 2, lwd = 1)
 
   }
 
@@ -106,12 +113,12 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
 
   if (histogram)
       pairs(x, gap = 0, lower.panel = panel.smooth, upper.panel = panel.cor,
-            diag.panel = hist.panel, method = method, pch=16, col='#22222288',
+            diag.panel = hist.panel, method = method, pch=20, col='#22222288',
             ## cex.labels = colnames(x),
             ...)
   ## else pairs(x, gap = 0, lower.panel = panel.smooth, upper.panel = panel.cor,
   else pairs(x, gap = 0, smooth = FALSE, upper.panel = panel.cor, lower.panel = lower.panel,
-             method = method, pch=16, col='#22222288', diag.panel = diag.panel,
+             method = method, pch=20, col='#22222288', diag.panel = diag.panel,
              text.panel = text.panel, xmin = xmin, xmax = xmax,
              xlim = c(xmin, xmax), ylim = c(xmin, xmax),
               ## cex.labels = colnames(x),
