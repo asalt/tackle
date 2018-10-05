@@ -996,7 +996,7 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 
         start, end = cax.get_xlim()
         cax.xaxis.set_ticks(np.linspace(start, end, 11))
-        cax.set_xticklabels( np.linspace(0, 1, 11) )
+        cax.set_xticklabels( ['{:.2f}'.format(x) for x in np.linspace(0, 1, 11)] )
         cax.set_xlabel('FWER p-val')
         ax0.grid(axis='x')
 
