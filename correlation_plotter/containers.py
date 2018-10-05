@@ -419,7 +419,6 @@ class Data:
                 continue
                 # raise ValueError('No data for {!r}'.format(exp))
 
-
             if self.metrics and not self.metrics_after_filter:
                 self._update_metrics(df, name)
 
@@ -441,9 +440,17 @@ class Data:
                           .pipe(normalize, median=True, outcol='iBAQ_dstrAdj_MED')
                     )
 
+                dummy_filter = lambda x, *args, **kwargs: x
+                taxon_filter = TAXON_MAPPER.get(self.taxon)
+                if taxon_filter is None:
+                    filter_func = dummy_filter
+                else:
+                    filter_func = lambda x: x[ x['TaxonID'] == taxon_filter ]
+
                 df = genefilter(df, funcats=self.funcats, funcats_inverse=self.funcats_inverse,
                                 geneid_subset=self.geneid_subset,
-                                ignored_geneid_subset=self.ignore_geneid_subset)
+                                ignored_geneid_subset=self.ignore_geneid_subset).pipe(filter_func)
+
 
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter:
@@ -900,6 +907,7 @@ class Data:
             export[order].to_csv(outname, sep='\t')
         print('Exported', outname)
 
+# ========================================================================================================= #
 
 from six import string_types
 class MyHeatMapper(HeatMapper):

@@ -365,7 +365,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     # validate_subgroup(nonzero_subgroup, experiment_file)
     validate_configfile(experiment_file, nonzero_subgroup=nonzero_subgroup, batch=batch, group=group, covariate=covariate, pairs=pairs)
 
-    metrics, metrics_after_filter, metrics_unnormed_area = False, True, True
+    metrics, metrics_after_filter, metrics_unnormed_area = False, False, True
     if 'metrics' in sys.argv:  #know this ahead of time, accumulate metrics during data load
         metrics = True
         if '--after-filter' in sys.argv:

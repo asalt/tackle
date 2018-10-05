@@ -13,7 +13,9 @@ import seaborn as sb
 
 
 
-from .utils import get_outname, save_multiple, genefilter, filter_sra
+from .utils import get_outname, save_multiple, genefilter, filter_sra, filter_taxon
+
+from .containers import TAXON_MAPPER
 
 idx = pd.IndexSlice
 
@@ -35,10 +37,12 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
 
     if before_filter:
         kws = dict(before='filter')
+        taxon = 'all'
     else:
         kws = dict(after='filter')
+        taxon = data_obj.taxon
 
-    outname = get_outname('metrics', name=data_obj.outpath_name, taxon=data_obj.taxon,
+    outname = get_outname('metrics', name=data_obj.outpath_name, taxon=taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
                           batch=data_obj.batch_applied,
                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
@@ -107,12 +111,16 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=0 )
 
     FONTSIZE = 10
-    ncols = {0: 1, 2:2, 3:1}
-    for ix, ax in enumerate((ax_sra, ax_gpg, ax_psms, ax_pept,)):
+    ncols = {0: 1, 2:2, 3:1, 4:0}
+    for ix, ax in enumerate((ax_sra, ax_gpg, ax_psms, ax_pept, ax_area)):
         ax.yaxis.grid(True, lw=.25, color='grey', ls=':')
-        for tick in ax.xaxis.get_ticklabels():
+        if ix == 4:
+            ticklabels = ax.yaxis.get_ticklabels()
+        else:
+            ticklabels = ax.xaxis.get_ticklabels()
+        for tick in ticklabels:
             txt = tick.get_text()
-            newsize = FONTSIZE
+            newsize = FONTSIZE + 3 if ix == 4 else FONTSIZE
             textlen = len(txt)
 
             # resizing so labels fit, not best approach
@@ -122,9 +130,11 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
                 newsize -= 1
             elif textlen >= 13:
                 newsize -= 1
-            if len(data.keys()) >= 17:
+            if len(data.keys()) >= 17 and ix != 4:
                 newsize -= 2
             tick.set_size(newsize)
+            if ix == 4:
+                print(txt, textlen, newsize)
         sb.despine(ax=ax)
         if ix == 1:
             continue  #  no legend for gpgroups
@@ -137,7 +147,7 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     save_multiple(fig, outname, *file_fmts)
 
     if full:  # also plot info from PSMs
-        raise NoteImplementedError('Not yet')
+        raise NotImplementedError('Not yet')
         return # not done
         config = data_obj.config
         data_dir = data_obj.data_dir
@@ -196,20 +206,35 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     fracs = [ x/ncols for x in range(1, ncols+1) ]
     bin_indices = sorted(set(np.searchsorted(bins, fracs)))
     bins_kept = [0, *[bins[x] for x in bin_indices], 1.1]
-    if before_filter:
-        df = data_obj.data.pipe(filter_sra, SRA='S')
-    elif not before_filter:  #after funcat filter
-        df = (genefilter(data_obj.data, funcats=data_obj.funcats,
-                         funcats_inverse=data_obj.funcats_inverse,
-                         geneid_subset=data_obj.geneid_subset,
-                         ignored_geneid_subset=data_obj.ignore_geneid_subset)
-              .pipe(filter_sra, SRA='S')
-        )
+
+    df = data_obj.data.pipe(filter_sra, SRA='S')
+    ## Below doesn't work, always returns after filter since before_filter data not saved
+    ## for this purpose.
+    ## will require explicit saving like the other data.
+    # if before_filter:
+    #     df = data_obj.data.pipe(filter_sra, SRA='S')
+    # elif not before_filter:  #after funcat filter
+    #     dfs = dict()
+    #     for c in data_obj.data.columns:
+    #         frame = (data_obj.data[[c]].reset_index().pivot('level_0', 'level_1', c)
+    #                  .pipe(genefilter,
+    #                        funcats=data_obj.funcats,
+    #                        funcats_inverse=data_obj.funcats_inverse,
+    #                        geneid_subset=data_obj.geneid_subset,
+    #                        ignored_geneid_subset=data_obj.ignore_geneid_subset
+    #                  )
+    #         )
+    #         dfs[c] = frame
+    #     stacked_data = [ df.stack() for df in dfs.values() ]
+    #     df = (pd.concat( stacked_data, axis=1, keys=dfs.keys() ).pipe(filter_sra, SRA='S')
+    #                  .pipe(filter_taxon, taxon=TAXON_MAPPER.get(data_obj.taxon))
+    #     )
 
     counts = (df.loc[ idx[:, 'SRA'], :]
               .where(lambda x: x == 'S')
               .count(1)
     )
+
     count_frac = counts / ncols
     bin_labels = ['≥ {:.0%}'.format(x) for x in bins_kept[:-1]]
     bin_labels[0]  = '> 0%'
@@ -238,12 +263,15 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     fig.autofmt_xdate(ha='center')
     fig.tight_layout()
 
+    # Note change this to taxon=taxon when updated
+    # also right now always returns after filter
     outname = get_outname('metrics_genecounts', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
                           batch=data_obj.batch_applied,
                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                           outpath=data_obj.outpath,
-                          **kws
+                          after='filter'
+                          # **kws
     )
     save_multiple(fig, outname, *file_fmts)
 
