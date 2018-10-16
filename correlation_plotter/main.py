@@ -967,7 +967,11 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         # print(gsea_sig[['FWER p-val', 'NES', 'color']])
 
         # mpl.colors.Normalize(vmin=1.,vmax=1.)
-        nes_range = gsea_sig.NES.max() + abs(gsea_sig.NES.min())
+        if gsea_sig.NES.max() * gsea_sig.NES.min() < 0:
+            nes_range = gsea_sig.NES.max() + abs(gsea_sig.NES.min())
+        else:
+            nes_range = max(abs(gsea_sig.NES.max()), 2.5)
+
         figwidth = np.round(nes_range*2.5, decimals=1)
 
 
