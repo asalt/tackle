@@ -88,7 +88,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         export_data = df
         if only_sig:
             _log2_cutoff = np.sqrt(foldchange)
-            export_data = df.query('pAdj < @sig & log2_Fold_Change > @_log2_cutoff')
+            export_data = df.query('pAdj < @sig & abs(log2_Fold_Change) > @_log2_cutoff')
         if expression_data:
             export_data = export_data.join(values)
         export_cols = [x for x in export_data.columns if x not in ('highlight', )]
