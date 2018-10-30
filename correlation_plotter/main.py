@@ -927,8 +927,10 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
             webbrowser.open(index)
 
         # parse result
-        group0 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}*.xls'.format(groups[0])) )
-        group1 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}*.xls'.format(groups[1])) )
+        # GSEA outputs the summary files of the form:
+        # gsea_report_for_[groupname]_[digit_timestamp].xls
+        group0 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[0])) )
+        group1 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[1])) )
         assert len(group0) == len(group1) == 1
         group0_df = pd.read_table(group0[0], index_col='NAME')
         group1_df = pd.read_table(group1[0], index_col='NAME')
