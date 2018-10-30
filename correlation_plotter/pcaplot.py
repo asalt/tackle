@@ -100,10 +100,8 @@ class PCAplot:
                 except KeyError:
                     warnings.warn('The label {} is not in the metadata'.format(color_label))
                     n_colors = 1
-        if pca_params is not None:
-            marker_label = pca_params.get('marker')
-        else:
-            marker_label = None
+            if pca_params is not None and 'marker' in pca_params:
+                marker_label = pca_params.get('marker')
 
         self.color_label = color_label
         if color_label:
