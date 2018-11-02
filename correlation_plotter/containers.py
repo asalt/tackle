@@ -364,7 +364,7 @@ class Data:
 
         return exps
 
-    def _update_metrics(self, df, name):
+    def _update_metrics(self, df, name, area_column='iBAQ_dstrAdj'):
         if self.metric_values is None:
             self._metric_values = DefaultOrderedDict(lambda : defaultdict(None) )
 
@@ -378,15 +378,16 @@ class Data:
                    'Strict':     df.PeptideCount_S.sum(),
                    'Strict_u2g': df.PeptideCount_S_u2g.sum(),
         }
-
         self._metric_values[name]['SRA']      = sra
         self._metric_values[name]['GPGroups'] = gpg
         self._metric_values[name]['PSMs']     = psms
         self._metric_values[name]['Peptides'] = peptides
-        if self.metrics_unnormed_area:
-            self._metric_values[name]['Area']     = df.AreaSum_dstrAdj.where(lambda x: x > 0 ).dropna().values
-        elif not self.metrics_unnormed_area:
-            self._metric_values[name]['Area']     = df.iBAQ_dstrAdj.where(lambda x: x > 0 ).dropna().values
+        self._metric_values[name]['Area']     = df[area_column].where(lambda x: x > 0 ).dropna().values
+
+        # if self.metrics_unnormed_area:
+        #     self._metric_values[name]['Area']     = df.AreaSum_dstrAdj.where(lambda x: x > 0 ).dropna().values
+        # elif not self.metrics_unnormed_area:
+        #     self._metric_values[name]['Area']     = df.iBAQ_dstrAdj.where(lambda x: x > 0 ).dropna().values
         # self._metric_values[name]['GeneIDs']  = exp.df.GeneID.unique()
 
 
@@ -419,8 +420,8 @@ class Data:
                 continue
                 # raise ValueError('No data for {!r}'.format(exp))
 
-            if self.metrics and not self.metrics_after_filter:
-                self._update_metrics(df, name)
+            if self.metrics and not self.metrics_after_filter and self.metrics_unnormed_area:
+                self._update_metrics(df, name, area_column='iBAQ_dstrAdj')
 
             # exp.df['GeneID'] = exp.df['GeneID'].astype(int)
             df['GeneID'] = df['GeneID'].apply(maybe_int)
@@ -446,15 +447,16 @@ class Data:
                     filter_func = dummy_filter
                 else:
                     filter_func = lambda x: x[ x['TaxonID'] == taxon_filter ]
-
+                if self.metrics and not self.metrics_after_filter and not self.metrics_unnormed_area:
+                    self._update_metrics(df, name, area_column='area')
                 df = genefilter(df, funcats=self.funcats, funcats_inverse=self.funcats_inverse,
                                 geneid_subset=self.geneid_subset,
                                 ignored_geneid_subset=self.ignore_geneid_subset).pipe(filter_func)
 
 
                 # df = assign_cols(exp.df, name)
-                if self.metrics and self.metrics_after_filter:
-                    self._update_metrics(df, name)
+                if self.metrics and self.metrics_after_filter and not self.metrics_unnormed_area:
+                    self._update_metrics(df, name, area_column='area')
                 # exps[name] = df.set_index(df.index.astype(int))
                 df.index = [maybe_int(x) for x in df.index]
                 exps[name] = df
