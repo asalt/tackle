@@ -575,6 +575,8 @@ class Data:
 
         self._areas_log_shifted = self._areas_log + shift_val
         self._areas_log_shifted.index.name = 'GeneID'
+        if self.geneid_subset:
+            self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
 
 
         # if specified, normalize by a specified control group
