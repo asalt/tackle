@@ -497,7 +497,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
         g.ax_row_colors.spines["left"].set_position(("axes", 0.0)) # green one
 
     if col_colors is not None:
-        col_label_lengths = col_data.applymap(len).max(1) + col_colors.nunique()
+        col_label_lengths = col_data.fillna('').applymap(len).max(1) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
         # widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
         widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.2 )

@@ -767,6 +767,9 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
     plt.rc('font',**{'family':'sans-serif','sans-serif':["DejaVu Sans", "Arial", "Liberation Sans",
                             "Bitstream Vera Sans", "sans-serif"]})
     group = data_obj.group #
+    if group is None:
+        raise ValueError('Must specify Group')
+
 
     # expression = data_obj.areas_log_shifted.copy().fillna(0)
     expression = data_obj.areas_log_shifted.copy().fillna('na')
@@ -787,6 +790,8 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
     cls_comparison = ''
     if ngroups == 2:  # reverse it
         cls_comparison = '#{1}_versus_{0}'.format(*groups)
+    elif ngroups != 2:
+        raise ValueError('Must have 2 groups')
 
 
     namegen = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
@@ -922,8 +927,10 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
             webbrowser.open(index)
 
         # parse result
-        group0 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}*.xls'.format(groups[0])) )
-        group1 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}*.xls'.format(groups[1])) )
+        # GSEA outputs the summary files of the form:
+        # gsea_report_for_[groupname]_[digit_timestamp].xls
+        group0 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[0])) )
+        group1 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[1])) )
         assert len(group0) == len(group1) == 1
         group0_df = pd.read_table(group0[0], index_col='NAME')
         group1_df = pd.read_table(group1[0], index_col='NAME')

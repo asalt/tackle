@@ -104,7 +104,7 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     ax_area.yaxis.tick_right()
     ax_area.set_ylabel('')
     if before_norm:
-        ax_area.set_xlabel('log$_{10}$ AreaSum dstrAdj')
+        ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj')
     else:
         ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj normed')
     # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=90 )
