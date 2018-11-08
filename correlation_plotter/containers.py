@@ -406,7 +406,7 @@ class Data:
             labeltype = config[name].get('__LABELTYPE__', 'LF') # depreciated
             recno = record.get('recno')
             runno = record.get('runno')
-            searchno = record.get('searcno')
+            searchno = record.get('searchno')
             label = record.get('label')
             labelquery = LABEL_MAPPER.get(label, 0)
             exp = ispec.E2G(recno, runno, searchno, data_dir=self.data_dir)
