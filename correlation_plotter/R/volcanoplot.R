@@ -42,7 +42,9 @@ volcanoplot <- function(X, max_labels = 35,
 
   X <- mutate(X, Sig = ifelse(X$pAdj < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
                               sig_filter_str, "N.S."))
-  X[ , 'usd' ] = 'black'
+  ## X[ , 'usd' ] = '#222222bb'
+  ## X[ , 'usd' ] = '#22222222'
+  X[ , 'usd' ] = '#22222288'
   X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[ X$highlight == TRUE, 'usd' ] = 'purple'
@@ -63,10 +65,12 @@ volcanoplot <- function(X, max_labels = 35,
 
   X[, 'label'] <- FALSE  # new column
   X[to_label, 'label'] <- TRUE  # label these
-  X[ X$highlight == TRUE, 'label' ] <- TRUE # also label these no matter what
+
   if (show_all == FALSE){
     X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
   }
+
+  X[ X$highlight == TRUE, 'label' ] <- TRUE # also label these no matter what
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
   ymax <- max(-log10(X[, ploty])) * 1.05
