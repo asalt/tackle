@@ -75,6 +75,7 @@ class GeneMapper:
         self._symbol = None
         self._funcat = None
         self._description = None
+        self._taxon = None
 
     @property
     def df(self):
@@ -99,6 +100,12 @@ class GeneMapper:
         if self._description is None:
             self._description = self.df['GeneDescription'].to_dict()
         return self._description
+
+    @property
+    def taxon(self):
+        if self._taxon is None:
+            self._taxon = self.df['TaxonID'].to_dict()
+        return self._taxon
 
 _genemapper = GeneMapper()
 
@@ -427,6 +434,10 @@ class Data:
             df['GeneID'] = df['GeneID'].apply(maybe_int)
             funcats_dict = df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
+
+            if df.TaxonID.isna().any():
+                loc = df[ df.TaxonID.isna() ].index
+                df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(x) for x in loc]
 
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
