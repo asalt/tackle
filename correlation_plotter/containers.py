@@ -474,7 +474,7 @@ class Data:
                    'FunCats', 'TaxonID'):
             fillna_meta(self.data, ax)
 
-        if self.additional_info:
+        if self.additional_info: # depreciated, remove
             labeled_meta = read_config(self.additional_info, enforce=False)
             additional_metadata = parse_metadata(labeled_meta)
             metadata_dict = dict()
@@ -529,7 +529,7 @@ class Data:
         self._areas.index = self._areas.index.droplevel(1)  # don't need the second index
 
 
-        batch_info = self.config.get('__batch__')
+        batch_info = self.config.get('__batch__') # depreciated
         if batch_info:
             batch = batch_info.get('batch')
             metadata = self.col_metadata.T  # rows are experiments, cols are metadata

@@ -202,6 +202,7 @@ def validate_seed(ctx, param, value):
 # def validate_configfile(experiment_file, nonzero_subgroup=None, batch=None, group=None, covariate=None, pairs=None):
 def validate_configfile(experiment_file, **kwargs):
     """
+    check to ensure all metadata is present in all samples
     :experiment_file: config file to validate metadata entries
     :**kwargs: metadata entries to test
     """
@@ -293,6 +294,8 @@ def validate_configfile(experiment_file, **kwargs):
     #     check_group(group, 'group')
     # if covariate is not None:
     #     check_group(covariate, 'covariate')
+
+    # check to ensure all metadata is present in all samples
     for kw_name, value in kwargs.items():
         if value is not None:
             check_group(value, kw_name)

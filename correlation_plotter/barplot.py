@@ -92,7 +92,8 @@ def barplot(X, genes, metadata, average=None, color=None, cmap=None, linear=Fals
     if average is not None:
         groupcols = metadata.T.groupby(average).groups # dict with groupname : [cols]
     else:
-        groupcols = {x: x for x in X.columns}
+        groupcols = OrderedDict([(x, x) for x in X.columns])
+
     for gene in genes:
 
 
