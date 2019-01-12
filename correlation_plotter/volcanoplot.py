@@ -72,7 +72,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         df.index.name = 'GeneID'
         df['highlight'] = False
         if gids_to_highlight is not None:
-            df.loc[gids_to_highlight, 'highlight'] = True
+            df.loc[set(gids_to_highlight) & set(df.index), 'highlight'] = True
 
 
         outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,

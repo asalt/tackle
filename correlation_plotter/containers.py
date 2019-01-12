@@ -75,6 +75,7 @@ class GeneMapper:
         self._symbol = None
         self._funcat = None
         self._description = None
+        self._taxon = None
 
     @property
     def df(self):
@@ -99,6 +100,12 @@ class GeneMapper:
         if self._description is None:
             self._description = self.df['GeneDescription'].to_dict()
         return self._description
+
+    @property
+    def taxon(self):
+        if self._taxon is None:
+            self._taxon = self.df['TaxonID'].to_dict()
+        return self._taxon
 
 _genemapper = GeneMapper()
 
@@ -428,6 +435,10 @@ class Data:
             funcats_dict = df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
 
+            if df.TaxonID.isna().any():
+                loc = df[ df.TaxonID.isna() ].index
+                df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(x) for x in loc]
+
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
             else:
@@ -575,6 +586,8 @@ class Data:
 
         self._areas_log_shifted = self._areas_log + shift_val
         self._areas_log_shifted.index.name = 'GeneID'
+        if self.geneid_subset:
+            self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
 
 
         # if specified, normalize by a specified control group
