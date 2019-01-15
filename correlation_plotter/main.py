@@ -26,6 +26,10 @@ from matplotlib.offsetbox import AnchoredText
 import seaborn as sb
 from seaborn.distributions import _freedman_diaconis_bins
 import click
+# try:
+#     from quick import gui_option
+# except ModuleNotFoundError:
+#     pass
 
 # rc = {'font.family': 'serif',
 #       'font.serif': ['Times', 'Palatino', 'serif']}
@@ -299,7 +303,7 @@ def validate_configfile(experiment_file, **kwargs):
 
     return  # all passed
 
-
+# @gui_option
 @click.group(chain=True)
 @click.option('--additional-info', type=click.Path(exists=True, dir_okay=False), default=None,
               help='.ini file with metadata for isobaric data used for scatter and PCA plots')
@@ -323,6 +327,7 @@ def validate_configfile(experiment_file, **kwargs):
               Should have 1 geneid per line. """)
 @click.option('--group', type=str, default=None, help='Metadata entry to calculate p-values for differential across (Requires rpy2, R, and sva installations)')
 @click.option('--limma', default=False, is_flag=True, help='Use limma moderated t test.')
+@click.option('--block', default=None, is_flag=False, help='Bio or Tech rep for block design for limma')
 @click.option('--pairs', type=str, default=None, help='Metadata entry that indicates sample pairs for running pairwise statistical tests.')
 @click.option('--ignore-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True,
@@ -352,7 +357,7 @@ def validate_configfile(experiment_file, **kwargs):
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, data_dir,
-         file_format, funcats, funcats_inverse, geneids, group, limma, pairs, ignore_geneids, ifot,
+         file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
          ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup,
          experiment_file):
     """
@@ -406,6 +411,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name,
                     non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
                     experiment_file=experiment_file, metrics=metrics, limma=limma,
+                    block=block,
                     metrics_after_filter=metrics_after_filter,
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
                     export_all=export_all
