@@ -84,7 +84,9 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
 
     ## points(x, y, col = '#4878cf33', cex=cex, xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
     ## smoothScatter(x, y, add = TRUE, nbin=64, xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
-    smoothScatter(x, y, add = TRUE, nrpoints = 0, nbin = 64, gap = 0.0,  ...)
+    smoothScatter(x, y, add = TRUE, nrpoints = 10, nbin = 64, gap = 0.0,
+                  pch = 46)  #cex = , col = ,
+                  ## ...)
     ## (..., nbin=64,
     ##   nrpoints = 0,
     ##   add = TRUE), gap = 0.2, ylim = c(-5,5), xlim=c(-5,5)
