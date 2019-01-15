@@ -21,9 +21,12 @@ from adjustText import adjust_text
 from .utils import *
 
 
-class PCAplot:
+class Deconvoluter:
 
     markers = ('o', 'v', 's', 'd', '*', 'X', 'P', 'h', '<', 'H', 'D', '>', 'p', '^', )
+
+    COMPONENT_NAME  = 'Component' # redefine this as appropriate for labeling on plots
+    COMPONENT_SHORT = 'C' # redefine this as appropriate for labeling on plots
 
     def __init__(self, X, color_label=None, marker_label=None, col_data=None, metadata=None, annotate=False):
         """
@@ -66,27 +69,33 @@ class PCAplot:
         X_centered = X.sub(X.mean(1), axis='index')
 
 
-        U, s, V = np.linalg.svd(X_centered)
-        self.s = s
-        self.vars = s**2 / (s**2).sum()
+        # U, s, V = np.linalg.svd(X_centered)
+        # self.s = s
+        # self.vars = s**2 / (s**2).sum()
 
-        eigen = s**2
-        sumvariance = np.cumsum(eigen)
-        sumvariance /= sumvariance[-1]
+        # eigen = s**2
+        # sumvariance = np.cumsum(eigen)
+        # sumvariance /= sumvariance[-1]
+
+        # # no current support for multiple multiplexed samples
+        # components = pd.DataFrame(data=V, columns=X.columns)  # should be same as col_data.index except removal of (any) experiments  with no data
+
+        V = self.deconvolute(X_centered)
 
         # no current support for multiple multiplexed samples
         components = pd.DataFrame(data=V, columns=X.columns)  # should be same as col_data.index except removal of (any) experiments  with no data
 
-        try:
-            # components = pd.DataFrame(data=V, columns=col_data.index)
-            df = col_data.join(components.T)
-        except ValueError:
-            components = pd.DataFrame(data=V, columns=col_data.columns)
-            mapping = col_data.to_dict(orient='records')[0]
-            df = components.rename(columns=mapping).T
-            df['color'] = pd.Categorical(df.index)
-            # df = col_data.T.join(components.T)
-            pca_params = dict(color = 'color')
+        df = col_data.join(components.T)
+        # try:
+        #     # components = pd.DataFrame(data=V, columns=col_data.index)
+        #     df = col_data.join(components.T)
+        # except ValueError:
+        #     components = pd.DataFrame(data=V, columns=col_data.columns)
+        #     mapping = col_data.to_dict(orient='records')[0]
+        #     df = components.rename(columns=mapping).T
+        #     df['color'] = pd.Categorical(df.index)
+        #     # df = col_data.T.join(components.T)
+        #     pca_params = dict(color = 'color')
 
         # var1, var2, *rest = [x/s.sum() for x in s]
         # var1, var2, *rest = s**2 / (s**2).sum()
@@ -134,6 +143,7 @@ class PCAplot:
 
         self.df = df
 
+
     def plot_pc(self, x=1, y=2):
 
         df           = self.df
@@ -156,7 +166,6 @@ class PCAplot:
 
         figsize = [6.4, 4.8]
         # figsize[1] += 1.4*(maxcols-1)
-
 
         fig, ax = plt.subplots(figsize=figsize)
         for name, row in df.iterrows():  # plot first and second components
@@ -217,8 +226,10 @@ class PCAplot:
             maxcol = max([maxcol, ncol])
 
         var1, var2 = self.vars[x-1], self.vars[y-1]
-        ax.set_xlabel('PC{} ({:.2%})'.format(x, var1))
-        ax.set_ylabel('PC{} ({:.2%})'.format(y, var2))
+        # ax.set_xlabel('PC{} ({:.2%})'.format(x, var1))
+        # ax.set_ylabel('PC{} ({:.2%})'.format(y, var2))
+        ax.set_xlabel('{}{} ({:.2%})'.format(self.COMPONENT_SHORT, x, var1))
+        ax.set_ylabel('{}{} ({:.2%})'.format(self.COMPONENT_SHORT, y, var2))
 
         for leg in legends:
             ax.add_artist(leg)
@@ -245,7 +256,8 @@ class PCAplot:
         # ax.scatter( range( 1, len(self.vars)+1 ), self.vars, c='#333333' )
         ax.scatter( range( 1, varmax+1 ), self.vars[:varmax], c='#333333' )
         ax.grid(axis='y')
-        ax.set_xlabel('Principal Component')
+        # ax.set_xlabel('Principal Component')
+        ax.set_xlabel(self.COMPONENT_NAME)
         for f in (ax.set_xticks, ax.set_xticklabels):
             # f( range(1, len(self.vars)+1) )
             f( range(1, varmax+1) )
@@ -255,6 +267,119 @@ class PCAplot:
         fig.tight_layout()
         return fig, ax
 
+    def deconvolute(self, *args, **kwargs):
+        raise NotImplementedError("Inherit and implement this!")
+
+class PCAplot(Deconvoluter):
+
+    COMPONENT_NAME  = 'Principal Component' # redefine this as appropriate for labeling on plots
+    COMPONENT_SHORT = 'PC' # redefine this as appropriate for labeling on plots
+
+    def deconvolute(self, X):
+
+
+        ## could also use scikit-learn implementation with same results
+        ## may offer increased flexibility / speed through svd estimation:
+        # from sklearn.decomposition import PCA
+        # pca = PCA(svd_solver='full')
+        # pca.fit(X.T)
+        # components = pca.components_ (equivalent to V below)
+        # explained_variance = pca.explained_variance_ratio_ (equivalent to self.vars below)
+
+        U, s, V = np.linalg.svd(X)
+        self.s = s
+        self.vars = s**2 / (s**2).sum()
+
+        eigen = s**2
+        sumvariance = np.cumsum(eigen)
+        sumvariance /= sumvariance[-1]
+
+        return V
+
+class PCAplot2(Deconvoluter):
+
+    COMPONENT_NAME  = 'Principal Component' # redefine this as appropriate for labeling on plots
+    COMPONENT_SHORT = 'PC' # redefine this as appropriate for labeling on plots
+
+    def deconvolute(self, X):
+
+        from sklearn.decomposition import PCA
+        pca = PCA(svd_solver='full')
+        comps = pca.fit_transform(X.T)
+        # components = pca.components_ (equivalent to V below)
+        # explained_variance = pca.explained_variance_ratio (equivalent to self.vars below)
+
+        self.s = pca.explained_variance_
+        self.vars = pca.explained_variance_ratio_
+
+        return comps.T
+
+
+
+
+class ICAplot(Deconvoluter):
+
+    COMPONENT_NAME  = 'Independent Component' # redefine this as appropriate for labeling on plots
+    COMPONENT_SHORT = 'IC' # redefine this as appropriate for labeling on plots
+
+    def deconvolute(self, X):
+
+        # from sklearn.decomposition import FastICA, fastica
+        from sklearn.decomposition import fastica
+
+
+        """
+        From sklearn.decomposition.fastica docs
+
+        X : array-like, shape (n_samples, n_features)
+        Training vector, where n_samples is the number of samples and n_features is the number of features.
+
+        K : array, shape (n_components, n_features) | None.
+            If whiten is 'True', K is the pre-whitening matrix that projects data
+            onto the first n_components principal components. If whiten is 'False',
+            K is 'None'.
+        W : array, shape (n_components, n_components)
+            Estimated un-mixing matrix.
+            The mixing matrix can be obtained by::
+                w = np.dot(W, K.T)
+                A = w.T * (w * w.T).I
+        S : array, shape (n_samples, n_components) | None
+            Estimated source matrix
+
+        """
+
+        self.vars = [0] * 10
+
+        # transpose X as is expected to to have samples as rows and features as columns
+        # this is typical for sklearn functions
+        K, W, S = fastica(X.T, random_state=0, algorithm='deflation', fun='exp')
+        # import ipdb; ipdb.set_trace()
+        S /= S.std(axis=0)
+
+        # from sklearn.decomposition import FastICA
+        # ica = FastICA(algorithm='deflation', random_state=0)
+        # Xt = ica.fit_transform(X.T)
+        # return Xt.T
+
+
+        # U, s, V = np.linalg.svd(X_centered)
+
+        # self.s = W
+
+        # self.vars = s**2 / (s**2).sum()
+        # self.vars = S**2 / (S**2).sum()
+        # TODO figure this out
+        # self.vars = [0] * 10
+
+        # return Xt.T
+        # eigen = s**2
+        # sumvariance = np.cumsum(eigen)
+        # sumvariance /= sumvariance[-1]
+
+        return S.T
+
+
+
 def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None):
     rc = {'font.family': 'sans-serif',
         "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
@@ -263,6 +388,8 @@ def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_lab
     }
     sb.set_context('talk')
     sb.set_style('white', rc)
+    # pca = ICAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
+    # pca = PCAplot2(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
     pca = PCAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
                   col_data=col_data, annotate=annotate)
 
