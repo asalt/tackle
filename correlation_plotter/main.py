@@ -496,6 +496,10 @@ def export(ctx, level, genesymbols):
               If not specified, tries to use a reasonable default depending on the number of
               samples.
               ''')
+@click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""File of geneids to plot.
+              Should have 1 geneid per line. """)
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
               help="Show Gene Symbols on clustermap")
 @click.option('--gene-symbol-fontsize', default=8, show_default=True,
@@ -535,7 +539,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_fontsize,
+def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gene_symbol_fontsize,
             highlight_geneids, legend_include, legend_exclude, linkage, max_autoclusters, nclusters,
             row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score):
 
@@ -544,6 +548,10 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
 
     if nclusters is not None and dbscan:
         raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
 
     data_obj = ctx.obj['data_obj']
     data_obj.set_highlight_gids(highlight_geneids)
@@ -561,6 +569,7 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
                          cmap_name=cmap,
                          highlight_gids=data_obj.highlight_gids,
                          highlight_gid_names=data_obj.highlight_gid_names,
+                         genes=genes,
                          gid_symbol=data_obj.gid_symbol,
                          gene_symbols=gene_symbols, z_score=data_obj.z_score,
                          standard_scale=data_obj.standard_scale,
@@ -648,15 +657,23 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, gene_symbols, gene_symbol_f
               help="What meta entry to color PCA")
 @click.option('--marker', default='', show_default=True, is_flag=False,
               help="What meta entry to mark PCA")
+@click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""File of geneids to plot.
+              Should have 1 geneid per line. """)
 @click.pass_context
-def pca(ctx, annotate, max_pc, color, marker):
+def pca(ctx, annotate, max_pc, color, marker, genefile):
 
     data_obj = ctx.obj['data_obj']
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
 
     # # fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
 
     figs = pcaplot(data_obj.areas_log_shifted, metadata=data_obj.config, col_data=data_obj.col_metadata,
-                   annotate=annotate, max_pc=max_pc, color_label=color, marker_label=marker)
+                   annotate=annotate, max_pc=max_pc, color_label=color, marker_label=marker, genes=genes)
 
     # outname_func = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
     #                            non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
@@ -1058,7 +1075,7 @@ def bar(ctx, average, color, cmap, gene, genefile, linear):
     data_obj = ctx.obj['data_obj']
     col_meta = data_obj.col_metadata
     if genefile:
-        gene = gene + parse_gid_file(genefile)
+        gene = gene + tuple(parse_gid_file(genefile))
     if len(gene) == 0:
         raise ValueError("Must supply at least 1 gene")
 
