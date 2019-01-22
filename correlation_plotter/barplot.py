@@ -119,3 +119,4 @@ def barplot(X, genes, metadata, average=None, color=None, cmap=None, linear=Fals
             name += '_linear'
         outname = base_outfunc(name)
         save_multiple(fig, outname, *file_fmts, dpi=300)
+        plt.close(fig)
