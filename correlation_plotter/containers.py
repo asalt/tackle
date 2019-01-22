@@ -123,6 +123,7 @@ class Data:
                  gene_symbols=False, geneids=None,
                  group=None, pairs=None,
                  limma=False,
+                 block=None,
                  highlight_geneids=None,
                  ignore_geneids=None,
                  name=None, non_zeros=0,
@@ -163,6 +164,7 @@ class Data:
         self.group                = group
         self.pairs                = pairs
         self.limma                = limma
+        self.block                = block
         self.highlight_geneids    = highlight_geneids
         self.non_zeros            = non_zeros
         self.nonzero_subgroup     = nonzero_subgroup
@@ -801,7 +803,15 @@ class Data:
         elif not self.pairs and self.limma:
             importr('limma')
             r('library(dplyr)')
-            results = r("""lmFit(as.matrix(edata), mod) %>%
+            r('block <- NULL')
+            r('cor <- NULL')
+            if self.block:
+
+                r('block <- as.factor(pheno[["{}"]])'.format(self.block))
+                r('corfit <- duplicateCorrelation(edata, design = mod,  block = block)')
+                r('cor <- corfit$consensus')
+
+            results = r("""lmFit(as.matrix(edata), mod, block = block, cor = cor) %>%
                        eBayes(robust=TRUE, trend=TRUE) %>%
                        topTable(n=Inf, sort.by='none')
             """.format(self.group))
