@@ -381,8 +381,7 @@ class ICAplot(Deconvoluter):
 
 
 
-def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None):
-
+def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None, genes=None):
     if genes is not None:  # only plot these select genes
         _genes = set(genes) & set(X.index)
         X = X.loc[_genes]
