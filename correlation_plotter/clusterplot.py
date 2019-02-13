@@ -142,7 +142,7 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
 
 
-def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
+def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
@@ -168,6 +168,10 @@ def clusterplot(data, cmap_name=None, dbscan=False, highlight_gids=None, highlig
     data = data.copy()
     mask = mask.copy()
 
+    if genes is not None:  # only plot these select genes
+        _genes = set(genes) & set(data.index)
+        data = data.loc[_genes]
+        mask = mask.loc[_genes]
 
     if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
         row_cluster = False

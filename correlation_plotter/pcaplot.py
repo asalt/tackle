@@ -267,6 +267,7 @@ class Deconvoluter:
         fig.tight_layout()
         return fig, ax
 
+def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None, genes=None):
     def deconvolute(self, *args, **kwargs):
         raise NotImplementedError("Inherit and implement this!")
 
@@ -380,14 +381,11 @@ class ICAplot(Deconvoluter):
 
 
 
-def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None):
-    rc = {'font.family': 'sans-serif',
-        "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
-                            "Bitstream Vera Sans", "sans-serif"],
-        'legend.frameon': False,
-    }
-    sb.set_context('talk')
-    sb.set_style('white', rc)
+def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None, genes=None):
+    if genes is not None:  # only plot these select genes
+        _genes = set(genes) & set(X.index)
+        X = X.loc[_genes]
+
     # pca = ICAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
     # pca = PCAplot2(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
     pca = PCAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
