@@ -460,7 +460,8 @@ def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=
     if ifot: # normalize by ifot but without keratins
         norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].sum()
     elif median:
-        norm_ = df.loc[ifot_normalizer.filter(df.index), 'iBAQ_dstrAdj'].median()
+        nonzero_ix = df.query('iBAQ_dstrAdj > 0').index
+        norm_ = df.loc[ifot_normalizer.filter(nonzero_ix), 'iBAQ_dstrAdj'].median()
     elif ifot_ki:
         norm_ = df.loc[df['FunCats'].fillna('').str.contains('KI'), 'iBAQ_dstrAdj'].sum()
     elif ifot_tf:
@@ -474,8 +475,9 @@ def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=
         # sum_ = 1
     if outcol is None:
         outcol = 'area'
-    df[outcol] = df['iBAQ_dstrAdj'] / norm_  # use generic 'area' name for all normalization procedures
-    return df
+    return df['iBAQ_dstrAdj'] / norm_
+    # df[outcol] = df['iBAQ_dstrAdj'] / norm_  # use generic 'area' name for all normalization procedures
+    # return df
 
 def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignored_geneid_subset=None):
 

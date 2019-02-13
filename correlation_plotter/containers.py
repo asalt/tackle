@@ -447,12 +447,27 @@ class Data:
                 # df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
                 #                        self.ifot_ki, self.ifot_tf, self.median)
-                df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
-                               median=self.median)
+                for taxonid in df.TaxonID.unique():
+
+                    df.loc[df.TaxonID==taxonid, 'area'] = normalize(df.loc[df.TaxonID==taxonid], name,
+                                                                    ifot=self.ifot, ifot_ki=self.ifot_ki,
+                                                                    ifot_tf=self.ifot_tf,
+                                                                    median=self.median)
+                # df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
+                #                median=self.median)
                 if self.export_all: # have to calculate more columns
-                    df = (df.pipe(normalize, ifot=True, outcol='iBAQ_dstrAdj_FOT')
-                          .pipe(normalize, median=True, outcol='iBAQ_dstrAdj_MED')
-                    )
+
+                    for taxonid in df.TaxonID.unique():
+
+                        df.loc[df.TaxonID==taxonid, 'iBAQ_dstrAdj_FOT'] = normalize(df.loc[df.TaxonID==taxonid],
+                                                                                    ifot=True)
+
+                        df.loc[df.TaxonID==taxonid, 'iBAQ_dstrAdj_MED'] = normalize(df.loc[df.TaxonID==taxonid],
+                                                                                    median=True)
+
+                    # df = (df.pipe(normalize, ifot=True, outcol='iBAQ_dstrAdj_FOT')
+                    #       .pipe(normalize, median=True, outcol='iBAQ_dstrAdj_MED')
+                    # )
 
                 dummy_filter = lambda x, *args, **kwargs: x
                 taxon_filter = TAXON_MAPPER.get(self.taxon)
