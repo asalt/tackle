@@ -587,7 +587,7 @@ class Data:
         self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
 
         # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
-        self._areas_log = np.log10(self._areas.replace(0, np.NAN).fillna(self.minval/2))
+        self._areas_log = np.log10(self._areas.replace(0, np.NAN).fillna(self.minval/2).divide(self.minval/2))
         self._areas_log.index.name = 'GeneID'
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
@@ -597,6 +597,7 @@ class Data:
         #     self._areas_log_shifted = self._areas_log
         #     return
 
+        # don't need this section anymore since now minval is 0
         minval = self._areas_log.min().min()
         shift_val = np.ceil(np.abs(minval))
         self.minval_log = minval
@@ -756,13 +757,12 @@ class Data:
         df.columns = data.columns
         # reassign mask - ComBat can impute some NA values
         # TODO: resolve this for normed data
-        if not self.normed:
-            if not self.batch_noimputation:  # else leave old mask
-                thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min()
-                new_mask = (df[ self.mask ] <= thresh)
-                new_mask.columns = self._areas_log_shifted.columns
-                self._mask = new_mask
-
+        # if not self.normed: # ??
+        if not self.batch_noimputation:  # else leave old mask
+            thresh = self.areas_log_shifted[ (~self.mask) & (self._areas_log_shifted > 0)].min().min()
+            new_mask = (df[ self.mask ] <= thresh)
+            new_mask.columns = self._areas_log_shifted.columns
+            self._mask = new_mask
 
         # self._areas_log_shifted = df.dropna(how='any')
         df = df.dropna(how='any')
