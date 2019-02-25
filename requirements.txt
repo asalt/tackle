@@ -6,3 +6,4 @@ rpy2
 click
 sklearn
 adjustText
+pyupset
