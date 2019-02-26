@@ -19,6 +19,10 @@ from .containers import TAXON_MAPPER
 
 idx = pd.IndexSlice
 
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
+plt.rcParams['svg.fonttype'] = 'none'
+
 def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, full=False):
 
     rc = {'font.family': 'sans-serif',
@@ -133,8 +137,8 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
             if len(data.keys()) >= 17 and ix != 4:
                 newsize -= 2
             tick.set_size(newsize)
-            if ix == 4:
-                print(txt, textlen, newsize)
+            # if ix == 4:
+            #     print(txt, textlen, newsize)
         sb.despine(ax=ax)
         if ix == 1:
             continue  #  no legend for gpgroups
@@ -274,6 +278,7 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
                           # **kws
     )
     save_multiple(fig, outname, *file_fmts)
+
 
 
 
