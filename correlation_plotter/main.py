@@ -746,6 +746,11 @@ def overlap(ctx, group, non_zeros):
 @click.option('-n', '--number', type=int, default=35, show_default=True,
               help='Maximum number of significant genes to highlight (annotate) in plot'
 )
+@click.option('--number-by', type=click.Choice(('abs_log2_Fold_Change', 'log2_Fold_Change', 'pValue')),
+              default='log2_Fold_Change', show_default=True,
+              help="""How to determine the top n genes to label on plot.
+              `log2_Fold_Change` takes top n/2 genes that are up and down"""
+)
 @click.option('-o', '--only-sig', default=False, is_flag=True, show_default=True,
               help='Only export genes that are significantly different (based on set cutoff)'
 )
@@ -755,20 +760,25 @@ def overlap(ctx, group, non_zeros):
 @click.option('--sig', type=float, default=.05, show_default=True,
               help='Significance cutoff for (B.H. adjusted) pvalue'
 )
+@click.option('--sig-metric', type=click.Choice(('pValue', 'pAdj')), default='pAdj', show_default=True,
+              help='Whether to use pValue or B.H. pAdj value for gene highlighting cutoff'
+)
 @click.option('--p-adj/--p-value', default=True, is_flag=True, show_default=True,
               help="Whether to plot padj or pvalue on volcano plot (does not change underlying data)")
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """)
 @click.pass_context
-def volcano(ctx, foldchange, expression_data, number, only_sig, sig, scale, p_adj, highlight_geneids):
+def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, sig_metric, scale,
+            p_adj, highlight_geneids):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
     yaxis = 'pAdj' if p_adj else 'pValue'
-    volcanoplot(ctx, foldchange, expression_data, number=number, only_sig=only_sig, sig=sig,
-                yaxis=yaxis, scale=scale, highlight_geneids=highlight_geneids)
+    volcanoplot(ctx, foldchange, expression_data, number=number, number_by=number_by,
+                only_sig=only_sig, sig=sig, sig_metric=sig_metric, yaxis=yaxis, scale=scale,
+                highlight_geneids=highlight_geneids)
 
 
 

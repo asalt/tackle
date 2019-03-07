@@ -6,7 +6,8 @@ import pandas as pd
 from .utils import get_outname, parse_gid_file
 
 def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
-                yaxis='pAdj', scale=1.2, highlight_geneids=None):
+                sig_metric='pAdj', number_by='log2_Fold_Change', yaxis='pAdj', scale=1.2,
+                highlight_geneids=None):
 
     data_obj = ctx.obj['data_obj']
 
@@ -29,8 +30,8 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
     # if data_obj.col_metadata.loc[group].nunique() != 2:
     #     print('Error in volcanoplot, number of groups must be exactly 2.')
     #     return
-    if data_obj.col_metadata.loc[group].value_counts().min() < 3:
-        print('Each group must have at least 3 replicates.')
+    if data_obj.col_metadata.loc[group].value_counts().min() < 2:
+        print('Each group must have at least 2 replicates.')
         return
 
     groups = dict()
@@ -134,7 +135,8 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             grdevice(file=out, **gr_kw)
 
             Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
-                         sig=sig, yaxis=yaxis, label_cex=scale, group0=group0, group1=group1)
+                         number_by=number_by, sig=sig, sig_metric=sig_metric, yaxis=yaxis,
+                         label_cex=scale, group0=group0, group1=group1)
 
             grdevices.dev_off()
             print('done.', flush=True)
