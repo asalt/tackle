@@ -18,7 +18,7 @@ from itertools import combinations
 def calc_combos(tot):
     return sum(len(x) for x in [list(combinations('a'*tot, i)) for i in np.arange(1, tot+1)])
 
-def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1.):
+def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsize=15):
 
     outname = get_outname('overlap', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
@@ -45,7 +45,7 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1.):
             s = '{} combinations to calculate.'.format(num_combos)
         stdout = 'Too many experiments. With {} experiments, {}. Consider using --groups'.format(len(cols), s)
         click.echo(stdout)
-        click.stdout('Skipping...')
+        click.echo('Skipping...')
         return
 
 
@@ -71,19 +71,19 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1.):
     de = DataExtractor(overlap_dict, 'GeneID' )
 
     # ensure overlap is small enough to be reasonable for display
-    maxiter, bound_min, size = 1e3, 1, np.inf
+    maxiter, bound_min, size = 1e3, 0, np.inf
     iiter = 0
-    while size > 15:  # no more than that!
+    while size > maxsize:  # no more than that! default 15
+        iiter += 1
+        bound_min += 1
         filtered_intersections = de.get_filtered_intersections(sort_by='size',
                                                                inters_size_bounds=(bound_min, np.inf),
                                                                inters_degree_bounds=(0, np.inf) )
         size = min(size, len(filtered_intersections[0]))
-        iiter += 1
-        bound_min += 1
+        # print(size, len(filtered_intersections[0]), min(filtered_intersections[0]))
         if iiter > maxiter:
             click.echo('Could not find small enough overlap...Skipping')
             return
-
 
 
     pyupset_res = make_upset(overlap_dict, unique_keys=('GeneID',), h_ratio=2, v_ratio=2.25,
@@ -91,3 +91,21 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1.):
     fig = pyupset_res['figure']
 
     save_multiple(fig, outname, *file_fmts)
+
+
+    # export gene membership
+
+    membership_df = (pd.DataFrame.from_dict(
+        {'|'.join(membership) : de.inters_df_dict[ membership ]['GeneID']
+         for membership in filtered_intersections[1]
+        },
+        orient='columns'
+    )
+                     .melt(var_name='Sample_Set', value_name='GeneID')
+                     .dropna()
+    )
+
+    membership_df['GeneID'] = membership_df['GeneID'].astype(int)
+
+    print('Saving {}+.tsv')
+    membership_df.to_csv(outname+'.tsv', index=False, sep='\t')

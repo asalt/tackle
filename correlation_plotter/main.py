@@ -717,13 +717,14 @@ def metrics(ctx, full, before_filter, before_norm):
 from .overlap import make_overlap
 @main.command('overlap')
 @click.option('--group', type=str, default=None, help='Metadata entry to group samples for assessing overlap')
+@click.option('--maxsize', default=15, help='Max number of overlaps to plot', show_default=True)
 @click.option('--non-zeros', default=1., show_default=True, type=int_or_ratio(),
               help="""Minimum number of non zeros OR fraction of nonzeros allowed for each sample
               (or sample group. If a decimal is specified (e.g. 1.0), this indicates 100% of values are nonzero.
               If an integer is specified (1), this indicates that 1 value is nonzero.
               """)
 @click.pass_context
-def overlap(ctx, group, non_zeros):
+def overlap(ctx, group, maxsize, non_zeros):
     """
     Plot gene product overlap across experiments
     """
@@ -733,7 +734,7 @@ def overlap(ctx, group, non_zeros):
     if group:
         validate_configfile(data_obj.experiment_file, group=group)
 
-    make_overlap(data_obj, group=group, non_zeros=non_zeros)
+    make_overlap(data_obj, group=group, maxsize=maxsize, non_zeros=non_zeros, file_fmts=file_fmts)
 
 
 @main.command('volcano')
