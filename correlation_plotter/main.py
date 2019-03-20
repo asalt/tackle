@@ -769,6 +769,9 @@ def overlap(ctx, group, maxsize, non_zeros):
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """)
+@click.option('--formula', default=None, show_default=True,
+              help="""more complex linear regression formula for use with limma.
+              Supersedes `group` option""")
 @click.pass_context
 def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, sig_metric, scale,
             p_adj, highlight_geneids):
@@ -779,6 +782,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
     yaxis = 'pAdj' if p_adj else 'pValue'
     volcanoplot(ctx, foldchange, expression_data, number=number, number_by=number_by,
                 only_sig=only_sig, sig=sig, sig_metric=sig_metric, yaxis=yaxis, scale=scale,
+                formula=formula,
                 highlight_geneids=highlight_geneids)
 
 
