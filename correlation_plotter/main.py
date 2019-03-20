@@ -42,7 +42,7 @@ sb.set_style('white', rc)
 sb.set_palette('muted')
 sb.set_color_codes()
 
-__version__ = '0.39'
+__version__ = '0.40'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -717,13 +717,14 @@ def metrics(ctx, full, before_filter, before_norm):
 from .overlap import make_overlap
 @main.command('overlap')
 @click.option('--group', type=str, default=None, help='Metadata entry to group samples for assessing overlap')
+@click.option('--maxsize', default=15, help='Max number of overlaps to plot', show_default=True)
 @click.option('--non-zeros', default=1., show_default=True, type=int_or_ratio(),
               help="""Minimum number of non zeros OR fraction of nonzeros allowed for each sample
               (or sample group. If a decimal is specified (e.g. 1.0), this indicates 100% of values are nonzero.
               If an integer is specified (1), this indicates that 1 value is nonzero.
               """)
 @click.pass_context
-def overlap(ctx, group, non_zeros):
+def overlap(ctx, group, maxsize, non_zeros):
     """
     Plot gene product overlap across experiments
     """
@@ -733,7 +734,7 @@ def overlap(ctx, group, non_zeros):
     if group:
         validate_configfile(data_obj.experiment_file, group=group)
 
-    make_overlap(data_obj, group=group, non_zeros=non_zeros)
+    make_overlap(data_obj, group=group, maxsize=maxsize, non_zeros=non_zeros, file_fmts=file_fmts)
 
 
 @main.command('volcano')
@@ -768,6 +769,9 @@ def overlap(ctx, group, non_zeros):
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """)
+@click.option('--formula', default=None, show_default=True,
+              help="""more complex linear regression formula for use with limma.
+              Supersedes `group` option""")
 @click.pass_context
 def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, sig_metric, scale,
             p_adj, highlight_geneids):
@@ -778,6 +782,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
     yaxis = 'pAdj' if p_adj else 'pValue'
     volcanoplot(ctx, foldchange, expression_data, number=number, number_by=number_by,
                 only_sig=only_sig, sig=sig, sig_metric=sig_metric, yaxis=yaxis, scale=scale,
+                formula=formula,
                 highlight_geneids=highlight_geneids)
 
 
