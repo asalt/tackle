@@ -53,14 +53,14 @@ def plot_silhouette_scores(scores, start, end):
     return fig, ax
 
 
-def calc_optimal_clusters(data, start=2, end=20):
+def calc_optimal_clusters(data, start=2, end=20, random_state=None):
     best_score = -np.inf
     best_cluster = None
 
     scores = list()
 
     for i in range(start, end+1):
-        kmeans = KMeans(n_clusters=i).fit(data)
+        kmeans = KMeans(n_clusters=i, random_state=random_state).fit(data)
 
         score = silhouette_score(data, kmeans.labels_)
 

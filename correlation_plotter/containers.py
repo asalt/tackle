@@ -825,7 +825,6 @@ class Data:
                 r('block <- as.factor(pheno[["{}"]])'.format(self.block))
                 r('corfit <- duplicateCorrelation(edata, design = mod,  block = block)')
                 r('cor <- corfit$consensus')
-
             results = r("""lmFit(as.matrix(edata), mod, block = block, cor = cor) %>%
                        eBayes(robust=TRUE, trend=TRUE) %>%
                        topTable(n=Inf, sort.by='none')
