@@ -1,7 +1,10 @@
 # these need to be installed within the R environment
+# note for osx, xcode needs to be installed from the appstore AND
+# xcode-select --install must  be run afterwards
 ggplot2
 dplyr
 ggrepel
 ggthemes
 bioconductor
 sva # via bioconductor
+statmod
