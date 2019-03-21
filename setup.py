@@ -8,9 +8,9 @@ def calculate_version(inputfile):
     else:
         return '1.0'
 
-package_version = calculate_version('./correlation_plotter/main.py')
+package_version = calculate_version('./src/main.py')
 setup(
-    name='correlation-plotter',
+    name='tackle',
     version=package_version,
     packages=find_packages(),
     author = 'Alex Saltzman',
@@ -22,7 +22,7 @@ setup(
     ],
     entry_points="""
     [console_scripts]
-    correlationplot=correlation_plotter.main:main
+    tackle=src.main:main
     # correlationplot=main:main
     """,
 
