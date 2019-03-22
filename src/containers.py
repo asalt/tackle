@@ -563,7 +563,8 @@ class Data:
         batch_info = self.config.get('__batch__') # depreciated
         if batch_info:
             batch = batch_info.get('batch')
-            metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            # metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            metadata = self.col_metadata  # rows are experiments, cols are metadata
             areas = self._areas.copy()
             for ix, g in metadata.groupby(batch):
                 meanvals = areas[g.index].mean(1)
@@ -617,7 +618,8 @@ class Data:
             control = norm_info['control']
             group   = norm_info['group']
             label   = norm_info['label']
-            metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            # metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            metadata = self.col_metadata  # rows are experiments, cols are metadata
             areas = self._areas_log_shifted.copy()
             ctrl_exps = list()
             for ix, g in metadata.groupby(group):
@@ -640,6 +642,7 @@ class Data:
             self._areas_log_shifted = (self._areas.fillna(self.minval_log/2)
                                        .replace(np.inf, maxval_log*1.5)
             )
+            # not sure if this is right, can check:
             sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
             sample_ixs  = [x for x in self.col_metadata.index if x != label]
             self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
@@ -715,7 +718,8 @@ class Data:
         pandas2ri.activate()
         grdevices = importr('grDevices')
 
-        pheno = self.col_metadata.T
+        # pheno = self.col_metadata.T
+        pheno = self.col_metadata
         r.assign('pheno', pheno)
 
         if self.covariate is not None:
@@ -811,7 +815,8 @@ class Data:
                               'R', 'pvalue_cov.R')
         r_source(r_file)
 
-        pheno = self.col_metadata.T
+        # pheno = self.col_metadata.T
+        pheno = self.col_metadata
         r.assign('pheno', pheno)
         r('mod0 <- model.matrix(~1, pheno)')
 
@@ -914,15 +919,19 @@ class Data:
 
         else: # ttest rel
             from .ttest_rel_cov import ttest_rel_cov
-            groups = self.col_metadata.loc[self.group].unique()
+            # groups = self.col_metadata.loc[self.group].unique()
+            groups = self.col_metadata[self.group].unique()
             # only have t-test implemented here
             if len(groups) > 2:
                 raise NotImplementedError('Only have support for 2 groups')
             group0, group1 = groups
-            meta_ordered = self.col_metadata.sort_index(by=[self.group, self.pairs], axis=1)
+            # meta_ordered = self.col_metadata.sort_index(by=[self.group, self.pairs], axis=1)
+            meta_ordered = self.col_metadata.sort_values(by=[self.group, self.pairs], axis=1)
             # better way to do this?
-            cols0 = (meta_ordered.T[self.group] == group0).apply(lambda x: x if x else np.nan).dropna().index
-            cols1 = (meta_ordered.T[self.group] == group1).apply(lambda x: x if x else np.nan).dropna().index
+            # cols0 = (meta_ordered.T[self.group] == group0).apply(lambda x: x if x else np.nan).dropna().index
+            # cols1 = (meta_ordered.T[self.group] == group1).apply(lambda x: x if x else np.nan).dropna().index
+            cols0 = (meta_ordered[self.group] == group0).apply(lambda x: x if x else np.nan).dropna().index
+            cols1 = (meta_ordered[self.group] == group1).apply(lambda x: x if x else np.nan).dropna().index
             # self.
             # t test on every gene set
             def ttest_func(row):

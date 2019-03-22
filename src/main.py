@@ -329,7 +329,7 @@ def validate_configfile(experiment_file, **kwargs):
               help="""Optional list of geneids to subset by.
               Should have 1 geneid per line. """)
 @click.option('--group', type=str, default=None, help='Metadata entry to calculate p-values for differential across (Requires rpy2, R, and sva installations)')
-@click.option('--limma', default=True, is_flag=True, help='Use limma moderated t test.')
+@click.option('--limma/ --no-limma', default=True, is_flag=True, help='Use limma moderated t test.')
 @click.option('--block', default=None, is_flag=False, help='Bio or Tech rep for block design for limma')
 @click.option('--pairs', type=str, default=None, help='Metadata entry that indicates sample pairs for running pairwise statistical tests.')
 @click.option('--ignore-geneids', type=click.Path(exists=True, dir_okay=False),
@@ -567,10 +567,12 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gen
     col_meta = data_obj.col_metadata
     _expids = ('recno', 'runno', 'searchno')
 
-    valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.index)
+    # valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.index)
+    valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.columns)
     legend_include = set(legend_include) & set(valid_entries)
     legend_exclude = set(legend_exclude) & set(valid_entries)
-    col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
+    # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
+    col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
     result = clusterplot(data_obj.areas_log_shifted,
                          cmap_name=cmap,
                          highlight_gids=data_obj.highlight_gids,

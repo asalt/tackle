@@ -24,21 +24,21 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         print('Must supply a group value.')
         return
 
-    if group and data_obj.col_metadata.loc[group].nunique() < 2:
+    if group and data_obj.col_metadata[group].nunique() < 2:
         print('Error in volcanoplot, number of groups must be at least 2.')
         return
     # if data_obj.col_metadata.loc[group].nunique() != 2:
     #     print('Error in volcanoplot, number of groups must be exactly 2.')
     #     return
-    if group and data_obj.col_metadata.loc[group].value_counts().min() < 2:
+    if group and data_obj.col_metadata[group].value_counts().min() < 2:
         print('Each group must have at least 2 replicates.')
         return
 
 
     if group:
         groups = dict()
-        for grp in data_obj.col_metadata.loc[group].unique():
-            samples = ((data_obj.col_metadata.loc[group] == grp)
+        for grp in data_obj.col_metadata[group].unique():
+            samples = ((data_obj.col_metadata[group] == grp)
                     .where(lambda x: x)
                     .dropna()
                     .index
@@ -100,7 +100,15 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             _log2_cutoff = np.sqrt(foldchange)
             export_data = df.query('pAdj < @sig & abs(log2_Fold_Change) > @_log2_cutoff')
         if expression_data:
-            export_data = export_data.join(values)
+            if group:
+                try:
+                    group_entries = [group0.split(group)[-1], group1.split(group)[-1]]
+                    exps = data_obj.col_metadata[ data_obj.col_metadata[group].isin(group_entries) ].index
+                    export_data = export_data.join(data_obj.areas_log_shifted[exps])
+                except Exception as e:
+                    print('Error trying to subselect data for export')
+                    print(e)
+                    export_data = export_data.join(data_obj.areas_log_shifted)
         export_cols = [x for x in export_data.columns if x not in ('highlight', )]
         export_data[export_cols].to_csv(out, sep='\t')
         print('done', flush=True)

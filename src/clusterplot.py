@@ -199,22 +199,32 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
     if not legend_exclude:
         legend_exclude = tuple()
     if not legend_include and col_data is not None:
-        legend_include = col_data.index.tolist()
+        # legend_include = col_data.index.tolist()
+        legend_include = col_data.columns.tolist()
+
 
     if col_data is not None:
         # col_data = parse_metadata(metadata)
-        _legend_data = set(legend_include) - set(legend_exclude) if legend_include else col_data.index
+        # _legend_data = set(legend_include) - set(legend_exclude) if legend_include else col_data.index
+        _legend_data = set(legend_include) - set(legend_exclude) if legend_include else col_data
         _legend_data = sorted(_legend_data)
-        col_data = col_data.loc[_legend_data].copy()
-        if 'label' in col_data.index:
-            if col_data.loc['label'].nunique() == 1:
-                col_data = col_data.loc[col_data.index.drop('label')]
+        # col_data = col_data.loc[_legend_data].copy()
+        col_data = col_data[_legend_data].copy()
+        # if 'label' in col_data.index:
+        #     if col_data.loc['label'].nunique() == 1:
+        #         col_data = col_data.loc[col_data.index.drop('label')]
+        if 'label' in col_data:
+            if col_data['label'].nunique() == 1:
+                # col_data = col_data[col_data.index.drop('label')]
+                col_data = col_data.drop('label', axis=1)
 
         col_colors = pd.DataFrame(columns=col_data.columns,
                                   index=col_data.index)
 
-        for info in col_data.index:
-            n_colors=max(10, col_data.loc[info].nunique())
+        # for info in col_data.index:
+        for info in col_data.columns:
+            # n_colors=max(10, col_data.loc[info].dropna().nunique())
+            n_colors=max(10, col_data[info].dropna().nunique())
             if n_colors <= 10:
                 colors = sb.color_palette('tab10', n_colors=n_colors)
             else:
@@ -222,10 +232,23 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                 colors = sb.cubehelix_palette(n_colors, start=.1, rot=.75)
             cmap = iter(rgb2hex(x) for x in
                         colors)
-            mapping = {val : next(cmap) for val in col_data.loc[info].unique()}
-            colors = col_data.loc[info].map(mapping)
-            col_colors.loc[info] = colors
-        col_colors = col_colors.T
+
+            # mapping = {val : next(cmap) if not pd.isna(val) else 'grey'
+            #            for val in col_data.loc[info].unique()}
+            # colors = col_data.loc[info].map(mapping)
+            # col_colors.loc[info] = colors
+
+            mapping = {val : next(cmap) if not pd.isna(val) else 'grey'
+                       for val in col_data[info].unique()}
+
+            colors = col_data[info].map(mapping) # cannot use np.nan as a dictionary key!
+            colors.loc[colors.isna()] = 'grey'  # cannot use np.nan as a dictionary key!
+            col_colors[info] = colors
+
+        # force NANs grey
+        # col_colors.loc[ col_data.loc[col_colors.index].isna() ] = '#444444'
+        # col_colors = col_colors.T
+
 
     _geneids = data.index.copy()
     if gene_symbols:  # change index to symbols
@@ -482,6 +505,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
             for tick in ticks:
                 tick.set_size(tick.get_size()*scale)
 
+    g.ax_heatmap.set_ylabel('') # don't need the GeneID label
+
     if row_colors is not None and 'Cluster' in row_colors.columns:
         # annotate cluster numbers
         _positions = dict()
@@ -501,19 +526,24 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
         g.ax_row_colors.spines["left"].set_position(("axes", 0.0)) # green one
 
     if col_colors is not None:
-        col_label_lengths = col_data.fillna('').applymap(len).max(1) + col_colors.nunique()
+        # col_label_lengths = col_data.fillna('').applymap(len).max(1) + col_colors.nunique()
+        col_label_lengths = col_data.astype(str).applymap(len).max(0) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
         # widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
         widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.2 )
         col_colors_t = col_colors.T
+
         # bbox_y0 = 1.44 if col_cluster else .8
-        bbox_y0 = 2.16 if col_cluster else 1.2
+        # bbox_y0 = 2.16 if col_cluster else 1.2
+        bbox_y0 = 2.46 if col_cluster else 1.2
+
         bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
         legends = list()
         for bbox, ix in zip(bboxes, col_colors_t.index):
             col_name        = ix
-            col_labels      = col_data.loc[ix].drop_duplicates()
+            # col_labels      = col_data.loc[ix].drop_duplicates()
+            col_labels      = col_data[ix].drop_duplicates()
             col_names       = col_labels.values
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()

@@ -79,7 +79,8 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
 
         all_gids = set()
 
-        for sample, grp in metadata.T.groupby(subgroup):
+        # for sample, grp in metadata.T.groupby(subgroup):
+        for sample, grp in metadata.groupby(subgroup):
             columns = grp.index
 
             if isinstance(nonzero_value, float): #then ratio of total
@@ -378,15 +379,20 @@ def read_config(configfile, enforce=True):
     return ordered_data
 
 def parse_gid_file(gids):
-
     gid_out = list()
+    rgx = re.compile(r'(\d+)')
     with open(gids, 'r') as f:
         for line in f:
             try:
                 gid = float(line.strip())
                 gid_out.append(gid)
             except ValueError:
-                pass
+                # try regex
+                try:
+                    gid = rgx.search(line).group(1)
+                    gid_out.append(int(gid))
+                except AttributeError:
+                    pass
     return set(gid_out)
 
 def get_file_name(full_file):
@@ -417,6 +423,13 @@ def fillna_meta(df, index_col):
 
 
 
+DEFAULT_NAS=['-1.#IND', '1.#QNAN', '1.#IND', '-1.#QNAN', '#N/A N/A', '#N/A', 'N/A', 'n/a', 'NA',
+             '#NA', 'NULL', 'null', 'NaN', '-NaN', 'nan', '-nan', '']
+
+def isna_str(entry):
+
+    return pd.isna(entry) | True if entry in DEFAULT_NAS else False
+
 def parse_metadata(metadata):
     # expids = ('recno', 'runno', 'searchno')
     expids = tuple()
@@ -426,7 +439,14 @@ def parse_metadata(metadata):
     # col_data = pd.DataFrame.from_dict(metadata, orient='columns').filter(regex='^(?!__)')
     # col_data = pd.DataFrame.from_dict(metadata_filtered, orient='columns')
     col_data = pd.DataFrame(metadata_filtered, columns=metadata_filtered.keys())
-    col_data = col_data.loc[[x for x in col_data.index if x not in expids]]
+    col_data = col_data.loc[[x for x in col_data.index if x not in expids]].T
+
+    for col in col_data.columns:
+        col_data.loc[col_data[col].apply(isna_str), col] = np.NAN
+        try:
+            col_data[col] = col_data[col].astype(float)
+        except ValueError:
+            pass
     return col_data
 
 
