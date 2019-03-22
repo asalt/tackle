@@ -314,6 +314,9 @@ def validate_configfile(experiment_file, **kwargs):
 @click.option('--batch-nonparametric', is_flag=True, default=False, help='Use nonparametric method for batch correction with ComBat (only used if --batch is also specified)')
 @click.option('--batch-noimputation', is_flag=True, default=False, help='Leave original missing values after batch correction')
 @click.option('--covariate', type=str, default=None, help='Metadata entry to use as covariate for batch correction via ComBat')
+@click.option('--cmap-file', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True,
+              help="JSON file associating specific metadata entries to pre-defined, valid colors")
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
@@ -359,7 +362,7 @@ def validate_configfile(experiment_file, **kwargs):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, data_dir,
+def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
          file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
          ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup,
          experiment_file):
@@ -412,7 +415,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
 
     data_obj = Data(additional_info=additional_info, batch=batch,
                     batch_nonparametric=batch_nonparametric, batch_noimputation=batch_noimputation,
-                    covariate=covariate, data_dir=data_dir, base_dir=result_dir, funcats=funcats,
+                    covariate=covariate, cmap_file=cmap_file, data_dir=data_dir, base_dir=result_dir, funcats=funcats,
                     funcats_inverse=funcats_inverse, geneids=geneids, group=group, pairs=pairs,
                     ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name,
                     non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
@@ -597,7 +600,8 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gen
                          linkage=linkage,
                          gene_symbol_fontsize=gene_symbol_fontsize,
                          legend_include=legend_include,
-                         legend_exclude=legend_exclude
+                         legend_exclude=legend_exclude,
+                         metadata_colors=data_obj.metadata_colors,
     )
 
     g = result['clustermap']['clustergrid']

@@ -8,11 +8,11 @@ def calculate_version(inputfile):
     else:
         return '1.0'
 
-package_version = calculate_version('./src/main.py')
+package_version = calculate_version('./tackle/main.py')
 setup(
     name='tackle',
     version=package_version,
-    packages=find_packages(),
+    packages=find_packages('tackle'),
     author = 'Alex Saltzman',
     author_email = 'a.saltzman920@gmail.com',
     description = 'CLI-based data filtering and plotting tools for proteomics data at BCM',

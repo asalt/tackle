@@ -116,6 +116,7 @@ class Data:
                  batch_nonparametric=False,
                  batch_noimputation=False,
                  covariate=None,
+                 cmap_file=None,
                  col_cluster=True,
                  colors_only=False, data_dir='./data',
                  base_dir='./results',
@@ -231,6 +232,14 @@ class Data:
 
         self._padj = None
         # self.perform_data_export()
+
+        if cmap_file:
+            with open(cmap_file) as f:
+                jdata = json.load(f)
+
+            self.metadata_colors = jdata
+        else:
+            self.metadata_colors = None
 
     @property
     def areas(self):

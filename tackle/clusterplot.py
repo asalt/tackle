@@ -147,7 +147,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
                 normed=False, linkage='average',
-                gene_symbol_fontsize=8, legend_include=None, legend_exclude=None
+                gene_symbol_fontsize=8, legend_include=None, legend_exclude=None,
+                metadata_colors=None,
 ):
     """
     :nclusters: None, 'auto', or positive integer
@@ -238,8 +239,17 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
             # colors = col_data.loc[info].map(mapping)
             # col_colors.loc[info] = colors
 
-            mapping = {val : next(cmap) if not pd.isna(val) else 'grey'
-                       for val in col_data[info].unique()}
+            mapping = dict()
+            for val in col_data[info].unique():
+                if pd.isna(val):
+                    continue
+                if metadata_colors and info in metadata_colors:
+                    c = metadata_colors[info].get(val, next(cmap))
+                else:
+                    c = next(cmap)
+                mapping[val] = c
+#             mapping = {val : next(cmap) if not pd.isna(val) else 'grey'
+#                        for val in col_data[info].unique()}
 
             colors = col_data[info].map(mapping) # cannot use np.nan as a dictionary key!
             colors.loc[colors.isna()] = 'grey'  # cannot use np.nan as a dictionary key!
@@ -530,7 +540,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
         col_label_lengths = col_data.astype(str).applymap(len).max(0) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
         # widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
-        widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.2 )
+        widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.1 )
         col_colors_t = col_colors.T
 
         # bbox_y0 = 1.44 if col_cluster else .8
