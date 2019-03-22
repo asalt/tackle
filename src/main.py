@@ -367,6 +367,9 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     """
          # name, taxon, non_zeros, experiment_file):
 
+    if not limma:
+        raise click.BadOptionUsage('limma', 'At the moment, only use of `limma` is supported')
+
     if ifot + ifot_ki + ifot_tf + median> 1:
         raise click.BadParameter('Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`')
 
