@@ -49,7 +49,7 @@ class Deconvoluter:
             )
 
         if col_data is not None:
-            col_data = col_data.T
+            col_data = col_data
             for col in col_data:
                 col_data[col] = pd.Categorical(col_data[col])
         to_drop = [x for x in col_data.columns if x.startswith('_')]

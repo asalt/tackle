@@ -428,6 +428,9 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
         # if col_colors is not None:
         #     figwidth -= (max(len(x) for x in col_colors.columns) * .16667)
         figsize = (figwidth, figheight)
+    else:
+        figwidth, figheight = figsize
+
 
     dendrogram_width_ratio = None
     heatmap_width_ratio = .8  # default

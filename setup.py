@@ -22,7 +22,7 @@ setup(
     ],
     entry_points="""
     [console_scripts]
-    tackle=src.main:main
+    tackle=tackle.main:main
     # correlationplot=main:main
     """,
 

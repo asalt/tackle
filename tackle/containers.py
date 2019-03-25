@@ -1123,7 +1123,7 @@ class MyHeatMapper(HeatMapper):
 
         # Annotate the cells with the formatted values
         if self.annot:
-            self._annotate_heatmap(ax, hmap)
+            self._annotate_heatmap(ax, mesh)
         # Invert the y axis to show the plot in matrix form
         ax.invert_yaxis()
 
@@ -1333,9 +1333,51 @@ class MyClusterGrid(ClusterGrid):
         except AttributeError:
             yind = np.arange(self.data2d.shape[0])
 
+        annot = None
+        if 'annot' in kws:
+            annot = kws.pop('annot')
+
         self.plot_colors(xind, yind, row_color_kws, col_color_kws, **kws)
-        self.plot_matrix(colorbar_kws, xind, yind, **kws)
+        self.plot_matrix(colorbar_kws, xind, yind, annot=annot, **kws)
         return self
+
+    def plot_matrix(self, colorbar_kws, xind, yind, **kws):
+        self.data2d = self.data2d.iloc[yind, xind]
+        self.mask = self.mask.iloc[yind, xind]
+
+        # Try to reorganize specified tick labels, if provided
+        xtl = kws.pop("xticklabels", "auto")
+        try:
+            xtl = np.asarray(xtl)[xind]
+        except (TypeError, IndexError):
+            pass
+        ytl = kws.pop("yticklabels", "auto")
+        try:
+            ytl = np.asarray(ytl)[yind]
+        except (TypeError, IndexError):
+            pass
+
+        annot = None
+        if 'annot' in kws and isinstance(kws['annot'], pd.DataFrame):
+            ## not working for some reason:
+            # annot = kws.pop('annot').iloc[yind, xind]
+            annot = kws.pop('annot').loc[self.data2d.index, self.data2d.columns]
+        elif 'annot' in kws:
+            annot = kws.pop('annot')
+
+
+        heatmap(self.data2d, ax=self.ax_heatmap, cbar_ax=self.cax,
+                cbar_kws=colorbar_kws, mask=self.mask,
+                annot=annot,
+                xticklabels=xtl, yticklabels=ytl, **kws)
+
+        ytl = self.ax_heatmap.get_yticklabels()
+        ytl_rot = None if not ytl else ytl[0].get_rotation()
+        self.ax_heatmap.yaxis.set_ticks_position('right')
+        self.ax_heatmap.yaxis.set_label_position('right')
+        if ytl_rot is not None:
+            ytl = self.ax_heatmap.get_yticklabels()
+            plt.setp(ytl, rotation=ytl_rot)
 
 
     def plot_colors(self, xind, yind, row_color_kws=None, col_color_kws=None, **kws):
