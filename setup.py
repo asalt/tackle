@@ -12,7 +12,7 @@ package_version = calculate_version('./tackle/main.py')
 setup(
     name='tackle',
     version=package_version,
-    packages=find_packages('tackle'),
+    packages=find_packages(),
     author = 'Alex Saltzman',
     author_email = 'a.saltzman920@gmail.com',
     description = 'CLI-based data filtering and plotting tools for proteomics data at BCM',
