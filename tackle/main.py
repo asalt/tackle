@@ -42,7 +42,7 @@ sb.set_style('white', rc)
 sb.set_palette('muted')
 sb.set_color_codes()
 
-__version__ = '0.40r1'
+__version__ = '0.41r1'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -358,13 +358,15 @@ def validate_configfile(experiment_file, **kwargs):
               across samples. If a decimal is specified (e.g. 1.0), this indicates 100% of values are nonzero.
               If an integer is specified (1), this indicates that 1 value is nonzero.
               """)
+@click.option('--unique-pepts', default=0, show_default=True, type=int,
+              help='number of unique peptides required per gene. Also must satisfy the nonzero argument.')
 @click.option('--nonzero-subgroup', type=str, default=None, help='')
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
          file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
-         ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup,
+         ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
          experiment_file):
     """
     """
@@ -418,7 +420,9 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     covariate=covariate, cmap_file=cmap_file, data_dir=data_dir, base_dir=result_dir, funcats=funcats,
                     funcats_inverse=funcats_inverse, geneids=geneids, group=group, pairs=pairs,
                     ifot=ifot, ifot_ki=ifot_ki, ifot_tf=ifot_tf, median=median, name=name,
-                    non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup, taxon=taxon,
+                    non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup,
+                    unique_pepts=unique_pepts,
+                    taxon=taxon,
                     experiment_file=experiment_file, metrics=metrics, limma=limma,
                     block=block,
                     metrics_after_filter=metrics_after_filter,
