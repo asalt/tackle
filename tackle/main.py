@@ -853,14 +853,14 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
     pheno = data_obj.col_metadata
 
 
-    nsamples = len(pheno.columns)
-    ngroups  = pheno.loc[group].nunique()
-    groups   = pheno.loc[group].unique()
+    nsamples = len(pheno.index)
+    ngroups  = pheno[group].nunique()
+    groups   = pheno[group].unique()
     # pheno_indicator = dict()
     # for ix, grp in enumerate(groups):
     #     pheno_indicator[grp] = ix
     # classes  = list(map(str, [pheno_indicator[grp] for grp in pheno.loc[group]]))
-    classes = [grp.replace(' ', '_') for grp in pheno.loc[group]]
+    classes = [grp.replace(' ', '_') for grp in pheno[group]]
 
     cls_comparison = ''
     if ngroups == 2:  # reverse it
@@ -946,7 +946,7 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
             g.write('{} {} 1\n'.format(nsamples, ngroups))
             g.write('# {}\n'.format(' '.join(groups)))
             # g.write('{}\n'.format(' '.join(classes)))
-            g.write('{}\n'.format(' '.join(pheno.loc[group])))
+            g.write('{}\n'.format(' '.join(pheno[group])))
             g.file.flush()
             g.close() # windows compat
 
