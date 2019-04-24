@@ -5,7 +5,7 @@ import os
 import re
 import configparser
 import operator as op
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, Counter
 from functools import lru_cache
 
 import numpy as np
@@ -393,10 +393,18 @@ def parse_gid_file(gids):
                     gid_out.append(int(gid))
                 except AttributeError:
                     pass
-    return set(gid_out)
+    c = Counter()
+    retval = list()
+    for gid in gid_out:
+        if c[gid] == 0:
+            retval.append(gid)
+            c[gid] += 1
+
+    return retval
 
 def get_file_name(full_file):
-    fname, ext = os.path.splitext(full_file)
+    # fname, ext = os.path.splitext(full_file)
+    fname, ext = os.path.splitext(os.path.basename(full_file))
     grp = re.search('\w+', fname)
     if grp:
         return grp.group()
@@ -443,10 +451,13 @@ def parse_metadata(metadata):
 
     for col in col_data.columns:
         col_data.loc[col_data[col].apply(isna_str), col] = np.NAN
-        try:
-            col_data[col] = col_data[col].astype(float)
-        except ValueError:
-            pass
+        # try:
+        #     col_data[col] = col_data[col].astype(float)
+        # except ValueError:
+        #     pass
+    for col in col_data.columns:
+        if not col_data[col].dtype == np.float:
+            col_data[col] = col_data[col].fillna('NA')
     return col_data
 
 
@@ -516,7 +527,7 @@ def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignor
     if funcats_inverse:  # do this after possible normalization
         df = df[~df['FunCats'].fillna('').str.contains(funcats_inverse, case=False)]
     if geneid_subset:  # do this at the end
-        df = df.loc[geneid_subset]
+        df = df.loc[set(df.index) & set(geneid_subset)]
     if ignored_geneid_subset:
         tokeep = set(df.index) - set(ignored_geneid_subset)
         df = df.loc[tokeep]

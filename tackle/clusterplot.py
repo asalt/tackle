@@ -15,10 +15,14 @@ from sklearn.metrics import silhouette_samples, silhouette_score
 from scipy.cluster import hierarchy
 
 from .utils import *
-from .containers import MyClusterGrid, GeneMapper
+from .containers import MyClusterGrid, GeneMapper, MyDendrogramPlotter
+sb.matrix._DendrogramPlotter = MyDendrogramPlotter
+
 
 rc = {'font.family': 'sans-serif',
-      'text.usetex': False}
+      'text.usetex': False,
+      'svg.fonttype': 'none'
+}
       # 'font.serif': ['Times', 'Palatino', 'serif']}
 sb.set_context('notebook')
 sb.set_palette('muted')
@@ -148,7 +152,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
                 normed=False, linkage='average',
                 gene_symbol_fontsize=8, legend_include=None, legend_exclude=None,
-                metadata_colors=None,
+                metadata_colors=None, circle_col_markers=False,
+                force_optimal_ordering=False,
 ):
     """
     :nclusters: None, 'auto', or positive integer
@@ -170,7 +175,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
     mask = mask.copy()
 
     if genes is not None:  # only plot these select genes
-        _genes = set(genes) & set(data.index)
+        _genes = [x for x in genes if x in (set(genes) & set(data.index))]
         data = data.loc[_genes]
         mask = mask.loc[_genes]
 
@@ -208,7 +213,9 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
         # col_data = parse_metadata(metadata)
         # _legend_data = set(legend_include) - set(legend_exclude) if legend_include else col_data.index
         _legend_data = set(legend_include) - set(legend_exclude) if legend_include else col_data
-        _legend_data = sorted(_legend_data)
+        # _legend_data = sorted(_legend_data)
+        _legend_data = [x for x in legend_include if x in _legend_data] # preserve order
+
         # col_data = col_data.loc[_legend_data].copy()
         col_data = col_data[_legend_data].copy()
         # if 'label' in col_data.index:
@@ -452,6 +459,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                             row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                             mask=mask.loc[plot_data.index] if show_missing_values else None,
+                            circle_col_markers=circle_col_markers,
+                            force_optimal_ordering=force_optimal_ordering,
                             # heatmap_height_ratio=heatmap_height_ratio,
                             # dendrogram_width_ratio=dendrogram_width_ratio,
                             # heatmap_width_ratio=heatmap_width_ratio,
@@ -540,7 +549,8 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
 
     if col_colors is not None:
         # col_label_lengths = col_data.fillna('').applymap(len).max(1) + col_colors.nunique()
-        col_label_lengths = col_data.astype(str).applymap(len).max(0) + col_colors.nunique()
+        # col_label_lengths = col_data.astype(str).applymap(len).max(0) + col_colors.nunique()
+        col_label_lengths = col_data.applymap(len).max(0) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
         # widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
         widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.1 )
@@ -548,7 +558,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
 
         # bbox_y0 = 1.44 if col_cluster else .8
         # bbox_y0 = 2.16 if col_cluster else 1.2
-        bbox_y0 = 2.46 if col_cluster else 1.2
+        bbox_y0 = 2.46 if col_cluster else 1.8
 
         bboxes = [(x, bbox_y0, 1, .2) for x in widths]  # (x0, y0, width, height)
         # bboxes = [(x, 1.02, 1, .2) for x in np.arange(0, 1, 1/len(col_colors_t.index))]
@@ -561,7 +571,11 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()
             for n, c in zip(col_names, label_colors):
-                handle = mpl.patches.Patch(color=c,)
+                if circle_col_markers:
+                    handle = mpl.lines.Line2D(range(1), range(1), color="none", marker='o', markerfacecolor=c,
+                                              markersize=12)
+                else:
+                    handle = mpl.patches.Patch(color=c,)
                 handles.append(handle)
                 labels.append(n)
             if len(col_names) <= 20:

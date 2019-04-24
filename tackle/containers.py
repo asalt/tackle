@@ -2,6 +2,7 @@ import sys
 import os
 import re
 import json
+from functools import lru_cache
 from datetime import datetime
 import operator as op
 from collections import OrderedDict
@@ -412,6 +413,10 @@ class Data:
         # self._metric_values[name]['GeneIDs']  = exp.df.GeneID.unique()
 
 
+    @staticmethod
+    @lru_cache()
+    def get_e2g(recno, runno, searchno, data_dir):
+        return ispec.E2G(recno, runno, searchno, data_dir=data_dir)
 
     def load_data(self):
 
@@ -430,8 +435,15 @@ class Data:
             searchno = record.get('searchno')
             label = record.get('label')
             labelquery = LABEL_MAPPER.get(label, 0)
-            exp = ispec.E2G(recno, runno, searchno, data_dir=self.data_dir)
+
+            exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir)
+
+            if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
+                exp.df.rename(columns={'LabelFLAG': 'EXPLabelFLAG'}, inplace=True)
             df = exp.df.query('EXPLabelFLAG==@labelquery').copy()
+
+
+            # df = exp.df.query('LabelFLAG==@labelquery').copy()
 
             if not df.index.name == 'GeneID':
                 df.index = df.GeneID
@@ -449,9 +461,16 @@ class Data:
             funcats_dict = df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
 
-            if df.TaxonID.isna().any():
-                loc = df[ df.TaxonID.isna() ].index
-                df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(x) for x in loc]
+            if (df.FunCats == '').all():
+                df['FunCats'] = df.GeneID.map(_genemapper.funcat).fillna('')
+
+            if 'TaxonID' not in df or df.TaxonID.isna().any():
+                if 'TaxonID' in df:
+                    loc = df[ df.TaxonID.isna() ].index
+                    df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(x) for x in loc]
+                else:
+                    df.loc[:, 'TaxonID'] = [_genemapper.taxon.get(x) for x in df.index]
+
 
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
@@ -491,6 +510,7 @@ class Data:
                     filter_func = lambda x: x[ x['TaxonID'] == taxon_filter ]
                 if self.metrics and not self.metrics_after_filter and not self.metrics_unnormed_area:
                     self._update_metrics(df, name, area_column='area')
+
                 df = genefilter(df, funcats=self.funcats, funcats_inverse=self.funcats_inverse,
                                 geneid_subset=self.geneid_subset,
                                 ignored_geneid_subset=self.ignore_geneid_subset).pipe(filter_func)
@@ -512,10 +532,12 @@ class Data:
 
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
-        # _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA']
-        # stacked_data = [ df[_cols].stack() for df in exps.values() ]
-        stacked_data = [ df.stack() for df in exps.values() ]
+        _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
+        stacked_data = [ df[_cols].stack() for df in exps.values() ]
+        # stacked_data = [ df.stack() for df in exps.values() ]
+        print('stacking...', flush=True, end='')
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
+        print('done', flush=True)
         # self.panel = pd.Panel(exps)
         for ax in ('GeneCapacity', 'GeneSymbol', 'GeneDescription',
                    'FunCats', 'TaxonID'):
@@ -591,7 +613,6 @@ class Data:
 
             self._areas = areas
 
-
         self._mask = self._areas.applymap(np.isnan)
         self._zeros = self._areas == 0
         if len(self.areas) == 0:
@@ -624,9 +645,8 @@ class Data:
 
         self._areas_log_shifted = self._areas_log + shift_val
         self._areas_log_shifted.index.name = 'GeneID'
-        if self.geneid_subset:
-            self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
-
+        # if self.geneid_subset: # don't do this here, already done
+        #     self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
 
         # if specified, normalize by a specified control group
         norm_info = self.config.get('__norm__')
@@ -634,10 +654,11 @@ class Data:
             control = norm_info['control']
             group   = norm_info['group']
             label   = norm_info['label']
-            # metadata = self.col_metadata.T  # rows are experiments, cols are metadata
+            # metadata = self.col_metadata.T  # rows are experiments, cols are metadat
             metadata = self.col_metadata  # rows are experiments, cols are metadata
             areas = self._areas_log_shifted.copy()
             ctrl_exps = list()
+
             for ix, g in metadata.groupby(group):
                 ctrl_exp = g[ g[label] == control ].index[0] # should only be one
                 ctrl_exps.append(ctrl_exp)
@@ -654,15 +675,19 @@ class Data:
             )
             self.minval_log = self._areas.replace(0, np.NAN).stack().dropna().min()
             finite = self._areas.pipe(np.isfinite)
+
+            # have to take care of number/0 case
             maxval_log = self._areas[ finite ].stack().dropna().max()
             self._areas_log_shifted = (self._areas.fillna(self.minval_log/2)
                                        .replace(np.inf, maxval_log*1.5)
             )
             # not sure if this is right, can check:
-            sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
-            sample_ixs  = [x for x in self.col_metadata.index if x != label]
+            # sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
+            sample_cols = self.col_metadata.columns
+            sample_ixs  = [x for x in self.col_metadata.index if x not in ctrl_exps]
+
             self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
-            self._mask = self.mask[sample_cols]
+            self._mask = self.mask[sample_ixs]
             self.normed = True
 
         if self.export_all:
@@ -831,17 +856,20 @@ class Data:
                               'R', 'pvalue_cov.R')
         r_source(r_file)
 
+        r.assign('edata', self.areas_log_shifted.fillna(0))
+
         # pheno = self.col_metadata.T
         pheno = self.col_metadata
         r.assign('pheno', pheno)
         r('mod0 <- model.matrix(~1, pheno)')
 
-        if self.group:
+        if self.group and not formula:
             mod = r('mod  <- model.matrix(~0+{}, pheno)'.format(self.group))
         elif formula:
             mod = r('mod <- model.matrix({}, pheno)'.format(formula))
+        else:
+            raise ValueError("Must specify 1 of `group` or `formula`")
 
-        r.assign('edata', self.areas_log_shifted.fillna(0))
 
         if self.covariate is not None:
             ncov = pheno[self.covariate].nunique()
@@ -854,7 +882,7 @@ class Data:
             pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, ncov)')
         elif not self.pairs and self.limma:
             importr('limma')
-            r('library(dplyr)')
+            r('suppressMessages(library(dplyr))')
             r('block <- NULL')
             r('cor <- NULL')
             if self.block:
@@ -867,7 +895,7 @@ class Data:
 
             # need to make valid R colnames
             variables = robjects.r('colnames(mod)')
-            fixed_vars = [x.replace(':', '_',).replace(' ', '_')
+            fixed_vars = [x.replace(':', '_',).replace(' ', '_').replace('-', '_')
                           for x in variables
             ]
             robjects.r.assign('fixed_vars', fixed_vars)
@@ -885,7 +913,7 @@ class Data:
 
 
             elif contrasts_str:
-                contrasts_array = contrasts_str.split(',')
+                contrasts_array = [ x.strip() for x in contrasts_str.split(',') if x.strip()]
 
             robjects.r.assign('contrasts_array', contrasts_array)
 
@@ -1210,7 +1238,8 @@ class MyClusterGrid(ClusterGrid):
     #              **kwargs):
     def __init__(self, data, pivot_kws=None, z_score=None, standard_scale=None,
                  figsize=None, row_colors=None, col_colors=None, mask=None,
-                 expected_size_dendrogram=1.0,
+                 expected_size_dendrogram=1.0, circle_col_markers=False,
+                 force_optimal_ordering=False,
                  expected_size_colors=0.25):
         """Grid object for organizing clustered heatmap input on to axes"""
 
@@ -1219,6 +1248,8 @@ class MyClusterGrid(ClusterGrid):
         else:
             self.data = pd.DataFrame(data)
 
+        self.circle_col_markers = circle_col_markers
+
         self.data2d = self.format_data(self.data, pivot_kws, z_score,
                                        standard_scale)
 
@@ -1226,6 +1257,8 @@ class MyClusterGrid(ClusterGrid):
 
         self.expected_size_dendrogram = expected_size_dendrogram
         self.expected_size_side_colors = expected_size_colors
+
+        self.force_optimal_ordering = force_optimal_ordering
 
         if figsize is None:
             width, height = 10, 10
@@ -1330,7 +1363,9 @@ class MyClusterGrid(ClusterGrid):
         row_color_kws = {} if row_color_kws is None else row_color_kws
         col_color_kws = {} if col_color_kws is None else col_color_kws
         self.plot_dendrograms(row_cluster, col_cluster, metric, method,
-                              row_linkage=row_linkage, col_linkage=col_linkage)
+                              row_linkage=row_linkage, col_linkage=col_linkage,
+                              force_optimal_ordering=self.force_optimal_ordering
+        )
         try:
             xind = self.dendrogram_col.reordered_ind
         except AttributeError:
@@ -1385,6 +1420,30 @@ class MyClusterGrid(ClusterGrid):
         if ytl_rot is not None:
             ytl = self.ax_heatmap.get_yticklabels()
             plt.setp(ytl, rotation=ytl_rot)
+
+
+    def plot_dendrograms(self, row_cluster, col_cluster, metric, method,
+                         row_linkage, col_linkage, force_optimal_ordering):
+        # Plot the row dendrogram
+        if row_cluster:
+            self.dendrogram_row = dendrogram(
+                self.data2d, metric=metric, method=method, label=False, axis=0,
+                ax=self.ax_row_dendrogram, rotate=True, linkage=row_linkage,
+                force_optimal_ordering=force_optimal_ordering)
+        else:
+            self.ax_row_dendrogram.set_xticks([])
+            self.ax_row_dendrogram.set_yticks([])
+        # PLot the column dendrogram
+        if col_cluster:
+            self.dendrogram_col = dendrogram(
+                self.data2d, metric=metric, method=method, label=False,
+                axis=1, ax=self.ax_col_dendrogram, linkage=col_linkage,
+                force_optimal_ordering=force_optimal_ordering)
+        else:
+            self.ax_col_dendrogram.set_xticks([])
+            self.ax_col_dendrogram.set_yticks([])
+        despine(ax=self.ax_row_dendrogram, bottom=True, left=True)
+        despine(ax=self.ax_col_dendrogram, bottom=True, left=True)
 
 
     def plot_colors(self, xind, yind, row_color_kws=None, col_color_kws=None, **kws):
@@ -1447,8 +1506,14 @@ class MyClusterGrid(ClusterGrid):
             full_kws = kws.copy()
             full_kws.update(col_color_kws)
 
-            heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,
-                    xticklabels=False, yticklabels=col_color_labels, **full_kws)
+
+            if self.circle_col_markers:
+                scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=60,
+                        xticklabels=False, yticklabels=col_color_labels, **kws)
+            else:
+                heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,
+                        xticklabels=False, yticklabels=col_color_labels, **full_kws)
+
             # scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=100,
             #            xticklabels=False, yticklabels=col_color_labels, **kws)
 
@@ -1458,6 +1523,85 @@ class MyClusterGrid(ClusterGrid):
                 plt.setp(self.ax_col_colors.get_yticklabels(), rotation=0)
         else:
             despine(self.ax_col_colors, left=True, bottom=True)
+
+
+from scipy.cluster import hierarchy
+
+class MyDendrogramPlotter(sb.matrix._DendrogramPlotter):
+
+
+    def __init__(self, data, linkage, metric, method, axis, label, rotate, force_optimal_ordering=False):
+
+        self.force_optimal_ordering = force_optimal_ordering
+        super(sb.matrix._DendrogramPlotter, self).__init__(data, linkage, metric, method, axis,
+                                                           label, rotate)
+
+
+    def _calculate_linkage_scipy(self):
+        if np.product(self.shape) >= 10000:
+            UserWarning('This will be slow... (gentle suggestion: '
+                        '"pip install fastcluster")')
+        optimal_ordering = False
+        if self.array.shape[0] < 100:
+            optimal_ordering = True
+
+        if self.force_optimal_ordering:
+            optimal_ordering = True
+
+        if optimal_ordering:
+            print('optimal ordering true')
+
+        linkage = hierarchy.linkage(self.array, method=self.method,
+                                    metric=self.metric, optimal_ordering=optimal_ordering)
+        return linkage
+
+sb.matrix._DendrogramPlotter = MyDendrogramPlotter
+
+def dendrogram(data, linkage=None, axis=1, label=True, metric='euclidean',
+               method='average', rotate=False, ax=None, force_optimal_ordering=False):
+    """Draw a tree diagram of relationships within a matrix
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Rectangular data
+    linkage : numpy.array, optional
+        Linkage matrix
+    axis : int, optional
+        Which axis to use to calculate linkage. 0 is rows, 1 is columns.
+    label : bool, optional
+        If True, label the dendrogram at leaves with column or row names
+    metric : str, optional
+        Distance metric. Anything valid for scipy.spatial.distance.pdist
+    method : str, optional
+        Linkage method to use. Anything valid for
+        scipy.cluster.hierarchy.linkage
+    rotate : bool, optional
+        When plotting the matrix, whether to rotate it 90 degrees
+        counter-clockwise, so the leaves face right
+    ax : matplotlib axis, optional
+        Axis to plot on, otherwise uses current axis
+
+    Returns
+    -------
+    dendrogramplotter : _DendrogramPlotter
+        A Dendrogram plotter object.
+
+    Notes
+    -----
+    Access the reordered dendrogram indices with
+    dendrogramplotter.reordered_ind
+
+    """
+    plotter = MyDendrogramPlotter(data, linkage=linkage, axis=axis,
+                                  metric=metric, method=method,
+                                  label=label, rotate=rotate,
+                                  force_optimal_ordering=force_optimal_ordering)
+    if ax is None:
+        ax = plt.gca()
+    return plotter.plot(ax=ax)
+
+
 
     # def dim_ratios(self, side_colors, axis, figsize, side_colors_ratio=0.05):
     #     """need to adjust the heatmap height ratio for long figures

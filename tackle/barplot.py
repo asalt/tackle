@@ -11,11 +11,13 @@ import seaborn as sb
 
 from .utils import save_multiple
 
-def plotter(data, linear=False, colors=None, legend_colors=None, legend_name=None, title=None):
+def plotter(data, linear=False, z_score=False, colors=None, legend_colors=None, legend_name=None, title=None):
 
     w = len(data.columns) * .75
     w = max(w, 4)
     ylabel = 'log$_{10}$ iBAQ' if not linear else 'iBAQ'
+    if z_score:
+        ylabel += ' z scored'
 
     kwargs = dict()
     if colors:
@@ -57,59 +59,179 @@ def plotter(data, linear=False, colors=None, legend_colors=None, legend_name=Non
     fig.tight_layout(w_pad=.1)
     return fig, ax
 
-def barplot(X, genes, metadata, average=None, color=None, cmap=None, linear=False,
-            base_outfunc=None, file_fmts=('.png',), gid_symbol=None):
+def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap=None, linear=False,
+            figsize=None, xtickrotation=None, xticksize=None,
+            z_score=False, base_outfunc=None, file_fmts=('.png',), gid_symbol=None, metadata_colors=None):
     """
     Plot barplots for each gene in a list of genes
     :file_fmts: iterable of valid file formats for matplotlib to save figures
     """
+
+
     if cmap is None:
         cmap = 'tab10'
     if gid_symbol is None:
         gid_symbol = dict()
 
     if color:
-        color_groups = metadata.T.groupby(color).groups
+        color_groups = metadata.groupby(color).groups
         cpalette = iter(sb.color_palette(cmap, n_colors=len(color_groups)))
         colors = dict()
         legend_colors = OrderedDict()
+        if average:
+            color_entries = {x:k for k,v in metadata.groupby([average]).groups.items() for x in v}
+        else:
+            color_entries = None
         for g, cols in color_groups.items():
-            thecolor = to_hex(next(cpalette))
+            if metadata_colors and g in metadata_colors:
+               thecolor = metadata_colors[g]
+            else:
+                thecolor = to_hex(next(cpalette))
             legend_colors[g] = thecolor
             for c in cols:
-                colors[c] = thecolor
+                if color_entries:
+                    key = color_entries.get(c)
+                    if key not in colors:
+                        colors[key] = thecolor
+                else:
+                    colors[c] = thecolor
+
+        # the_order = [x for y in color_groups.values() for x in y]
+        # the_colors = [colors[x] for x in the_order]
+        # the_order = [x for y in legend_colors.values() for x in y]
+        # the_colors = [colors[x] for x in the_order]
+
+        the_order = list()
+        if color_order is not None:
+            _color_order = color_order.split('|')
+            _missing = set(legend_colors.keys()) - set(_color_order)
+            for m in _missing:
+                _color_order.append(m)
+            _iter = ((x, legend_colors.get(x)) for x in _color_order)
+
+        else:
+            _iter = legend_colors.items()
+
+        for entry, _color in _iter:
+            samples = [x for x, y in colors.items() if y == _color]
+            for s in samples:
+                the_order.append(s)
+
     else:
         colors = None
         legend_colors = None
+        the_order, the_colors = None, None
 
         # colors is a dict with sample_name : hex_color
 
-
-
     if linear:
         X = X.apply(lambda x: np.power(10, x))
+    elif z_score:
+        X = sb.matrix.ClusterGrid.z_score(X, 0)
 
     if average is not None:
-        groupcols = metadata.T.groupby(average).groups # dict with groupname : [cols]
+        groupcols = metadata.groupby(average).groups # dict with groupname : [cols]
     else:
         groupcols = OrderedDict([(x, x) for x in X.columns])
+
 
     for gene in genes:
 
 
-        edata = X.loc[gene]
-        data = OrderedDict()
-        for k, cols in groupcols.items():
-            mean_ = edata.loc[cols].mean()
-            std_ = edata.loc[cols].std()
-            data[k] = {'mean': mean_, 'std': std_}
+        # import ipdb ;ipdb.set_trace()
+        edata = X.loc[gene].to_frame('Expression').join(metadata).reset_index()
+        # edata = X.loc[gene]
 
-        df = pd.DataFrame(data)
+        # data = OrderedDict()
+        # for k, cols in groupcols.items():
+        #     mean_ = edata.loc[cols].mean()
+        #     std_ = edata.loc[cols].std()
+        #     data[k] = {'mean': mean_, 'std': std_}
+
+        # df = pd.DataFrame(data)
 
         symbol = gid_symbol.get(gene, '')
         title = "{} {}".format(gene, symbol)
-        fig, ax = plotter(df, colors=colors, linear=linear, legend_name=color, legend_colors=legend_colors,
-                          title=title)
+
+        if not average:
+            data_size = len(edata)
+        else:
+            data_size = metadata[average].nunique()
+        w = data_size * .75
+        w = max(w, 4)
+
+        # fig, ax = plt.subplots(figsize=(w,5))
+        if figsize:
+            w, h = figsize
+        else:
+            h = 5
+        print(w,h)
+        fig = plt.figure(figsize=(w,h))
+        gs = gridspec.GridSpec(1,10)
+        ax = fig.add_subplot(gs[0, 0:9])
+        ax_leg = fig.add_subplot(gs[0, 9])
+
+        x = 'index' if not average else average
+
+        sb.barplot(x=x, y='Expression', data=edata, ax=ax, ci='sd', capsize=.2,
+                   palette=colors, order=the_order,
+        )
+
+        if average:
+            sb.swarmplot(x=x, y='Expression', hue=None, data=edata, order=the_order, hue_order=None, dodge=False,
+                         orient=None, color=None, palette=colors, size=5, edgecolor='gray', linewidth=1., ax=ax, )
+
+
+        ylabel = 'log$_{10}$ iBAQ' if not linear else 'iBAQ'
+        if z_score:
+            ylabel += ' z scored'
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+
+        ax.legend([], frameon=False)
+        if xtickrotation is None:
+            fig.autofmt_xdate()
+        else:
+            for tick in ax.get_xticklabels():
+                tick.set_rotation(xtickrotation)
+                if xticksize is not None:
+                    tick.set_fontsize(xticksize)
+
+
+        if legend_colors is not None:
+            handles, labels = list(), list()
+            if color_order:
+                _iter = (( x, legend_colors.get(x) ) for x in _color_order if x in legend_colors )
+            else:
+                _iter = legend_colors.items()
+            for key, value in _iter:
+                handles.append(mpl.patches.Patch(color=value))
+                labels.append(key)
+            if len(labels) <= 20:
+                ncols = max(len(labels) // 4, 1)
+            else:
+                ncols = max(len(labels) // 8, 1)
+
+            leg = ax_leg.legend( handles, labels,
+                                 loc='center', ncol=ncols,
+                                 title=color, frameon=False,
+                                 handleheight=.8, handlelength=.8,
+            )
+            ax_leg.add_artist(leg)
+
+        ax.set_ylabel(ylabel)
+        sb.despine(ax=ax_leg, bottom=True, left=True)
+        ax_leg.set_xticks([])
+        ax_leg.set_yticks([])
+
+
+        fig.tight_layout(w_pad=.1)
+        ax.set_xlabel('')
+
+        # ax_leg.legend
+
+        # fig, ax = plotter(df, colors=colors, linear=linear, z_score=z_score, legend_name=color, legend_colors=legend_colors,
+        #                   title=title)
 
         if average:
             name = '{}_{}'.format(str(gene), average)
@@ -117,6 +239,8 @@ def barplot(X, genes, metadata, average=None, color=None, cmap=None, linear=Fals
             name = str(gene)
         if linear:
             name += '_linear'
+        if z_score:
+            name += '_zscore'
         outname = base_outfunc(name)
         save_multiple(fig, outname, *file_fmts, dpi=300)
         plt.close(fig)

@@ -42,7 +42,7 @@ sb.set_style('white', rc)
 sb.set_palette('muted')
 sb.set_color_codes()
 
-__version__ = '0.41r1'
+__version__ = '0.42r1'
 
 from bcmproteomics_ext import ispec
 sb.set_context('notebook', font_scale=1.4)
@@ -274,20 +274,24 @@ def validate_configfile(experiment_file, **kwargs):
 
     def check_group(name, name_str):
         count = 0
+        missing = list()
         for k, v in config.items():
             if k in dunder_fields:
                 continue
             ret = v.get(name)
             if ret is not None:
                 count += 1
+            else:
+                missing.append(k)
 
         if count == 0:
             raise click.BadParameter("""{} is specified for {} but
             is not annotated in the config file""".format(name, name_str))
         if count < config_len:
             raise click.BadParameter("""{} is specified for {} but
-            is not annotated for all experiments in the config file ({} / {})""".format(name, name_str,
-                                                                                        count, config_len
+            is not annotated for all experiments in the config file ({} / {}).
+            Check entries {}
+            """.format(name, name_str, count, config_len, ', '.join(missing)
             ))
 
     # if nonzero_subgroup is not None:
@@ -370,7 +374,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
          experiment_file):
     """
     """
-         # name, taxon, non_zeros, experiment_file):
+    # name, taxon, non_zeros, experiment_file):
 
     if not limma:
         raise click.BadOptionUsage('limma', 'At the moment, only use of `limma` is supported')
@@ -507,11 +511,13 @@ def export(ctx, level, genesymbols):
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
 @click.option('--cmap', default=None, show_default=True)
+@click.option('--circle-col-markers', is_flag=True, default=False,)
 @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
               help='''Optionally specify the figuresize (width, height) in inches
               If not specified, tries to use a reasonable default depending on the number of
               samples.
               ''')
+@click.option('--force-optimal-ordering', is_flag=True, default=False,)
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""File of geneids to plot.
@@ -555,8 +561,10 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gene_symbol_fontsize,
-            highlight_geneids, legend_include, legend_exclude, linkage, max_autoclusters, nclusters,
+def cluster(ctx, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_optimal_ordering,
+            genefile, gene_symbols,
+            gene_symbol_fontsize, highlight_geneids, legend_include, legend_exclude, linkage,
+            max_autoclusters, nclusters,
             row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score):
 
     if not figsize:  # returns empty tuple if not specified
@@ -570,6 +578,7 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gen
         genes = parse_gid_file(genefile)
 
     data_obj = ctx.obj['data_obj']
+    X = data_obj.areas_log_shifted
     data_obj.set_highlight_gids(highlight_geneids)
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
@@ -579,14 +588,15 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gen
 
     # valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.index)
     valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.columns)
-    legend_include = set(legend_include) & set(valid_entries)
+    legend_include = [x for x in legend_include if x in (set(legend_include) & set(valid_entries))]
     legend_exclude = set(legend_exclude) & set(valid_entries)
     # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
-    result = clusterplot(data_obj.areas_log_shifted,
+    result = clusterplot(X,
                          cmap_name=cmap,
                          highlight_gids=data_obj.highlight_gids,
                          highlight_gid_names=data_obj.highlight_gid_names,
+                         force_optimal_ordering=force_optimal_ordering,
                          genes=genes,
                          gid_symbol=data_obj.gid_symbol,
                          gene_symbols=gene_symbols, z_score=data_obj.z_score,
@@ -606,6 +616,7 @@ def cluster(ctx, cmap, col_cluster, dbscan, figsize, genefile, gene_symbols, gen
                          legend_include=legend_include,
                          legend_exclude=legend_exclude,
                          metadata_colors=data_obj.metadata_colors,
+                         circle_col_markers=circle_col_markers
     )
 
     g = result['clustermap']['clustergrid']
@@ -692,7 +703,9 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     # # fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
 
     figs = pcaplot(data_obj.areas_log_shifted, metadata=data_obj.config, col_data=data_obj.col_metadata,
-                   annotate=annotate, max_pc=max_pc, color_label=color, marker_label=marker, genes=genes)
+                   annotate=annotate, max_pc=max_pc, color_label=color, marker_label=marker, genes=genes,
+                   metadata_colors=data_obj.metadata_colors,
+    )
 
     # outname_func = get_outname('pcaplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
     #                            non_zeros=data_obj.non_zeros, batch=data_obj.batch_applied,
@@ -751,7 +764,7 @@ def overlap(ctx, group, maxsize, non_zeros):
 
 
 @main.command('volcano')
-@click.option('-f', '--foldchange', type=int, default=4, show_default=True,
+@click.option('-f', '--foldchange', type=float, default=4, show_default=True,
               help='fold change cutoff'
 )
 @click.option('-e', '--expression-data', default=False, is_flag=True, show_default=True,
@@ -786,18 +799,33 @@ def overlap(ctx, group, maxsize, non_zeros):
               help="""more complex linear regression formula for use with limma.
               Supersedes `group` option""")
 @click.option('--contrasts', default=None, show_default=True,)
+@click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""File of geneids to plot.
+              Should have 1 geneid per line. """)
+@click.option('--figsize', nargs=2, type=float, default=(5,5), show_default=True,
+              help='''Optionally specify the figuresize (width, height) in inches
+              ''')
 @click.pass_context
 def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, sig_metric, scale,
-            p_adj, highlight_geneids, formula, contrasts):
+            p_adj, highlight_geneids, formula, contrasts, genefile, figsize,):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
     yaxis = 'pAdj' if p_adj else 'pValue'
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
+
+    width, height = figsize
+
     volcanoplot(ctx, foldchange, expression_data, number=number, number_by=number_by,
                 only_sig=only_sig, sig=sig, sig_metric=sig_metric, yaxis=yaxis, scale=scale,
                 formula=formula, contrasts=contrasts,
-                highlight_geneids=highlight_geneids)
+                genes=genes, width=width, height=height,
+                highlight_geneids=highlight_geneids, )
 
 
 
@@ -830,9 +858,11 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--set-min', default=15, show_default=True)
 @click.option('--sort', type=click.Choice(('real', 'abs')), default='real', show_default=True)
 @click.option('-n', '--number', default=9999, help='Number of pathways to plot in output', show_default=True)
+@click.option('--group', default=None, help="""Specify group for GSEA.
+                Supersedes main --group option, also allows specifying genes for gene-pathway association""")
 @click.pass_context
 def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutations, norm, permute,
-         plot_top_x, rnd_type, scoring_scheme, sort, set_max, set_min, number):
+         plot_top_x, rnd_type, scoring_scheme, sort, set_max, set_min, number, group):
     """
     Run GSEA on specified groups
     """
@@ -841,9 +871,10 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 
     plt.rc('font',**{'family':'sans-serif','sans-serif':["DejaVu Sans", "Arial", "Liberation Sans",
                             "Bitstream Vera Sans", "sans-serif"]})
-    group = data_obj.group #
     if group is None:
-        raise ValueError('Must specify Group')
+        group = data_obj.group #
+        if group is None:
+            raise ValueError('Must specify Group')
 
 
     # expression = data_obj.areas_log_shifted.copy().fillna(0)
@@ -1120,12 +1151,23 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
               Should have 1 geneid per line. """)
 @click.option('--average', type=str, default=None, help='Metadata entry to group data and plot average. Cannot be used with color')
 @click.option('--color', type=str, default=None, help='Metadata entry to group color bars. Cannot be used with average')
+@click.option('--color-order', type=str, default=None, help="""Pipe `|` separated order
+to arrange data. For use in conjunction with `--color`
+""")
 @click.option('--cmap', default=None, show_default=True, help="""
 Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples/color/colormaps_reference.html.
 """)
 @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
+@click.option('--z-score', default=False, is_flag=True, help='Plot zscored values (linear or log10 transformed)')
+@click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
+              help='''Optionally specify the figuresize (width, height) in inches
+              If not specified, tries to use a reasonable default depending on the number of
+              samples.
+              ''')
+@click.option('--xtickrotation', default=None, type=int)
+@click.option('--xticksize', default=None, type=int)
 @click.pass_context
-def bar(ctx, average, color, cmap, gene, genefile, linear):
+def bar(ctx, average, color, color_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
 
     data_obj = ctx.obj['data_obj']
     col_meta = data_obj.col_metadata
@@ -1144,11 +1186,14 @@ def bar(ctx, average, color, cmap, gene, genefile, linear):
                       batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                       outpath=outpath,
     )
-    if color is not None and average is not None:
-        raise ValueError('Cannot specify color and average at the same time.')
+    # if color is not None and average is not None:
+    #     raise ValueError('Cannot specify color and average at the same time.')
 
-    barplot(data_obj.areas_log_shifted, genes=gene, color=color, cmap=cmap, metadata=col_meta, average=average,
-            linear=linear, base_outfunc=outfunc, file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol)
+    barplot(data_obj.areas_log_shifted, genes=gene, color=color, cmap=cmap, metadata=col_meta,
+            average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
+            file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
+            xtickrotation=xtickrotation, xticksize=xticksize,
+    )
 
 if __name__ == '__main__':
 

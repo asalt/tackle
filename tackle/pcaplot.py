@@ -28,7 +28,7 @@ class Deconvoluter:
     COMPONENT_NAME  = 'Component' # redefine this as appropriate for labeling on plots
     COMPONENT_SHORT = 'C' # redefine this as appropriate for labeling on plots
 
-    def __init__(self, X, color_label=None, marker_label=None, col_data=None, metadata=None, annotate=False):
+    def __init__(self, X, color_label=None, marker_label=None, col_data=None, metadata=None, annotate=False, metadata_colors=None):
         """
         :X: DataFrame with columns as sample names and rows as GeneIDs. Index consists of GeneIDs
         :metadata: Dictionary of dictionaries of this format:
@@ -42,6 +42,8 @@ class Deconvoluter:
         self.X = X
         self.metadata = metadata
         self.annotate = annotate
+        self.metadata_colors = metadata_colors
+
         if metadata.get('__PCA__') is not None:
             warnings.warn("""
             Specifying __PCA__ in config file is depreciated. Specify color, marker, and annot at the command line
@@ -123,8 +125,10 @@ class Deconvoluter:
         else:
             colors = sb.color_palette('cubehelix', n_colors=n_colors)
 
-        if color_label:
+        if color_label and not self.metadata_colors:
             color_mapper = [ colors[ix] for ix in df[color_label].cat.codes ]
+        elif color_label and self.metadata_colors and color_label in self.metadata_colors:
+            color_mapper = [ self.metadata_colors[color_label].get(ix, 'grey') for ix in df[color_label].values ]
         else:
             color_mapper = [ colors[0] for _ in df.index ]
         df['_color'] = color_mapper
@@ -177,7 +181,7 @@ class Deconvoluter:
                 texts.append( ax.text(row[x-1], row[y-1], row.name, size=6 ) )
 
             if color_label:
-                name = row[color_label]
+                name = str(row[color_label])
                 if name not in color_labels:
                     color_labels.append(name)
                     # color_handle = matplotlib.patches.Patch(color=color)
@@ -187,7 +191,7 @@ class Deconvoluter:
                     )
                     color_handles.append(color_handle)
             if marker_label:
-                name = row[marker_label]
+                name = str(row[marker_label])
                 if name not in marker_labels:
                     marker_labels.append(name)
                     marker_handle = plt.Line2D((0, 1), (0, 0), color='gray', marker=marker,
@@ -381,7 +385,7 @@ class ICAplot(Deconvoluter):
 
 
 
-def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None, genes=None):
+def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_label=None, marker_label=None, genes=None, metadata_colors=None):
     if genes is not None:  # only plot these select genes
         _genes = set(genes) & set(X.index)
         X = X.loc[_genes]
@@ -389,7 +393,7 @@ def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_lab
     # pca = ICAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
     # pca = PCAplot2(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
     pca = PCAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
-                  col_data=col_data, annotate=annotate)
+                  col_data=col_data, annotate=annotate, metadata_colors=metadata_colors)
 
     figs = dict()
 

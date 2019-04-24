@@ -58,8 +58,8 @@ volcanoplot <- function(X, max_labels = 35,
   X[ , 'usd' ] = '#22222288'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
-  X[ (X[,sig_metric] < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   X[ (X[,sig_metric] < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
+  X[ (X[,sig_metric] < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   X[ X$highlight == TRUE, 'usd' ] = 'purple'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 

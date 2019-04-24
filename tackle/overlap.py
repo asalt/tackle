@@ -32,7 +32,7 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
 
     overlap_dict = dict()
     if group:
-        cols = data_obj.col_metadata.T.groupby(group).groups
+        cols = data_obj.col_metadata.groupby(group).groups
     else:
         cols = {col: [col] for col in data_obj.data.columns}
 

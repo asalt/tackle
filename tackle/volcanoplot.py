@@ -6,8 +6,10 @@ import pandas as pd
 from .utils import get_outname, parse_gid_file
 
 def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
+                genes=None,
                 sig_metric='pAdj', number_by='log2_Fold_Change', yaxis='pAdj', scale=1.2,
-                highlight_geneids=None, formula=None, contrasts=None):
+                highlight_geneids=None, formula=None, contrasts=None,
+                width=5, height=5):
 
     data_obj = ctx.obj['data_obj']
 
@@ -85,6 +87,10 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             df.loc[set(gids_to_highlight) & set(df.index), 'highlight'] = True
 
 
+        if genes is not None:  # only plot these select genes
+            _genes = set(genes) & set(df.index)
+            df = df.loc[_genes]
+
         outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
                               non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
                               batch=data_obj.batch_applied,
@@ -100,15 +106,16 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             _log2_cutoff = np.sqrt(foldchange)
             export_data = df.query('pAdj < @sig & abs(log2_Fold_Change) > @_log2_cutoff')
         if expression_data:
-            if group:
-                try:
-                    group_entries = [group0.split(group)[-1], group1.split(group)[-1]]
-                    exps = data_obj.col_metadata[ data_obj.col_metadata[group].isin(group_entries) ].index
-                    export_data = export_data.join(data_obj.areas_log_shifted[exps])
-                except Exception as e:
-                    print('Error trying to subselect data for export')
-                    print(e)
-                    export_data = export_data.join(data_obj.areas_log_shifted)
+            try:
+                group_entries = [group0.split(group)[-1], group1.split(group)[-1]]
+                exps = data_obj.col_metadata[ data_obj.col_metadata[group].isin(group_entries) ].index
+                if exps.empty:
+                    raise ValueError()
+                export_data = export_data.join(data_obj.areas_log_shifted[exps])
+            except Exception as e:
+                print('Error trying to subselect data for export. Try specifying group if you have not.')
+                print(e)
+                export_data = export_data.join(data_obj.areas_log_shifted)
         export_cols = [x for x in export_data.columns if x not in ('highlight', )]
         export_data[export_cols].to_csv(out, sep='\t')
         print('done', flush=True)
@@ -138,9 +145,9 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         gr_devices = {'.png': grdevices.png,
                         '.pdf': grdevices.pdf,
                         '.svg': grdevices.svg}
-        gr_kws = {'.png': dict(width=5, height=5, units='in', res=300),
-                    '.pdf': dict(width=5, height=5,),
-                    '.svg': dict(width=5, height=5,)
+        gr_kws = {'.png': dict(width=width, height=height, units='in', res=300),
+                    '.pdf': dict(width=width, height=height,),
+                    '.svg': dict(width=width, height=height,)
         }
         for file_fmt in file_fmts:
 
