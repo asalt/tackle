@@ -22,7 +22,6 @@ z_score = ClusterGrid.z_score
 
 from .utils import *
 
-
 idx = pd.IndexSlice
 
 TAXON_MAPPER = {'human': 9606,

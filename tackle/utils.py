@@ -7,6 +7,7 @@ import configparser
 import operator as op
 from collections import OrderedDict, defaultdict, Counter
 from functools import lru_cache
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -378,9 +379,20 @@ def read_config(configfile, enforce=True):
 
     return ordered_data
 
-def parse_gid_file(gids):
+
+def parse_gid_file(gids, symbol_gid_mapping=None):
+    """
+    :gids: collection of files to read and extract geneids
+    :symbol_gid_mapping: optional dictionary that maps symbols to geneid"""
+
+    from .containers import GeneMapper
+    genemapper = GeneMapper()
+    # symbol_gid = {v:k for k, v in genemapper.symbol.items()}
+
+    if symbol_gid_mapping is None:
+        symbol_gid_mapping = dict()
     gid_out = list()
-    rgx = re.compile(r'(\d+)')
+    rgx = re.compile(r'(?<![A-Za-z])(\d+)(?![A-Za-z])')
     with open(gids, 'r') as f:
         for line in f:
             try:
@@ -392,7 +404,15 @@ def parse_gid_file(gids):
                     gid = rgx.search(line).group(1)
                     gid_out.append(int(gid))
                 except AttributeError:
-                    pass
+                    # try symbol mapping
+                    # TODO: expand from just human
+                    gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
+                    if gid.empty:
+                        warn('Could not parse GeneID from line {}'.format(line))
+                        pass
+                    else:
+                        gid_out.append(gid.index[0])
+
     c = Counter()
     retval = list()
     for gid in gid_out:
