@@ -532,8 +532,9 @@ class Data:
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
         _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
-        stacked_data = [ df[_cols].stack() for df in exps.values() ]
-        # stacked_data = [ df.stack() for df in exps.values() ]
+        ## TODO can check to ensure not exporting all data and stack this smaller amount of data
+        # stacked_data = [ df[_cols].stack() for df in exps.values() ]
+        stacked_data = [ df.stack() for df in exps.values() ]
         print('stacking...', flush=True, end='')
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
         print('done', flush=True)
