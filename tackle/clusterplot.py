@@ -133,13 +133,52 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
     kmeans = KMeans(n_clusters=nclusters, random_state=seed).fit(data)
 
-    fig, ax = silhouette_plot(data, kmeans.labels_)
+    clusters = pd.Series(data=kmeans.labels_, index=data.index)
+    cluster_order = clusters.sort_values().index
+
+    # order the kmeans clusters via hierachical clustering for visual display
+    _d = dict()
+    for c in clusters.unique():
+        sel = data.loc[ clusters[clusters==c].index ]
+        _d[c] = sel.mean() # or median, or mean/std, or some variation
+    _df = pd.DataFrame(_d).T
+    _linkage = hierarchy.linkage(_df, method='ward', optimal_ordering=True)
+    _dend = hierarchy.dendrogram(_linkage, no_plot=True)
+    _order = _dend['leaves']
+    cluster_order = _df.iloc[_order].index
+    clusters_categorical = pd.Series(pd.Categorical(clusters, categories=cluster_order, ordered=True),
+                                        index=clusters.index).sort_values()
+    cluster_order_remapping = {c: i for i, c in enumerate(cluster_order)}
+    clusters = clusters.map(cluster_order_remapping)
+
+    suborder = list()
+    for c in clusters_categorical.cat.categories:
+        ids = clusters_categorical.where(lambda x: x == c).dropna().index
+
+        _linkage = hierarchy.linkage(data.loc[ids], method='ward', optimal_ordering=True)
+        _dend = hierarchy.dendrogram(_linkage, no_plot=True)
+        _order = _dend['leaves']
+        suborder.append(data.loc[ids].iloc[_order].index)
+
+    suborder = np.concatenate(suborder)
+
+    clusters_categorical = clusters_categorical.loc[suborder]
+
+
+    silhouette_scores = silhouette_samples(data, clusters.values)
+
+
+    # fig, ax = silhouette_plot(data, kmeans.labels_)
+    fig, ax = silhouette_plot(data, clusters.values)
 
 
     ret = {'nclusters': nclusters, 'auto': {'fig': autofig, 'ax': autoax},
            'silhouette': {'fig': fig, 'ax': ax},
-           'kmeans': kmeans,
-           'nclusters': nclusters
+           'clusters': clusters,
+           # 'kmeans': kmeans,
+           'nclusters': nclusters,
+           'clusters_categorical': clusters_categorical,
+           'silhouette_scores': silhouette_scores
     }
 
     return ret
@@ -290,28 +329,16 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
     if nclusters is not None:
 
         kmeans_result = calc_kmeans(data_t, nclusters, seed, max_autoclusters)
-        kmeans = kmeans_result['kmeans']
-        clusters = pd.Series(data=kmeans.labels_, index=data.index)
-        cluster_order = clusters.sort_values().index
-        # order the kmeans clusters via hierachical clustering for visual display
-        _d = dict()
-        for c in clusters.unique():
-            sel = data_t.loc[ clusters[clusters==c].index ]
-            _d[c] = sel.mean() # or median, or mean/std, or some variation
-        _df = pd.DataFrame(_d).T
-        _linkage = hierarchy.linkage(_df, method='single', optimal_ordering=True)
-        _dend = hierarchy.dendrogram(_linkage, no_plot=True)
-        _order = _dend['leaves']
-        cluster_order = _df.iloc[_order].index
-        clusters_categorical = pd.Series(pd.Categorical(clusters, categories=cluster_order, ordered=True),
-                                         index=clusters.index).sort_values()
-        cluster_order_remapping = {c: i for i, c in enumerate(cluster_order)}
-        clusters = clusters.map(cluster_order_remapping)
+        # kmeans = kmeans_result['kmeans']
+        clusters = kmeans_result['clusters']
+        clusters_categorical = kmeans_result['clusters_categorical'] #optimally ordered for visualization
+
+
 
         plot_data = data_t.loc[clusters_categorical.index]
 
-        cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=max(6, kmeans.n_clusters)))
-        cmap_mapping = {val : next(cmap) for val in range(kmeans.n_clusters)}
+        cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=max(6, nclusters)))
+        cmap_mapping = {val : next(cmap) for val in range(nclusters)}
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
         cluster_data = data_t.copy()
@@ -319,7 +346,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
             # cluster_data[mask] = np.NAN
             cluster_data[mask] = 0
         cluster_data = cluster_data.assign(Cluster=clusters+1)
-        cluster_data['silhouette_score'] = silhouette_samples(data_t, kmeans.labels_)
+        cluster_data['silhouette_score'] = kmeans_result['silhouette_scores']
 
         _genemapper = GeneMapper()
         if not gene_symbols:
