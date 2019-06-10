@@ -66,7 +66,7 @@ def calc_optimal_clusters(data, start=2, end=20, random_state=None):
     for i in range(start, end+1):
         kmeans = KMeans(n_clusters=i, random_state=random_state).fit(data)
 
-        score = silhouette_score(data, kmeans.labels_)
+        score = silhouette_score(data, kmeans.labels_, random_state=random_state)
 
         scores.append(score)
 
@@ -86,7 +86,7 @@ def silhouette_plot(data, labels):
     # ax.set_xlim([-0.1, 1])
     ax.set_ylim([0, len(data) + (n_clusters + 1) * 10])
 
-    silhouette_avg = silhouette_score(data, labels)
+    silhouette_avg = silhouette_score(data, labels, random_state=random_state)
     sample_silhouette_values = silhouette_samples(data, labels)
 
     y_lower = 10
@@ -129,7 +129,8 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
     autofig, autoax = None, None
     if nclusters == 'auto':
-        nclusters, autofig, autoax = calc_optimal_clusters(data, end=max_autoclusters)
+        nclusters, autofig, autoax = calc_optimal_clusters(data, end=max_autoclusters,
+                                                           random_state=seed)
 
     kmeans = KMeans(n_clusters=nclusters, random_state=seed).fit(data)
 
