@@ -168,7 +168,6 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
     silhouette_scores = silhouette_samples(data, clusters.values)
 
-
     # fig, ax = silhouette_plot(data, kmeans.labels_)
     fig, ax = silhouette_plot(data, clusters.values, random_state=seed)
 
@@ -343,9 +342,10 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
         cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
 
         cluster_data = data_t.copy()
-        if show_missing_values:
+        # ?? this is not right
+        # if show_missing_values:
             # cluster_data[mask] = np.NAN
-            cluster_data[mask] = 0
+            # cluster_data[mask] = 0
         cluster_data = cluster_data.assign(Cluster=clusters+1)
         cluster_data['silhouette_score'] = kmeans_result['silhouette_scores']
 
