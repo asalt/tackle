@@ -152,7 +152,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
                 normed=False, linkage='average',
                 gene_symbol_fontsize=8, legend_include=None, legend_exclude=None,
-                metadata_colors=None, circle_col_markers=False,
+                metadata_colors=None, circle_col_markers=False, circle_col_marker_size=12,
                 force_optimal_ordering=False,
 ):
     """
@@ -460,6 +460,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
                             mask=mask.loc[plot_data.index] if show_missing_values else None,
                             circle_col_markers=circle_col_markers,
+                            circle_col_marker_size=circle_col_marker_size,
                             force_optimal_ordering=force_optimal_ordering,
                             # heatmap_height_ratio=heatmap_height_ratio,
                             # dendrogram_width_ratio=dendrogram_width_ratio,

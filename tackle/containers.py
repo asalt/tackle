@@ -1239,6 +1239,7 @@ class MyClusterGrid(ClusterGrid):
     def __init__(self, data, pivot_kws=None, z_score=None, standard_scale=None,
                  figsize=None, row_colors=None, col_colors=None, mask=None,
                  expected_size_dendrogram=1.0, circle_col_markers=False,
+                 circle_col_marker_size=60,
                  force_optimal_ordering=False,
                  expected_size_colors=0.25):
         """Grid object for organizing clustered heatmap input on to axes"""
@@ -1249,6 +1250,7 @@ class MyClusterGrid(ClusterGrid):
             self.data = pd.DataFrame(data)
 
         self.circle_col_markers = circle_col_markers
+        self.circle_col_marker_size = circle_col_marker_size
 
         self.data2d = self.format_data(self.data, pivot_kws, z_score,
                                        standard_scale)
@@ -1508,7 +1510,7 @@ class MyClusterGrid(ClusterGrid):
 
 
             if self.circle_col_markers:
-                scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=60,
+                scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=self.circle_col_marker_size,
                         xticklabels=False, yticklabels=col_color_labels, **kws)
             else:
                 heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,

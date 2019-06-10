@@ -511,7 +511,8 @@ def export(ctx, level, genesymbols):
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
 @click.option('--cmap', default=None, show_default=True)
-@click.option('--circle-col-markers', is_flag=True, default=False,)
+@click.option('--circle-col-markers', is_flag=True, default=False, show_default=True)
+@click.option('--circle-col-marker-size', default=60, show_default=True)
 @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
               help='''Optionally specify the figuresize (width, height) in inches
               If not specified, tries to use a reasonable default depending on the number of
@@ -561,7 +562,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_optimal_ordering,
+def cluster(ctx, cmap, circle_col_markers, circle_col_marker_size, col_cluster, dbscan, figsize, force_optimal_ordering,
             genefile, gene_symbols,
             gene_symbol_fontsize, highlight_geneids, legend_include, legend_exclude, linkage,
             max_autoclusters, nclusters,
@@ -616,7 +617,8 @@ def cluster(ctx, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_o
                          legend_include=legend_include,
                          legend_exclude=legend_exclude,
                          metadata_colors=data_obj.metadata_colors,
-                         circle_col_markers=circle_col_markers
+                         circle_col_markers=circle_col_markers,
+                         circle_col_marker_size=circle_col_marker_size,
     )
 
     g = result['clustermap']['clustergrid']
