@@ -171,12 +171,11 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
     # fig, ax = silhouette_plot(data, kmeans.labels_)
     fig, ax = silhouette_plot(data, clusters.values)
 
-
     ret = {'nclusters': nclusters, 'auto': {'fig': autofig, 'ax': autoax},
            'silhouette': {'fig': fig, 'ax': ax},
            'clusters': clusters,
            # 'kmeans': kmeans,
-           'nclusters': nclusters,
+           'nclusters': clusters.nunique(),
            'clusters_categorical': clusters_categorical,
            'silhouette_scores': silhouette_scores
     }
@@ -331,6 +330,7 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
         kmeans_result = calc_kmeans(data_t, nclusters, seed, max_autoclusters)
         # kmeans = kmeans_result['kmeans']
         clusters = kmeans_result['clusters']
+        nclusters = kmeans_result['nclusters']
         clusters_categorical = kmeans_result['clusters_categorical'] #optimally ordered for visualization
 
 
