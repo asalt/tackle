@@ -78,7 +78,7 @@ def calc_optimal_clusters(data, start=2, end=20, random_state=None):
 
     return best_cluster, fig, ax
 
-def silhouette_plot(data, labels):
+def silhouette_plot(data, labels, random_state=None):
 
     fig, ax = plt.subplots()
     n_clusters = len(set(labels))
@@ -170,7 +170,7 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
 
     # fig, ax = silhouette_plot(data, kmeans.labels_)
-    fig, ax = silhouette_plot(data, clusters.values)
+    fig, ax = silhouette_plot(data, clusters.values, random_state=seed)
 
     ret = {'nclusters': nclusters, 'auto': {'fig': autofig, 'ax': autoax},
            'silhouette': {'fig': fig, 'ax': ax},
