@@ -61,11 +61,16 @@ def plotter(data, linear=False, z_score=False, colors=None, legend_colors=None, 
 
 def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap=None, linear=False,
             figsize=None, xtickrotation=None, xticksize=None,
-            z_score=False, base_outfunc=None, file_fmts=('.png',), gid_symbol=None, metadata_colors=None):
+            z_score=False, base_outfunc=None, file_fmts=('.png',), gid_symbol=None, metadata_colors=None,
+            retain_order=False
+):
     """
     Plot barplots for each gene in a list of genes
     :file_fmts: iterable of valid file formats for matplotlib to save figures
     """
+
+    if xtickrotation is None:
+        xtickrotation=30
 
 
     if cmap is None:
@@ -112,10 +117,12 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         else:
             _iter = legend_colors.items()
 
-        for entry, _color in _iter:
-            samples = [x for x, y in colors.items() if y == _color]
-            for s in samples:
-                the_order.append(s)
+        if not retain_order:
+            for entry, _color in _iter:
+                samples = [x for x, y in colors.items() if y == _color]
+                for s in samples:
+                    the_order.append(s)
+
 
     else:
         colors = None
@@ -138,8 +145,10 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
     for gene in genes:
 
 
-        # import ipdb ;ipdb.set_trace()
         edata = X.loc[gene].to_frame('Expression').join(metadata).reset_index()
+        if the_order:
+            new_ix_order = [edata[edata['index'] == x].index[0] for x in the_order]
+            edata = edata.loc[new_ix_order]
         # edata = X.loc[gene]
 
         # data = OrderedDict()
@@ -153,49 +162,84 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         symbol = gid_symbol.get(gene, '')
         title = "{} {}".format(gene, symbol)
 
+
         if not average:
             data_size = len(edata)
         else:
             data_size = metadata[average].nunique()
-        w = data_size * .75
+
+        MAX_ROW = 18
+
+        nrow = int( np.ceil(data_size / MAX_ROW) )
+        # w = data_size * .75
+        w = min(data_size, MAX_ROW) * .75
         w = max(w, 4)
 
         # fig, ax = plt.subplots(figsize=(w,5))
         if figsize:
             w, h = figsize
         else:
-            h = 5
+            h = 5 * (nrow*.75)
+            h = min(h, 15)
         print(w,h)
+
         fig = plt.figure(figsize=(w,h))
-        gs = gridspec.GridSpec(1,10)
-        ax = fig.add_subplot(gs[0, 0:9])
-        ax_leg = fig.add_subplot(gs[0, 9])
+        # gs = gridspec.GridSpec(1,10)
+        gs = gridspec.GridSpec(nrow, 10, wspace=.4)
+
+        # ax = fig.add_subplot(gs[0, 0:9])
+
 
         x = 'index' if not average else average
+        chunks = np.array_split(np.arange(data_size), nrow)
 
-        sb.barplot(x=x, y='Expression', data=edata, ax=ax, ci='sd', capsize=.2,
-                   palette=colors, order=the_order,
-        )
+        axs = list()
+        for chunk, row in zip(chunks, range(nrow)):
+            if axs:
+                ax = fig.add_subplot(gs[row, 0:9], sharey=axs[row-1])
+            else:
+                ax = fig.add_subplot(gs[row, 0:9])
 
-        if average:
-            sb.swarmplot(x=x, y='Expression', hue=None, data=edata, order=the_order, hue_order=None, dodge=False,
-                         orient=None, color=None, palette=colors, size=5, edgecolor='gray', linewidth=1., ax=ax, )
+            sb.barplot(x=x, y='Expression', data=edata.iloc[chunk], ax=ax, ci='sd', capsize=.2,
+                    # palette=colors, order=the_order,
+                       palette=colors, order=None,
+            )
+
+            if average:
+                sb.swarmplot(x=x, y='Expression', hue=None, data=edata.iloc[chunk], order=the_order,
+                             hue_order=None, dodge=False, orient=None, color=None, palette=colors,
+                             size=5, edgecolor='gray', linewidth=1., ax=ax, )
 
 
-        ylabel = 'log$_{10}$ iBAQ' if not linear else 'iBAQ'
-        if z_score:
-            ylabel += ' z scored'
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
+            yticks = ax.get_yticks()
+            print(yticks)
+            if len(yticks) < 3:
+                ax.yaxis.set_major_locator(mpl.ticker.LinearLocator(3))
+                ax.yaxis.set_minor_locator(MultipleLocator(1))
 
-        ax.legend([], frameon=False)
-        if xtickrotation is None:
-            fig.autofmt_xdate()
-        else:
+
+            ax.grid(axis='y', which='both')
+            axs.append(ax)
+
+
+            ylabel = 'log$_{10}$ iBAQ' if not linear else 'iBAQ'
+            if z_score:
+                ylabel += ' z scored'
+            ax.set_ylabel(ylabel)
+            ax.set_xlabel('')
+
+            ax.legend([], frameon=False)
+            # if xtickrotation is None:
+            #     xtickrotation=45
+            #     # fig.autofmt_xdate()
+            # else:
             for tick in ax.get_xticklabels():
                 tick.set_rotation(xtickrotation)
                 if xticksize is not None:
                     tick.set_fontsize(xticksize)
+
+        axs[0].set_title(title)
+        ax_leg = fig.add_subplot(gs[:, 9])
 
 
         if legend_colors is not None:
@@ -219,14 +263,30 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
             )
             ax_leg.add_artist(leg)
 
-        ax.set_ylabel(ylabel)
+        # ax.set_ylabel(ylabel)
         sb.despine(ax=ax_leg, bottom=True, left=True)
         ax_leg.set_xticks([])
         ax_leg.set_yticks([])
 
 
-        fig.tight_layout(w_pad=.1)
-        ax.set_xlabel('')
+        fig.subplots_adjust(left=.10, bottom=.08, top=.96, hspace=.8)
+
+        # do this at the end, after all plots are drawn
+        for ax in axs:
+            yticks = ax.get_yticks()
+            print(yticks)
+            if len(yticks) < 4:
+
+                ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(
+                    np.ceil(ax.get_ylim()[1] / 3)
+                )
+                )
+
+                # ax.yaxis.set_major_locator(mpl.ticker.LinearLocator(3))
+                # ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+
+        # fig.tight_layout(w_pad=.1)
+        # ax.set_xlabel('')
 
         # ax_leg.legend
 

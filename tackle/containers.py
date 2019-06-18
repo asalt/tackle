@@ -523,9 +523,12 @@ class Data:
                 # df = assign_cols(exp.df, name)
                 if self.metrics and self.metrics_after_filter and not self.metrics_unnormed_area:
                     self._update_metrics(df, name, area_column='area')
+                elif self.metrics and self.metrics_after_filter and self.metrics_unnormed_area:
+                    raise NotImplementedError('Not available. Use --after-norm in conjunction with --after-filter')
                 # exps[name] = df.set_index(df.index.astype(int))
                 df.index = [maybe_int(x) for x in df.index]
                 exps[name] = df
+
 
         self.gid_funcat_mapping = gid_funcat_mapping
 
