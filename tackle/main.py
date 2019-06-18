@@ -13,6 +13,7 @@ from functools import partial
 import copy
 from tempfile import NamedTemporaryFile
 import subprocess
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -125,12 +126,17 @@ def run(data_obj):
 #     pass
 class Path_or_Subcommand(click.Path):
 
+    EXCEPTIONS = 'make_config', # this one we just run
+
     def __init__(self, *args, **kwargs ):
         super(Path_or_Subcommand, self).__init__(*args, **kwargs)
 
     def convert(self, value, param, ctx):
 
         commands = ctx.command.commands.keys()
+
+        if value in self.EXCEPTIONS:
+            return value
 
         if value in commands:
             help_txt = globals()[value].get_help(ctx)
@@ -376,6 +382,17 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     """
     # name, taxon, non_zeros, experiment_file):
 
+    if experiment_file in Path_or_Subcommand.EXCEPTIONS:
+        # then is it actually a subcommand (only make_config right now)
+        # we wish to run on its own, without loading data
+
+        # hacky
+        parser = make_config.make_parser(ctx)
+        the_kws = parser.parse_args(sys.argv[2:])[0]
+        ctx.invoke(make_config, **the_kws)
+        ctx.exit(0)
+
+
     if not limma:
         raise click.BadOptionUsage('limma', 'At the moment, only use of `limma` is supported')
 
@@ -416,8 +433,8 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
         analysis_name = 'Unnamed'
 
     now = datetime.now()
-    context = click.get_current_context()
-    params = context.params
+    # context = click.get_current_context() # same thing as ctx
+    params = ctx.params
 
     data_obj = Data(additional_info=additional_info, batch=batch,
                     batch_nonparametric=batch_nonparametric, batch_noimputation=batch_noimputation,
@@ -455,6 +472,63 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     param_df.to_csv(outname, sep='\t')
 
     ctx.obj['data_obj'] = data_obj
+
+@main.command('make_config')
+@click.option('--delimiter', type=str, default=None, show_default=True,
+              help="Delimiter used in the input file.")
+@click.option('--excel', default=False, is_flag=True, show_default=True,
+              help="""Input file is an excel sheet.""")
+@click.option('--excel-sheetnumber', default=0, type=int, show_default=True,
+              help="""Sheet number to use if input is excel file. For use with `--excel`.""")
+@click.option('--infer-inputfile/--no--infer-inputfile', default=True, is_flag=True, show_default=True,
+              help="""Automatically try to infer input file and delimiter based on file extension.
+              Note explicit use of `--delimiter` and `--excel` will overwrite this behavior.
+              """
+)
+@click.option('--output', default=None, show_default=True,
+              help="Name and location to save output. Default is same location as input with same basename."
+)
+@click.argument('inputfile', type=click.Path(exists=True, dir_okay=False))
+def make_config(delimiter, excel, excel_sheetnumber, infer_inputfile, output, inputfile):
+    """
+    Convert a delimited (tab, csv, excel, etc) file into a config file.
+    """
+
+    from .Ini2Csv.main import Csv2Conf
+
+    SEP_DICT = {'.tab': '\t', '.tsv': '\t', '.ssv': ';', 'csv': ',',
+                'xls': 'excel', 'xlsx': 'excel'
+    }
+
+
+    filefront, ext = os.path.splitext(inputfile)
+
+
+    if infer_inputfile and delimiter is None:
+
+        sep = SEP_DICT.get(ext)
+        if sep is None:
+            warn('Separator not known for extension {}, falling back to default tab'.format(ext))
+            sep = '\t'
+
+    elif delimiter and not excel:
+        sep = delimiter
+
+    elif excel:
+        sep = 'excel'
+
+
+    if output is not None:
+        out = output
+    else:
+        out = filefront+'.conf'
+
+    c = Csv2Conf(inputfile, sep=sep, excel_sheetnumber=excel_sheetnumber)
+    print("Writing {}".format(out), end=' ...', flush=True)
+    c.export(out)
+    print('done')
+
+
 
 @main.command('scatter')
 @click.option('--colors-only', default=False, is_flag=True, show_default=True,
@@ -507,6 +581,9 @@ def export(ctx, level, genesymbols):
     data_obj.perform_data_export(level, genesymbols=genesymbols)
 
 @main.command('cluster')
+@click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2G', 'PeptideCount', 'PeptideCount_S',
+                                               'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
+]), default=None, show_default=True )
 @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
@@ -561,7 +638,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
-def cluster(ctx, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_optimal_ordering,
+def cluster(ctx, annotate, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_optimal_ordering,
             genefile, gene_symbols,
             gene_symbol_fontsize, highlight_geneids, legend_include, legend_exclude, linkage,
             max_autoclusters, nclusters,
@@ -578,7 +655,13 @@ def cluster(ctx, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_o
         genes = parse_gid_file(genefile)
 
     data_obj = ctx.obj['data_obj']
+
     X = data_obj.areas_log_shifted
+
+    # X = data_obj.areas_log_shifted.copy()
+    # X[data_obj.areas == 0] = 0 # fill the zeros back
+    # X[data_obj.mask] = np.NaN
+
     data_obj.set_highlight_gids(highlight_geneids)
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
@@ -592,7 +675,18 @@ def cluster(ctx, cmap, circle_col_markers, col_cluster, dbscan, figsize, force_o
     legend_exclude = set(legend_exclude) & set(valid_entries)
     # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
+
+    annot_mat = None
+    if annotate:
+
+        annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
+                     .reset_index(level=1, drop=True)
+                     .fillna(0)
+                     .astype(int)
+        )
+
     result = clusterplot(X,
+                         annot_mat=annot_mat,
                          cmap_name=cmap,
                          highlight_gids=data_obj.highlight_gids,
                          highlight_gid_names=data_obj.highlight_gid_names,
@@ -886,260 +980,280 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 
     nsamples = len(pheno.index)
     ngroups  = pheno[group].nunique()
-    groups   = pheno[group].unique()
+    # groups   = pheno[group].unique()
     # pheno_indicator = dict()
     # for ix, grp in enumerate(groups):
     #     pheno_indicator[grp] = ix
     # classes  = list(map(str, [pheno_indicator[grp] for grp in pheno.loc[group]]))
     classes = [grp.replace(' ', '_') for grp in pheno[group]]
 
-    cls_comparison = ''
-    if ngroups == 2:  # reverse it
+    # cls_comparison = ''
+    # if ngroups == 2:  # reverse it
+    #     cls_comparison = '#{1}_versus_{0}'.format(*groups)
+    # elif ngroups != 2:
+    #     raise ValueError('Must have 2 groups')
+
+    if ngroups < 2:
+        raise ValueError('Must have at least 2 groups')
+
+    import itertools
+    for groups in itertools.combinations(pheno[group].unique(), 2):
+
+
+        nsamples = pheno[pheno[group].isin(groups)].pipe(len)
+
         cls_comparison = '#{1}_versus_{0}'.format(*groups)
-    elif ngroups != 2:
-        raise ValueError('Must have 2 groups')
 
 
-    namegen = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
-                      non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                      batch=data_obj.batch_applied,
-                      batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                      outpath=data_obj.outpath)
+
+        namegen = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
+                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          outpath=data_obj.outpath, cls=cls_comparison.strip('#'))
 
 
-    # param_file = os.path.abspath(namegen('gsea_params') + '.txt')
-    param_file = namegen('gsea_params') + '.txt'
+        # param_file = os.path.abspath(namegen('gsea_params') + '.txt')
+        param_file = namegen('gsea_params') + '.txt'
 
-    gsea_jar = os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                            'GSEA', 'gsea-3.0.jar')
+        gsea_jar = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                                'GSEA', 'gsea-3.0.jar')
 
-    geneset_mapping = {'hallmark': 'h.all.v6.1.entrez.gmt',
-                       'go_biological': 'c5.bp.v6.1.entrez.gmt',
-                       'curated.CGP': 'c2.all.v6.1.entrez.gmt',
-                       'curated.CP.all': 'c2.cp.v6.1.entrez.gmt',
-                       'curated.CP.BioCarta': 'c2.cp.biocarta.v6.1.entrez.gmt',
-                       'curated.CP.KEGG': 'c2.cp.kegg.v6.1.entrez.gmt',
-                       'curated.CP.Reactome': 'c2.cp.reactome.v6.1.entrez.gmt',
-                       'oncogenic': 'c6.all.v6.1.entrez.gmt',
-                       'go.All': 'c5.all.v6.1.entrez.gmt',
-                       'go.Bio': 'c5.bp.v6.1.entrez.gmt',
-                       'go.Cell': 'c5.cc.v6.1.entrez.gmt',
-                       'go.Molecular': 'c5.mf.v6.1.entrez.gmt'
-                       # : 'msigdb.v6.1.entrez.gmt',
-    }
-    # get most recent, sort by name and take last
-    homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                                                 'data', 'homologene*data')),
-                          reverse=True)[0]
+        geneset_mapping = {'hallmark': 'h.all.v6.1.entrez.gmt',
+                        'go_biological': 'c5.bp.v6.1.entrez.gmt',
+                        'curated.CGP': 'c2.all.v6.1.entrez.gmt',
+                        'curated.CP.all': 'c2.cp.v6.1.entrez.gmt',
+                        'curated.CP.BioCarta': 'c2.cp.biocarta.v6.1.entrez.gmt',
+                        'curated.CP.KEGG': 'c2.cp.kegg.v6.1.entrez.gmt',
+                        'curated.CP.Reactome': 'c2.cp.reactome.v6.1.entrez.gmt',
+                        'oncogenic': 'c6.all.v6.1.entrez.gmt',
+                        'go.All': 'c5.all.v6.1.entrez.gmt',
+                        'go.Bio': 'c5.bp.v6.1.entrez.gmt',
+                        'go.Cell': 'c5.cc.v6.1.entrez.gmt',
+                        'go.Molecular': 'c5.mf.v6.1.entrez.gmt'
+                        # : 'msigdb.v6.1.entrez.gmt',
+        }
+        # get most recent, sort by name and take last
+        homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                                                    'data', 'homologene*data')),
+                            reverse=True)[0]
 
 
-    homologene = (pd.read_table(homologene_f, header=None,
-                                names=('Homologene', 'TaxonID', 'GeneID',
-                                       'Symbol', 'ProteinGI', 'ProteinAccession'))
-    )
-    # check if we have non-human GeneIDs
-    hgene_query = homologene[ homologene.GeneID.isin(expression.index) ]
-    if hgene_query.TaxonID.nunique() > 1:
-        raise ValueError('No support for multi-species GSEA')
-    if hgene_query.TaxonID.nunique() == 1 and hgene_query.TaxonID.unique()[0] != 9606:
-        # remap
-        print('Remapping {} GeneIDs to human'.format(hgene_query.TaxonID.unique()[0]))
-        gid_hgene = hgene_query[['GeneID', 'Homologene']].set_index('GeneID')['Homologene'].to_dict()
-        hgene_hugid = (homologene.query('TaxonID==9606') [['GeneID', 'Homologene']]
-                       .set_index('Homologene')['GeneID'].to_dict()
+        homologene = (pd.read_table(homologene_f, header=None,
+                                    names=('Homologene', 'TaxonID', 'GeneID',
+                                        'Symbol', 'ProteinGI', 'ProteinAccession'))
         )
-        expression.index = expression.index.map( lambda x: hgene_hugid.get( gid_hgene.get(x) ))
-
-    expression = expression.loc[ expression.index.dropna() ]
-    expression.index = expression.index.astype(int)
-    if expression.index.nunique() < len(expression.index):
-        expression = expression.groupby(expression.index).mean()
-
-
-    collapse = 'true' if collapse else 'false'
-
-    for gs in geneset:
-
-        outname = namegen('gsea', pathway=gs)
-        outdir = os.path.abspath(os.path.join(data_obj.outpath, 'gsea'))
-        report_name = os.path.split(outname)[-1]
-
-        f = geneset_mapping.get(gs)
-
-        geneset_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                                    'GSEA', 'genesets', f)
-
-        # with NamedTemporaryFile(suffix='.txt') as f, NamedTemporaryFile(mode='w', suffix='.cls') as g:
-        with named_temp(suffix='.txt') as f, named_temp(mode='w', suffix='.cls') as g:
-            expression.to_csv(f.name, sep='\t')
-            f.close() # windows compat
-        # with open('./results/gsea/kip_dda_kinases_pheno.cls', 'w') as g:
-            g.write('{} {} 1\n'.format(nsamples, ngroups))
-            g.write('# {}\n'.format(' '.join(groups)))
-            # g.write('{}\n'.format(' '.join(classes)))
-            g.write('{}\n'.format(' '.join(pheno[group])))
-            g.file.flush()
-            g.close() # windows compat
-
-            # rpt_name\t{rpt_name}
-            params = """
-            collapse\t{collapse}
-            metric\t{metric}
-            mode\t{mode}
-            norm\t{norm}
-            order\tdescending
-            include_only_symbols\tfalse
-            permute\t{permute}
-            plot_top_x\t{plot_top_x}
-            rnd_type\t{rnd_type}
-            set_max\t{set_max}
-            set_min\t{set_min}
-            nperm\t{nperm}
-            res\t{res}
-            cls\t{cls}{cls_comparison}
-            gmx\t{gmx}
-            out\t{outdir}
-            rpt_label\t{rpt_label}
-            gui\tfalse
-            """.format(collapse=collapse, metric=metric, mode=mode, norm=norm, permute=permute,
-                    rnd_type=rnd_type, scoring_scheme=scoring_scheme, sort=sort, set_max=set_max,
-                    set_min=set_min, nperm=number_of_permutations, plot_top_x=plot_top_x,
-                    cls_comparison=cls_comparison,
-                    # rpt_name=report_name,
-                    res=os.path.abspath(f.name), cls=os.path.abspath(g.name),
-                    gmx=os.path.abspath(geneset_file), outdir=outdir, rpt_label=report_name )
-            with open(param_file, 'w') as f:
-                f.write(params)
-
-
-            res = subprocess.run(['java', '-Xmx8192m', '-cp', gsea_jar, 'xtools.gsea.Gsea',
-                                '-param_file', param_file,
-            ],
-                                # stdout=subprocess.PIPE
+        # check if we have non-human GeneIDs
+        hgene_query = homologene[ homologene.GeneID.isin(expression.index) ]
+        if hgene_query.TaxonID.nunique() > 1:
+            raise ValueError('No support for multi-species GSEA')
+        if hgene_query.TaxonID.nunique() == 1 and hgene_query.TaxonID.unique()[0] != 9606:
+            # remap
+            print('Remapping {} GeneIDs to human'.format(hgene_query.TaxonID.unique()[0]))
+            gid_hgene = hgene_query[['GeneID', 'Homologene']].set_index('GeneID')['Homologene'].to_dict()
+            hgene_hugid = (homologene.query('TaxonID==9606') [['GeneID', 'Homologene']]
+                        .set_index('Homologene')['GeneID'].to_dict()
             )
+            expression.index = expression.index.map( lambda x: hgene_hugid.get( gid_hgene.get(x) ))
 
-            res.check_returncode()
+        _expression = expression.loc[ expression.index.dropna(), pheno[pheno[group].isin(groups)].index
+        ]
 
-        folders = [os.path.abspath(os.path.join(outdir, f)) for f in os.listdir(outdir) if ('Gsea' in f)]
-        folders.sort(key=os.path.getmtime)
-
-        new_folder = folders[-1]
-        index = os.path.join(new_folder, 'index.html')
-        if sys.platform == "darwin":  # check if on OSX
-            index = 'file://' + index
-
-        if show_result:
-            import webbrowser
-            webbrowser.open(index)
-
-        # parse result
-        # GSEA outputs the summary files of the form:
-        # gsea_report_for_[groupname]_[digit_timestamp].xls
-        group0 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[0])) )
-        group1 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[1])) )
-        assert len(group0) == len(group1) == 1
-        group0_df = pd.read_table(group0[0], index_col='NAME')
-        group1_df = pd.read_table(group1[0], index_col='NAME')
-
-        # gsea_sig = group0_df[ group0_df['FWER p-val' ] < .55 ].join(
-        #     group1_df[ group1_df['FWER p-val'] < .25 ],
-        #     lsuffix='_group0', rsuffix='_group1',
-        #     how='outer'
-        # )
-
-        cmap = mpl.cm.Reds_r
-        bounds = np.linspace(0, 1, 21)
-        cnorm = mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
-        powernorm = mpl.colors.PowerNorm(.5, vmin=0, vmax=1)
-
-        gsea_sig = pd.DataFrame()
-        cutoff = .25
-        while len(gsea_sig) < 5:
-            if cutoff > 1:
-                break
-            gsea_sig = pd.concat([group0_df[ group0_df['FWER p-val'] < cutoff ],
-                                  group1_df[ group1_df['FWER p-val'] < cutoff ],
-            ])
-            cutoff += .1
-
-        if gsea_sig.empty:
-            print('No gene sets to plot!')
-            # return
-        tokeep = gsea_sig.NES.sort_values(ascending=False).head(number).index
-        idx = [x for x in gsea_sig.index if x in tokeep]
-        gsea_sig = gsea_sig.loc[idx]
-
-        gsea_sig['color'] = gsea_sig['FWER p-val'].apply(lambda x:
-                                mpl.colors.to_hex( cmap(cnorm(powernorm(x))) )
-        )
-        import textwrap
-        gsea_sig.index = gsea_sig.index +  ['*' if x<.25 else '' for x in gsea_sig['FWER p-val'] ]
-        gsea_sig.index = gsea_sig.index.map(lambda x: textwrap.fill(x.replace('_', ' '),
-                                                                    24,
-                                                                    break_long_words=False) )
-        # print(gsea_sig[['FWER p-val', 'NES', 'color']])
-
-        # mpl.colors.Normalize(vmin=1.,vmax=1.)
-        if gsea_sig.NES.max() * gsea_sig.NES.min() < 0:
-            nes_range = gsea_sig.NES.max() + abs(gsea_sig.NES.min())
-        else:
-            nes_range = max(abs(gsea_sig.NES.max()), 2.5)
-
-        figwidth = np.round(nes_range*2.5, decimals=1)
+        _expression.index = expression.index.astype(int)
+        if _expression.index.nunique() < len(_expression.index):
+            _expression = _expression.groupby(_expression.index).mean()
 
 
-        figheight = max(4, min(gsea_sig.pipe(len) // 1.5, 14))
-        fig = plt.figure(figsize=(figwidth, figheight))
-        gs = mpl.gridspec.GridSpec(2, 1,
-                                   width_ratios=[1,],
-                                   height_ratios=[19, 1],
-                                   hspace=.4,
-        )
-        # ax0 = plt.subplot(gs[0])
-        ax0 = fig.add_subplot(gs[0])
-        # ax1 = plt.subplot(gs[1])
-        # cax = plt.subplot(gs[1:])
-        cax = fig.add_subplot(gs[1:])
-        gsea_sig['NES'].fillna(0).plot.barh(ax=ax0, color=gsea_sig.color, edgecolor='#222222',
-                                            linewidth=2)
-        ax0.axvline(color='#222222')
-        # gsea_sig['NES_group1'].fillna(0).plot.barh(colormap=cmap, ax=ax1)
-        # ax1.set_yticklabels(())
+        collapse = 'true' if collapse==True else 'false'
 
-        gradient = np.apply_along_axis(lambda x: cnorm(powernorm(x)), 0, np.linspace(0, 1, 256))
-        gradient = np.vstack((gradient, gradient))
-        cax.imshow(gradient, aspect='auto', cmap=cmap)
-        cax.set_yticklabels(())
+        for gs in geneset:
 
-        start, end = cax.get_xlim()
-        cax.xaxis.set_ticks(np.linspace(start, end, 11))
-        cax.set_xticklabels( ['{:.2f}'.format(x) for x in np.linspace(0, 1, 11)] )
-        cax.set_xlabel('FWER p-val')
-        ax0.grid(axis='x')
+            outname = namegen('gsea', pathway=gs)
+            outdir = os.path.abspath(os.path.join(data_obj.outpath, 'gsea'))
+            report_name = os.path.split(outname)[-1]
 
-        ax0.set_ylabel('')
-        ax0.set_xlabel('NES')
+            f = geneset_mapping.get(gs)
 
-        for tick in ax0.yaxis.get_ticklabels():
-            txt = tick.get_text()
-            if len(txt) > 20:
-                size = 8
-            elif len(txt) > 30:
-                size = 6
+            geneset_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                                        'GSEA', 'genesets', f)
+
+            # with NamedTemporaryFile(suffix='.txt') as f, NamedTemporaryFile(mode='w', suffix='.cls') as g:
+            with named_temp(suffix='.txt') as f, named_temp(mode='w', suffix='.cls') as g:
+                _expression.to_csv(f.name, sep='\t')
+                f.close() # windows compat
+            # with open('./results/gsea/kip_dda_kinases_pheno.cls', 'w') as g:
+
+            ## =========================== cls file ================================== #
+                # g.write('{} {} 1\n'.format(nsamples, ngroups))
+
+                g.write('{} {} 1\n'.format(nsamples, '2'))
+                g.write('# {}\n'.format(' '.join(groups)))
+                # g.write('{}\n'.format(' '.join(classes)))
+                # g.write('{}\n'.format(' '.join(pheno[group])))
+                g.write('{}\n'.format( ' '.join(  pheno[pheno[group].isin(groups)][group] )
+                ))
+
+                g.file.flush()
+                g.close() # windows compat
+
+                # rpt_name\t{rpt_name}
+                params = """
+                collapse\t{collapse}
+                metric\t{metric}
+                mode\t{mode}
+                norm\t{norm}
+                order\tdescending
+                include_only_symbols\tfalse
+                permute\t{permute}
+                plot_top_x\t{plot_top_x}
+                rnd_type\t{rnd_type}
+                set_max\t{set_max}
+                set_min\t{set_min}
+                nperm\t{nperm}
+                res\t{res}
+                cls\t{cls}{cls_comparison}
+                gmx\t{gmx}
+                out\t{outdir}
+                rpt_label\t{rpt_label}
+                gui\tfalse
+                """.format(collapse=collapse, metric=metric, mode=mode, norm=norm, permute=permute,
+                        rnd_type=rnd_type, scoring_scheme=scoring_scheme, sort=sort, set_max=set_max,
+                        set_min=set_min, nperm=number_of_permutations, plot_top_x=plot_top_x,
+                        cls_comparison=cls_comparison,
+                        # rpt_name=report_name,
+                        res=os.path.abspath(f.name), cls=os.path.abspath(g.name),
+                        gmx=os.path.abspath(geneset_file), outdir=outdir, rpt_label=report_name )
+                with open(param_file, 'w') as f:
+                    f.write(params)
+
+                res = subprocess.run(['java', '-Xmx8192m', '-cp', gsea_jar, 'xtools.gsea.Gsea',
+                                    '-param_file', param_file,
+                ],
+                                    # stdout=subprocess.PIPE
+                )
+
+                res.check_returncode()
+
+            folders = [os.path.abspath(os.path.join(outdir, f)) for f in os.listdir(outdir) if ('Gsea' in f)]
+            folders.sort(key=os.path.getmtime)
+
+            new_folder = folders[-1]
+            index = os.path.join(new_folder, 'index.html')
+            if sys.platform == "darwin":  # check if on OSX
+                index = 'file://' + index
+
+            if show_result:
+                import webbrowser
+                webbrowser.open(index)
+
+            # parse result
+            # GSEA outputs the summary files of the form:
+            # gsea_report_for_[groupname]_[digit_timestamp].xls
+            group0 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[0])) )
+            group1 = glob.glob( os.path.join(new_folder, 'gsea_report_for_{}_[0-9]*.xls'.format(groups[1])) )
+            assert len(group0) == len(group1) == 1
+            group0_df = pd.read_table(group0[0], index_col='NAME')
+            group1_df = pd.read_table(group1[0], index_col='NAME')
+
+            # gsea_sig = group0_df[ group0_df['FWER p-val' ] < .55 ].join(
+            #     group1_df[ group1_df['FWER p-val'] < .25 ],
+            #     lsuffix='_group0', rsuffix='_group1',
+            #     how='outer'
+            # )
+
+            cmap = mpl.cm.Reds_r
+            bounds = np.linspace(0, 1, 21)
+            cnorm = mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
+            powernorm = mpl.colors.PowerNorm(.5, vmin=0, vmax=1)
+
+            gsea_sig = pd.DataFrame()
+            cutoff = .25
+            while len(gsea_sig) < 5:
+                if cutoff > 1:
+                    break
+                gsea_sig = pd.concat([group0_df[ group0_df['FWER p-val'] < cutoff ],
+                                    group1_df[ group1_df['FWER p-val'] < cutoff ],
+                ])
+                cutoff += .1
+
+            if gsea_sig.empty:
+                print('No gene sets to plot!')
+                # return
+            tokeep = gsea_sig.NES.sort_values(ascending=False).head(number).index
+            idx = [x for x in gsea_sig.index if x in tokeep]
+            gsea_sig = gsea_sig.loc[idx]
+
+            gsea_sig['color'] = gsea_sig['FWER p-val'].apply(lambda x:
+                                    mpl.colors.to_hex( cmap(cnorm(powernorm(x))) )
+            )
+            import textwrap
+            gsea_sig.index = gsea_sig.index +  ['*' if x<.25 else '' for x in gsea_sig['FWER p-val'] ]
+            gsea_sig.index = gsea_sig.index.map(lambda x: textwrap.fill(x.replace('_', ' '),
+                                                                        24,
+                                                                        break_long_words=False) )
+            # print(gsea_sig[['FWER p-val', 'NES', 'color']])
+
+            # mpl.colors.Normalize(vmin=1.,vmax=1.)
+            if gsea_sig.NES.max() * gsea_sig.NES.min() < 0:
+                nes_range = gsea_sig.NES.max() + abs(gsea_sig.NES.min())
             else:
-                size = 9
-            tick.set_size(size)
+                nes_range = max(abs(gsea_sig.NES.max()), 2.5)
+
+            figwidth = np.round(nes_range*2.5, decimals=1)
 
 
-        # plt.tight_layout()
-        # fig = plt.gcf()
-        groups[0], groups[1]
-        ax0.text(0, 1.04, groups[0], transform=ax0.transAxes)
-        ax0.text(1, 1.04, groups[1], transform=ax0.transAxes, ha='right')
-        gs.tight_layout(fig, rect=(0, 0, 1, .96))
-        # fig.subplots_adjust(left=.4)
-        # fig.tight_layout()
-        save_multiple(fig, outname, *file_fmts)
+            figheight = max(4, min(gsea_sig.pipe(len) // 1.5, 14))
+            fig = plt.figure(figsize=(figwidth, figheight))
+            gs = mpl.gridspec.GridSpec(2, 1,
+                                    width_ratios=[1,],
+                                    height_ratios=[19, 1],
+                                    hspace=.4,
+            )
+            # ax0 = plt.subplot(gs[0])
+            ax0 = fig.add_subplot(gs[0])
+            # ax1 = plt.subplot(gs[1])
+            # cax = plt.subplot(gs[1:])
+            cax = fig.add_subplot(gs[1:])
+            gsea_sig['NES'].fillna(0).plot.barh(ax=ax0, color=gsea_sig.color, edgecolor='#222222',
+                                                linewidth=2)
+            ax0.axvline(color='#222222')
+            # gsea_sig['NES_group1'].fillna(0).plot.barh(colormap=cmap, ax=ax1)
+            # ax1.set_yticklabels(())
+
+            gradient = np.apply_along_axis(lambda x: cnorm(powernorm(x)), 0, np.linspace(0, 1, 256))
+            gradient = np.vstack((gradient, gradient))
+            cax.imshow(gradient, aspect='auto', cmap=cmap)
+            cax.set_yticklabels(())
+
+            start, end = cax.get_xlim()
+            cax.xaxis.set_ticks(np.linspace(start, end, 11))
+            cax.set_xticklabels( ['{:.2f}'.format(x) for x in np.linspace(0, 1, 11)] )
+            cax.set_xlabel('FWER p-val')
+            ax0.grid(axis='x')
+
+            ax0.set_ylabel('')
+            ax0.set_xlabel('NES')
+
+            for tick in ax0.yaxis.get_ticklabels():
+                txt = tick.get_text()
+                if len(txt) > 20:
+                    size = 8
+                elif len(txt) > 30:
+                    size = 6
+                else:
+                    size = 9
+                tick.set_size(size)
+
+
+            # plt.tight_layout()
+            # fig = plt.gcf()
+            groups[0], groups[1]
+            ax0.text(0, 1.04, groups[0], transform=ax0.transAxes)
+            ax0.text(1, 1.04, groups[1], transform=ax0.transAxes, ha='right')
+            gs.tight_layout(fig, rect=(0, 0, 1, .96))
+            # fig.subplots_adjust(left=.4)
+            # fig.tight_layout()
+            save_multiple(fig, outname, *file_fmts)
 
 @main.command('bar')
 @click.option('--gene', type=int,
@@ -1154,6 +1268,8 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 @click.option('--color-order', type=str, default=None, help="""Pipe `|` separated order
 to arrange data. For use in conjunction with `--color`
 """)
+@click.option('--retain-order', is_flag=True, default=False, show_default=True,
+              help="""Retains original config order""")
 @click.option('--cmap', default=None, show_default=True, help="""
 Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples/color/colormaps_reference.html.
 """)
@@ -1167,7 +1283,7 @@ Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples
 @click.option('--xtickrotation', default=None, type=int)
 @click.option('--xticksize', default=None, type=int)
 @click.pass_context
-def bar(ctx, average, color, color_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
+def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
 
     data_obj = ctx.obj['data_obj']
     col_meta = data_obj.col_metadata
@@ -1189,10 +1305,14 @@ def bar(ctx, average, color, color_order, cmap, gene, genefile, linear, z_score,
     # if color is not None and average is not None:
     #     raise ValueError('Cannot specify color and average at the same time.')
 
-    barplot(data_obj.areas_log_shifted, genes=gene, color=color, cmap=cmap, metadata=col_meta,
+    data = data_obj.areas_log_shifted.copy()
+    data[data_obj.areas == 0] = 0 # fill the zeros back
+    data[data_obj.mask] = np.NaN
+
+    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta,
             average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
             file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
-            xtickrotation=xtickrotation, xticksize=xticksize,
+            xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order
     )
 
 if __name__ == '__main__':

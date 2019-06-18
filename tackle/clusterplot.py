@@ -146,7 +146,8 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
 
 
-def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
+def clusterplot(data, annot_mat=None,
+                cmap_name=None, dbscan=False, genes=None, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
                 nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
@@ -173,11 +174,15 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
     retval = dict()
     data = data.copy()
     mask = mask.copy()
+    if annot_mat is not None:
+        annot_mat = annot_mat.copy()
 
     if genes is not None:  # only plot these select genes
         _genes = [x for x in genes if x in (set(genes) & set(data.index))]
         data = data.loc[_genes]
         mask = mask.loc[_genes]
+        if annot_mat is not None:
+            annot_mat = annot_mat.loc[_genes]
 
     if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
         row_cluster = False
@@ -270,9 +275,12 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
     _geneids = data.index.copy()
     if gene_symbols:  # change index to symbols
         assert all(data.index == mask.index)
+        assert all(data.index == annot_mat.index)
         clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
         data.index = clustermap_symbols
         mask.index = clustermap_symbols
+        if annot_mat is not None:
+            annot_mat.index = clustermap_symbols
         if row_colors is not None:
             row_colors.index = clustermap_symbols
 
@@ -477,7 +485,9 @@ def clusterplot(data, cmap_name=None, dbscan=False, genes=None, highlight_gids=N
                      center=0 if cmap != 'YlOrRd' else None,
                      vmax=plot_data.max().max() if cmap == 'YlOrRd' else None,
                      rasterized=True,
-                     xticklabels=plot_data.columns
+                     xticklabels=plot_data.columns,
+                     annot=annot_mat.loc[plot_data.index] if annot_mat is not None else None
+
     )
     if figheight <= 12:
         hspace =.01
