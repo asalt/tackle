@@ -313,7 +313,8 @@ def clusterplot(data, annot_mat=None,
     _geneids = data.index.copy()
     if gene_symbols:  # change index to symbols
         assert all(data.index == mask.index)
-        assert all(data.index == annot_mat.index)
+        if annot_mat is not None:
+            assert all(data.index == annot_mat.index)
         clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
         data.index = clustermap_symbols
         mask.index = clustermap_symbols
@@ -515,19 +516,10 @@ def clusterplot(data, annot_mat=None,
                      vmax=plot_data.max().max() if cmap == 'YlOrRd' else None,
                      rasterized=True,
                      xticklabels=plot_data.columns,
-                     annot=annot_mat.loc[plot_data.index] if annot_mat is not None else None
+                     col_color_kws=dict(fontsize=12),
+                     annot=annot_mat.loc[plot_data.index] if annot_mat is not None else None,
+                     annot_kws=dict(size=FONTSIZE),
 
-    )
-    if figheight <= 12:
-        hspace =.01
-        wspace = .01
-    else:
-        hspace = .01 / (22*figheight)
-        wspace = .01
-
-    g.fig.subplots_adjust(hspace=hspace, wspace=wspace,
-                          left=.5/figwidth, right=1-1./figwidth,
-                          bottom=1/figheight, top=1-(1.4/figheight)
     )
 
 
@@ -631,6 +623,20 @@ def clusterplot(data, annot_mat=None,
             extra_artists = legends
 
 
+    if figheight <= 12:
+        hspace =.01
+        wspace = .01
+    else:
+        hspace = .01 / (22*figheight)
+        wspace = .01
+
+    g.fig.subplots_adjust(hspace=hspace, wspace=wspace,
+                          # left=.5/figwidth, right=1-1./figwidth,
+                          left=.04, right=.88,
+                          bottom=1/figheight, top=1-(1.4/figheight)
+    )
+
+
     # make sure there is enough room on the right side for labels
     if col_colors is not None and not col_colors.empty:
 
@@ -639,9 +645,14 @@ def clusterplot(data, annot_mat=None,
         longest_label = max(len(x) for x in col_colors.columns) + 6  # add a little padding
         char_width = (430/1000) # approx via from https://www.math.utah.edu/~beebe/fonts/afm-widths.html
         longest_length = longest_label * char_width
-        inch_shift = longest_length * 12/72  # 72 pts in an inch
+        # inch_shift = longest_length * 12/72  # 72 pts in an inch
+        # inch_shift = longest_length * FONTSIZE/72  # 72 pts in an inch
 
-        shift = 1 - (inch_shift / width)
+        inch_shift = longest_length * (0.0393701*FONTSIZE/12) # 1 mm, 0.039 inches
+
+
+        # shift = 1 - (inch_shift / width)
+        shift = 1 - (inch_shift)
 
         g.gs.update(right=shift)  # add some room on the right so everything fits
 
