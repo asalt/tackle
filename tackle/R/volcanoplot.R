@@ -51,8 +51,17 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## X <- mutate(X, Sig = ifelse(X$pAdj < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
   ##                             sig_filter_str, "N.S."))
-  X <- mutate(X, Sig = ifelse(X[,sig_metric] < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
-                              sig_filter_str, "N.S."))
+  ## library(tibble)
+  ## browser()
+  ## X <- as.tibble(X)
+  ## X <- mutate(X, Sig = ifelse(X[,sig_metric] < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
+  ##                             sig_filter_str, "N.S."))
+
+  Sig <- ifelse(X[,sig_metric] < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
+               sig_filter_str, "N.S.")
+  X[, 'Sig'] <- Sig
+
+
   ## X[ , 'usd' ] = '#222222bb'
   ## X[ , 'usd' ] = '#22222222'
   X[ , 'usd' ] = '#22222288'
@@ -112,7 +121,8 @@ volcanoplot <- function(X, max_labels = 35,
   ymax <- max(-log10(X[, ploty])) * 1.05
   xmax <- X[, 'log2_Fold_Change'] %>% abs %>% max
 
-  ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
+  ## ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
+  ratio_sig <- paste0( dim( X[X$Sig == sig_filter_str,] )[1], '/', dim(X)[1] )
   footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  linear_fc_cutoff, 'F.C.' )
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
@@ -120,7 +130,7 @@ volcanoplot <- function(X, max_labels = 35,
     theme_base() +
     geom_point(size = 1, cex = cex, show.legend = FALSE, pch=pch) +
     scale_colour_identity() +
-    geom_text_repel(data = filter( X, label == TRUE ),
+    geom_text_repel(data = X[X$label==TRUE, ],
                     aes(label = GeneSymbol),  min.segment.length = .05,
                     point.padding = 1e-6,
                     box.padding = .1, cex = label_cex,
@@ -144,3 +154,5 @@ volcanoplot <- function(X, max_labels = 35,
 
 
 }
+
+    ## geom_text_repel(data = filter( X, label == TRUE ),

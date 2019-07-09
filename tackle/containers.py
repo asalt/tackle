@@ -139,6 +139,7 @@ class Data:
                  taxon='all',
                  z_score='0',
                  export_all=False,
+                 SRA='S',
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
                  set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
@@ -190,6 +191,7 @@ class Data:
         self.metrics_after_filter = metrics_after_filter
         self.metrics_unnormed_area= metrics_unnormed_area
         self._metric_values       = None
+        self.SRA                  = SRA
 
         self.outpath              = None
         self.analysis_name        = None
@@ -588,7 +590,7 @@ class Data:
 
         df_filtered = (self.data.pipe(filter_observations, 'area',
                                       self.non_zeros, self.nonzero_subgroup, self.col_metadata)
-                       .pipe(filter_sra, SRA='S')
+                       .pipe(filter_sra, SRA=self.SRA)
                        .pipe(filter_func)
         )
         df_filtered.index.names = ['GeneID', 'Metric']
@@ -795,7 +797,8 @@ class Data:
 
         df = pd.DataFrame(index=data.index,
                           columns=data.columns,
-                          data=pandas2ri.ri2py(res)
+                          # data=pandas2ri.ri2py(res)
+                          data=res
         )
         # df = pandas2ri.ri2py(res)
         nas = sum(df.isnull().any(1))
@@ -1363,10 +1366,12 @@ class MyClusterGrid(ClusterGrid):
         return ratios
 
     def plot(self, metric, method, colorbar_kws, row_cluster, col_cluster,
-             row_linkage, col_linkage, row_color_kws=None, col_color_kws=None, **kws):
+             row_linkage, col_linkage, row_color_kws=None, col_color_kws=None,
+             annot_kws=None, **kws):
         colorbar_kws = {} if colorbar_kws is None else colorbar_kws
         row_color_kws = {} if row_color_kws is None else row_color_kws
         col_color_kws = {} if col_color_kws is None else col_color_kws
+        annot_kws = {} if annot_kws is None else annot_kws
         self.plot_dendrograms(row_cluster, col_cluster, metric, method,
                               row_linkage=row_linkage, col_linkage=col_linkage,
                               force_optimal_ordering=self.force_optimal_ordering
@@ -1385,7 +1390,7 @@ class MyClusterGrid(ClusterGrid):
             annot = kws.pop('annot')
 
         self.plot_colors(xind, yind, row_color_kws, col_color_kws, **kws)
-        self.plot_matrix(colorbar_kws, xind, yind, annot=annot, **kws)
+        self.plot_matrix(colorbar_kws, xind, yind, annot=annot, annot_kws=annot_kws, **kws)
         return self
 
     def plot_matrix(self, colorbar_kws, xind, yind, **kws):
@@ -1415,7 +1420,7 @@ class MyClusterGrid(ClusterGrid):
 
         heatmap(self.data2d, ax=self.ax_heatmap, cbar_ax=self.cax,
                 cbar_kws=colorbar_kws, mask=self.mask,
-                annot=annot,
+                annot=annot, fmt='',
                 xticklabels=xtl, yticklabels=ytl, **kws)
 
         ytl = self.ax_heatmap.get_yticklabels()
@@ -1511,13 +1516,18 @@ class MyClusterGrid(ClusterGrid):
             full_kws = kws.copy()
             full_kws.update(col_color_kws)
 
+            fontsize = 12
+            if 'fontsize' in col_color_kws:
+                fontsize = col_color_kws.pop('fontsize')
 
             if self.circle_col_markers:
-                scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=self.circle_col_marker_size,
-                        xticklabels=False, yticklabels=col_color_labels, **kws)
+                scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,
+                           marker_size=self.circle_col_marker_size, xticklabels=False,
+                           yticklabels=col_color_labels, **col_color_kws, **kws)
             else:
                 heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,
-                        xticklabels=False, yticklabels=col_color_labels, **full_kws)
+                        xticklabels=False, yticklabels=col_color_labels,
+                        **col_color_kws, **kws)
 
             # scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=100,
             #            xticklabels=False, yticklabels=col_color_labels, **kws)
@@ -1525,7 +1535,7 @@ class MyClusterGrid(ClusterGrid):
             # Adjust rotation of labels, place on right side
             if col_color_labels is not False:
                 self.ax_col_colors.yaxis.tick_right()
-                plt.setp(self.ax_col_colors.get_yticklabels(), rotation=0)
+                plt.setp(self.ax_col_colors.get_yticklabels(), rotation=0, fontsize=fontsize)
         else:
             despine(self.ax_col_colors, left=True, bottom=True)
 
