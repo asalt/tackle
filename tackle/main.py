@@ -361,6 +361,7 @@ def validate_configfile(experiment_file, **kwargs):
 @click.option('--result-dir', type=click.Path(exists=False, file_okay=False),
               default='./results', show_default=True,
               help='Base directory to store results. Will be created if does not exist.')
+@click.option('--SRA', type=click.Choice(['S', 'R', 'A']))
 @click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
               default='all', show_default=True)
 @click.option('--non-zeros', default=1, show_default=True, type=int_or_ratio(),
@@ -377,6 +378,7 @@ def validate_configfile(experiment_file, **kwargs):
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
          file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
          ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
+         sra,
          experiment_file):
     """
     """
@@ -446,6 +448,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     taxon=taxon,
                     experiment_file=experiment_file, metrics=metrics, limma=limma,
                     block=block,
+                    SRA=sra,
                     metrics_after_filter=metrics_after_filter,
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
                     export_all=export_all
