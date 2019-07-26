@@ -102,7 +102,17 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
 
 def filter_sra(df, SRA='S'):
 
-    mask = ((df.loc[ idx[:, 'SRA'], :] == 'S')
+    if SRA is None:
+        SRA = 'S'
+
+    if SRA == 'S':
+        sra_list = ('S',)
+    elif SRA == 'R':
+        sra_list = ('S', 'R')
+    else:
+        sra_list = ('S',)
+
+    mask = ((df.loc[ idx[:, 'SRA'], :].isin(sra_list))
             .any(1)
             .where(lambda x: x)
             .dropna()
@@ -392,33 +402,47 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     if symbol_gid_mapping is None:
         symbol_gid_mapping = dict()
     gid_out = list()
-    rgx = re.compile(r'(?<![A-Za-z])(\d+)(?![A-Za-z])')
+    # rgx = re.compile(r'(?<![A-Za-z])(\d+)(?![A-Za-z])')
+    # rgx = re.compile(r'(?<=[\w])(\d+)(?![A-Za-z])')
+    # rgx_digit = re.compile(r'(?<=\W)(\d+)(?=\W)')
+    rgx_digit = re.compile(r'\W?(\d+)\W?')
+    rgx_word = re.compile('([A-Za-z]+\d*)(?=\W)')
     with open(gids, 'r') as f:
         for line in f:
+            if line.startswith('#'):
+                continue
             try:
                 gid = float(line.strip())
                 gid_out.append(gid)
             except ValueError:
                 # try regex
                 try:
-                    gid = rgx.search(line).group(1)
+                    gid = rgx_digit.search(line).group(1)
                     gid_out.append(int(gid))
                 except AttributeError:
                     # try symbol mapping
                     # TODO: expand from just human
-                    gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
+                    genesymbol = rgx_word.search(line)
+                    if genesymbol is None:
+                        warn('Could not parse GeneID from line {}'.format(line))
+                        pass
+                    # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
+                    gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
                     if gid.empty:
                         warn('Could not parse GeneID from line {}'.format(line))
                         pass
                     else:
                         gid_out.append(gid.index[0])
 
-    c = Counter()
     retval = list()
     for gid in gid_out:
-        if c[gid] == 0:
+        if gid not in retval:
             retval.append(gid)
-            c[gid] += 1
+    # c = Counter()
+    # for gid in gid_out:
+    #     if c[gid] == 0:
+    #         retval.append(gid)
+    #         c[gid] += 1
 
     return retval
 
