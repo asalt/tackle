@@ -1312,7 +1312,7 @@ def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, li
     data[data_obj.areas == 0] = 0 # fill the zeros back
     data[data_obj.mask] = np.NaN
 
-    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta,
+    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta.fillna('NA'),
             average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
             file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
             xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order

@@ -765,7 +765,9 @@ class Data:
         grdevices = importr('grDevices')
 
         # pheno = self.col_metadata.T
-        pheno = self.col_metadata
+        pheno = self.col_metadata.copy()
+        for col in ('recno', 'runno', 'searchno'):
+            pheno[col] = pheno[col].astype(str)
         r.assign('pheno', pheno)
 
         if self.covariate is not None:
