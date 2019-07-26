@@ -1,5 +1,6 @@
 from collections import OrderedDict
 
+from  warnings import warn
 import numpy as np
 import pandas as pd
 
@@ -90,6 +91,8 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         for g, cols in color_groups.items():
             if metadata_colors and g in metadata_colors:
                thecolor = metadata_colors[g]
+            elif g == 'NA':
+                thecolor = 'grey'
             else:
                 thecolor = to_hex(next(cpalette))
             legend_colors[g] = thecolor
@@ -100,6 +103,10 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
                         colors[key] = thecolor
                 else:
                     colors[c] = thecolor
+        # if 'NA' in colors:
+        #     color['NA'] = 'grey'
+        # if 'NA' in legend_colors:
+        #     legend_colors['NA'] = 'grey'
 
         # the_order = [x for y in color_groups.values() for x in y]
         # the_colors = [colors[x] for x in the_order]
@@ -144,10 +151,21 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
 
     for gene in genes:
 
-
+        if gene not in X.index:
+            warn('GeneID {} not in dataset, skipping..'.format(gene))
+            continue
         edata = X.loc[gene].to_frame('Expression').join(metadata).reset_index()
         if the_order:
-            new_ix_order = [edata[edata['index'] == x].index[0] for x in the_order]
+            if not average:
+                new_ix_order = [edata[edata['index'] == x].index[0] for x in the_order]
+            elif average: # then need to extract each individual entry
+                new_ix_order = list()
+                for x in the_order:
+                    for y in groupcols[x]:
+                        new_ix_order.append(
+                            edata[edata['index'] == y].index[0]
+                        )
+
             edata = edata.loc[new_ix_order]
         # edata = X.loc[gene]
 
@@ -186,6 +204,7 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         fig = plt.figure(figsize=(w,h))
         # gs = gridspec.GridSpec(1,10)
         gs = gridspec.GridSpec(nrow, 10, wspace=.4)
+        # import ipdb; ipdb.set_trace()
 
         # ax = fig.add_subplot(gs[0, 0:9])
 
@@ -200,13 +219,25 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
             else:
                 ax = fig.add_subplot(gs[row, 0:9])
 
-            sb.barplot(x=x, y='Expression', data=edata.iloc[chunk], ax=ax, ci='sd', capsize=.2,
-                    # palette=colors, order=the_order,
-                       palette=colors, order=None,
-            )
+            if not average:
+                sb.barplot(x=x, y='Expression', data=edata.iloc[chunk], ax=ax, ci='sd', capsize=.2,
+                        # palette=colors, order=the_order,
+                        palette=colors, order=None,
+                )
 
             if average:
-                sb.swarmplot(x=x, y='Expression', hue=None, data=edata.iloc[chunk], order=the_order,
+
+                group_chunk = the_order[ chunk[0]:chunk[-1]+1 ]
+
+                sb.barplot(x=x, y='Expression', data=edata[edata[average].isin(group_chunk)],
+                           ax=ax, ci='sd', capsize=.2,
+                        # palette=colors, order=the_order,
+                        palette=colors, order=None,
+                )
+
+                sb.swarmplot(x=x, y='Expression', hue=None, data=edata[edata[average].isin(group_chunk)],
+                             order=None,
+                             # order=the_order,
                              hue_order=None, dodge=False, orient=None, color=None, palette=colors,
                              size=5, edgecolor='gray', linewidth=1., ax=ax, )
 
