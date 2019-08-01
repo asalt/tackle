@@ -142,7 +142,7 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
         sb.despine(ax=ax)
         if ix == 1:
             continue  #  no legend for gpgroups
-        ax.legend(loc='lower left', ncol=ncols[ix])
+        ax.legend(loc='lower left', ncol=ncols[ix], fontsize=8)
 
     sb.despine(ax=ax_area, right=False, top=True, left=True, bottom=False)
     ax_area.xaxis.grid(True, lw=.25, color='grey', ls=':')
