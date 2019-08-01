@@ -505,6 +505,7 @@ def make_config(delimiter, excel, excel_sheetnumber, infer_inputfile, output, in
 
 
     filefront, ext = os.path.splitext(inputfile)
+    ext = ext[1:]
 
 
     if infer_inputfile and delimiter is None:
@@ -842,6 +843,9 @@ def metrics(ctx, full, before_filter, before_norm):
 
 from .overlap import make_overlap
 @main.command('overlap')
+@click.option('--figsize', nargs=2, type=float, default=(12, 10.5), show_default=True,
+              help='''Optionally specify the figuresize (width, height) in inches
+              ''')
 @click.option('--group', type=str, default=None, help='Metadata entry to group samples for assessing overlap')
 @click.option('--maxsize', default=15, help='Max number of overlaps to plot', show_default=True)
 @click.option('--non-zeros', default=1., show_default=True, type=int_or_ratio(),
@@ -850,7 +854,7 @@ from .overlap import make_overlap
               If an integer is specified (1), this indicates that 1 value is nonzero.
               """)
 @click.pass_context
-def overlap(ctx, group, maxsize, non_zeros):
+def overlap(ctx, figsize, group, maxsize, non_zeros):
     """
     Plot gene product overlap across experiments
     """
@@ -860,7 +864,8 @@ def overlap(ctx, group, maxsize, non_zeros):
     if group:
         validate_configfile(data_obj.experiment_file, group=group)
 
-    make_overlap(data_obj, group=group, maxsize=maxsize, non_zeros=non_zeros, file_fmts=file_fmts)
+    make_overlap(data_obj, figsize=figsize, group=group, maxsize=maxsize, non_zeros=non_zeros,
+                 file_fmts=file_fmts)
 
 
 @main.command('volcano')
@@ -1315,7 +1320,9 @@ def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, li
     data[data_obj.areas == 0] = 0 # fill the zeros back
     data[data_obj.mask] = np.NaN
 
-    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta.fillna('NA'),
+
+    # barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta.fillna('NA'),
+    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta,
             average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
             file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
             xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order

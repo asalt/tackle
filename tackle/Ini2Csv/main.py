@@ -78,11 +78,12 @@ class Conf2Csv(object):
 class Csv2Conf(object):
     def __init__(self, csv_name, sep=',', excel_sheetnumber=0):
         self.sep = sep
+        self.excel_sheetnumber = excel_sheetnumber
+        self._dict = {}
+        # the order is very important here!
         self._rows = self._reader(csv_name)
         self._cols = self._rows[0]
         self._rows = self._rows[1:]
-        self.excel_sheetnumber = excel_sheetnumber
-        self._dict = {}
 
     def _transform(self):
         for row in self._rows:
@@ -108,7 +109,7 @@ class Csv2Conf(object):
 
         if self.sep == 'excel':
             import pandas as pd
-            df = pd.read_excel(filename, sheet_name=self.sheet_number)
+            df = pd.read_excel(filename, sheet_name=self.excel_sheetnumber, dtype=str)
             rows.append(df.columns.tolist())
             for _, row in df.iterrows():
                 rows.append(row.tolist())
