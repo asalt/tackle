@@ -18,7 +18,10 @@ from itertools import combinations
 def calc_combos(tot):
     return sum(len(x) for x in [list(combinations('a'*tot, i)) for i in np.arange(1, tot+1)])
 
-def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsize=15):
+def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsize=15, figsize=None):
+
+    if figsize is None:
+        figsize=(12,10.5)
 
     outname = get_outname('overlap', name=data_obj.outpath_name, taxon=data_obj.taxon,
                           non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
@@ -85,9 +88,8 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
             click.echo('Could not find small enough overlap...Skipping')
             return
 
-
     pyupset_res = make_upset(overlap_dict, unique_keys=('GeneID',), h_ratio=2, v_ratio=2.25,
-                             dot_size=180, figsize=(12,10.5), bound_min=bound_min)
+                             dot_size=180, figsize=figsize, bound_min=bound_min)
     fig = pyupset_res['figure']
 
     save_multiple(fig, outname, *file_fmts)
@@ -107,5 +109,5 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
 
     membership_df['GeneID'] = membership_df['GeneID'].astype(int)
 
-    print('Saving {}+.tsv')
+    print('Saving {}+.tsv'.format(outname))
     membership_df.to_csv(outname+'.tsv', index=False, sep='\t')

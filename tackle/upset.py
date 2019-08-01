@@ -20,6 +20,25 @@ import seaborn as sb
 sb.set_context('talk')
 sb.set_style('ticks')
 
+# def __newgetitem__(self, key):
+#     """Create and return a SuplotSpec instance.
+#     """
+#     nrows, ncols = self.get_geometry()
+
+#     def _normalize(key, size):  # Includes last index.
+#         if isinstance(key, slice):
+#             start, stop, _ = key.indices(size)
+#             if stop > start:
+#                 return start, stop - 1
+#             return stop - 1, start
+#         else:
+#             if key < 0:
+#                 key += size
+#             if 0 <= key < size:
+#                 return key, key
+#         raise IndexError("invalid index")
+# mpl.gridspec.GridSpecFromSubplotSpec.__getitem__  = __newgetitem__
+# mpl.gridspec.GridSpecBase.__getitem__  = __newgetitem__
 
 
 from matplotlib.patches import Rectangle, Circle
@@ -199,6 +218,8 @@ class MyUpSetPlot(UpSetPlot):
             botgs = main_gs[2, 0]
         else:
             topgs = gridspec.GridSpec(1, 1)[0, 0]
+            # mpl 3.1+ fix:
+            # topgs = gridspec.GridSpec(1, 1)
         fig_cols = self.cols + 5
         # fig_rows = self.rows + self.rows * 4
         fig_rows = self.rows + self.rows * self.h_ratio
@@ -218,11 +239,25 @@ class MyUpSetPlot(UpSetPlot):
                                                   # height_ratios = [*[1]*32, *[5]*4, *[1]*4]
                                                   # height_ratios = [*[1]*intbars_h, *[4]*(intmatrix_h//2), *[1]*(tablesize_h//2)]
                                                   )
-        ax_setsize = plt.subplot(gs_top[-1:-setsize_h, 0:setsize_w])
-        ax_tablenames = plt.subplot(gs_top[-1:-tablesize_h, setsize_w:tablesize_w])
-        ax_intmatrix = plt.subplot(gs_top[-1:-intmatrix_h, tablesize_w:intmatrix_w])
+
+        ax_setsize = plt.subplot(gs_top[-setsize_h:-1, 0:setsize_w])
+        ax_tablenames = plt.subplot(gs_top[-tablesize_h:-1, setsize_w:tablesize_w])
+        ax_intmatrix = plt.subplot(gs_top[-intmatrix_h:-1, tablesize_w:intmatrix_w])
+        # ax_setsize = plt.subplot(gs_top[-1:-setsize_h, 0:setsize_w])
+        # ax_tablenames = plt.subplot(gs_top[-1:-tablesize_h, setsize_w:tablesize_w])
+        # ax_intmatrix = plt.subplot(gs_top[-1:-intmatrix_h, tablesize_w:intmatrix_w])
+
         # ax_intbars = plt.subplot(gs_top[:self.rows * 4 - 1, tablesize_w:intbars_w])
         ax_intbars = plt.subplot(gs_top[:self.rows * self.h_ratio - 1, tablesize_w:intbars_w])
+
+        # for side in ["top", "right", "left", "bottom"]:
+        for side in ["top", "right", "left"]:
+            ax_setsize.spines[side].set_visible(False)
+        for side in ["top", "right", "bottom"]:
+            ax_tablenames.spines[side].set_visible(False)
+            ax_intmatrix.spines[side].set_visible(False)
+            # for side in ["top", "right", "bottom"]:
+        #     ax_intmatrix.spines[side].set_visible(False)
 
         add_ax = []
         if additional_plots:
@@ -367,6 +402,27 @@ def make_plot(data, unique_keys, suptitle='', bound_min=1, h_ratio=4, v_ratio=1,
         bot_ax.cla()
 
     fig.subplots_adjust(top=.92)
+
+    ## doesn't work..
+    # for ax in ['intersection_bars', 'intersection_matrix', 'base_set_size']:
+    # strip_axes(res['intersection_matrix'], keep_ticklabels=['left'])
+    # strip_axes(res['intersection_bars'], keep_spines=['left'], keep_ticklabels=['left'])
+
+    # matplotlib 3.1+ fix..
+
+    ax = res['intersection_matrix']
+    for tick in [*ax.xaxis.get_major_ticks(), *ax.yaxis.get_major_ticks()]:
+        tick.set_visible(False)
+
+    ax = res['intersection_bars']
+    for tick in [*ax.xaxis.get_major_ticks()]:
+       tick.set_visible(False)
+    ax.yaxis.set_ticks_position('left')
+
+    ax = res['base_set_size']
+    for tick in [*ax.yaxis.get_major_ticks()]:
+       tick.set_visible(False)
+    ax.xaxis.set_ticks_position('bottom')
 
     # total_data = np.array(sorted( ((k, data[k]['total']) for k in data.keys() )) )
 
