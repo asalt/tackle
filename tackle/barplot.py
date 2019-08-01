@@ -113,8 +113,8 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         # the_order = [x for y in legend_colors.values() for x in y]
         # the_colors = [colors[x] for x in the_order]
 
-        the_order = list()
         if color_order is not None:
+            the_order = list()
             _color_order = color_order.split('|')
             _missing = set(legend_colors.keys()) - set(_color_order)
             for m in _missing:
@@ -123,6 +123,7 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
 
         else:
             _iter = legend_colors.items()
+            the_order = None
 
         if not retain_order:
             for entry, _color in _iter:
@@ -204,7 +205,6 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         fig = plt.figure(figsize=(w,h))
         # gs = gridspec.GridSpec(1,10)
         gs = gridspec.GridSpec(nrow, 10, wspace=.4)
-        # import ipdb; ipdb.set_trace()
 
         # ax = fig.add_subplot(gs[0, 0:9])
 
@@ -227,8 +227,10 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
 
             if average:
 
-                group_chunk = the_order[ chunk[0]:chunk[-1]+1 ]
-
+                if the_order is not None:
+                    group_chunk = the_order[ chunk[0]:chunk[-1]+1 ]
+                else:
+                    group_chunk = edata[average].unique()[chunk]
                 sb.barplot(x=x, y='Expression', data=edata[edata[average].isin(group_chunk)],
                            ax=ax, ci='sd', capsize=.2,
                         # palette=colors, order=the_order,
@@ -299,8 +301,10 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         ax_leg.set_xticks([])
         ax_leg.set_yticks([])
 
-
-        fig.subplots_adjust(left=.10, bottom=.08, top=.96, hspace=.8)
+        if len(chunks) == 1:
+            fig.subplots_adjust(left=.10, bottom=.20, top=.90, hspace=.8)
+        else:
+            fig.subplots_adjust(left=.10, bottom=.08, top=.96, hspace=.8)
 
         # do this at the end, after all plots are drawn
         for ax in axs:
