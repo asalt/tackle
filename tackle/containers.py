@@ -38,7 +38,8 @@ LABEL_MAPPER = {'none': 0,  # hard coded number IDs for labels
                 '129N': 1291,
                 '130C': 1300,
                 '130N': 1301,
-                '131': 1310,
+                '131N': 1310,
+                '131C': 1311,
                 '113': 113,
                 '114': 114,
                 '115': 115,
@@ -141,6 +142,7 @@ class Data:
                  export_all=False,
                  SRA='S',
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
+                 normalize_across_species=False,
                  set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
                  metrics_unnormed_area=True,
@@ -186,6 +188,7 @@ class Data:
         self.ifot_ki              = ifot_ki
         self.ifot_tf              = ifot_tf
         self.median               = median
+        self.normalize_across_species = normalize_across_species
         self.base_dir             = base_dir
         self.metrics              = metrics
         self.metrics_after_filter = metrics_after_filter
@@ -475,6 +478,13 @@ class Data:
 
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
                 exps = self._assign_labeled(record, exp, exps, name, self.funcats, self.geneid_subset)
+            if self.normalize_across_species:
+
+                    df['area'] = normalize(df, name,
+                                           ifot=self.ifot, ifot_ki=self.ifot_ki,
+                                           ifot_tf=self.ifot_tf,
+                                           median=self.median,
+                    )
             else:
                 # df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
@@ -489,6 +499,7 @@ class Data:
                     )
                 # df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
                 #                median=self.median)
+                #TODO fix this for --normalize-across-species option
                 if self.export_all: # have to calculate more columns
 
                     for taxonid in df.TaxonID.unique():
@@ -503,33 +514,33 @@ class Data:
                     #       .pipe(normalize, median=True, outcol='iBAQ_dstrAdj_MED')
                     # )
 
-                dummy_filter = lambda x, *args, **kwargs: x
-                taxon_filter = TAXON_MAPPER.get(self.taxon)
-                if taxon_filter is None:
-                    filter_func = dummy_filter
-                else:
-                    filter_func = lambda x: x[ x['TaxonID'] == taxon_filter ]
-                if self.metrics and not self.metrics_after_filter and not self.metrics_unnormed_area:
-                    self._update_metrics(df, name, area_column='area')
+            dummy_filter = lambda x, *args, **kwargs: x
+            taxon_filter = TAXON_MAPPER.get(self.taxon)
+            if taxon_filter is None:
+                filter_func = dummy_filter
+            else:
+                filter_func = lambda x: x[ x['TaxonID'] == taxon_filter ]
+            if self.metrics and not self.metrics_after_filter and not self.metrics_unnormed_area:
+                self._update_metrics(df, name, area_column='area')
 
-                df = genefilter(df, funcats=self.funcats, funcats_inverse=self.funcats_inverse,
-                                geneid_subset=self.geneid_subset,
-                                ignored_geneid_subset=self.ignore_geneid_subset).pipe(filter_func)
+            df = genefilter(df, funcats=self.funcats, funcats_inverse=self.funcats_inverse,
+                            geneid_subset=self.geneid_subset,
+                            ignored_geneid_subset=self.ignore_geneid_subset).pipe(filter_func)
 
-                # unique peptide filter
-                df = df[ df.PeptideCount_u2g >= self.unique_pepts ]
-
-
+            # unique peptide filter
+            df = df[ df.PeptideCount_u2g >= self.unique_pepts ]
 
 
-                # df = assign_cols(exp.df, name)
-                if self.metrics and self.metrics_after_filter and not self.metrics_unnormed_area:
-                    self._update_metrics(df, name, area_column='area')
-                elif self.metrics and self.metrics_after_filter and self.metrics_unnormed_area:
-                    raise NotImplementedError('Not available. Use --after-norm in conjunction with --after-filter')
-                # exps[name] = df.set_index(df.index.astype(int))
-                df.index = [maybe_int(x) for x in df.index]
-                exps[name] = df
+
+
+            # df = assign_cols(exp.df, name)
+            if self.metrics and self.metrics_after_filter and not self.metrics_unnormed_area:
+                self._update_metrics(df, name, area_column='area')
+            elif self.metrics and self.metrics_after_filter and self.metrics_unnormed_area:
+                raise NotImplementedError('Not available. Use --after-norm in conjunction with --after-filter')
+            # exps[name] = df.set_index(df.index.astype(int))
+            df.index = [maybe_int(x) for x in df.index]
+            exps[name] = df
 
 
         self.gid_funcat_mapping = gid_funcat_mapping

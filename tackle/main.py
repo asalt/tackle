@@ -356,6 +356,7 @@ def validate_configfile(experiment_file, **kwargs):
               help='Calculate iFOT based on transcription factors')
 @click.option('--median', default=False, show_default=True, is_flag=True,
               help='Normalize based on median sample expression value')
+@click.option('--normalize-across-species', is_flag=True, default=False, show_default=True)
 @click.option('-n', '--name', type=str, default='',
               help='An optional name for the analysis that will place all results in a subfolder.')
 @click.option('--result-dir', type=click.Path(exists=False, file_okay=False),
@@ -377,7 +378,7 @@ def validate_configfile(experiment_file, **kwargs):
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
          file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
-         ifot_ki, ifot_tf, median, name, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
+         ifot_ki, ifot_tf, median, name, normalize_across_species, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
          sra,
          experiment_file):
     """
@@ -446,6 +447,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     non_zeros=non_zeros, nonzero_subgroup=nonzero_subgroup,
                     unique_pepts=unique_pepts,
                     taxon=taxon,
+                    normalize_across_species=normalize_across_species,
                     experiment_file=experiment_file, metrics=metrics, limma=limma,
                     block=block,
                     SRA=sra,
