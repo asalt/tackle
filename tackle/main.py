@@ -463,6 +463,15 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                           outpath=data_obj.outpath)+'.tab'
     data_obj.col_metadata.to_csv(outname, sep='\t')
 
+    taxon_ratios = data_obj.taxon_ratios
+    if not taxon_ratios['9606'].nunique() == taxon_ratios['10090'].nunique() == taxon_ratios['9031'].nunique() :
+        outname = get_outname('taxon_ratios', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                            non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                            batch=data_obj.batch_applied,
+                            batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                            outpath=data_obj.outpath)+'.tab'
+        taxon_ratios.to_csv(outname, sep='\t')
+
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
     #     json.dump(params, f)
