@@ -1,3 +1,4 @@
+import os
 from collections import OrderedDict
 
 import matplotlib
@@ -80,6 +81,21 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
                               outpath=data_obj.outpath,
     )
     to_export.to_csv(export_name+'.tab', sep='\t', index=True)
+
+
+    # ==================================================================
+    from rpy2.robjects import r
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
+    pandas2ri.activate()
+    r_source = robjects.r['source']
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                            'R', 'metrics.R')
+    r_source(r_file)
+    Rmetrics = robjects.r['metrics']
+    Rmetrics(to_export, savename=export_name, exts=[x.lstrip('.') for x in file_fmts ])
+    # ==================================================================
 
     # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
 

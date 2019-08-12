@@ -427,7 +427,10 @@ class Data:
         exps = OrderedDict()
         gid_funcat_mapping = dict()
         config = self.config
-        col_metadata = None
+
+        col_metadata = parse_metadata(self.config)
+        self.col_metadata = col_metadata
+        taxon_ratios = col_metadata.copy()
 
         for name, record in config.items():
             # print('Loading', record)
@@ -441,6 +444,9 @@ class Data:
             labelquery = LABEL_MAPPER.get(label, 0)
 
             exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir)
+            taxon_ratios.loc[name, '9606'] = exp.taxon_ratios['9606']
+            taxon_ratios.loc[name, '10090'] = exp.taxon_ratios['10090']
+            taxon_ratios.loc[name, '9031'] = exp.taxon_ratios['9031']
 
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
                 exp.df.rename(columns={'LabelFLAG': 'EXPLabelFLAG'}, inplace=True)
@@ -542,6 +548,7 @@ class Data:
             df.index = [maybe_int(x) for x in df.index]
             exps[name] = df
 
+        self.taxon_ratios = taxon_ratios
 
         self.gid_funcat_mapping = gid_funcat_mapping
 
@@ -549,8 +556,8 @@ class Data:
         self.exps = exps
         _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
         ## TODO can check to ensure not exporting all data and stack this smaller amount of data
-        # stacked_data = [ df[_cols].stack() for df in exps.values() ]
-        stacked_data = [ df.stack() for df in exps.values() ]
+        stacked_data = [ df[_cols].stack() for df in exps.values() ]
+        # stacked_data = [ df.stack() for df in exps.values() ]
         print('stacking...', flush=True, end='')
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
         print('done', flush=True)
@@ -559,24 +566,24 @@ class Data:
                    'FunCats', 'TaxonID'):
             fillna_meta(self.data, ax)
 
-        if self.additional_info: # depreciated, remove
-            labeled_meta = read_config(self.additional_info, enforce=False)
-            additional_metadata = parse_metadata(labeled_meta)
-            metadata_dict = dict()
-            for col in self.data.columns:
-                exp, label = col.split('|')
-                try:
-                    metadata = additional_metadata[label]
-                except KeyError:
-                    warn('Mismatch between `labeled_meta` and input labels')
-                    continue
-                metadata_dict[col] = metadata
-            col_metadata = pd.DataFrame.from_dict(metadata_dict)
+        # if self.additional_info: # depreciated, remove
+        #     labeled_meta = read_config(self.additional_info, enforce=False)
+        #     additional_metadata = parse_metadata(labeled_meta)
+        #     metadata_dict = dict()
+        #     for col in self.data.columns:
+        #         exp, label = col.split('|')
+        #         try:
+        #             metadata = additional_metadata[label]
+        #         except KeyError:
+        #             warn('Mismatch between `labeled_meta` and input labels')
+        #             continue
+        #         metadata_dict[col] = metadata
+        #     col_metadata = pd.DataFrame.from_dict(metadata_dict)
 
-        else:
-            col_metadata = parse_metadata(self.config)
+        # else:
+        #     col_metadata = parse_metadata(self.config)
 
-        self.col_metadata = col_metadata
+        # self.col_metadata = col_metadata
 
     @property
     def gid_symbol(self):
