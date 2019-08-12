@@ -878,8 +878,10 @@ class Data:
         r.assign('edata', self.areas_log_shifted.fillna(0))
 
         # pheno = self.col_metadata.T
-        pheno = self.col_metadata
-        r.assign('pheno', pheno)
+        pheno = self.col_metadata.copy()
+        for col in ('recno', 'runno', 'searchno'):
+            pheno[col] = pheno[col].astype(str)
+        robjects.r.assign('pheno', pheno)
         r('mod0 <- model.matrix(~1, pheno)')
 
         if self.group and not formula:
