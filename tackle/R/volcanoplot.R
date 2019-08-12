@@ -40,7 +40,9 @@ volcanoplot <- function(X, max_labels = 35,
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
   linear_fc_cutoff <- fc_cutoff
-  fc_cutoff <- log2(fc_cutoff)
+  if (fc_cutoff > 0){
+    fc_cutoff <- log2(fc_cutoff)
+  }
 
   if (sig_metric == 'pAdj') {
     sig_filter_str <- paste0('FDR<', sig)
