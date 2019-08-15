@@ -28,8 +28,9 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
                                     levels=c('Total_peptides', 'u2g_peptides',
                                              'Strict', 'Strict_u2g'))
 
-  thewidth <- dim(df)[1] %/% 2 %>% max(9) %>% min(21)
-  annot_scale = (thewidth/9)
+  ## thewidth <- dim(df)[1] %/% 2 %>% max(9)
+  thewidth <- dim(df)[1] %/% 2 %>% max(9) %>% min(24)
+  annot_scale = (9/thewidth)
 
   ## green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
 
@@ -102,8 +103,9 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
     for (ext in exts){
 
       outname <- paste(savename, ext, sep='.')
+      print(paste('Saving', outname))
 
-      ggsave(outname, height=9, width=thewidth, units='in')
+      ggsave(outname, height=9, width=thewidth, units='in', limitsize = FALSE, dpi = 300)
 
     }
 
