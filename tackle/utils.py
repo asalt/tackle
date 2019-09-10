@@ -395,8 +395,25 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     :gids: collection of files to read and extract geneids
     :symbol_gid_mapping: optional dictionary that maps symbols to geneid"""
 
+
     from .containers import GeneMapper
     genemapper = GeneMapper()
+    def regex_symbol_xtract(line):
+
+
+        rgx_word = re.compile('([A-Za-z]+\d*)(?=\W)')
+        genesymbol = rgx_word.search(line)
+        if genesymbol is None:
+            warn('Could not parse GeneID from line {}'.format(line))
+            return
+        # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
+        gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
+        if gid.empty:
+            warn('Could not parse GeneID from line {}'.format(line))
+            return
+        else:
+            return gid.index[0]
+
     # symbol_gid = {v:k for k, v in genemapper.symbol.items()}
 
     if symbol_gid_mapping is None:
@@ -409,8 +426,9 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     rgx_word = re.compile('([A-Za-z]+\d*)(?=\W)')
     with open(gids, 'r') as f:
         for line in f:
-            if line.startswith('#'):
+            if line.startswith('#') or not line.strip():
                 continue
+
             try:
                 gid = float(line.strip())
                 gid_out.append(gid)
@@ -420,19 +438,28 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
                     gid = rgx_digit.search(line).group(1)
                     gid_out.append(int(gid))
                 except AttributeError:
+                    # warn('Could not parse GeneID from line {}'.format(line))
+                    # pass
+
+                    if line.strip().isalnum():
+                        gid = regex_symbol_xtract(line)
+                        if gid:
+                            gid_out.append(gid)
+                        continue
+
                     # try symbol mapping
                     # TODO: expand from just human
-                    genesymbol = rgx_word.search(line)
-                    if genesymbol is None:
-                        warn('Could not parse GeneID from line {}'.format(line))
-                        pass
-                    # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
-                    gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
-                    if gid.empty:
-                        warn('Could not parse GeneID from line {}'.format(line))
-                        pass
-                    else:
-                        gid_out.append(gid.index[0])
+                    # genesymbol = rgx_word.search(line)
+                    # if genesymbol is None:
+                    #     warn('Could not parse GeneID from line {}'.format(line))
+                    #     pass
+                    # # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
+                    # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
+                    # if gid.empty:
+                    #     warn('Could not parse GeneID from line {}'.format(line))
+                    #     pass
+                    # else:
+                    #     gid_out.append(gid.index[0])
 
     retval = list()
     for gid in gid_out:
@@ -445,6 +472,8 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     #         c[gid] += 1
 
     return retval
+
+
 
 def get_file_name(full_file):
     # fname, ext = os.path.splitext(full_file)
