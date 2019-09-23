@@ -815,11 +815,18 @@ class Data:
         if plot_prior:
             grdevices.dev_off()
 
-        df = pd.DataFrame(index=data.index,
-                          columns=data.columns,
-                          # data=pandas2ri.ri2py(res)
-                          data=res
-        )
+        try:
+            df = pd.DataFrame(index=data.index,
+                              columns=data.columns,
+                              # data=pandas2ri.ri2py(res)
+                              data=res
+            )
+        except ValueError: # rpy2.9.5 support
+            df = pd.DataFrame(index=data.index,
+                              columns=data.columns,
+                              data=pandas2ri.ri2py(res)
+            )
+
         # df = pandas2ri.ri2py(res)
         nas = sum(df.isnull().any(1))
         if nas > 0:
