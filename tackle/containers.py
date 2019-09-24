@@ -40,6 +40,7 @@ LABEL_MAPPER = {'none': 0,  # hard coded number IDs for labels
                 '130N': 1301,
                 '131N': 1310,
                 '131C': 1311,
+                '131': 1310,
                 '113': 113,
                 '114': 114,
                 '115': 115,
@@ -146,6 +147,7 @@ class Data:
                  set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
                  metrics_unnormed_area=True,
+                 cluster_annotate_col=None,
 
     ):
         "docstring"
@@ -195,6 +197,7 @@ class Data:
         self.metrics_unnormed_area= metrics_unnormed_area
         self._metric_values       = None
         self.SRA                  = SRA
+        self.cluster_annotate_col = cluster_annotate_col
 
         self.outpath              = None
         self.analysis_name        = None
@@ -429,11 +432,10 @@ class Data:
         config = self.config
 
         col_metadata = parse_metadata(self.config)
-        self.col_metadata = col_metadata
         taxon_ratios = col_metadata.copy()
 
         for name, record in config.items():
-            # print('Loading', record)
+            # print('Loading', name)
             if name.startswith('__'):
                 continue
             labeltype = config[name].get('__LABELTYPE__', 'LF') # depreciated
@@ -444,13 +446,18 @@ class Data:
             labelquery = LABEL_MAPPER.get(label, 0)
 
             exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir)
-            taxon_ratios.loc[name, '9606'] = exp.taxon_ratios['9606']
-            taxon_ratios.loc[name, '10090'] = exp.taxon_ratios['10090']
-            taxon_ratios.loc[name, '9031'] = exp.taxon_ratios['9031']
 
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
                 exp.df.rename(columns={'LabelFLAG': 'EXPLabelFLAG'}, inplace=True)
             df = exp.df.query('EXPLabelFLAG==@labelquery').copy()
+            if df.empty:
+                warn('No data for {!r}, skipping'.format(exp))
+                continue
+
+            taxon_ratios.loc[name, '9606'] = exp.taxon_ratios['9606']
+            taxon_ratios.loc[name, '10090'] = exp.taxon_ratios['10090']
+            taxon_ratios.loc[name, '9031'] = exp.taxon_ratios['9031']
+
 
 
             # df = exp.df.query('LabelFLAG==@labelquery').copy()
@@ -458,9 +465,6 @@ class Data:
             if not df.index.name == 'GeneID':
                 df.index = df.GeneID
 
-            if df.empty:
-                warn('No data for {!r}, skipping'.format(exp))
-                continue
                 # raise ValueError('No data for {!r}'.format(exp))
 
             if self.metrics and not self.metrics_after_filter and self.metrics_unnormed_area:
@@ -552,12 +556,19 @@ class Data:
 
         self.gid_funcat_mapping = gid_funcat_mapping
 
+        # filter down by exps that actually have data and were loaded
+        self.col_metadata = col_metadata.loc[exps.keys()]
+
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
-        _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
         ## TODO can check to ensure not exporting all data and stack this smaller amount of data
-        stacked_data = [ df[_cols].stack() for df in exps.values() ]
-        # stacked_data = [ df.stack() for df in exps.values() ]
+        if not self.export_all:
+            _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
+            if self.cluster_annotate_col:
+                _cols.append(self.cluster_annotate_col)
+            stacked_data = [ df[_cols].stack() for df in exps.values() ]
+        else:
+            stacked_data = [ df.stack() for df in exps.values() ]
         print('stacking...', flush=True, end='')
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
         print('done', flush=True)
@@ -1153,8 +1164,17 @@ class MyHeatMapper(HeatMapper):
 
         # Possibly add a colorbar
         if self.cbar:
+            fontsize = None
+            # doesn't work...
+            if 'fontsize' in self.cbar_kws:
+                fontsize = self.cbar_kws.pop('fontsize')
             cb = ax.figure.colorbar(mesh, cax, ax, **self.cbar_kws)
             cb.outline.set_linewidth(0)
+            if fontsize:
+                for tick in ax.get_yticklabels():
+                    tick.set_size(fontsize)
+                    print(tick.get_text(), tick.get_size())
+                # ax.set_yticklabels(ax.get_yticklabels(), fontsize=fontsize)
             # If rasterized is passed to pcolormesh, also rasterize the
             # colorbar to avoid white lines on the PDF rendering
             if kws.get('rasterized', False):
@@ -1228,10 +1248,12 @@ class _ScatterMapper(MyHeatMapper):
         range_y = np.arange(data.shape[0], dtype=int) + 0.5
         range_x = np.arange(data.shape[1], dtype=int) + 0.45
         x, y = np.meshgrid(range_x, range_y)
+        kws['rasterized'] = False
         return ax.scatter(x, y,
                           c=data,
                           marker=self.marker,
-                          s=self.marker_size, **kws)
+                          s=self.marker_size,
+                          **kws)
 
 def scattermap(data,
                marker='o',
@@ -1445,6 +1467,11 @@ class MyClusterGrid(ClusterGrid):
                 annot=annot, fmt='',
                 xticklabels=xtl, yticklabels=ytl, **kws)
 
+        # need to remove..
+        if kws.get('cbar') == False:
+            self.cax.set_xticks([])
+            self.cax.set_yticks([])
+
         ytl = self.ax_heatmap.get_yticklabels()
         ytl_rot = None if not ytl else ytl[0].get_rotation()
         self.ax_heatmap.yaxis.set_ticks_position('right')
@@ -1511,6 +1538,9 @@ class MyClusterGrid(ClusterGrid):
                 row_color_kws.pop(x, None)
             full_kws = kws.copy()
             full_kws.update(row_color_kws)
+            # TODO: ???
+            if 'cbar' in full_kws:
+                full_kws.pop('cbar')
 
             heatmap(matrix, cmap=cmap, cbar=False, ax=self.ax_row_colors,
                     xticklabels=row_color_labels, yticklabels=False, **full_kws)
@@ -1542,6 +1572,9 @@ class MyClusterGrid(ClusterGrid):
             if 'fontsize' in col_color_kws:
                 fontsize = col_color_kws.pop('fontsize')
 
+            # TODO: ???
+            if 'cbar' in kws:
+                kws.pop('cbar')
             if self.circle_col_markers:
                 scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors,
                            marker_size=self.circle_col_marker_size, xticklabels=False,

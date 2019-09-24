@@ -413,6 +413,15 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
         if '--after-norm' in sys.argv:
             metrics_unnormed_area = False
 
+    # for keeping track of what to stack from data
+    cluster_annotate_col = None
+    if all(x in sys.argv for x in ('cluster', '--annotate')):
+        _ix = sys.argv.index('--annotate')
+        cluster_annotate_col = sys.argv[_ix+1]
+        # if cluster_annotate_col not in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
+        #                                 'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
+        #     cluster_annotate_col = None
+
     export_all = False
     if all(x in sys.argv for x in ('export', '--level')) and any(x in sys.argv for x in ('all', 'align')):
         #know this ahead of time, calculate more things during data load
@@ -453,7 +462,8 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     SRA=sra,
                     metrics_after_filter=metrics_after_filter,
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
-                    export_all=export_all
+                    export_all=export_all,
+                    cluster_annotate_col=cluster_annotate_col
     )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
@@ -596,7 +606,7 @@ def export(ctx, level, genesymbols):
     data_obj.perform_data_export(level, genesymbols=genesymbols)
 
 @main.command('cluster')
-@click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2G', 'PeptideCount', 'PeptideCount_S',
+@click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
                                                'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
 ]), default=None, show_default=True )
 @click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
@@ -651,6 +661,7 @@ when `auto` is set for `--nclusters`""")
               default='None', show_default=True)
 @click.option('--show-missing-values/--hide-missing-values', default=True, is_flag=True, show_default=True,
               help="""Whether or not to show missing values on the cluster plot and missing values""")
+@click.option('--square', default=False, is_flag=True, help='Force square heatmap')
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
 @click.pass_context
@@ -658,7 +669,7 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
             genefile, gene_symbols,
             gene_symbol_fontsize, highlight_geneids, legend_include, legend_exclude, linkage,
             max_autoclusters, nclusters,
-            row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score):
+            row_cluster, seed, show_metadata, standard_scale, show_missing_values, square, z_score):
 
     if not figsize:  # returns empty tuple if not specified
         figsize = None
@@ -729,6 +740,7 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
                          metadata_colors=data_obj.metadata_colors,
                          circle_col_markers=circle_col_markers,
                          circle_col_marker_size=circle_col_marker_size,
+                         square=square,
     )
 
     g = result['clustermap']['clustergrid']
@@ -951,7 +963,8 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--geneset', type=click.Choice(('hallmark', 'go_biological', 'curated.CP.all',
                                               'curated.CP.KEGG', 'oncogenic', 'curated.CP.BioCarta',
                                               'curated.CP.Reactome', 'curated.CGP',
-                                              'go.All', 'go.Bio', 'go.Cell', 'go.Molecular'
+                                              'go.All', 'go.Bio', 'go.Cell', 'go.Molecular',
+                                              'motif.gene.sets',
 )),
               default=('hallmark',), show_default=True, multiple=True
 )
@@ -1041,18 +1054,19 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         gsea_jar = os.path.join(os.path.split(os.path.abspath(__file__))[0],
                                 'GSEA', 'gsea-3.0.jar')
 
-        geneset_mapping = {'hallmark': 'h.all.v6.1.entrez.gmt',
-                        'go_biological': 'c5.bp.v6.1.entrez.gmt',
-                        'curated.CGP': 'c2.all.v6.1.entrez.gmt',
-                        'curated.CP.all': 'c2.cp.v6.1.entrez.gmt',
-                        'curated.CP.BioCarta': 'c2.cp.biocarta.v6.1.entrez.gmt',
-                        'curated.CP.KEGG': 'c2.cp.kegg.v6.1.entrez.gmt',
-                        'curated.CP.Reactome': 'c2.cp.reactome.v6.1.entrez.gmt',
-                        'oncogenic': 'c6.all.v6.1.entrez.gmt',
-                        'go.All': 'c5.all.v6.1.entrez.gmt',
-                        'go.Bio': 'c5.bp.v6.1.entrez.gmt',
-                        'go.Cell': 'c5.cc.v6.1.entrez.gmt',
-                        'go.Molecular': 'c5.mf.v6.1.entrez.gmt'
+        geneset_mapping = {'hallmark': 'h.all.v7.0.entrez.gmt',
+                           'go_biological': 'c5.bp.v6.1.entrez.gmt',
+                           'curated.CGP': 'c2.all.v6.1.entrez.gmt',
+                           'curated.CP.all': 'c2.cp.v6.1.entrez.gmt',
+                           'curated.CP.BioCarta': 'c2.cp.biocarta.v6.1.entrez.gmt',
+                           'curated.CP.KEGG': 'c2.cp.kegg.v6.1.entrez.gmt',
+                           'curated.CP.Reactome': 'c2.cp.reactome.v6.1.entrez.gmt',
+                           'oncogenic': 'c6.all.v6.1.entrez.gmt',
+                           'go.All': 'c5.all.v6.1.entrez.gmt',
+                           'go.Bio': 'c5.bp.v6.1.entrez.gmt',
+                           'go.Cell': 'c5.cc.v6.1.entrez.gmt',
+                           'go.Molecular': 'c5.mf.v6.1.entrez.gmt',
+                           'motif.gene.sets': 'c3.all.v7.0.entrez.gmt'
                         # : 'msigdb.v6.1.entrez.gmt',
         }
         # get most recent, sort by name and take last
@@ -1081,7 +1095,7 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
         _expression = expression.loc[ expression.index.dropna(), pheno[pheno[group].isin(groups)].index
         ]
 
-        _expression.index = expression.index.astype(int)
+        _expression.index = _expression.index.astype(int)
         if _expression.index.nunique() < len(_expression.index):
             _expression = _expression.groupby(_expression.index).mean()
 
@@ -1333,7 +1347,7 @@ def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, li
 
 
     # barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta.fillna('NA'),
-    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta,
+    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta, metadata_colors=data_obj.metadata_colors,
             average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
             file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
             xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order
