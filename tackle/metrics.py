@@ -102,69 +102,75 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
 
     # fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12,8), sharex=True, sharey=False)
-    fig = plt.figure(figsize=(18,10))
-    gs = gridspec.GridSpec(2,3)
+    # fig = plt.figure(figsize=(18,10))
+    # gs = gridspec.GridSpec(2,3)
 
-    ax_sra  = fig.add_subplot(gs[0, 0])
-    ax_gpg  = fig.add_subplot(gs[0, 1])
-    ax_psms = fig.add_subplot(gs[1, 0])
-    ax_pept = fig.add_subplot(gs[1, 1])
-    ax_area = fig.add_subplot(gs[0:, 2])
+    # ax_sra  = fig.add_subplot(gs[0, 0])
+    # ax_gpg  = fig.add_subplot(gs[0, 1])
+    # ax_psms = fig.add_subplot(gs[1, 0])
+    # ax_pept = fig.add_subplot(gs[1, 1])
+    # ax_area = fig.add_subplot(gs[0:, 2])
 
-    sra[['S', 'R', 'A']].plot.bar(stacked=True, ax=ax_sra, color=[green, yellow, red], title='SRA')
-    gpg.plot.bar(ax=ax_gpg, legend=False, title='Gene Product Groups')
-    psms[['Total', 'u2g']].plot.bar(stacked=False, ax=ax_psms, title='PSMs', width=.75)
-    peptides[['Total', 'u2g', 'Strict', 'Strict_u2g']].plot.bar(stacked=False, ax=ax_pept, title='Peptides',
-                                                                width=.8)
-    plt.setp(ax_sra.get_xticklabels(), visible=False)
-    plt.setp(ax_gpg.get_xticklabels(), visible=False)
+    # sra[['S', 'R', 'A']].plot.bar(stacked=True, ax=ax_sra, color=[green, yellow, red], title='SRA')
+    # gpg.plot.bar(ax=ax_gpg, legend=False, title='Gene Product Groups')
+    # psms[['Total', 'u2g']].plot.bar(stacked=False, ax=ax_psms, title='PSMs', width=.75)
+    # peptides[['Total', 'u2g', 'Strict', 'Strict_u2g']].plot.bar(stacked=False, ax=ax_pept, title='Peptides',
+    #                                                             width=.8)
+    # plt.setp(ax_sra.get_xticklabels(), visible=False)
+    # plt.setp(ax_gpg.get_xticklabels(), visible=False)
 
-    # sb.violinplot(y='Name', x=area_name, data=area_df, ax=ax_area)
-    sb.boxenplot(y='Name', x=area_name, data=area_df, ax=ax_area)
-    ax_area.yaxis.tick_right()
-    ax_area.set_ylabel('')
-    if before_norm:
-        ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj')
-    else:
-        ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj normed')
-    # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=90 )
-    plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=0 )
+    # # sb.violinplot(y='Name', x=area_name, data=area_df, ax=ax_area)
+    # ### ????? This is not working for some reason...... n
+    # ### *** TypeError: ufunc 'isfinite' not supported for the input types, and the inputs could not be safely coerced to any supported types according to the casting rule ''safe''
 
-    FONTSIZE = 10
-    ncols = {0: 1, 2:2, 3:1, 4:0}
-    for ix, ax in enumerate((ax_sra, ax_gpg, ax_psms, ax_pept, ax_area)):
-        ax.yaxis.grid(True, lw=.25, color='grey', ls=':')
-        if ix == 4:
-            ticklabels = ax.yaxis.get_ticklabels()
-        else:
-            ticklabels = ax.xaxis.get_ticklabels()
-        for tick in ticklabels:
-            txt = tick.get_text()
-            newsize = FONTSIZE + 3 if ix == 4 else FONTSIZE
-            textlen = len(txt)
+    # area_df['Name'] = area_df['Name'].astype(str)
+    # area_df[area_name] = area_df[area_name].astype(float)
+    # # sb.boxenplot(y='Name', x=area_name, data=area_df, ax=ax_area)
+    # sb.boxenplot(y=area_df['Name'].values, x=area_df[area_name].values, ax=ax_area)
+    # ax_area.yaxis.tick_right()
+    # ax_area.set_ylabel('')
+    # if before_norm:
+    #     ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj')
+    # else:
+    #     ax_area.set_xlabel('log$_{10}$ iBAQ dstrAdj normed')
+    # # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=90 )
+    # plt.setp( ax_area.xaxis.get_majorticklabels(), rotation=0 )
 
-            # resizing so labels fit, not best approach
-            if textlen > 7 and textlen <= 9:
-                newsize -= 1
-            if textlen >= 10 and textlen < 13:
-                newsize -= 1
-            elif textlen >= 13:
-                newsize -= 1
-            if len(data.keys()) >= 17 and ix != 4:
-                newsize -= 2
-            tick.set_size(newsize)
-            # if ix == 4:
-            #     print(txt, textlen, newsize)
-        sb.despine(ax=ax)
-        if ix == 1:
-            continue  #  no legend for gpgroups
-        ax.legend(loc='lower left', ncol=ncols[ix], fontsize=8)
+    # FONTSIZE = 10
+    # ncols = {0: 1, 2:2, 3:1, 4:0}
+    # for ix, ax in enumerate((ax_sra, ax_gpg, ax_psms, ax_pept, ax_area)):
+    #     ax.yaxis.grid(True, lw=.25, color='grey', ls=':')
+    #     if ix == 4:
+    #         ticklabels = ax.yaxis.get_ticklabels()
+    #     else:
+    #         ticklabels = ax.xaxis.get_ticklabels()
+    #     for tick in ticklabels:
+    #         txt = tick.get_text()
+    #         newsize = FONTSIZE + 3 if ix == 4 else FONTSIZE
+    #         textlen = len(txt)
 
-    sb.despine(ax=ax_area, right=False, top=True, left=True, bottom=False)
-    ax_area.xaxis.grid(True, lw=.25, color='grey', ls=':')
+    #         # resizing so labels fit, not best approach
+    #         if textlen > 7 and textlen <= 9:
+    #             newsize -= 1
+    #         if textlen >= 10 and textlen < 13:
+    #             newsize -= 1
+    #         elif textlen >= 13:
+    #             newsize -= 1
+    #         if len(data.keys()) >= 17 and ix != 4:
+    #             newsize -= 2
+    #         tick.set_size(newsize)
+    #         # if ix == 4:
+    #         #     print(txt, textlen, newsize)
+    #     sb.despine(ax=ax)
+    #     if ix == 1:
+    #         continue  #  no legend for gpgroups
+    #     ax.legend(loc='lower left', ncol=ncols[ix], fontsize=8)
 
-    fig.subplots_adjust(hspace=.15, top=.95, left=.1, right=.9)
-    save_multiple(fig, outname, *file_fmts)
+    # sb.despine(ax=ax_area, right=False, top=True, left=True, bottom=False)
+    # ax_area.xaxis.grid(True, lw=.25, color='grey', ls=':')
+
+    # fig.subplots_adjust(hspace=.15, top=.95, left=.1, right=.9)
+    # save_multiple(fig, outname, *file_fmts)
 
     if full:  # also plot info from PSMs
         raise NotImplementedError('Not yet')

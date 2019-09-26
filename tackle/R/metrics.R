@@ -31,6 +31,9 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
   ## thewidth <- dim(df)[1] %/% 2 %>% max(9)
   thewidth <- dim(df)[1] %/% 2 %>% max(9) %>% min(24)
   annot_scale = (9/thewidth)
+  overflow_width <- (24 / (dim(df)[1] %/% 2)) %>% min(1)
+  print(dim(df)[1])
+  print(overflow_width)
 
   ## green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
 
@@ -71,7 +74,7 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
           legend.position = 'top',
           legend.title=element_text(size=8),
           legend.text = element_text(size=8),
-          axis.text.x = element_text(angle=90, hjust=1, vjust=.4)
+          axis.text.x = element_text(angle=90, hjust=1, vjust=.4, size = 12*overflow_width)
           ) +
     guides(fill=guide_legend(nrow=1, byrow=TRUE)) +
     labs(fill='PSM\nMetric') +
@@ -85,7 +88,7 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
           legend.position = 'top',
           legend.title=element_text(size=8),
           legend.text = element_text(size=8),
-          axis.text.x = element_text(angle=90, hjust=1, vjust=.4)
+          axis.text.x = element_text(angle=90, hjust=1, vjust=.4, size = 12*overflow_width)
           ) +
     guides(fill=guide_legend(nrow=1, byrow=TRUE)) +
     labs(fill='Peptide\nMetric') +
