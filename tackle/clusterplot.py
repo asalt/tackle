@@ -193,6 +193,7 @@ def clusterplot(data, annot_mat=None,
                 gene_symbol_fontsize=8, legend_include=None, legend_exclude=None,
                 metadata_colors=None, circle_col_markers=False, circle_col_marker_size=12,
                 force_optimal_ordering=False,
+                square=False,
 ):
     """
     :nclusters: None, 'auto', or positive integer
@@ -293,6 +294,9 @@ def clusterplot(data, annot_mat=None,
             for val in col_data[info].unique():
                 if pd.isna(val):
                     continue
+                if val == 'NA':
+                    mapping['NA'] = 'grey'
+                    continue
                 if metadata_colors and info in metadata_colors:
                     c = metadata_colors[info].get(val, next(cmap))
                 else:
@@ -303,6 +307,7 @@ def clusterplot(data, annot_mat=None,
 
             colors = col_data[info].map(mapping) # cannot use np.nan as a dictionary key!
             colors.loc[colors.isna()] = 'grey'  # cannot use np.nan as a dictionary key!
+            colors.loc['NA'] = 'grey'  # cannot use np.nan as a dictionary key!
             col_colors[info] = colors
 
         # force NANs grey
@@ -504,6 +509,12 @@ def clusterplot(data, annot_mat=None,
                             # heatmap_width_ratio=heatmap_width_ratio,
     )
 
+    col_color_kws=dict(fontsize=FONTSIZE)
+    if circle_col_markers:
+        col_color_kws['linewidths'] = .5
+        col_color_kws['linecolor'] = '#111111'
+
+
     g = plotter.plot(method=linkage, metric='euclidean',
                      row_cluster=row_cluster, col_cluster=col_cluster,
                      row_linkage=None, col_linkage=None,
@@ -516,9 +527,12 @@ def clusterplot(data, annot_mat=None,
                      vmax=plot_data.max().max() if cmap == 'YlOrRd' else None,
                      rasterized=True,
                      xticklabels=plot_data.columns,
-                     col_color_kws=dict(fontsize=12),
+                     # col_color_kws=dict(fontsize=12),
+                     col_color_kws=col_color_kws,
                      annot=annot_mat.loc[plot_data.index] if annot_mat is not None else None,
                      annot_kws=dict(size=FONTSIZE),
+                     square=square,
+
 
     )
 
@@ -559,6 +573,7 @@ def clusterplot(data, annot_mat=None,
                 tick.set_size(tick.get_size()*scale)
 
     g.ax_heatmap.set_ylabel('') # don't need the GeneID label
+    plt.rcParams['figure.constrained_layout.use'] = True
 
     if row_colors is not None and 'Cluster' in row_colors.columns:
         # annotate cluster numbers
@@ -604,6 +619,7 @@ def clusterplot(data, annot_mat=None,
             for n, c in zip(col_names, label_colors):
                 if circle_col_markers:
                     handle = mpl.lines.Line2D(range(1), range(1), color="none", marker='o', markerfacecolor=c,
+                                              markeredgewidth=.5, markeredgecolor='#111111',
                                               markersize=12)
                 else:
                     handle = mpl.patches.Patch(color=c,)
@@ -616,7 +632,7 @@ def clusterplot(data, annot_mat=None,
 
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
                                               loc='upper left', ncol=ncols,
-                                              title=col_name
+                                              title=col_name, frameon=False,
             )
             legends.append(leg)
             g.ax_col_dendrogram.add_artist(leg)
@@ -629,6 +645,8 @@ def clusterplot(data, annot_mat=None,
     else:
         hspace = .01 / (22*figheight)
         wspace = .01
+
+
 
     g.fig.subplots_adjust(hspace=hspace, wspace=wspace,
                           # left=.5/figwidth, right=1-1./figwidth,
