@@ -583,7 +583,7 @@ def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=
     if norm_ == 0:
         # error = '{} has a sum of 0 when trying to normalize, aborting'.format(name)
         error = '{} has a sum of 0 when trying to normalize, skipping normalization'.format(name)
-        print(error)
+        warn(error)
         # raise click.Abort()
         sum_ = 1
     if outcol is None:
