@@ -202,9 +202,10 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
             h = min(h, 15)
         print(w,h)
 
+        plt.rcParams['figure.constrained_layout.use'] = True
         fig = plt.figure(figsize=(w,h))
         # gs = gridspec.GridSpec(1,10)
-        gs = gridspec.GridSpec(nrow, 10, wspace=.4)
+        gs = gridspec.GridSpec(nrow, 10, wspace=.4, figure=fig)
 
         # ax = fig.add_subplot(gs[0, 0:9])
 
@@ -231,6 +232,13 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
                     group_chunk = the_order[ chunk[0]:chunk[-1]+1 ]
                 else:
                     group_chunk = edata[average].unique()[chunk]
+
+                if metadata_colors and average in metadata_colors:
+                    color_mapping = metadata_colors[average]
+                    # group_chunk is the collection of items to plot, a subset of the
+                    # "average" indicator category, in the correct order
+                    colors = [color_mapping.get(x) for x in group_chunk]
+
                 sb.barplot(x=x, y='Expression', data=edata[edata[average].isin(group_chunk)],
                            ax=ax, ci='sd', capsize=.2,
                         # palette=colors, order=the_order,
@@ -301,10 +309,10 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         ax_leg.set_xticks([])
         ax_leg.set_yticks([])
 
-        if len(chunks) == 1:
-            fig.subplots_adjust(left=.10, bottom=.20, top=.90, hspace=.8)
-        else:
-            fig.subplots_adjust(left=.10, bottom=.08, top=.96, hspace=.8)
+        # if len(chunks) == 1:
+        #     fig.subplots_adjust(left=.10, bottom=.20, top=.90, hspace=.8)
+        # else:
+        #     fig.subplots_adjust(left=.10, bottom=.08, top=.96, hspace=.8)
 
         # do this at the end, after all plots are drawn
         for ax in axs:
