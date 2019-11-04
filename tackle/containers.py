@@ -755,7 +755,7 @@ class Data:
             self._mask = self.mask[sample_ixs]
             self.normed = True
 
-        if self.export_all:
+        if self.export_all and not self.normed:
             new_cols = list()
             for col in 'iBAQ_dstrAdj', 'iBAQ_dstrAdj_FOT', 'iBAQ_dstrAdj_MED':
                 frame = self.df_filtered.loc[ idx[:, col], :]
@@ -772,10 +772,13 @@ class Data:
                 # self.data.loc[ idx[frame_log.index.levels[0].values, col+'_log'], :] = frame_log.values
             self.df_filtered = pd.concat([self.df_filtered, *new_cols])
 
+
+
+
         if self.batch is not None:
             self._areas_log_shifted = self.batch_normalize(self.areas_log_shifted)
             # try batch normalization via ComBat
-            if self.export_all:  # batch normalize the other requested area columns
+            if self.export_all and not self.normed:  # batch normalize the other requested area columns
                 for col in 'iBAQ_dstrAdj', 'iBAQ_dstrAdj_FOT', 'iBAQ_dstrAdj_MED':
                     frame = (self.df_filtered.loc[ idx[:, col+'_log10'], :].reset_index(level=1, drop=True)
                              .astype(float)
@@ -784,8 +787,14 @@ class Data:
                     res = self.batch_normalize(frame, prior_plot=False)
                     self.df_filtered.loc[ idx[:, col+'_log10'], :] = res.values
                     self.df_filtered.loc[ idx[:, col], :] = np.power(res, 10).values
+            elif self.export_all and self.normed:
+                warn("""No support for full export with norm channel. Please ignore
+                        iBAQ_dstrAdj, iBAQ_dstrAdj_FOT, and iBAQ_dstrAdj_MED
+                        as they have not been properly batch corrected and
+                        normalized
+                """)
 
-        if self.export_all:  # now calculate z scores for all these extra columns
+        if self.export_all and not self.normed:  # now calculate z scores for all these extra columns
             new_cols = list()
             for col in 'iBAQ_dstrAdj_log10', 'iBAQ_dstrAdj_FOT_log10', 'iBAQ_dstrAdj_MED_log10':
                 frame = self.df_filtered.loc[ idx[:, col], : ].apply(z_score, axis=1).reset_index()
