@@ -193,12 +193,22 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         # group0, group1 = data_obj.col_metadata.loc[group].unique()[[0, -1]]
         samples0, samples1 = groups[group0], groups[group1]
 
-        log2_fc = ((values[samples1].mean(1) - values[samples0].mean(1))
-                .apply(lambda x: np.power(10, x))
-                # .pipe(np.power, 10)
-                .pipe(np.log2)
+        log2_fc = (values[samples1] - values[samples0].mean(1)
+                   .apply(lambda x: np.power(10, x))
+                   # .pipe(np.power, 10)
+                   .pipe(np.log2)
         )
         log2_fc.name = 'log2_Fold_Change'
+
+
+        # this is more "correct"
+        # log2_fc = ((values[samples1].apply(lambda x: np.power(10, x)) /\
+        #             values[samples0].mean(1).apply(lambda x: np.power(10, x))
+        #            # .apply(lambda x: np.power(10, x))
+        #            # .pipe(np.power, 10)
+        #            .pipe(np.log2)
+        # )
+        # log2_fc.name = 'log2_Fold_Change'
 
         df = padj.join(log2_fc.to_frame())
         df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
