@@ -112,6 +112,33 @@ class GeneMapper:
 
 _genemapper = GeneMapper()
 
+
+def assign_sra(df):
+
+    # df['SRA'] = 'A'
+    # cat_type = CategoricalDtype(categories=['S', 'R', 'A'],
+    #                             ordered=True)
+    # df['SRA'] = df['SRA'].astype(cat_type)
+    df['SRA'] = pd.Categorical(['A']*len(df), categories=['S', 'R', 'A'], ordered=True)
+    # df['SRA'] = df['SRA'].astype('category', categories=['S', 'R', 'A'],
+    #                              ordered=True)
+    df.loc[ (df['IDSet'] == 1) &
+            (df['IDGroup_u2g'] <= 3), 'SRA'] = 'S'
+
+    df.loc[ (df['IDSet'] == 2) &
+            (df['IDGroup'] <= 3), 'SRA'] = 'S'
+
+    df.loc[ (df['IDSet'] == 1) &
+            (df['SRA'] != 'S') &
+            (df['IDGroup_u2g'] <= 5), 'SRA'] = 'R'
+
+    df.loc[ (df['IDSet'] == 2) &
+            (df['SRA'] != 'S') &
+            (df['IDGroup'] <= 5), 'SRA'] = 'R'
+
+    return df
+
+
 class Data:
 
     def __init__(self, additional_info=None, batch=None,
@@ -450,6 +477,10 @@ class Data:
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
                 exp.df.rename(columns={'LabelFLAG': 'EXPLabelFLAG'}, inplace=True)
             df = exp.df.query('EXPLabelFLAG==@labelquery').copy()
+
+            if 'SRA' not in df or df.SRA.isna().any(): # some old grouper experiments don't have it
+                df = assign_sra(df)
+
             if df.empty:
                 warn('No data for {!r}, skipping'.format(exp))
                 continue
