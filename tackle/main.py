@@ -415,9 +415,29 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
 
     # for keeping track of what to stack from data
     cluster_annotate_col = None
-    if all(x in sys.argv for x in ('cluster', '--annotate')):
-        _ix = sys.argv.index('--annotate')
-        cluster_annotate_col = sys.argv[_ix+1]
+
+    # extract cluster annotation column for cluster if present
+    # and not if --annotate is specified for pca
+    # this is needed now so we keep the proper column when loading data
+    # the logic should work!
+    if all(x in [y.strip() for y in sys.argv] for x in ('cluster', '--annotate')):
+        if 'pca' in [x.strip() for x in sys.argv]:
+
+            _pca_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'pca'][0]
+            _cluster_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'cluster'][0]
+            # can be 1 or more annot arg. We want the one greater than cluster and not PCA
+            _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
+            for a in _annot_args:
+                if ( a > _cluster_arg and _cluster_arg < _pca_arg and a < _pca_arg) or\
+                   (a > _cluster_arg and _cluster_arg > _pca_arg and a > _pca_arg):
+                    _annot_arg = a #and we're done
+                    break
+
+        else:
+            _annot_arg = [i for i, x in enumerate(sys.argv) if x.strip() == '--annotate'][0]
+
+        cluster_annotate_col = sys.argv[_annot_arg+1].strip()
+
         # if cluster_annotate_col not in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
         #                                 'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
         #     cluster_annotate_col = None
