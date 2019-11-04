@@ -573,7 +573,7 @@ def clusterplot(data, annot_mat=None,
                 tick.set_size(tick.get_size()*scale)
 
     g.ax_heatmap.set_ylabel('') # don't need the GeneID label
-    plt.rcParams['figure.constrained_layout.use'] = True
+    # plt.rcParams['figure.constrained_layout.use'] = True
 
     if row_colors is not None and 'Cluster' in row_colors.columns:
         # annotate cluster numbers
