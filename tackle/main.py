@@ -981,8 +981,10 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--show-result/--no-show-result', default=True, show_default=True)
 @click.option('--collapse', type=bool, default=False, show_default=True)
 @click.option('--geneset', type=click.Choice(('hallmark', 'go_biological', 'curated.CP.all',
-                                              'curated.CP.KEGG', 'oncogenic', 'curated.CP.BioCarta',
+                                              'curated.CP.KEGG', 'curated.CGP',
+                                              'oncogenic.C6', 'curated.CP.BioCarta',
                                               'curated.CP.Reactome', 'curated.CGP',
+                                              'curated.CP.PID',
                                               'go.All', 'go.Bio', 'go.Cell', 'go.Molecular',
                                               'motif.gene.sets',
 )),
@@ -1073,22 +1075,23 @@ def gsea(ctx, show_result, collapse, geneset, metric, mode, number_of_permutatio
 
         gsea_jar = os.path.join(os.path.split(os.path.abspath(__file__))[0],
                                 'GSEA', 'gsea-3.0.jar')
-
         geneset_mapping = {'hallmark': 'h.all.v7.0.entrez.gmt',
-                           'go_biological': 'c5.bp.v6.1.entrez.gmt',
-                           'curated.CGP': 'c2.all.v6.1.entrez.gmt',
-                           'curated.CP.all': 'c2.cp.v6.1.entrez.gmt',
-                           'curated.CP.BioCarta': 'c2.cp.biocarta.v6.1.entrez.gmt',
-                           'curated.CP.KEGG': 'c2.cp.kegg.v6.1.entrez.gmt',
-                           'curated.CP.Reactome': 'c2.cp.reactome.v6.1.entrez.gmt',
-                           'oncogenic': 'c6.all.v6.1.entrez.gmt',
-                           'go.All': 'c5.all.v6.1.entrez.gmt',
-                           'go.Bio': 'c5.bp.v6.1.entrez.gmt',
-                           'go.Cell': 'c5.cc.v6.1.entrez.gmt',
-                           'go.Molecular': 'c5.mf.v6.1.entrez.gmt',
+                           'go_biological': 'c5.bp.v7.0.entrez.gmt',
+                           'curated.all': 'c2.all.v7.0.entrez.gmt',
+                           'curated.CGP': 'c2.cgp.v7.0.entrez.gmt',
+                           'curated.CP.all': 'c2.cp.v7.0.entrez.gmt',
+                           'curated.CP.BioCarta': 'c2.cp.biocarta.v7.0.entrez.gmt',
+                           'curated.CP.KEGG': 'c2.cp.kegg.v7.0.entrez.gmt',
+                           'curated.CP.Reactome': 'c2.cp.reactome.v7.0.entrez.gmt',
+                           'curated.CP.PID': 'c2.cp.pid.v7.0.entrez.gmt',
+                           'oncogenic.C6': 'c6.all.v7.0.entrez.gmt',
+                           'go.All': 'c5.all.v7.0.entrez.gmt',
+                           'go.Bio': 'c5.bp.v7.0.entrez.gmt',
+                           'go.Cell': 'c5.cc.v7.0.entrez.gmt',
+                           'go.Molecular': 'c5.mf.v7.0.entrez.gmt',
                            'motif.gene.sets': 'c3.all.v7.0.entrez.gmt'
-                        # : 'msigdb.v6.1.entrez.gmt',
         }
+
         # get most recent, sort by name and take last
         homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
                                                     'data', 'homologene*data')),
