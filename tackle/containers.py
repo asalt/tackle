@@ -40,6 +40,17 @@ LABEL_MAPPER = {'none': 0,  # hard coded number IDs for labels
                 '130N': 1301,
                 '131N': 1310,
                 '131C': 1311,
+                '1260': 1260,
+                '1270': 1270,
+                '1271': 1271,
+                '1280': 1280,
+                '1281': 1281,
+                '1290': 1290,
+                '1291': 1291,
+                '1300': 1300,
+                '1301': 1301,
+                '1310': 1310,
+                '1311': 1311,
                 '131': 1310,
                 '113': 113,
                 '114': 114,
@@ -170,6 +181,7 @@ class Data:
                  export_all=False,
                  SRA='S',
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
+                 genefile_norm=None,
                  normalize_across_species=False,
                  set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
@@ -217,6 +229,7 @@ class Data:
         self.ifot_ki              = ifot_ki
         self.ifot_tf              = ifot_tf
         self.median               = median
+        self.genefile_norm        = genefile_norm
         self.normalize_across_species = normalize_across_species
         self.base_dir             = base_dir
         self.metrics              = metrics
@@ -470,6 +483,14 @@ class Data:
             runno = record.get('runno')
             searchno = record.get('searchno')
             label = record.get('label')
+            if label and label not in LABEL_MAPPER:
+
+                warn('\n'+'#'*80+'\n'+\
+                     'Could not find label {}, in mapping, check if correct label specified. Skipping to avoid error'.format(label) +\
+                     '\n'+'#'*80
+                )
+                continue
+
             labelquery = LABEL_MAPPER.get(label, 0)
 
             exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir)
@@ -482,12 +503,18 @@ class Data:
                 df = assign_sra(df)
 
             if df.empty:
-                warn('No data for {!r}, skipping'.format(exp))
+                warn('No data for {!r}, label {}, skipping'.format(exp, label))
                 continue
 
-            taxon_ratios.loc[name, '9606'] = exp.taxon_ratios['9606']
-            taxon_ratios.loc[name, '10090'] = exp.taxon_ratios['10090']
-            taxon_ratios.loc[name, '9031'] = exp.taxon_ratios['9031']
+            if '9606' not in exp.taxon_ratios:
+                # should always be here, or None?
+                pass
+            # taxon_ratios.loc[name, '9606'] = exp.taxon_ratios['9606']
+            # taxon_ratios.loc[name, '10090'] = exp.taxon_ratios['10090']
+            # taxon_ratios.loc[name, '9031'] = exp.taxon_ratios['9031']
+            taxon_ratios.loc[name, '9606'] = exp.taxon_ratios.get('9606')
+            taxon_ratios.loc[name, '10090'] = exp.taxon_ratios.get('10090')
+            taxon_ratios.loc[name, '9031'] = exp.taxon_ratios.get('9031')
 
 
 
@@ -525,6 +552,7 @@ class Data:
                                            ifot=self.ifot, ifot_ki=self.ifot_ki,
                                            ifot_tf=self.ifot_tf,
                                            median=self.median,
+                                           genefile_norm=self.genefile_norm,
                     )
             else:
                 # df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
@@ -536,6 +564,7 @@ class Data:
                                                                     ifot=self.ifot, ifot_ki=self.ifot_ki,
                                                                     ifot_tf=self.ifot_tf,
                                                                     median=self.median,
+                                                                    genefile_norm=self.genefile_norm,
                                                                     taxon=taxonid
                     )
                 # df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
@@ -572,8 +601,6 @@ class Data:
             df = df[ df.PeptideCount_u2g >= self.unique_pepts ]
 
 
-
-
             # df = assign_cols(exp.df, name)
             if self.metrics and self.metrics_after_filter and not self.metrics_unnormed_area:
                 self._update_metrics(df, name, area_column='area')
@@ -593,6 +620,7 @@ class Data:
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
         ## TODO can check to ensure not exporting all data and stack this smaller amount of data
+
         if not self.export_all:
             _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
             if self.cluster_annotate_col:
@@ -956,7 +984,6 @@ class Data:
         else:
             raise ValueError("Must specify 1 of `group` or `formula`")
 
-
         if self.covariate is not None:
             ncov = pheno[self.covariate].nunique()
             r.assign('ncov', pheno[self.covariate].nunique())
@@ -995,8 +1022,6 @@ class Data:
                                                     2):
                     contrast = '{} - {}'.format(*group)
                     contrasts_array.append(contrast)
-
-
 
             elif contrasts_str:
                 contrasts_array = [ x.strip() for x in contrasts_str.split(',') if x.strip()]
