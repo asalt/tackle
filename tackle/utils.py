@@ -4,6 +4,7 @@
 import os
 import re
 import configparser
+import glob
 import operator as op
 from collections import OrderedDict, defaultdict, Counter
 from functools import lru_cache
@@ -23,7 +24,7 @@ import click
 
 
 from bcmproteomics_ext import ispec
-sb.set_context('notebook', font_scale=1.8)
+# sb.set_context('notebook', font_scale=1.8)
 
 idx = pd.IndexSlice
 
@@ -561,6 +562,7 @@ ifot_normalizer = iFOT()
 UNANNOTATED_TIDS = (6239,)
 
 def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=False,
+              genefile_norm=None,
               outcol=None, taxon=None):
 
     if ifot: # normalize by ifot but without keratins
@@ -578,6 +580,15 @@ def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=
             norm_ = 1
         else:
             norm_ = df.loc[df['FunCats'].fillna('').str.contains('TF'), 'iBAQ_dstrAdj'].sum()
+    elif genefile_norm:
+        gids_for_normalization = parse_gid_file(genefile_norm)
+        if not gids_for_normalization:
+            warn('No genes found in file: {}'.format(genefile_norm))
+        overlapping_gids = set(df.index) & set(gids_for_normalization)
+        if not overlapping_gids:
+            warn('No genes in file {} present in experiment'.format(genefile_norm))
+        norm_ = df.loc[overlapping_gids, 'iBAQ_dstrAdj'].sum()
+
     else:
         norm_ = 1
     if norm_ == 0:
@@ -603,7 +614,8 @@ def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignor
     if ignored_geneid_subset:
         tokeep = set(df.index) - set(ignored_geneid_subset)
         df = df.loc[tokeep]
-    valid_ixs = (x for x in df.index if not np.isnan(x))
+    # valid_ixs = (x for x in df.index if not np.isnan(x))
+    valid_ixs = (x for x in df.index if not pd.isna(x))
     return df.loc[valid_ixs]
 
 def filter_and_assign(df, name, funcats=None, funcats_inverse=None, geneid_subset=None,
@@ -716,3 +728,56 @@ class DefaultOrderedDict(OrderedDict):
     def __repr__(self):
         return 'OrderedDefaultDict(%s, %s)' % (self.default_factory,
                                                OrderedDict.__repr__(self))
+
+def hgene_map(expression, boolean=False):
+
+    # get most recent, sort by name and take last
+    homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                                                'data', 'homologene*data')),
+                        reverse=True)[0]
+
+
+    homologene = (pd.read_table(homologene_f, header=None,
+                                names=('Homologene', 'TaxonID', 'GeneID',
+                                       'Symbol', 'ProteinGI', 'ProteinAccession'))
+    )
+    # check if we have non-human GeneIDs
+    hgene_query = homologene[ homologene.GeneID.isin(expression.index) ]
+    if hgene_query.TaxonID.nunique() > 1:
+        raise ValueError('No support for multi-species GSEA')
+    if hgene_query.TaxonID.nunique() == 1 and hgene_query.TaxonID.unique()[0] != 9606:
+        # remap
+        print('Remapping {} GeneIDs to human'.format(hgene_query.TaxonID.unique()[0]))
+        gid_hgene = hgene_query[['GeneID', 'Homologene']].set_index('GeneID')['Homologene'].to_dict()
+        hgene_hugid = (homologene.query('TaxonID==9606') [['GeneID', 'Homologene']]
+                    .set_index('Homologene')['GeneID'].to_dict()
+        )
+        expression.index = expression.index.map( lambda x: hgene_hugid.get( gid_hgene.get(x) ))
+    else:
+        return expression
+    # _expression = expression.loc[ expression.index.dropna(), pheno[pheno[group].isin(groups)].index]
+    _expression = expression.loc[ expression.index.dropna()]
+
+    _expression.index = _expression.index.astype(int)
+    if _expression.index.nunique() < len(_expression.index):
+        # take mean of nonzero values
+        _expression = _expression.replace(0, np.nan).groupby(_expression.index).mean()
+        if boolean:
+            _expression = _expression.applymap(bool)
+    return _expression
+
+
+
+from tempfile import NamedTemporaryFile
+from contextlib import contextmanager
+# workaround for windows
+@contextmanager
+def named_temp(*args, **kwargs):
+    f = NamedTemporaryFile(*args, delete=False, **kwargs)
+    try:
+        yield f
+    finally:
+        try:
+            os.unlink(f.name)
+        except OSError:
+            pass

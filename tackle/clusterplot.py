@@ -1,3 +1,5 @@
+import textwrap
+
 import matplotlib as mpl
 mpl.use('Agg')
 
@@ -193,10 +195,12 @@ def clusterplot(data, annot_mat=None,
                 gene_symbol_fontsize=8, legend_include=None, legend_exclude=None,
                 metadata_colors=None, circle_col_markers=False, circle_col_marker_size=12,
                 force_optimal_ordering=False,
-                square=False,
+                square=False, force_plot_genes=False,
+                main_title=None,
 ):
     """
     :nclusters: None, 'auto', or positive integer
+    :force_plot_genes: bool, default False. When True, will force display of all genes in `genes` as missing values
 
     """
 
@@ -212,16 +216,22 @@ def clusterplot(data, annot_mat=None,
 
     retval = dict()
     data = data.copy()
-    mask = mask.copy()
+    if mask is not None:
+        mask = mask.copy()
     if annot_mat is not None:
         annot_mat = annot_mat.copy()
 
     if genes is not None:  # only plot these select genes
-        _genes = [x for x in genes if x in (set(genes) & set(data.index))]
-        data = data.loc[_genes]
-        mask = mask.loc[_genes]
+        if not force_plot_genes:
+            _genes = [x for x in genes if x in (set(genes) & set(data.index))]
+        else:
+            _genes = genes
+        # data = data.loc[_genes].fillna(0)
+        # mask = mask.loc[_genes].fillna(True)
+        data = data.reindex(_genes).fillna(0)
+        mask = mask.reindex(_genes).fillna(True)
         if annot_mat is not None:
-            annot_mat = annot_mat.loc[_genes]
+            annot_mat = annot_mat.reindex(_genes).fillna(0).astype(int)
 
     if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
         row_cluster = False
@@ -306,7 +316,8 @@ def clusterplot(data, annot_mat=None,
 #                        for val in col_data[info].unique()}
 
             colors = col_data[info].map(mapping) # cannot use np.nan as a dictionary key!
-            colors.loc[colors.isna()] = 'grey'  # cannot use np.nan as a dictionary key!
+            if colors.isna().any():
+                colors.loc[colors.isna()] = 'grey'  # cannot use np.nan as a dictionary key!
             colors.loc['NA'] = 'grey'  # cannot use np.nan as a dictionary key!
             col_colors[info] = colors
 
@@ -314,13 +325,16 @@ def clusterplot(data, annot_mat=None,
         # col_colors.loc[ col_data.loc[col_colors.index].isna() ] = '#444444'
         # col_colors = col_colors.T
 
+    _genemapper = GeneMapper()
 
     _geneids = data.index.copy()
     if gene_symbols:  # change index to symbols
         assert all(data.index == mask.index)
         if annot_mat is not None:
             assert all(data.index == annot_mat.index)
-        clustermap_symbols = [gid_symbol.get(x, '?') for x in data.index]
+        # clustermap_symbols = [gid_symbol.get(x, _genemapper.symbol.get(x, '?'))
+        clustermap_symbols = [gid_symbol.get(x, _genemapper.symbol.get(x, x))
+                              for x in data.index]
         data.index = clustermap_symbols
         mask.index = clustermap_symbols
         if annot_mat is not None:
@@ -328,10 +342,11 @@ def clusterplot(data, annot_mat=None,
         if row_colors is not None:
             row_colors.index = clustermap_symbols
 
-
     # if nclusters is not None or dbscan:
     if z_score is not None:
         data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
+        _minval = data_t.min().min()
+        data_t = data_t.fillna(_minval)
         # data[ data < 0] = 0
         # data_t = sb.matrix.ClusterGrid.z_score(data.replace(0, np.NAN), z_score)
         # data_t = data_t.fillna(data_t.min().min())
@@ -353,7 +368,7 @@ def clusterplot(data, annot_mat=None,
 
         cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=max(6, nclusters)))
         cmap_mapping = {val : next(cmap) for val in range(nclusters)}
-        cluster_colors = clusters.map(cmap_mapping).to_frame('Cluster')
+        cluster_colors = clusters.loc[clusters_categorical.index].map(cmap_mapping).to_frame('Cluster')
 
         cluster_data = data_t.copy()
         # ?? this is not right
@@ -363,10 +378,9 @@ def clusterplot(data, annot_mat=None,
         cluster_data = cluster_data.assign(Cluster=clusters+1)
         cluster_data['silhouette_score'] = kmeans_result['silhouette_scores']
 
-        _genemapper = GeneMapper()
         if not gene_symbols:
             cluster_data['GeneSymbol'] = cluster_data.index.map(lambda x: gid_symbol.get(x,
-                                                                        _genemapper.symbol.get(x, '?')
+                                                                        _genemapper.symbol.get(x, x)
             ))
         elif gene_symbols:
             cluster_data['GeneID'] = _geneids
@@ -495,12 +509,26 @@ def clusterplot(data, annot_mat=None,
                                             (.1*np.log10(figwidth))*(figwidth-12)
         )
 
+    # # TODO this should be done to make unique
+    # index_counts = plot_data.index.value_counts().where(lambda x : x > 1).dropna()
+    # for ix, entry in index_counts.items():
+    #     break
+
+    # simple workaround, fix this:
+    plot_data = plot_data.groupby(plot_data.index).mean()
+    themask = mask.groupby(mask.index).mean()
+
+
+    if nclusters is not None: # put back in order again
+        plot_data = plot_data.loc[clusters_categorical.index]
+        themask = themask.loc[clusters_categorical.index]
+
     # a minimal subclass of seaborn ClusterGrid for scaling.
     plotter = MyClusterGrid(plot_data,
                             figsize=figsize,
                             row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
-                            mask=mask.loc[plot_data.index] if show_missing_values else None,
+                            mask=themask.loc[plot_data.index] if show_missing_values else None,
                             circle_col_markers=circle_col_markers,
                             circle_col_marker_size=circle_col_marker_size,
                             force_optimal_ordering=force_optimal_ordering,
@@ -530,11 +558,15 @@ def clusterplot(data, annot_mat=None,
                      # col_color_kws=dict(fontsize=12),
                      col_color_kws=col_color_kws,
                      annot=annot_mat.loc[plot_data.index] if annot_mat is not None else None,
-                     annot_kws=dict(size=FONTSIZE),
+                     annot_kws=dict(size=8),
                      square=square,
 
 
     )
+
+    if annot_mat is not None:
+        _txt = 'Annotation : {}'.format(annot_mat.columns.name)
+        g.ax_row_dendrogram.text(0, -.34, _txt, transform=g.ax_row_dendrogram.transAxes, fontsize=8)
 
 
     # g = sb.clustermap(plot_data,
@@ -632,7 +664,10 @@ def clusterplot(data, annot_mat=None,
 
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
                                               loc='upper left', ncol=ncols,
-                                              title=col_name, frameon=False,
+                                              frameon=False,
+                                              title=textwrap.fill(col_name.replace('_',' '),
+                                                                  8,
+                                                                  break_long_words=False)
             )
             legends.append(leg)
             g.ax_col_dendrogram.add_artist(leg)
@@ -647,6 +682,8 @@ def clusterplot(data, annot_mat=None,
         wspace = .01
 
 
+    if main_title is not None:
+        g.fig.suptitle(main_title)
 
     g.fig.subplots_adjust(hspace=hspace, wspace=wspace,
                           # left=.5/figwidth, right=1-1./figwidth,
