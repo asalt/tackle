@@ -404,33 +404,55 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
             metrics_unnormed_area = False
 
     # for keeping track of what to stack from data
-    cluster_annotate_col = None
+    cluster_annotate_cols = None
 
     # extract cluster annotation column for cluster if present
     # and not if --annotate is specified for pca
     # this is needed now so we keep the proper column when loading data
     # the logic should work!
-    if all(x in [y.strip() for y in sys.argv] for x in ('cluster', '--annotate')):
-        if 'pca' in [x.strip() for x in sys.argv]:
 
-            _pca_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'pca'][0]
-            _cluster_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'cluster'][0]
-            # can be 1 or more annot arg. We want the one greater than cluster and not PCA
-            _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
-            for a in _annot_args:
-                if ( a > _cluster_arg and _cluster_arg < _pca_arg and a < _pca_arg) or\
-                   (a > _cluster_arg and _cluster_arg > _pca_arg and a > _pca_arg):
-                    _annot_arg = a #and we're done
-                    break
-            else: # we make it out of the loop and don't find --annotate associated with cluster
-                _annot_arg = None
+    if '--annotate' in sys.argv and ('cluster' in sys.argv or 'gsea' in sys.argv):
+        cluster_annotate_cols = list()
+        # _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
+        _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
+        for i in _annot_args:
+            try:
+                _q = sys.argv[i+1]
+            except IndexError:
+                continue
+            if _q in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
+                        'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
+                cluster_annotate_cols.append(_q)
+
+    # if all(x in [y.strip() for y in sys.argv] for x in ('cluster', '--annotate')):
+        # if 'pca' in [x.strip() for x in sys.argv]:
+
+        #     _pca_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'pca'][0]
+        #     _cluster_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'cluster'][0]
+        #     _gsea_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'gsea'][0]
+        #     # can be 1 or more annot arg. We want the one greater than cluster and not PCA
+        #     _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
+        #     for a in _annot_args:
+        #         if (a > _cluster_arg and _cluster_arg < _pca_arg and a < _pca_arg and \
+        #             (a < _gsea_arg and _cluster_arg < _gsea_arg) or\
+        #         if (a > _cluster_arg and _cluster_arg < _pca_arg and a < _pca_arg and \
+        #             (a > _gsea_arg and _cluster_arg > _gsea_arg) or\
+        #            (a > _cluster_arg and _cluster_arg > _pca_arg and a > _pca_arg ) or\
+        #            (a > _gsea_arg and _gsea_arg > _pca_arg and a > _pca_arg) :
+        #             _annot_arg = a #and we're done
+        #             print(_cluster_arg, _pca_arg, _gsea_arg, _annot_arg)
+        #             break
+        #     else: # we make it out of the loop and don't find --annotate associated with cluster
+        #         _annot_arg = None
 
 
-        else:
-            _annot_arg = [i for i, x in enumerate(sys.argv) if x.strip() == '--annotate'][0]
+        # else:
+        #     # _annot_arg = [i for i, x in enumerate(sys.argv) if x.strip() == '--annotate'][0]
+        #     _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == '--annotate']
 
-        if _annot_arg:
-            cluster_annotate_col = sys.argv[_annot_arg+1].strip()
+        # if _annot_arg:
+        #     # cluster_annotate_col = sys.argv[_annot_arg+1].strip()
+        #     cluster_annotate_cols = [sys.argv[_annot_arg+1].strip() for _annot_arg in _annot_args]
 
         # if cluster_annotate_col not in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
         #                                 'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
@@ -479,7 +501,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     metrics_after_filter=metrics_after_filter,
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
                     export_all=export_all,
-                    cluster_annotate_col=cluster_annotate_col
+                    cluster_annotate_cols=cluster_annotate_cols
     )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
@@ -985,6 +1007,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--collapse', type=bool, default=False, show_default=True)
 @click.option('--gmt', type=click.Path(exists=True, dir_okay=False),
               help='Custom GMT geneset')
+@click.option('--only-human', is_flag=True, help='Only use human genes in a mixed species dataset')
 @click.option('--geneset', type=click.Choice(('hallmark', 'go_biological', 'curated.CP.all',
                                               'curated.CP.KEGG', 'curated.CGP',
                                               'oncogenic.C6', 'curated.CP.BioCarta',
@@ -1019,10 +1042,15 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
                 Supersedes main --group option, also allows specifying genes for gene-pathway association""")
 @click.option('--plot-genes', default=False, show_default=True, is_flag=True,
               help="Plot heatmap of genes in differential gene sets")
+@click.option('--plot-genes-sig', default=False, show_default=True, is_flag=True,
+              help="Plot heatmap of genes in differential gene sets that pass FWER 0.05")
+@click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
+                                               'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
+]), default=None, show_default=True )
 @click.pass_context
-def gsea(ctx, show_result, collapse, gmt, geneset, metric, mode, number_of_permutations, norm, permute,
+def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, number_of_permutations, norm, permute,
          plot_top_x, rnd_seed, rnd_type, scoring_scheme, sort, set_max, set_min, number, group,
-         plot_genes
+         plot_genes, plot_genes_sig, annotate
 ):
     """
     Run GSEA on specified groups
@@ -1045,6 +1073,7 @@ def gsea(ctx, show_result, collapse, gmt, geneset, metric, mode, number_of_permu
     # expression = data_obj.areas_log_shifted.copy().fillna(0)
     expression = data_obj.areas_log_shifted.copy().fillna('na')
     expression.index.name = 'NAME'
+    # if only_human:
 
     pheno = data_obj.col_metadata
 
@@ -1354,7 +1383,7 @@ def gsea(ctx, show_result, collapse, gmt, geneset, metric, mode, number_of_permu
             save_multiple(fig, outname, *file_fmts)
 
 
-            if plot_genes:
+            if plot_genes or plot_genes_sig:
 
                 # load genesets
                 genesets = dict()
@@ -1382,7 +1411,15 @@ def gsea(ctx, show_result, collapse, gmt, geneset, metric, mode, number_of_permu
                                         cls=cls_comparison.strip('#')
                 )
 
-                for ix, row in gsea_sig.iterrows():
+                if plot_genes_sig:
+                    iter_ = gsea_sig[gsea_sig['FWER p-val']<.25].iterrows()
+                else:
+                    iter_ = gsea_sig.iterrows()
+
+
+                # for ix, row in gsea_sig.iterrows():
+                for ix, row in iter_:
+
 
                     force_plot_genes = False
                     gs = row['GS<br> follow link to MSigDB']
@@ -1405,9 +1442,19 @@ def gsea(ctx, show_result, collapse, gmt, geneset, metric, mode, number_of_permu
                     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
                     main_title = '{}\nNES: {:.2f} FWER pval: {:.2f}'.format(gs, row['NES'], row['FWER p-val'])
 
+
+                    annot_mat = None
+                    if annotate:
+                        annot_mat = (data_obj.data.loc[ pd.IndexSlice[X.index.tolist(), annotate], _cols ]
+                                    .reset_index(level=1, drop=True)
+                                    .fillna(0)
+                                    .astype(int)
+                        )
+                        annot_mat.columns.name = annotate
+
                     result = clusterplot(X,
                                          main_title=main_title,
-                                         annot_mat=None,
+                                         annot_mat=annot_mat,
                                          cmap_name='RdBu_r',
                                          highlight_gids=data_obj.highlight_gids,
                                          highlight_gid_names=data_obj.highlight_gid_names,
@@ -1621,6 +1668,12 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
             warn('GeneID {} not in dataset, skipping..'.format(g))
             continue
         df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
+
+        if linear:
+            df = df.apply(lambda x: np.power(10, x))
+        elif z_score:
+            df = sb.matrix.ClusterGrid.z_score(X, 0)
+
         for col in ('runno', 'searchno'):
             df[col] = df[col].astype(str)
 
@@ -1650,26 +1703,23 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
 
 
 
-
-
 @main.command('bar')
-@click.option('--gene',
+@click.option('--gene', type=int,
               default=None, show_default=True, multiple=True,
               help="Gene to plot. Multiple allowed")
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
               help="""File of geneids to plot.
               Should have 1 geneid per line. """)
-@click.option('--average', type=str, default=None, help='Metadata entry to group data and plot average. Cannot be used with color')
-@click.option('--color', type=str, default=None, help='Metadata entry to group color bars. Cannot be used with average')
-@click.option('--color-order', type=str, default=None, help="""Pipe `|` separated order
-to arrange data. For use in conjunction with `--color`
+@click.option('--color', type=str, default=None, help='Metadata entry to color bars.')
+@click.option('--group', type=str, default=None, help='Metadata entry to group color bars. Cannot be used with average')
+@click.option('--group-order', type=str, default=None, help="""Pipe `|` separated order
+to arrange data. For use in conjunction with `--group`
 """)
 @click.option('--retain-order', is_flag=True, default=False, show_default=True,
               help="""Retains original config order""")
 @click.option('--cmap', default=None, show_default=True, help="""
-Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples/color/colormaps_reference.html.
-""")
+Any valid, qualitative, colormap? """)
 @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
 @click.option('--z-score', default=False, is_flag=True, help='Plot zscored values (linear or log10 transformed)')
 @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
@@ -1680,12 +1730,15 @@ Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples
 @click.option('--xtickrotation', default=None, type=int)
 @click.option('--xticksize', default=None, type=int)
 @click.pass_context
-def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, linear, z_score,
-        figsize, xtickrotation, xticksize):
+def bar(ctx, color, group, group_order, retain_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
 
+    if group_order is not None:
+        group_order = group_order.split('|')
 
+    # if group is None:
+    #     raise ValueError('Must specify group')
     data_obj = ctx.obj['data_obj']
-    col_meta = data_obj.col_metadata
+    metadata = data_obj.col_metadata
     if genefile:
         gene = gene + tuple(parse_gid_file(genefile))
     if len(gene) == 0:
@@ -1709,11 +1762,148 @@ def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, li
     data[data_obj.mask] = np.NaN
 
 
-    barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta, metadata_colors=data_obj.metadata_colors,
-            average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
-            file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
-            xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order
-    )
+    try:
+        from rpy2.robjects import r
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+    except ModuleNotFoundError:
+        print("rpy2 needs to be installed")
+        return
+
+    pandas2ri.activate()
+    r_source = robjects.r['source']
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                          'R', 'barplot.R')
+
+    r_source(r_file)
+    grdevices = importr('grDevices')
+    Rbarplot = robjects.r['barplot']
+
+
+    for g in gene:
+
+        if g not in data.index:
+            warn('GeneID {} not in dataset, skipping..'.format(g))
+            continue
+        df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
+
+
+        plt_height = 6
+        plt_width = len(df) // 2
+        plt_width = max(9, plt_width)
+        plt_width = min(24, plt_width)
+
+        gr_devices = {'.png': grdevices.png,
+                    '.pdf': grdevices.pdf,
+                    '.svg': grdevices.svg}
+        gr_kws = {'.png': dict(width=plt_width, height=plt_height, units='in', res=300),
+                '.pdf': dict(width=plt_width, height=plt_height,),
+                '.svg': dict(width=plt_width, height=plt_height,)
+            }
+
+        ylab='log10 Expression'
+        if linear:
+            df['Expression'] = df['Expression'].apply(lambda x: np.power(10, x))
+            ylab = 'Expression'
+        elif z_score:
+            df['Expression'] = sb.matrix.ClusterGrid.z_score(df['Expression'])
+            ylab='log10 Expression (z-score)'
+
+
+        for col in ('runno', 'searchno'):
+            df[col] = df[col].astype(str)
+
+
+        symbol = data_obj.gid_symbol.get(g, '')
+        title = "{} {}".format(g, symbol)
+        outname = outfunc('barplot_{}_{}'.format(g, symbol))
+
+        for file_fmt in ctx.obj['file_fmts']:
+            grdevice = gr_devices[file_fmt]
+            gr_kw = gr_kws[file_fmt]
+
+            out = outname + file_fmt
+
+            grdevice(file=out, **gr_kw)
+            print("Saving", out, '...', end='', flush=True)
+
+            # cannot pass None to r func?
+            if color is None:
+                color = np.nan
+            if group is None:
+                group = np.nan
+
+
+            p = Rbarplot(df, color, group, title=title, ylab=ylab)
+
+            grdevices.dev_off()
+            print('done.', flush=True)
+
+
+
+# @main.command('bar')
+# @click.option('--gene',
+#               default=None, show_default=True, multiple=True, type=int,
+#               help="Gene to plot. Multiple allowed")
+# @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+#               default=None, show_default=True, multiple=False,
+#               help="""File of geneids to plot.
+#               Should have 1 geneid per line. """)
+# @click.option('--average', type=str, default=None, help='Metadata entry to group data and plot average. Cannot be used with color')
+# @click.option('--color', type=str, default=None, help='Metadata entry to group color bars. Cannot be used with average')
+# @click.option('--color-order', type=str, default=None, help="""Pipe `|` separated order
+# to arrange data. For use in conjunction with `--color`
+# """)
+# @click.option('--retain-order', is_flag=True, default=False, show_default=True,
+#               help="""Retains original config order""")
+# @click.option('--cmap', default=None, show_default=True, help="""
+# Any valid, qualitative, matplotlib colormap. See https://matplotlib.org/examples/color/colormaps_reference.html.
+# """)
+# @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
+# @click.option('--z-score', default=False, is_flag=True, help='Plot zscored values (linear or log10 transformed)')
+# @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
+#               help='''Optionally specify the figuresize (width, height) in inches
+#               If not specified, tries to use a reasonable default depending on the number of
+#               samples.
+#               ''')
+# @click.option('--xtickrotation', default=None, type=int)
+# @click.option('--xticksize', default=None, type=int)
+# @click.pass_context
+# def bar(ctx, average, color, color_order, retain_order, cmap, gene, genefile, linear, z_score,
+#         figsize, xtickrotation, xticksize):
+
+
+#     data_obj = ctx.obj['data_obj']
+#     col_meta = data_obj.col_metadata
+#     if genefile:
+#         gene = gene + tuple(parse_gid_file(genefile))
+#     if len(gene) == 0:
+#         raise ValueError("Must supply at least 1 gene")
+
+#     outpath = os.path.join(data_obj.outpath, 'bar')
+#     if not os.path.exists(outpath):
+#         os.makedirs(outpath)
+
+#     outfunc = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
+#                       non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+#                       batch=data_obj.batch_applied,
+#                       batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+#                       outpath=outpath,
+#     )
+#     # if color is not None and average is not None:
+#     #     raise ValueError('Cannot specify color and average at the same time.')
+
+#     data = data_obj.areas_log_shifted.copy()
+#     data[data_obj.areas == 0] = 0 # fill the zeros back
+#     data[data_obj.mask] = np.NaN
+
+
+#     barplot(data, genes=gene, color=color, cmap=cmap, metadata=col_meta, metadata_colors=data_obj.metadata_colors,
+#             average=average, color_order=color_order, linear=linear, z_score=z_score, base_outfunc=outfunc,
+#             file_fmts=ctx.obj['file_fmts'], gid_symbol=data_obj.gid_symbol, figsize=figsize,
+#             xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order
+#     )
 
 
 
