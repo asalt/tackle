@@ -120,6 +120,7 @@ class Csv2Conf(object):
                 #next(f)
                 reader = csv.reader(f, delimiter=self.sep, quoting=csv.QUOTE_NONE)
                 for row in reader:
+                    if row[0].startswith('#'): continue
                     rows.append(row)
         return rows
 
