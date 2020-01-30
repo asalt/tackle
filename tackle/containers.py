@@ -186,7 +186,7 @@ class Data:
                  set_outpath=True, outpath=None, outpath_name=None,
                  metrics=False, metrics_after_filter=True,
                  metrics_unnormed_area=True,
-                 cluster_annotate_col=None,
+                 cluster_annotate_cols=None,
 
     ):
         "docstring"
@@ -237,7 +237,7 @@ class Data:
         self.metrics_unnormed_area= metrics_unnormed_area
         self._metric_values       = None
         self.SRA                  = SRA
-        self.cluster_annotate_col = cluster_annotate_col
+        self.cluster_annotate_cols= cluster_annotate_cols
 
         self.outpath              = None
         self.analysis_name        = None
@@ -623,8 +623,9 @@ class Data:
 
         if not self.export_all:
             _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
-            if self.cluster_annotate_col:
-                _cols.append(self.cluster_annotate_col)
+            if self.cluster_annotate_cols:
+                for x in self.cluster_annotate_cols:
+                    _cols.append(x)
             stacked_data = [ df[_cols].stack() for df in exps.values() ]
         else:
             stacked_data = [ df.stack() for df in exps.values() ]
@@ -1046,6 +1047,7 @@ class Data:
                                            'P.Value': 'pValue',
                           })
                 )
+                result['log2_Fold_Change'] = result['log2_Fold_Change'].apply(lambda x: x/np.log10(2))
 
                 # we ensure the order of result is equal to order of areas_log_shifted
                 # to preserve GeneID order
@@ -1128,7 +1130,7 @@ class Data:
                               non_zeros=self.non_zeros, colors_only=self.colors_only,
                               batch=self.batch_applied,
                               batch_method = 'parametric' if not self.batch_nonparametric else 'nonparametric',
-                              outpath=self.outpath) + '.tab'
+                              outpath=self.outpath) + '.tsv'
 
         # outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
@@ -1161,7 +1163,7 @@ class Data:
                                 non_zeros=self.non_zeros, colors_only=self.colors_only,
                                 batch=self.batch_applied,
                                 batch_method = 'parametric' if not self.batch_nonparametric else 'nonparametric',
-                                outpath=self.outpath) + '.tab'
+                                outpath=self.outpath) + '.tsv'
             meta_df.to_csv(outname, sep='\t')
 
 
