@@ -1711,7 +1711,8 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
               default=None, show_default=True, multiple=False,
               help="""File of geneids to plot.
               Should have 1 geneid per line. """)
-@click.option('--color', type=str, default=None, help='Metadata entry to color bars.')
+@click.option('--average', is_flag=True, default=False, show_default=True,
+              help="Take average within each subgroup as specified by `--group`")
 @click.option('--group', type=str, default=None, help='Metadata entry to group color bars. Cannot be used with average')
 @click.option('--group-order', type=str, default=None, help="""Pipe `|` separated order
 to arrange data. For use in conjunction with `--group`
@@ -1730,13 +1731,14 @@ Any valid, qualitative, colormap? """)
 @click.option('--xtickrotation', default=None, type=int)
 @click.option('--xticksize', default=None, type=int)
 @click.pass_context
-def bar(ctx, color, group, group_order, retain_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
+def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
+
+    if average is not None and group is None:
+        raise valueError('Must specify group with average')
 
     if group_order is not None:
         group_order = group_order.split('|')
 
-    # if group is None:
-    #     raise ValueError('Must specify group')
     data_obj = ctx.obj['data_obj']
     metadata = data_obj.col_metadata
     if genefile:
@@ -1817,7 +1819,11 @@ def bar(ctx, color, group, group_order, retain_order, cmap, gene, genefile, line
 
         symbol = data_obj.gid_symbol.get(g, '')
         title = "{} {}".format(g, symbol)
-        outname = outfunc('barplot_{}_{}'.format(g, symbol))
+        data_xform = 'log' if not (linear or z_score) else ('linear' if linear else 'zscore')
+        if not average:
+            outname = outfunc('barplot_{}_{}_{}'.format(data_xform, g, symbol))
+        elif average:
+            outname = outfunc('barplot_{}_{}_{}_{}'.format(data_xform, group, g, symbol))
 
         for file_fmt in ctx.obj['file_fmts']:
             grdevice = gr_devices[file_fmt]
@@ -1829,13 +1835,15 @@ def bar(ctx, color, group, group_order, retain_order, cmap, gene, genefile, line
             print("Saving", out, '...', end='', flush=True)
 
             # cannot pass None to r func?
-            if color is None:
-                color = np.nan
+            if average is None:
+                average = np.nan
             if group is None:
                 group = np.nan
+            if group_order is None:
+                group_order = np.nan
 
 
-            p = Rbarplot(df, color, group, title=title, ylab=ylab)
+            p = Rbarplot(df, average, group, group_order=group_order, title=title, ylab=ylab)
 
             grdevices.dev_off()
             print('done.', flush=True)
