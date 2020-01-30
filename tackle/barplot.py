@@ -14,6 +14,8 @@ from .utils import save_multiple
 
 def plotter(data, linear=False, z_score=False, colors=None, legend_colors=None, legend_name=None, title=None):
 
+    sb.set_context('notebook')
+
     w = len(data.columns) * .75
     w = max(w, 4)
     ylabel = 'log$_{10}$ iBAQ' if not linear else 'iBAQ'
@@ -32,7 +34,9 @@ def plotter(data, linear=False, z_score=False, colors=None, legend_colors=None, 
     ax_leg = fig.add_subplot(gs[0, 9])
 
     data.loc['mean'].plot.bar(yerr=data.loc['std'], rot=0, ax=ax, **kwargs)
-    fig.autofmt_xdate()
+    # fig.autofmt_xdate()
+    # plt.setp( ax[1].xaxis.get_majorticklabels(), rotation=90 )
+
     ax.set_ylabel(ylabel)
     sb.despine(ax=ax_leg, bottom=True, left=True)
     ax_leg.set_xticks([])
@@ -69,6 +73,19 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
     Plot barplots for each gene in a list of genes
     :file_fmts: iterable of valid file formats for matplotlib to save figures
     """
+
+    orig_rc = mpl.rcParams
+    # sb.set_context('notebook', font_scale=.8)
+
+
+    rc = {'font.size': 12.0, 'axes.labelsize': 12.0, 'axes.titlesize': 12.0, 'xtick.labelsize': 11.0,
+          'ytick.labelsize': 11.0, 'legend.fontsize': 11.0, 'axes.linewidth': 1.25, 'grid.linewidth': 1.0,
+          'lines.linewidth': 1.5, 'lines.markersize': 6.0, 'patch.linewidth': 1.0, 'xtick.major.width': 1.25,
+          'ytick.major.width': 1.25, 'xtick.minor.width': 1.0, 'ytick.minor.width': 1.0, 'xtick.major.size':
+          6.0, 'ytick.major.size': 6.0, 'xtick.minor.size': 4.0, 'ytick.minor.size': 4.0}
+    sb.set_context('notebook', rc=rc)
+    mpl.rcParams.update(rc)
+    # why does none of this work??
 
     if xtickrotation is None:
         xtickrotation=30
@@ -123,7 +140,7 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
 
         else:
             _iter = legend_colors.items()
-            the_order = None
+            the_order = list()
 
         if not retain_order:
             for entry, _color in _iter:
@@ -148,7 +165,6 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         groupcols = metadata.groupby(average).groups # dict with groupname : [cols]
     else:
         groupcols = OrderedDict([(x, x) for x in X.columns])
-
 
     for gene in genes:
 
@@ -202,7 +218,7 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
             h = min(h, 15)
         print(w,h)
 
-        plt.rcParams['figure.constrained_layout.use'] = True
+        # plt.rcParams['figure.constrained_layout.use'] = True
         fig = plt.figure(figsize=(w,h))
         # gs = gridspec.GridSpec(1,10)
         gs = gridspec.GridSpec(nrow, 10, wspace=.4, figure=fig)
@@ -328,7 +344,6 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
                 # ax.yaxis.set_major_locator(mpl.ticker.LinearLocator(3))
                 # ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
 
-        # fig.tight_layout(w_pad=.1)
         # ax.set_xlabel('')
 
         # ax_leg.legend
@@ -347,3 +362,5 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         outname = base_outfunc(name)
         save_multiple(fig, outname, *file_fmts, dpi=300)
         plt.close(fig)
+
+    mpl.rcParams.update(orig_rc)
