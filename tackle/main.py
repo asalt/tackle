@@ -818,8 +818,14 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
 
 
     if kmeans_res is not None:
+
+        fig = kmeans_res['cluster_center_plot']['fig']
+        outname = outname_func('cluster_centers')
+        save_multiple(fig, outname, *file_fmts)
+        plt.close(fig)
+
         kmeans_data = kmeans_res['data']
-        outname = os.path.abspath(outname_func('{}clusters_labels'.format(kmeans_clusters))+'.tab')
+        outname = os.path.abspath(outname_func('{}clusters_labels'.format(kmeans_clusters))+'.tsv')
         kmeans_data.to_csv(outname, index=True, sep='\t', na_rep='NaN')
         print('Saved:', outname)
 
@@ -827,11 +833,13 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
         if fig is not None:
             outname = outname_func('cluster_optimized_results')
             save_multiple(fig, outname, *file_fmts)
+        plt.close(fig)
 
         fig = kmeans_res['silhouette'].get('fig')
         if fig is not None:
             outname = outname_func('{}clusters_silhouette'.format(kmeans_clusters))
             save_multiple(fig, outname, *file_fmts)
+        plt.close(fig)
 
     if dbscan_res is not None:
         dbscan_data = dbscan_res['data']

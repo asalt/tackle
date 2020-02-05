@@ -149,10 +149,15 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
     _dend = hierarchy.dendrogram(_linkage, no_plot=True)
     _order = _dend['leaves']
     cluster_order = _df.iloc[_order].index
+    # cluster_order = _df.index
     clusters_categorical = pd.Series(pd.Categorical(clusters, categories=cluster_order, ordered=True),
                                         index=clusters.index).sort_values()
     cluster_order_remapping = {c: i for i, c in enumerate(cluster_order)}
+    clusters_categorical = clusters_categorical.map(cluster_order_remapping)
     clusters = clusters.map(cluster_order_remapping)
+
+    cluster_centers = kmeans.cluster_centers_[ cluster_order ]
+    cluster_order_remapping
 
     suborder = list()
     for c in clusters_categorical.cat.categories:
@@ -168,7 +173,8 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
     clusters_categorical = clusters_categorical.loc[suborder]
 
 
-    silhouette_scores = silhouette_samples(data, clusters.values)
+    silhouette_scores = silhouette_samples(data.loc[clusters_categorical.index],
+                                           clusters_categorical.values)
 
     # fig, ax = silhouette_plot(data, kmeans.labels_)
     fig, ax = silhouette_plot(data, clusters.values, random_state=seed)
@@ -177,6 +183,7 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
            'silhouette': {'fig': fig, 'ax': ax},
            'clusters': clusters,
            # 'kmeans': kmeans,
+           'cluster_centers': cluster_centers,
            'nclusters': clusters.nunique(),
            'clusters_categorical': clusters_categorical,
            'silhouette_scores': silhouette_scores
@@ -362,13 +369,40 @@ def clusterplot(data, annot_mat=None,
         nclusters = kmeans_result['nclusters']
         clusters_categorical = kmeans_result['clusters_categorical'] #optimally ordered for visualization
 
-
-
         plot_data = data_t.loc[clusters_categorical.index]
 
         cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=max(6, nclusters)))
         cmap_mapping = {val : next(cmap) for val in range(nclusters)}
         cluster_colors = clusters.loc[clusters_categorical.index].map(cmap_mapping).to_frame('Cluster')
+
+        # ==============================================================
+        # cluster centers plot
+        cluster_centers = kmeans_result['cluster_centers']
+        print(cluster_centers.shape)
+        figsize = [max(cluster_centers.shape[1]*.75, 16), cluster_centers.shape[0]]
+        print(figsize)
+        ccenter_fig, axs = plt.subplots(nrows=cluster_centers.shape[0], sharex=True, sharey=True, figsize=figsize)
+        for ax, category in zip(axs.flat, clusters_categorical.cat.categories):
+            color=cmap_mapping[category]
+            ax.plot(cluster_centers[category], color=color, marker='o')
+            ax.axhline(y=0, ls='--', color='grey', alpha=.6)
+            bbox = dict(boxstyle="round", ec=color, fc=color+'aa', alpha=0.5)
+            # ax.set_ylabel(category+1, rotation=0, backgroundcolor=cmap_mapping[category]+'aa', boxstyle='round')
+            ax.set_ylabel(category+1, rotation=0, bbox=bbox)
+            ax.set_yticklabels([])
+        ax.set_xticks(range(len(plot_data.columns)))
+        ax.set_xticklabels(plot_data.columns)
+        axs[0].set_title('Cluster Centers')
+        ymax = max(np.abs(ax.get_ylim()))*1.14
+        ax.set_ylim(-ymax, ymax)
+        ccenter_fig.tight_layout()
+        sb.despine(fig=ccenter_fig, left=True, bottom=True)
+
+        kmeans_result['cluster_center_plot'] = dict(fig=ccenter_fig)
+
+        # ==============================================================
+
+
 
         cluster_data = data_t.copy()
         # ?? this is not right
@@ -503,7 +537,6 @@ def clusterplot(data, annot_mat=None,
         # dendrogram_width_ratio = .06
         # print(figheight, heatmap_height_ratio)
         pass
-
     if figheight > 12:
         dendrogram_width_ratio  = .16 + max(0,
                                             (.1*np.log10(figwidth))*(figwidth-12)
@@ -566,7 +599,7 @@ def clusterplot(data, annot_mat=None,
 
     if annot_mat is not None:
         _txt = 'Annotation : {}'.format(annot_mat.columns.name)
-        g.ax_row_dendrogram.text(0, -.34, _txt, transform=g.ax_row_dendrogram.transAxes, fontsize=8)
+        g.ax_row_dendrogram.text(0, -.14, _txt, transform=g.ax_row_dendrogram.transAxes, fontsize=8)
 
 
     # g = sb.clustermap(plot_data,
