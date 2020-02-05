@@ -1530,8 +1530,8 @@ class MyClusterGrid(ClusterGrid):
         annot = None
         if 'annot' in kws and isinstance(kws['annot'], pd.DataFrame):
             ## not working for some reason:
-            # annot = kws.pop('annot').iloc[yind, xind]
-            annot = kws.pop('annot').loc[self.data2d.index, self.data2d.columns]
+            annot = kws.pop('annot').iloc[yind, xind]
+            # annot = kws.pop('annot').loc[self.data2d.index, self.data2d.columns]
         elif 'annot' in kws:
             annot = kws.pop('annot')
 
