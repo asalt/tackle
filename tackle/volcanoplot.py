@@ -53,14 +53,32 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
 
     def fix_group_name(group, entries):
         # for entry in meta.index:
-        for entry in entries:
-            start = group.find(entry)
-            end = len(entry) + start
-            if start == -1:
-                continue
-            group_lst = list(group)
-            group = ''.join(group_lst[:start] + group_lst[end:])
-        return group
+        # print(group, entries)
+        group = group.split('_')
+        entries = sorted(entries, key=lambda x: len(x))
+        for ix, entry in enumerate(entries):
+            groupres = list()
+            for g in group:
+                if g.startswith(entry) and not any(g.startswith(e) for e in entries[ix+1:]):
+                    i = g.find(entry)
+                    if i != 0:continue
+                    res = g[len(entry):]
+                    # res = g.lstrip(entry)
+                else:
+                    res = g
+                groupres.append(res)
+            group = groupres
+            #group = [x.lstrip(entry) if x.startswith(entry) else x for x in group]
+            # print(entry, group)
+        return ':'.join(group)
+
+            # start = group.find(entry)
+            # end = len(entry) + start
+            # if start == -1:
+            #     continue
+            # group_lst = list(group)
+            # group = ''.join(group_lst[:start] + group_lst[end:])
+        #return group
 
 
     for comparison, df in results.items():
@@ -99,7 +117,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                               group='{}_vs_{}'.format(group0, group1),
         )
 
-        out = outname + '.tab'
+        out = outname + '.tsv'
         print("Saving", out, '...', end='', flush=True)
         export_data = df
         if only_sig:
@@ -149,6 +167,9 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                     '.pdf': dict(width=width, height=height,),
                     '.svg': dict(width=width, height=height,)
         }
+
+        df['FunCats'] = df.FunCats.astype(str)
+
         for file_fmt in file_fmts:
 
             grdevice = gr_devices[file_fmt]
@@ -227,7 +248,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                               group='{}_vs_{}'.format(group0, group1),
         )
 
-        out = outname + '.tab'
+        out = outname + '.tsv'
         print("Saving", out, '...', end='', flush=True)
         export_data = df
         if only_sig:
