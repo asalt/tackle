@@ -64,18 +64,28 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
         raise ValueError('Must provide metadata if specifying subgroup')
 
     if subgroup is None:
+        columns = [x for x in df.columns if x not in ('GeneID', 'Metric')]
         if isinstance(nonzero_value, float): #then ratio of total
             threshold = len(df.columns) * nonzero_value
 
-        mask = (df.loc[ idx[:, column], :].fillna(0)
+        # mask = (df.loc[ idx[:, column], :].fillna(0)
+        #         .where(lambda x : x != 0)
+        #         .count(1)
+        #         .where(lambda x: x >= threshold)
+        #         .dropna())
+
+        mask = (df.loc[df.Metric==column][columns].fillna(0)
                 .where(lambda x : x != 0)
                 .count(1)
                 .where(lambda x: x >= threshold)
-                .dropna())
+                .dropna()
+        )
 
-        gids = mask.index.get_level_values(0)
+        # gids = mask.index.get_level_values(0)
+        gids = df.loc[mask.index].GeneID.values
 
-        return df.loc[ gids.values ]
+        # return df.loc[ gids.values ]
+        return df[ df.GeneID.isin(gids) ]
 
     else:
 
@@ -88,16 +98,25 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
             if isinstance(nonzero_value, float): #then ratio of total
                 threshold = len(columns) * nonzero_value
 
-            mask = (df.loc[ idx[:, column], columns].fillna(0)
+            mask = (df.loc[df.Metric==column][columns].fillna(0)
                     .where(lambda x : x != 0)
                     .count(1)
                     .where(lambda x: x >= threshold)
-                    .dropna())
+                    .dropna()
+            )
+            gids = df.loc[mask.index].GeneID
 
-            gids = mask.index.get_level_values(0)
+            # mask = (df.loc[ idx[:, column], columns].fillna(0)
+            #         .where(lambda x : x != 0)
+            #         .count(1)
+            #         .where(lambda x: x >= threshold)
+            #         .dropna())
+
+            # gids = mask.index.get_level_values(0)
             all_gids |= set(gids)
+        return df[ df.GeneID.isin(all_gids) ]
 
-        return df.loc[ idx[tuple(all_gids), :], : ]
+        # return df.loc[ idx[tuple(all_gids), :], : ]
 
 
 
@@ -113,14 +132,17 @@ def filter_sra(df, SRA='S'):
     else:
         sra_list = ('S',)
 
-    mask = ((df.loc[ idx[:, 'SRA'], :].isin(sra_list))
+    # mask = ((df.loc[ idx[:, 'SRA'], :].isin(sra_list))
+    mask = ((df.loc[ df.Metric=='SRA' ].isin(sra_list))
             .any(1)
             .where(lambda x: x)
             .dropna()
     )
-    gids = mask.index.get_level_values(0)
+    # gids = mask.index.get_level_values(0)
+    gids = df.loc[mask.index, 'GeneID'].values
 
-    return df.loc[ gids.values ]
+    # return df.loc[ gids.values ]
+    return df.loc[ df.GeneID.isin(gids) ]
 
 def filter_funcats(df_long, funcats):
 
@@ -496,12 +518,22 @@ def fillna_meta(df, index_col):
     """
     Fill NANs across rows
     """
-    if index_col not in df.index.get_level_values(1).unique():
+    if index_col not in df['Metric'].unique():
         return
-    selection = df.loc[idx[:, index_col], :]
-    df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
-                                    .fillna(method='bfill', axis=1)
+    # if index_col not in df.index.get_level_values(1).unique():
+    #     return
+    # selection = df.loc[idx[:, index_col], :]
+    selection = df[ df.Metric == index_col ]
+    _cols = [x for x in df.columns if x not in ('GeneID', 'Metric')]
+
+    df.loc[selection.index, _cols] = (df.loc[selection.index, _cols]
+                                      .fillna(method='ffill', axis=1)
+                                      .fillna(method='bfill', axis=1)
     )
+
+    # df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
+    #                                 .fillna(method='bfill', axis=1)
+    # )
 
 
 

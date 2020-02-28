@@ -1,5 +1,5 @@
 import textwrap
-
+from collections import OrderedDict
 import matplotlib as mpl
 mpl.use('Agg')
 
@@ -8,6 +8,8 @@ from matplotlib import cm
 from matplotlib.offsetbox import AnchoredText
 from matplotlib.ticker import MaxNLocator
 from matplotlib.colors import rgb2hex
+import matplotlib.ticker as ticker
+
 
 import numpy as np
 import pandas as pd
@@ -179,6 +181,54 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
     # fig, ax = silhouette_plot(data, kmeans.labels_)
     fig, ax = silhouette_plot(data, clusters.values, random_state=seed)
 
+    # ==============================================================
+    # cluster centers plot
+    # cluster_centers = kmeans_result['cluster_centers']
+
+    # cmap = iter(rgb2hex(x) for x in sb.color_palette('hls', n_colors=nclusters))
+    # cmap_mapping = OrderedDict(((val,  next(cmap)) for val in range(nclusters)))
+    cmap_mapping = {val: rgb2hex(c) for val, c in enumerate(sb.color_palette('hls', n_colors=nclusters))}
+    print(list(rgb2hex(x) for x in sb.color_palette('hls', nclusters)))
+    print('tackle cmap', cmap_mapping)
+    cluster_colors = clusters.loc[clusters_categorical.index].map(cmap_mapping).to_frame('Cluster')
+
+    # print(cluster_centers.shape)
+    figsize = [max(cluster_centers.shape[1]*.75, max(cluster_centers.shape[0]*.5, 16)), cluster_centers.shape[0]]
+    # print(figsize)
+    ccenter_fig, ccenter_axs = plt.subplots(nrows=cluster_centers.shape[0], sharex=True,
+                                            sharey=True, figsize=figsize)
+
+
+    ymin, ymax = cluster_centers.min()*1.1, cluster_centers.max()*1.1
+    for ax, category in zip(ccenter_axs.flat, clusters_categorical.cat.categories):
+        color=cmap_mapping[category]
+        ax.plot(cluster_centers[category], color=color, marker='o')
+        ax.axhline(y=0, ls='--', color='grey', alpha=.6)
+        bbox = dict(boxstyle="round", ec=color, fc=color+'aa', alpha=0.5)
+        # ax.set_ylabel(category+1, rotation=0, backgroundcolor=cmap_mapping[category]+'aa', boxstyle='round')
+        ax.set_ylabel(category+1, rotation=0, bbox=bbox)
+        ax.set_yticklabels([])
+        # ax.set_ylim(-ymax, ymax)
+        # ax.yaxis.set_major_locator(ticker.LinearLocator(5))
+        ax.grid(axis='x', zorder=9)
+        ax.patch.set_alpha(0)
+
+    ax.set_xticks(range(len(data.columns)))
+    ticks = list()
+    for tick in data.columns:
+        txt = textwrap.fill(tick.replace('_', ' ', 1), 6, break_long_words=False)
+        ticks.append(txt)
+    ax.set_xticklabels(ticks, rotation=90)
+    ccenter_axs[0].set_title('Cluster Centers')
+    ymax = max(np.abs(ax.get_ylim()))*1.14
+    ax.set_ylim(-ymax, ymax)
+    # ccenter_fig.subplots_adjust(hspace=-.2)
+    ccenter_fig.tight_layout()
+    sb.despine(fig=ccenter_fig, left=True, bottom=True)
+
+
+    # ==============================================================
+
     ret = {'nclusters': nclusters, 'auto': {'fig': autofig, 'ax': autoax},
            'silhouette': {'fig': fig, 'ax': ax},
            'clusters': clusters,
@@ -186,7 +236,8 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
            'cluster_centers': cluster_centers,
            'nclusters': clusters.nunique(),
            'clusters_categorical': clusters_categorical,
-           'silhouette_scores': silhouette_scores
+           'silhouette_scores': silhouette_scores,
+           'cluster_center_plot': dict(fig=ccenter_fig, axs=ccenter_axs)
     }
 
     return ret
@@ -375,32 +426,33 @@ def clusterplot(data, annot_mat=None,
         cmap_mapping = {val : next(cmap) for val in range(nclusters)}
         cluster_colors = clusters.loc[clusters_categorical.index].map(cmap_mapping).to_frame('Cluster')
 
-        # ==============================================================
-        # cluster centers plot
-        cluster_centers = kmeans_result['cluster_centers']
-        print(cluster_centers.shape)
-        figsize = [max(cluster_centers.shape[1]*.75, 16), cluster_centers.shape[0]]
-        print(figsize)
-        ccenter_fig, axs = plt.subplots(nrows=cluster_centers.shape[0], sharex=True, sharey=True, figsize=figsize)
-        for ax, category in zip(axs.flat, clusters_categorical.cat.categories):
-            color=cmap_mapping[category]
-            ax.plot(cluster_centers[category], color=color, marker='o')
-            ax.axhline(y=0, ls='--', color='grey', alpha=.6)
-            bbox = dict(boxstyle="round", ec=color, fc=color+'aa', alpha=0.5)
-            # ax.set_ylabel(category+1, rotation=0, backgroundcolor=cmap_mapping[category]+'aa', boxstyle='round')
-            ax.set_ylabel(category+1, rotation=0, bbox=bbox)
-            ax.set_yticklabels([])
-        ax.set_xticks(range(len(plot_data.columns)))
-        ax.set_xticklabels(plot_data.columns)
-        axs[0].set_title('Cluster Centers')
-        ymax = max(np.abs(ax.get_ylim()))*1.14
-        ax.set_ylim(-ymax, ymax)
-        ccenter_fig.tight_layout()
-        sb.despine(fig=ccenter_fig, left=True, bottom=True)
+        # this is all done in the calc_kmeans function now
+        # # ==============================================================
+        # # cluster centers plot
+        # cluster_centers = kmeans_result['cluster_centers']
+        # print(cluster_centers.shape)
+        # figsize = [max(cluster_centers.shape[1]*.75, 16), cluster_centers.shape[0]]
+        # print(figsize)
+        # ccenter_fig, axs = plt.subplots(nrows=cluster_centers.shape[0], sharex=True, sharey=True, figsize=figsize)
+        # for ax, category in zip(axs.flat, clusters_categorical.cat.categories):
+        #     color=cmap_mapping[category]
+        #     ax.plot(cluster_centers[category], color=color, marker='o')
+        #     ax.axhline(y=0, ls='--', color='grey', alpha=.6)
+        #     bbox = dict(boxstyle="round", ec=color, fc=color+'aa', alpha=0.5)
+        #     # ax.set_ylabel(category+1, rotation=0, backgroundcolor=cmap_mapping[category]+'aa', boxstyle='round')
+        #     ax.set_ylabel(category+1, rotation=0, bbox=bbox)
+        #     ax.set_yticklabels([])
+        # ax.set_xticks(range(len(plot_data.columns)))
+        # ax.set_xticklabels(plot_data.columns)
+        # axs[0].set_title('Cluster Centers')
+        # ymax = max(np.abs(ax.get_ylim()))*1.14
+        # ax.set_ylim(-ymax, ymax)
+        # ccenter_fig.tight_layout()
+        # sb.despine(fig=ccenter_fig, left=True, bottom=True)
 
-        kmeans_result['cluster_center_plot'] = dict(fig=ccenter_fig)
+        # kmeans_result['cluster_center_plot'] = dict(fig=ccenter_fig)
 
-        # ==============================================================
+        # # ==============================================================
 
 
 
@@ -690,11 +742,12 @@ def clusterplot(data, annot_mat=None,
                     handle = mpl.patches.Patch(color=c,)
                 handles.append(handle)
                 labels.append(n)
-            if len(col_names) <= 20:
-                ncols = max(len(col_names) // 4, 1)
-            else:
-                ncols = max(len(col_names) // 8, 1)
-
+            ncols = max(len(col_names) // 3, 1)
+            # if len(col_names) <= 10:
+            #     ncols = max(len(col_names) // 3, 1)
+            # else:
+            #     ncols = max(len(col_names) // 5, 1)
+            # ncols = min(ncols, 20)
             leg = g.ax_col_dendrogram.legend( handles, labels, bbox_to_anchor=bbox,
                                               loc='upper left', ncol=ncols,
                                               frameon=False,

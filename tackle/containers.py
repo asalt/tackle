@@ -66,7 +66,7 @@ def maybe_int(x):
     try:
         return int(x)
     except ValueError:
-        warn('Value {} cannot be converted to int'.format(x))
+        # warn('Value {} cannot be converted to int'.format(x))
         return x
 
 def join_and_create_path(*strings, verbose=True):
@@ -95,6 +95,7 @@ class GeneMapper:
     def df(self):
         if self._df is None:
             self._df = pd.read_table(self.file, index_col='GeneID')
+            self._df['FunCats'] = self._df['FunCats'].fillna('')
         return self._df
 
     @property
@@ -530,6 +531,7 @@ class Data:
 
             # exp.df['GeneID'] = exp.df['GeneID'].astype(int)
             df['GeneID'] = df['GeneID'].apply(maybe_int)
+
             funcats_dict = df.drop_duplicates('GeneID').set_index('GeneID')['FunCats'].to_dict()
             gid_funcat_mapping.update(funcats_dict)
 
@@ -631,6 +633,8 @@ class Data:
             stacked_data = [ df.stack() for df in exps.values() ]
         print('stacking...', flush=True, end='')
         self.data = pd.concat( stacked_data, axis=1, keys=exps.keys() )
+        self.data.index.names = ['GeneID', 'Metric']
+        self.data = self.data.reset_index()
         print('done', flush=True)
         # self.panel = pd.Panel(exps)
         for ax in ('GeneCapacity', 'GeneSymbol', 'GeneDescription',
@@ -660,9 +664,10 @@ class Data:
     def gid_symbol(self):
         if self._gid_symbol is None:
             try:
-                sel = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
-                sel.index = sel.index.droplevel(1)
-                self._gid_symbol = sel.to_dict()
+                # sel = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
+                sel = self.data.loc[ self.data.Metric=='GeneSymbol', self.data.columns[0:3] ]
+                # sel.index = sel.index.droplevel(1)
+                self._gid_symbol = sel.set_index('GeneID')[sel.columns[-1]].to_dict()
             except KeyError:
                 return dict()
             # self._gid_symbol = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
@@ -676,14 +681,12 @@ class Data:
             filter_func = dummy_filter
         else:
             filter_func = partial(filter_taxon, taxon=taxon_filter)
-
         df_filtered = (self.data.pipe(filter_observations, 'area',
                                       self.non_zeros, self.nonzero_subgroup, self.col_metadata)
                        .pipe(filter_sra, SRA=self.SRA)
                        .pipe(filter_func)
         )
-        df_filtered.index.names = ['GeneID', 'Metric']
-        self.df_filtered = df_filtered
+        self.df_filtered = df_filtered.set_index(['GeneID', 'Metric'])
 
 
     def set_area_dfs(self):
@@ -1140,15 +1143,41 @@ class Data:
         elif level == 'align':
 
             export = self.df_filtered.sort_index(level=[0,1])
+            export
             column_number_mapping = dict()
             data = list()
-            cols = export.index.get_level_values(1).unique()
+            # cols = export.index.get_level_values(1).unique()
+            gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'Description', 'FunCats', 'GeneCapacity']
+            for c in gene_metadata_cols:
+                export.loc[ idx[:, c], :] = (export.loc[ idx[:, c], :]
+                                             .fillna(method='ffill', axis=1,)
+                                             .fillna(method='bfill', axis=1,)
+                )
+
+            gene_metadata = dict()
+
+            cols = ['SRA', 'IDSet', 'IDGroup', 'IDGroup_u2g', 'GPGroup', 'GPGroups_All',
+                    'ProteinGI_GIDGroups', 'ProteinGI_GIDGroupCount', 'PeptidePrint', 'Coverage',
+                    'Coverage_u2g', 'PeptideCount', 'PeptideCount_u2g', 'PeptideCount_S',
+                    'PeptideCount_S_u2g', 'PSMs', 'PSMs_u2g', 'AreaSum_u2g_0', 'AreaSum_u2g_all',
+                    'AreaSum_max', 'AreaSum_dstrAdj', 'iBAQ_dstrAdj', 'iBAQ_dstrAdj_log10',
+                    'iBAQ_dstrAdj_log10_zscore', 'iBAQ_dstrAdj_FOT', 'iBAQ_dstrAdj_FOT_log10',
+                    'iBAQ_dstrAdj_FOT_log10_zscore', 'iBAQ_dstrAdj_MED', 'iBAQ_dstrAdj_MED_log10',
+                    'iBAQ_dstrAdj_MED_log10_zscore',]
+
+
             for ix, col in enumerate(export.columns, 1):
                 renamer = {x: '{}_{}'.format(x, ix) for x in cols}
+
                 subdf = (export.loc[idx[:, :], col].reset_index()
-                         .pivot(index='GeneID', columns='Metric', values=col)
-                         .rename(columns=renamer)
+                         .pivot(index='GeneID', columns='Metric')
                 )
+                subdf.columns = subdf.columns.droplevel(0)
+                # subdf['GeneID'] = subdf.index #hack
+                # subdf['Description'] =
+
+                subdf = subdf.set_index(gene_metadata_cols)[cols].rename(columns=renamer)
+
                 metadata = dict(self.config[col])
                 metadata['name'] = col
                 to_pop = [x for x in metadata if x not in ('recno', 'runno', 'searchno', 'label', 'name')]
@@ -1156,8 +1185,10 @@ class Data:
                     metadata.pop(p)
                 column_number_mapping[ix] = metadata
                 data.append(subdf)
-            for_export = pd.concat(data, axis=1)
-            for_export.to_csv(outname, sep='\t')
+            for_export = pd.concat(data, axis=1).reset_index()
+            for_export['GeneID'] = for_export['GeneID'].apply(maybe_int)
+            for_export['TaxonID'] = for_export['TaxonID'].apply(maybe_int)
+            for_export.to_csv(outname, sep='\t', index=False)
             meta_df = pd.DataFrame(column_number_mapping).T
             outname = get_outname('metadata_{}'.format(level), name=self.outpath_name, taxon=self.taxon,
                                 non_zeros=self.non_zeros, colors_only=self.colors_only,
@@ -1175,7 +1206,8 @@ class Data:
             if genesymbols:
                 # export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
                 export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x,
-                                                                      _genemapper.symbol.get(x, '?')
+                                                                      # _genemapper.symbol.get(x, '?')
+                                                                      _genemapper.symbol.get(x, x)
                 ))
                 order = ['GeneSymbol']  # index column is GeneID, add GeneSymbol
                 order += [x for x in export.columns if x not in order]

@@ -97,6 +97,30 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     Rmetrics(to_export, savename=export_name, exts=[x.lstrip('.') for x in file_fmts ])
     # ==================================================================
 
+    ggridges = importr('ggridges')
+    rboxplot = r['boxplot']
+    rboxplot
+
+    import rpy2.robjects.lib.ggplot2 as gg
+
+    plot = gg.ggplot(area_df) +\
+         gg.aes_string(y='Name', x=area_name) +\
+         ggridges.stat_density_ridges(quantile_lines=True, alpha=.8) +\
+         gg.theme_classic(base_size=12)
+    plot.plot()
+
+    outname = get_outname('metrics_dist', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          batch=data_obj.batch_applied,
+                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                          outpath=data_obj.outpath,
+                          after='filter'
+                          # **kws
+    )
+    for ffmt in file_fmts:
+        plot.save(outname+ffmt)
+
+
     # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
 
     green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
@@ -256,7 +280,8 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     #                  .pipe(filter_taxon, taxon=TAXON_MAPPER.get(data_obj.taxon))
     #     )
 
-    counts = (df.loc[ idx[:, 'SRA'], :]
+    # counts = (df.loc[ idx[:, 'SRA'], :]
+    counts = (df.loc[ df.Metric=='SRA']
               .where(lambda x: x == 'S')
               .count(1)
     )

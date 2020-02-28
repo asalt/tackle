@@ -749,8 +749,12 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
     annot_mat = None
     if annotate:
 
-        annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
-                     .reset_index(level=1, drop=True)
+        # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
+        _cols = [x for x in data_obj.data.columns if x not in ('Metric')]
+        annot_mat = (data_obj.data.loc[ (data_obj.data.GeneID.isin(X.index.tolist())) &
+                                        (data_obj.data.Metric == annotate)][_cols]
+                     # .reset_index(level=1, drop=True)
+                     .set_index('GeneID')
                      .fillna(0)
                      .astype(int)
         )
@@ -820,7 +824,7 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
     if kmeans_res is not None:
 
         fig = kmeans_res['cluster_center_plot']['fig']
-        outname = outname_func('cluster_centers')
+        outname = outname_func('{}clusters_centers'.format(kmeans_clusters))
         save_multiple(fig, outname, *file_fmts)
         plt.close(fig)
 
@@ -1589,7 +1593,7 @@ def ssGSEA(ctx, geneset, norm, combine_mode, weight, correl, perm, min_overlap, 
 
 
 @main.command('box')
-@click.option('--gene', type=int,
+@click.option('--gene',
               default=None, show_default=True, multiple=True,
               help="Gene to plot. Multiple allowed")
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
@@ -1712,7 +1716,7 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
 
 
 @main.command('bar')
-@click.option('--gene', type=int,
+@click.option('--gene',
               default=None, show_default=True, multiple=True,
               help="Gene to plot. Multiple allowed")
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
@@ -1741,8 +1745,8 @@ Any valid, qualitative, colormap? """)
 @click.pass_context
 def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, linear, z_score, figsize, xtickrotation, xticksize):
 
-    if average is not None and group is None:
-        raise valueError('Must specify group with average')
+    if average and group is None:
+        raise ValueError('Must specify group with average')
 
     if group_order is not None:
         group_order = group_order.split('|')
@@ -1849,7 +1853,6 @@ def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, li
                 group = np.nan
             if group_order is None:
                 group_order = np.nan
-
 
             p = Rbarplot(df, average, group, group_order=group_order, title=title, ylab=ylab)
 
