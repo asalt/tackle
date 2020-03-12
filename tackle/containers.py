@@ -94,7 +94,8 @@ class GeneMapper:
     @property
     def df(self):
         if self._df is None:
-            self._df = pd.read_table(self.file, index_col='GeneID')
+            self._df = pd.read_table(self.file, index_col='GeneID', dtype=str)
+            self._df.index = self._df.index.astype(str)
             self._df['FunCats'] = self._df['FunCats'].fillna('')
         return self._df
 
@@ -188,6 +189,7 @@ class Data:
                  metrics=False, metrics_after_filter=True,
                  metrics_unnormed_area=True,
                  cluster_annotate_cols=None,
+                 impute_missing_values=False,
 
     ):
         "docstring"
@@ -246,6 +248,8 @@ class Data:
         self.normed               = False
         self.batch_applied        = None  # set to the batch (only) upon successful batch correction
         self.gid_funcat_mapping   = None  # loaded with data
+
+        self.impute_missing_values = impute_missing_values # use gaussian distribution 2 sd down from mean of data
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -561,7 +565,7 @@ class Data:
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
                 #                        self.ifot_ki, self.ifot_tf, self.median)
                 for taxonid in df.TaxonID.unique():
-
+                    if taxonid == 0.0: continue # invalid
                     df.loc[df.TaxonID==taxonid, 'area'] = normalize(df.loc[df.TaxonID==taxonid], name,
                                                                     ifot=self.ifot, ifot_ki=self.ifot_ki,
                                                                     ifot_tf=self.ifot_tf,
@@ -688,6 +692,27 @@ class Data:
         )
         self.df_filtered = df_filtered.set_index(['GeneID', 'Metric'])
 
+    def impute_missing(self, frame):
+        _norm_notna = frame.replace(0, np.NAN).stack().apply(np.log10)
+        _norm_notna += np.abs(_norm_notna.min())
+        _mean = _norm_notna.mean()
+        _sd = _norm_notna.std()
+        _norm = stats.norm(loc=_mean-(_sd*2), scale=_sd)
+        _number_na = self._areas.replace(0, np.NAN).isna().sum().sum()
+        # print(frame.replace(0, np.NAN).isna().sum())
+        random_values = _norm.rvs(size=_number_na, random_state=1234)
+
+        _areas_log = np.log10(frame.replace(0, np.NAN))
+        _areas_log += np.abs(_areas_log.min().min())
+
+        start_ix = 0
+        for col in _areas_log:
+            last_ix = _areas_log[col].isna().sum()
+            # print(_areas_log[col].isna().sum())
+            _areas_log.loc[_areas_log[col].isna(), col] = random_values[start_ix: start_ix+last_ix]
+            start_ix += last_ix
+        return _areas_log
+
 
     def set_area_dfs(self):
         # self.areas = self.panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
@@ -724,8 +749,15 @@ class Data:
         gids = tuple(gids)
         self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
 
+        if self.impute_missing_values:
+            self._areas_log = self.impute_missing(self._areas)
+                    
+
+
         # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
-        self._areas_log = np.log10(self._areas.replace(0, np.NAN).fillna(self.minval/2).divide(self.minval/2))
+        else:
+            self._areas_log = np.log10(self._areas.replace(0, np.NAN).fillna(self.minval/2).divide(self.minval/2))
+
         self._areas_log.index.name = 'GeneID'
         # fillna with the mean value. This prevents skewing of normalization such as
         # z score. The NAN values are held in the self.mask dataframe
@@ -791,11 +823,14 @@ class Data:
             new_cols = list()
             for col in 'iBAQ_dstrAdj', 'iBAQ_dstrAdj_FOT', 'iBAQ_dstrAdj_MED':
                 frame = self.df_filtered.loc[ idx[:, col], :]
-                minval = frame.replace(0, np.NAN).stack().dropna().min()
-                frame_log = np.log10(frame.replace(0, np.NAN).fillna(minval/2))
-                minval_log = frame_log.replace(0, np.NAN).stack().dropna().min()
-                shift_val = np.ceil(np.abs(minval_log))
-                frame_log = (frame_log.fillna(minval_log/2) + shift_val).reset_index()
+                if self.impute_missing_values:
+                    frame_log = self.impute_missing(frame).reset_index()
+                else:
+                    minval = frame.replace(0, np.NAN).stack().dropna().min()
+                    frame_log = np.log10(frame.replace(0, np.NAN).fillna(minval/2))
+                    minval_log = frame_log.replace(0, np.NAN).stack().dropna().min()
+                    shift_val = np.ceil(np.abs(minval_log))
+                    frame_log = (frame_log.fillna(minval_log/2) + shift_val).reset_index()
                 frame_log['Metric'] = col+'_log10'
                 new_cols.append(frame_log.set_index(['GeneID', 'Metric']))
 
@@ -1124,7 +1159,7 @@ class Data:
             return True
         return False
 
-    def perform_data_export(self, level='all', genesymbols=False):
+    def perform_data_export(self, level='all', genesymbols=False, linear=False):
 
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
@@ -1149,10 +1184,13 @@ class Data:
             # cols = export.index.get_level_values(1).unique()
             gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'Description', 'FunCats', 'GeneCapacity']
             for c in gene_metadata_cols:
-                export.loc[ idx[:, c], :] = (export.loc[ idx[:, c], :]
-                                             .fillna(method='ffill', axis=1,)
-                                             .fillna(method='bfill', axis=1,)
-                )
+                try:
+                    export.loc[ idx[:, c], :] = (export.loc[ idx[:, c], :]
+                                                .fillna(method='ffill', axis=1,)
+                                                .fillna(method='bfill', axis=1,)
+                    )
+                except KeyError:
+                    pass
 
             gene_metadata = dict()
 
@@ -1176,7 +1214,7 @@ class Data:
                 # subdf['GeneID'] = subdf.index #hack
                 # subdf['Description'] =
 
-                subdf = subdf.set_index(gene_metadata_cols)[cols].rename(columns=renamer)
+                subdf = subdf.set_index([x for x in gene_metadata_cols if x in subdf])[cols].rename(columns=renamer)
 
                 metadata = dict(self.config[col])
                 metadata['name'] = col
@@ -1200,6 +1238,8 @@ class Data:
 
         elif level == 'area':
             export = self.areas_log_shifted.copy()
+            if linear:
+                export.apply(lambda x: 10**x)
             export[self.areas == 0] = 0 # fill the zeros back
             export[self.mask] = np.NaN
             order = export.columns
