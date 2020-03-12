@@ -97,7 +97,8 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
 
 
 
-        df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+        # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+        df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, x))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
         df.index.name = 'GeneID'
         df['highlight'] = False
@@ -168,7 +169,10 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                     '.svg': dict(width=width, height=height,)
         }
 
-        df['FunCats'] = df.FunCats.astype(str)
+        df['FunCats'] = df.FunCats.fillna('').astype(str)
+        df['GeneSymbol'] = df.GeneSymbol.fillna('').astype(str)
+        df.index = df.index.astype('str')# make uniform dtype so rpy2 does not crash in conversion
+        df = df.reset_index()
 
         for file_fmt in file_fmts:
 
@@ -232,7 +236,8 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         # log2_fc.name = 'log2_Fold_Change'
 
         df = padj.join(log2_fc.to_frame())
-        df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+        # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+        df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, x))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
         df.index.name = 'GeneID'
         df['highlight'] = False
