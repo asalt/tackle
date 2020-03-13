@@ -637,11 +637,13 @@ def scatter(ctx, colors_only, shade_correlation, stat):
               """)
 @click.option('--genesymbols', default=False, is_flag=True, show_default=True,
               help='Include GeneSymbols in data export when `level` is set to `area`')
+@click.option('--linear', default=False, is_flag=True, show_default=True,
+              help='linear transformation ')
 @click.pass_context
-def export(ctx, level, genesymbols):
+def export(ctx, level, genesymbols, linear):
 
     data_obj = ctx.obj['data_obj']
-    data_obj.perform_data_export(level, genesymbols=genesymbols)
+    data_obj.perform_data_export(level, genesymbols=genesymbols, linear=linear)
 
 @main.command('cluster')
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
