@@ -50,11 +50,12 @@ barplot <- function(df, average=FALSE, group=NA, group_order=NA, title = '', yla
 
   ## p <- ggplot(data = df, aes(x=factor(index, level=df$index), y=Expression, fill=get(group))) +
   ## p <- ggplot(data = df, aes(x=index, y=Expression, fill=get(group))) +
-  p <- ggplot(data = df, aes(x=index, y=Expression, fill=group)) +
+  p <- ggplot(data = df, aes_string(x='index', y='Expression', fill=group)) +
     geom_bar(stat='identity') +
     xlab(NULL) + ylab(ylab) + ggtitle(title) +
     theme_light()+
     guides(fill=guide_legend(title='')) +
+    labs(title=title) +
     theme(
       text = element_text(size=16),
       legend.position='bottom',

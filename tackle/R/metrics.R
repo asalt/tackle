@@ -8,6 +8,7 @@ library(tidyr)
 metrics <- function(df, savename=NULL, exts=NULL, ...){
 
 
+  options(bitmapType='cairo')
   df$Sample <- factor(rownames(df))
 
 
@@ -30,7 +31,8 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
 
   ## thewidth <- dim(df)[1] %/% 2 %>% max(9)
   thewidth <- dim(df)[1] %/% 2 %>% max(9) %>% min(24)
-  annot_scale = (9/thewidth)
+  annot_scale = (12/thewidth)
+  print(thewidth, annot_scale)
   overflow_width <- (24 / (dim(df)[1] %/% 2)) %>% min(1)
   print(dim(df)[1])
   print(overflow_width)
