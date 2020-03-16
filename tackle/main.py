@@ -362,13 +362,14 @@ def validate_configfile(experiment_file, **kwargs):
 @click.option('--unique-pepts', default=0, show_default=True, type=int,
               help='number of unique peptides required per gene. Also must satisfy the nonzero argument.')
 @click.option('--nonzero-subgroup', type=str, default=None, help='')
+@click.option('--impute-missing-values', default=False, show_default=True, is_flag=True)
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
          file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
          ifot_ki, ifot_tf, genefile_norm, median, name, normalize_across_species, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
-         sra,
+         sra, impute_missing_values,
          experiment_file):
     """
     """
@@ -501,7 +502,8 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     metrics_after_filter=metrics_after_filter,
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
                     export_all=export_all,
-                    cluster_annotate_cols=cluster_annotate_cols
+                    cluster_annotate_cols=cluster_annotate_cols,
+                    impute_missing_values=impute_missing_values,
     )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
@@ -635,13 +637,14 @@ def scatter(ctx, colors_only, shade_correlation, stat):
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
               """)
+@click.option('--linear', default=False, show_default=True, is_flag=True, help='Export linear (not logged) values when exporting as area')
 @click.option('--genesymbols', default=False, is_flag=True, show_default=True,
               help='Include GeneSymbols in data export when `level` is set to `area`')
 @click.pass_context
 def export(ctx, level, genesymbols):
 
     data_obj = ctx.obj['data_obj']
-    data_obj.perform_data_export(level, genesymbols=genesymbols)
+    data_obj.perform_data_export(level, genesymbols=genesymbols, linear=linear)
 
 @main.command('cluster')
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
@@ -1774,6 +1777,7 @@ def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, li
     data = data_obj.areas_log_shifted.copy()
     data[data_obj.areas == 0] = 0 # fill the zeros back
     data[data_obj.mask] = np.NaN
+    data.index = data.index.astype(str)
 
 
     try:
@@ -1793,10 +1797,11 @@ def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, li
     r_source(r_file)
     grdevices = importr('grDevices')
     Rbarplot = robjects.r['barplot']
+    from tackle.containers import GeneMapper
+    gm = GeneMapper()
 
 
     for g in gene:
-
         if g not in data.index:
             warn('GeneID {} not in dataset, skipping..'.format(g))
             continue
@@ -1829,7 +1834,9 @@ def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, li
             df[col] = df[col].astype(str)
 
 
-        symbol = data_obj.gid_symbol.get(g, '')
+        symbol = data_obj.gid_symbol.get(g,)
+        if symbol is None:
+            symbol = gm.symbol.get(g, '')
         title = "{} {}".format(g, symbol)
         data_xform = 'log' if not (linear or z_score) else ('linear' if linear else 'zscore')
         if not average:
