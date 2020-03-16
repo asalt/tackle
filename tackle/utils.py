@@ -66,7 +66,7 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
     if subgroup is None:
         columns = [x for x in df.columns if x not in ('GeneID', 'Metric')]
         if isinstance(nonzero_value, float): #then ratio of total
-            threshold = len(df.columns) * nonzero_value
+            threshold = len(columns) * nonzero_value
 
         # mask = (df.loc[ idx[:, column], :].fillna(0)
         #         .where(lambda x : x != 0)

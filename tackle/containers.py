@@ -751,7 +751,7 @@ class Data:
 
         if self.impute_missing_values:
             self._areas_log = self.impute_missing(self._areas)
-                    
+
 
 
         # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
