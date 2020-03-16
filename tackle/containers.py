@@ -1239,7 +1239,7 @@ class Data:
         elif level == 'area':
             export = self.areas_log_shifted.copy()
             if linear:
-                export.apply(lambda x: 10**x)
+                export = export.apply(lambda x: 10**x)
             export[self.areas == 0] = 0 # fill the zeros back
             export[self.mask] = np.NaN
             order = export.columns
