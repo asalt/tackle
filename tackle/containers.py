@@ -1214,8 +1214,10 @@ class Data:
                 subdf.columns = subdf.columns.droplevel(0)
                 # subdf['GeneID'] = subdf.index #hack
                 # subdf['Description'] =
+                # this makes sure we don't crash if any columns are missing
+                _cols = [x for x in cols if x in subdf]
 
-                subdf = subdf.set_index([x for x in gene_metadata_cols if x in subdf])[cols].rename(columns=renamer)
+                subdf = subdf.set_index([x for x in gene_metadata_cols if x in subdf])[_cols].rename(columns=renamer)
 
                 metadata = dict(self.config[col])
                 metadata['name'] = col
