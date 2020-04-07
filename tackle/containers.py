@@ -510,7 +510,6 @@ class Data:
             if df.empty:
                 warn('No data for {!r}, label {}, skipping'.format(exp, label))
                 continue
-
             if '9606' not in exp.taxon_ratios:
                 # should always be here, or None?
                 pass
@@ -545,9 +544,9 @@ class Data:
             if 'TaxonID' not in df or df.TaxonID.isna().any():
                 if 'TaxonID' in df:
                     loc = df[ df.TaxonID.isna() ].index
-                    df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(x) for x in loc]
+                    df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(str(x)) for x in loc]
                 else:
-                    df.loc[:, 'TaxonID'] = [_genemapper.taxon.get(x) for x in df.index]
+                    df.loc[:, 'TaxonID'] = [_genemapper.taxon.get(str(x)) for x in df.index]
 
 
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
@@ -1034,7 +1033,9 @@ class Data:
             pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, ncov)')
         elif not self.pairs and self.limma:
             importr('limma')
-            r('suppressMessages(library(dplyr))')
+            # import ipdb; ipdb.set_trace()
+            # r('suppressMessages(library(dplyr))')
+            importr('dplyr', on_conflict='warn')
             r('block <- NULL')
             r('cor <- NULL')
             if self.block:
