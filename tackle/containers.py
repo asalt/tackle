@@ -1033,7 +1033,6 @@ class Data:
             pvalues = r('pvalue.batch(as.matrix(edata), mod, mod0, ncov)')
         elif not self.pairs and self.limma:
             importr('limma')
-            # import ipdb; ipdb.set_trace()
             # r('suppressMessages(library(dplyr))')
             importr('dplyr', on_conflict='warn')
             r('block <- NULL')
@@ -1179,7 +1178,6 @@ class Data:
         elif level == 'align':
 
             export = self.df_filtered.sort_index(level=[0,1])
-            export
             column_number_mapping = dict()
             data = list()
             # cols = export.index.get_level_values(1).unique()
@@ -1193,8 +1191,6 @@ class Data:
                 except KeyError:
                     pass
 
-            gene_metadata = dict()
-
             cols = ['SRA', 'IDSet', 'IDGroup', 'IDGroup_u2g', 'GPGroup', 'GPGroups_All',
                     'ProteinGI_GIDGroups', 'ProteinGI_GIDGroupCount', 'PeptidePrint', 'Coverage',
                     'Coverage_u2g', 'PeptideCount', 'PeptideCount_u2g', 'PeptideCount_S',
@@ -1204,6 +1200,14 @@ class Data:
                     'iBAQ_dstrAdj_FOT_log10_zscore', 'iBAQ_dstrAdj_MED', 'iBAQ_dstrAdj_MED_log10',
                     'iBAQ_dstrAdj_MED_log10_zscore',]
 
+            if 'GeneCapacity' in export.index.get_level_values(1):
+                if not all(export.loc[ idx[:, 'GeneCapacity'], :].T.nunique() == 1): # different genecapacities...
+                    gene_metadata_cols = [ x for x in gene_metadata_cols if x != 'GeneCapacity' ]
+                    cols.append('GeneCapacity')
+
+            gene_metadata = dict()
+
+
 
             for ix, col in enumerate(export.columns, 1):
                 renamer = {x: '{}_{}'.format(x, ix) for x in cols}
@@ -1211,13 +1215,17 @@ class Data:
                 subdf = (export.loc[idx[:, :], col].reset_index()
                          .pivot(index='GeneID', columns='Metric')
                 )
+                if 'GeneID' in subdf:
+                    subdf = subdf.drop('GeneID',1)
                 subdf.columns = subdf.columns.droplevel(0)
+                subdf.index = subdf.index.map(maybe_int).astype(str)
+                subdf['GeneID'] = subdf['GeneID'].apply(maybe_int).astype(str)
                 # subdf['GeneID'] = subdf.index #hack
                 # subdf['Description'] =
                 # this makes sure we don't crash if any columns are missing
                 _cols = [x for x in cols if x in subdf]
 
-                subdf = subdf.set_index([x for x in gene_metadata_cols if x in subdf])[_cols].rename(columns=renamer)
+                subdf = (subdf.set_index([x for x in gene_metadata_cols if x in subdf])[_cols].rename(columns=renamer)) 
 
                 metadata = dict(self.config[col])
                 metadata['name'] = col
