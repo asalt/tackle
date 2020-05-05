@@ -24,7 +24,7 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
         figsize=(12,10.5)
 
     outname = get_outname('overlap', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          non_zeros=non_zeros, colors_only=data_obj.colors_only,
                           # batch=data_obj.batch_applied,
                           # batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                           outpath=data_obj.outpath,
@@ -54,10 +54,13 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
 
     for name, col in cols.items():
 
-        res = (filter_observations(data_obj.data[col], 'area', nonzero_value=non_zeros)
+        # res = (filter_observations(data_obj.data[col], 'area', nonzero_value=non_zeros)
+
+        res = (filter_observations(data_obj.data[['GeneID', 'Metric', *col]], 'area', nonzero_value=non_zeros)
                .pipe(filter_sra)
-               .loc[ idx[:, 'SRA'], :]
-               .reset_index()
+               # .loc[ idx[:, 'SRA'], :]
+               .query('Metric=="SRA"')
+               # .reset_index()
                .rename(columns={'level_0':'GeneID', 'level_1': 'SRA'})
         )
 
@@ -97,9 +100,14 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
 
     # export gene membership
 
+    all_intersections = de.get_filtered_intersections(sort_by='size',
+                                                      inters_size_bounds=(0, np.inf),
+                                                      inters_degree_bounds=(0, np.inf) )
+
+
     membership_df = (pd.DataFrame.from_dict(
         {'|'.join(membership) : de.inters_df_dict[ membership ]['GeneID']
-         for membership in filtered_intersections[1]
+         for membership in all_intersections[1]
         },
         orient='columns'
     )
