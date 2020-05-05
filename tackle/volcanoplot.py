@@ -5,6 +5,11 @@ import numpy as np
 import pandas as pd
 from .utils import get_outname, parse_gid_file
 
+from .containers import GeneMapper
+
+def fix_name(x):
+    return x.replace(':', '_').replace(' ', '_').replace('/','dv')
+
 def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
                 genes=None,
                 sig_metric='pAdj', number_by='log2_Fold_Change', yaxis='pAdj', scale=1.2,
@@ -12,6 +17,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                 width=5, height=5):
 
     data_obj = ctx.obj['data_obj']
+    gm = GeneMapper()
 
     gids_to_highlight = None
     if highlight_geneids is not None:
@@ -100,6 +106,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
         df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, x))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
+        df['GeneDescription']    = df.index.map(lambda x: gm.description.get(str(x), ''))
         df.index.name = 'GeneID'
         df['highlight'] = False
         if gids_to_highlight is not None:
@@ -110,12 +117,14 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             _genes = set(genes) & set(df.index)
             df = df.loc[_genes]
 
+
+
         outname = get_outname('volcanoplot', name=data_obj.outpath_name, taxon=data_obj.taxon,
                               non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
                               batch=data_obj.batch_applied,
                               batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                               outpath=data_obj.outpath,
-                              group='{}_vs_{}'.format(group0, group1),
+                              group='{}_vs_{}'.format(fix_name(group0), fix_name(group1)),
         )
 
         out = outname + '.tsv'
@@ -239,6 +248,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
         df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, x))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
+        df['GeneDescription']    = df.index.map(lambda x: gm.description.get(x, ''))
         df.index.name = 'GeneID'
         df['highlight'] = False
         if gids_to_highlight is not None:
