@@ -20,12 +20,15 @@ from seaborn.matrix import _matrix_mask
 
 z_score = ClusterGrid.z_score
 
+from . import utils
 from .utils import *
 
 idx = pd.IndexSlice
 
 TAXON_MAPPER = {'human': 9606,
-                'mouse': 10090}
+                'mouse': 10090,
+                'celegans': 6239,
+}
 
 
 LABEL_MAPPER = {'none': 0,  # hard coded number IDs for labels
@@ -62,12 +65,6 @@ LABEL_MAPPER = {'none': 0,  # hard coded number IDs for labels
                 '121': 121,
 }
 
-def maybe_int(x):
-    try:
-        return int(x)
-    except ValueError:
-        # warn('Value {} cannot be converted to int'.format(x))
-        return x
 
 def join_and_create_path(*strings, verbose=True):
     """Joins strings and returns resulting path.
@@ -83,7 +80,8 @@ def join_and_create_path(*strings, verbose=True):
 class GeneMapper:
     def __init__(self):
         self.file = os.path.join( os.path.split(os.path.abspath(__file__))[0],
-                                  'data', 'genetable_hsmmgg.tab'
+                                  # 'data', 'genetable_hsmmgg.tab'
+                                  'data', 'genetable20200501.tsv'
         )
         self._df = None
         self._symbol = None
@@ -182,6 +180,7 @@ class Data:
                  z_score='0',
                  export_all=False,
                  SRA='S',
+                 number_sra=1,
                  ifot=False, ifot_ki=False, ifot_tf=False, median=False,
                  genefile_norm=None,
                  normalize_across_species=False,
@@ -240,6 +239,7 @@ class Data:
         self.metrics_unnormed_area= metrics_unnormed_area
         self._metric_values       = None
         self.SRA                  = SRA
+        self.number_sra           = number_sra
         self.cluster_annotate_cols= cluster_annotate_cols
 
         self.outpath              = None
@@ -560,6 +560,10 @@ class Data:
                                            median=self.median,
                                            genefile_norm=self.genefile_norm,
                     )
+
+                    if self.export_all:
+                        df.loc[:, 'iBAQ_dstrAdj_FOT'] = normalize(df, ifot=True)
+                        df.loc[:, 'iBAQ_dstrAdj_MED'] = normalize(df, median=True)
             else:
                 # df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
@@ -575,7 +579,6 @@ class Data:
                     )
                 # df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
                 #                median=self.median)
-                #TODO fix this for --normalize-across-species option
                 if self.export_all: # have to calculate more columns
 
                     for taxonid in df.TaxonID.unique():
@@ -687,31 +690,31 @@ class Data:
             filter_func = partial(filter_taxon, taxon=taxon_filter)
         df_filtered = (self.data.pipe(filter_observations, 'area',
                                       self.non_zeros, self.nonzero_subgroup, self.col_metadata)
-                       .pipe(filter_sra, SRA=self.SRA)
+                       .pipe(filter_sra, SRA=self.SRA, number_sra=self.number_sra)
                        .pipe(filter_func)
         )
         self.df_filtered = df_filtered.set_index(['GeneID', 'Metric'])
 
-    def impute_missing(self, frame):
-        _norm_notna = frame.replace(0, np.NAN).stack().apply(np.log10)
-        _norm_notna += np.abs(_norm_notna.min())
-        _mean = _norm_notna.mean()
-        _sd = _norm_notna.std()
-        _norm = stats.norm(loc=_mean-(_sd*2), scale=_sd)
-        _number_na = self._areas.replace(0, np.NAN).isna().sum().sum()
-        # print(frame.replace(0, np.NAN).isna().sum())
-        random_values = _norm.rvs(size=_number_na, random_state=1234)
+    # def impute_missing(self, frame):
+    #     _norm_notna = frame.replace(0, np.NAN).stack().apply(np.log10)
+    #     _norm_notna += np.abs(_norm_notna.min())
+    #     _mean = _norm_notna.mean()
+    #     _sd = _norm_notna.std()
+    #     _norm = stats.norm(loc=_mean-(_sd*2), scale=_sd)
+    #     _number_na = self._areas.replace(0, np.NAN).isna().sum().sum()
+    #     # print(frame.replace(0, np.NAN).isna().sum())
+    #     random_values = _norm.rvs(size=_number_na, random_state=1234)
 
-        _areas_log = np.log10(frame.replace(0, np.NAN))
-        _areas_log += np.abs(_areas_log.min().min())
+    #     _areas_log = np.log10(frame.replace(0, np.NAN))
+    #     _areas_log += np.abs(_areas_log.min().min())
 
-        start_ix = 0
-        for col in _areas_log:
-            last_ix = _areas_log[col].isna().sum()
-            # print(_areas_log[col].isna().sum())
-            _areas_log.loc[_areas_log[col].isna(), col] = random_values[start_ix: start_ix+last_ix]
-            start_ix += last_ix
-        return _areas_log
+    #     start_ix = 0
+    #     for col in _areas_log:
+    #         last_ix = _areas_log[col].isna().sum()
+    #         # print(_areas_log[col].isna().sum())
+    #         _areas_log.loc[_areas_log[col].isna(), col] = random_values[start_ix: start_ix+last_ix]
+    #         start_ix += last_ix
+    #     return _areas_log
 
 
     def set_area_dfs(self):
@@ -750,7 +753,20 @@ class Data:
         self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
 
         if self.impute_missing_values:
-            self._areas_log = self.impute_missing(self._areas)
+            # downshift=2.
+            # scale = .5
+            downshift, scale = 1.8, .8
+
+            inpute_plotname = get_outname('distribution_ds_{:.2g}_scale_{:.2g}'.format(downshift, scale),
+                                          name=self.outpath_name, taxon=self.taxon, non_zeros=self.non_zeros,
+                                          colors_only=self.colors_only, batch=self.batch_applied, batch_method = 'parametric'
+                                          if not self.batch_nonparametric else 'nonparametric', outpath=self.outpath)
+
+            to_impute = self._areas.replace(0, np.NAN).divide(self.minval).add(1).applymap(np.log10)
+            imputed = utils.impute_missing(to_impute, downshift=downshift, scale=scale, make_plot=True)
+            plt.savefig(inpute_plotname+'.png', dpi=90)
+            plt.close(plt.gcf())
+            self._areas_log = imputed
 
 
 
@@ -1164,15 +1180,21 @@ class Data:
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
         #                                               self.non_zeros)
-        outname = get_outname('data_{}'.format(level), name=self.outpath_name, taxon=self.taxon,
+
+        # outname = os.path.abspath(os.path.join(self.outpath, fname))
+        # if self.export_data == 'all':
+        self.areas_log_shifted # make sure it's created
+
+        level_formatter = level
+        if level == 'area' and linear:
+            level_formatter = level+'_linear'
+
+        outname = get_outname('data_{}'.format(level_formatter), name=self.outpath_name, taxon=self.taxon,
                               non_zeros=self.non_zeros, colors_only=self.colors_only,
                               batch=self.batch_applied,
                               batch_method = 'parametric' if not self.batch_nonparametric else 'nonparametric',
                               outpath=self.outpath) + '.tsv'
 
-        # outname = os.path.abspath(os.path.join(self.outpath, fname))
-        # if self.export_data == 'all':
-        self.areas_log_shifted # make sure it's created
         if level == 'all':
             self.df_filtered.sort_index(level=[0,1]).to_csv(outname, sep='\t')
         elif level == 'align':
@@ -1182,7 +1204,7 @@ class Data:
             column_number_mapping = dict()
             data = list()
             # cols = export.index.get_level_values(1).unique()
-            gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'Description', 'FunCats', 'GeneCapacity']
+            gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity']
             for c in gene_metadata_cols:
                 try:
                     export.loc[ idx[:, c], :] = (export.loc[ idx[:, c], :]
@@ -1240,8 +1262,9 @@ class Data:
             export = self.areas_log_shifted.copy()
             if linear:
                 export = export.apply(lambda x: 10**x)
-            export[self.areas == 0] = 0 # fill the zeros back
-            export[self.mask] = np.NaN
+            if not self.impute_missing_values:
+                export[self.areas == 0] = 0 # fill the zeros back
+                export[self.mask] = np.NaN
             order = export.columns
             if genesymbols:
                 # export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))

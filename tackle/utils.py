@@ -33,6 +33,61 @@ N_COLORS = 100
 r_colors = sb.color_palette("RdBu_r", n_colors=N_COLORS+1)
 STEP = .2
 
+def maybe_int(x):
+    try:
+        return int(x)
+    except ValueError:
+        # warn('Value {} cannot be converted to int'.format(x))
+        return x
+
+
+def plot_imputed(edata_impute, observed, missing, downshift, scale):
+    fig, ax = plt.subplots()
+    sb.distplot(edata_impute.stack(), label='All Data', ax=ax, kde=False)
+    sb.distplot(observed, label='Observed Values', ax=ax, kde=False)
+    sb.distplot(edata_impute[missing].stack(), label='Imputed Values', ax=ax, kde=False)
+    ax.legend(fontsize=10, loc='upper right', markerscale=.4)
+    # ax.set_xlim(0, 10)
+    title = 'downshift : {:.2g} scale : {:.2g}'.format(downshift, scale)
+    ax.set_title(title)
+    # outname = os.path.join('../results/imputation_testing', 'distribution_ds_{:.2g}_scale_{:.2g}'.format(downshift, scale))
+
+    # fig.savefig(outname+'.png', dpi=90)
+    # plt.close(fig)
+
+def impute_missing(frame, downshift=2., scale=1., random_state=1234, make_plot=True):
+    # _norm_notna = frame.replace(0, np.NAN).stack()
+
+    observed = frame.replace(0, np.nan).stack().dropna()
+    missing  = frame.isna()
+
+    _norm_notna = frame.stack()
+    # _norm_notna += np.abs(_norm_notna.min())
+    _mean = _norm_notna.mean()
+    _sd = _norm_notna.std()
+    _norm = stats.norm(loc=_mean-(_sd*downshift), scale=_sd*scale)
+    _number_na = frame.replace(0, np.NAN).isna().sum().sum()
+    # print(frame.replace(0, np.NAN).isna().sum())
+    random_values = _norm.rvs(size=_number_na, random_state=random_state)
+
+    # _areas_log = np.log10(frame.replace(0, np.NAN))
+    # _areas_log += np.abs(_areas_log.min().min())
+    # _areas_log = frame.copy().replace(0, np.NAN)
+    areas_log = frame.copy()
+
+    start_ix = 0
+    for col in areas_log:
+        last_ix = areas_log[col].isna().sum()
+        # print(_areas_log[col].isna().sum())
+        areas_log.loc[areas_log[col].isna(), col] = random_values[start_ix: start_ix+last_ix]
+        start_ix += last_ix
+
+    if make_plot:
+        plot_imputed(areas_log, observed, missing, downshift=downshift, scale=scale)
+
+    return areas_log
+
+
 
 # def filter_observations(panel, column, threshold):
 #     """
@@ -120,7 +175,8 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
 
 
 
-def filter_sra(df, SRA='S'):
+def filter_sra(df, SRA='S', number_sra=1):
+
 
     if SRA is None:
         SRA = 'S'
@@ -134,8 +190,8 @@ def filter_sra(df, SRA='S'):
 
     # mask = ((df.loc[ idx[:, 'SRA'], :].isin(sra_list))
     mask = ((df.loc[ df.Metric=='SRA' ].isin(sra_list))
-            .any(1)
-            .where(lambda x: x)
+            .sum(1)
+            .where(lambda x: x>=number_sra)
             .dropna()
     )
     # gids = mask.index.get_level_values(0)
@@ -165,9 +221,13 @@ def filter_funcats(df_long, funcats):
 #     return panel.loc[:, indices, :]
 
 def filter_taxon(df, taxon=9606):
-    mask = df.loc[ idx[:, ('TaxonID')], : ] == 9606
-    gids = mask[mask].dropna().index.get_level_values(0)
-    return df.loc[ gids.values ]
+
+    mask = df.loc[df.query('Metric == "TaxonID"').index, df.columns[2]] == taxon
+    gids = df.loc[mask.index].GeneID
+    # mask = df.loc[ idx[:, ('TaxonID')], : ] == 9606
+    # gids = mask[mask].dropna().index.get_level_values(0)
+    # return df.loc[ gids.values ]
+    return df[ df.GeneID.isin(gids) ]
 
 def pearson_r(x, y):
     return stats.pearsonr(x, y)[0]
@@ -620,7 +680,6 @@ def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=
         if not overlapping_gids:
             warn('No genes in file {} present in experiment'.format(genefile_norm))
         norm_ = df.loc[overlapping_gids, 'iBAQ_dstrAdj'].sum()
-
     else:
         norm_ = 1
     if norm_ == 0:
@@ -766,7 +825,7 @@ def hgene_map(expression, boolean=False):
     # get most recent, sort by name and take last
     homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
                                                 'data', 'homologene*data')),
-                        reverse=True)[0]
+                          reverse=True)[0]
 
 
     homologene = (pd.read_table(homologene_f, header=None,
@@ -788,7 +847,7 @@ def hgene_map(expression, boolean=False):
     else:
         return expression
     # _expression = expression.loc[ expression.index.dropna(), pheno[pheno[group].isin(groups)].index]
-    _expression = expression.loc[ expression.index.dropna()]
+    _expression = expression.loc[ expression.index.dropna() ]
 
     _expression.index = _expression.index.astype(int)
     if _expression.index.nunique() < len(_expression.index):

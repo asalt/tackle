@@ -59,7 +59,9 @@ from .barplot import barplot
 sys.setrecursionlimit(10000)
 
 TAXON_MAPPER = {'human': 9606,
-                'mouse': 10090}
+                'mouse': 10090,
+                'celegans': 6239
+}
 
 
 
@@ -352,7 +354,9 @@ def validate_configfile(experiment_file, **kwargs):
               default='./results', show_default=True,
               help='Base directory to store results. Will be created if does not exist.')
 @click.option('--SRA', type=click.Choice(['S', 'R', 'A']))
-@click.option('--taxon', type=click.Choice(['human', 'mouse', 'all']),
+@click.option('--number-sra', default=1, help='number of `SRA` level gene products required',
+              show_default=True)
+@click.option('--taxon', type=click.Choice(['human', 'mouse', 'celegans', 'all']),
               default='all', show_default=True)
 @click.option('--non-zeros', default=1, show_default=True, type=int_or_ratio(),
               help="""Minimum number of non zeros OR fraction of nonzeros allowed for each gene product
@@ -369,7 +373,7 @@ def validate_configfile(experiment_file, **kwargs):
 def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
          file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
          ifot_ki, ifot_tf, genefile_norm, median, name, normalize_across_species, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
-         sra, impute_missing_values,
+         sra, number_sra, impute_missing_values,
          experiment_file):
     """
     """
@@ -499,6 +503,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     experiment_file=experiment_file, metrics=metrics, limma=limma,
                     block=block,
                     SRA=sra,
+                    number_sra=number_sra,
                     metrics_after_filter=metrics_after_filter,
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
                     export_all=export_all,
@@ -680,6 +685,7 @@ def export(ctx, level, genesymbols, linear):
               default=None, show_default=True, multiple=True,
               help="""Optional list of geneids to highlight by.
               Should have 1 geneid per line. """)
+@click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
 @click.option('--legend-include', type=str, multiple=True,
               help="""Specific entries in the config file to include in the legend.
               (Default all are included)""")
@@ -699,6 +705,7 @@ when `auto` is set for `--nclusters`""")
               help="""Use DBSCAN algorithm to find and cluster data. Cannot be used with nclusters specification""")
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster rows via hierarchical clustering")
+@click.option('--order-by-abundance', default=False, is_flag=True, show_default=True)
 @click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
               show_default=True)
 @click.option('--show-metadata/--hide-metadata', default=True, show_default=True,
@@ -711,13 +718,21 @@ when `auto` is set for `--nclusters`""")
 @click.option('--square', default=False, is_flag=True, help='Force square heatmap')
 @click.option('--z-score', type=click.Choice(['None', '0', '1']),
               default='0', show_default=True)
+@click.option('--z-score-by', type=str, default=None, show_default=True)
 @click.pass_context
 def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col_cluster, dbscan, figsize, force_optimal_ordering,
             force_plot_genes,
             genefile, gene_symbols,
-            gene_symbol_fontsize, highlight_geneids, legend_include, legend_exclude, linkage,
+            gene_symbol_fontsize, highlight_geneids, linear, legend_include, legend_exclude, linkage,
             max_autoclusters, nclusters,
-            row_cluster, seed, show_metadata, standard_scale, show_missing_values, square, z_score):
+            order_by_abundance,
+            row_cluster, seed, show_metadata, standard_scale, show_missing_values, square, z_score,
+            z_score_by,
+):
+
+
+    if order_by_abundance and row_cluster:
+        print('Not ')
 
     if not figsize:  # returns empty tuple if not specified
         figsize = None
@@ -732,6 +747,8 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
     data_obj = ctx.obj['data_obj']
 
     X = data_obj.areas_log_shifted
+    if linear:
+        X = 10**X
 
     # X = data_obj.areas_log_shifted.copy()
     # X[data_obj.areas == 0] = 0 # fill the zeros back
@@ -790,11 +807,14 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
                          gene_symbol_fontsize=gene_symbol_fontsize,
                          legend_include=legend_include,
                          legend_exclude=legend_exclude,
+                         order_by_abundance=order_by_abundance,
                          seed=seed,
                          metadata_colors=data_obj.metadata_colors,
                          circle_col_markers=circle_col_markers,
                          circle_col_marker_size=circle_col_marker_size,
                          square=square,
+                         z_score_by=z_score_by,
+
     )
 
     g = result['clustermap']['clustergrid']
@@ -1045,7 +1065,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--permute', type=click.Choice(('phenotype', 'gene_set')), default='phenotype',
               show_default=True,
 )
-@click.option('--plot-top-x', default=20, show_default=True)
+@click.option('--plot-top-x', default=10, show_default=True)
 @click.option('--rnd-type', type=click.Choice(('no_balance', 'equalize_and_balance')),
               default='no_balance', show_default=True)
 @click.option('--rnd-seed', default='timestamp', show_default=True)
@@ -1064,10 +1084,11 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
                                                'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
 ]), default=None, show_default=True )
+@click.option('--no-homologene-remap', is_flag=True, default=False, help='If not a human species, do not map to human through homologene. Requires pairing with appropriate gene set file' )
 @click.pass_context
 def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, number_of_permutations, norm, permute,
          plot_top_x, rnd_seed, rnd_type, scoring_scheme, sort, set_max, set_min, number, group,
-         plot_genes, plot_genes_sig, annotate
+         plot_genes, plot_genes_sig, annotate, no_homologene_remap,
 ):
     """
     Run GSEA on specified groups
@@ -1186,7 +1207,8 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
         expression = data_obj.areas_log_shifted.copy().fillna('na')
         expression.index.name = 'NAME'
-        expression = hgene_map(expression)
+        if not no_homologene_remap:
+            expression = hgene_map(expression)
         expression = expression[pheno[pheno[group].isin(groups)].index]
 
         collapse = 'true' if collapse==True else 'false'
@@ -1249,13 +1271,13 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                 rnd_seed\t{rnd_seed}
                 gui\tfalse
                 """.format(collapse=collapse, metric=metric, mode=mode, norm=norm, permute=permute,
-                        rnd_type=rnd_type, scoring_scheme=scoring_scheme, sort=sort, set_max=set_max,
-                        set_min=set_min, nperm=number_of_permutations, plot_top_x=plot_top_x,
-                        cls_comparison=cls_comparison,
+                           rnd_type=rnd_type, scoring_scheme=scoring_scheme, sort=sort, set_max=set_max,
+                           set_min=set_min, nperm=number_of_permutations, plot_top_x=plot_top_x,
+                           cls_comparison=cls_comparison,
                            rnd_seed=rnd_seed,
-                        # rpt_name=report_name,
-                        res=os.path.abspath(f.name), cls=os.path.abspath(g.name),
-                        gmx=os.path.abspath(geneset_file), outdir=outdir, rpt_label=report_name )
+                           # rpt_name=report_name,
+                           res=os.path.abspath(f.name), cls=os.path.abspath(g.name),
+                           gmx=os.path.abspath(geneset_file), outdir=outdir, rpt_label=report_name )
                 with open(param_file, 'w') as f:
                     f.write(params)
 
@@ -1408,6 +1430,8 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     for line in f:
                         the_geneset = line.strip().split('\t')
                         name = the_geneset[0]
+                        # need to do this because GSEA.jar capitalizes all geneset names in output table
+                        name = str.upper(name)
                         genes = the_geneset[2:]
                         genesets[name] = genes
 
@@ -1441,7 +1465,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     force_plot_genes = False
                     gs = row['GS<br> follow link to MSigDB']
 
-                    genes = [int(x) for x in genesets[gs]]
+                    genes = [maybe_int(x) for x in genesets[gs]]
                     z_score = 0
                     row_cluster = True
                     col_cluster = False
@@ -1453,7 +1477,10 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     _cols = col_meta[ col_meta[group] == groups[0] ].index.tolist() + col_meta[ col_meta[group] == groups[1] ].index.tolist()
 
                     X = expression.replace(0, np.nan).dropna(0, 'all')[_cols] # drop if all zero
-                    mask = data_obj.mask[expression.columns].pipe(hgene_map, boolean=True)[_cols]
+                    if not no_homologene_remap:
+                        mask = data_obj.mask[expression.columns].pipe(hgene_map, boolean=True)[_cols]
+                    else:
+                        mask = data_obj.mask[expression.columns][_cols]
 
                     _expids = ('recno', 'runno', 'searchno', 'label')
                     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
@@ -1462,11 +1489,34 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
                     annot_mat = None
                     if annotate:
-                        annot_mat = (data_obj.data.loc[ pd.IndexSlice[X.index.tolist(), annotate], _cols ]
-                                    .reset_index(level=1, drop=True)
-                                    .fillna(0)
-                                    .astype(int)
-                        )
+                        # annot_mat = (data_obj.data.loc[ pd.IndexSlice[X.index.tolist(), annotate], _cols ]
+                                     # .loc[ pd.IndexSlice[X.index.tolist(), annotate], _cols ]
+                                    # .reset_index(level=1, drop=True)
+                        if not no_homologene_remap:
+
+                            annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
+                                        .set_index("GeneID")
+                                        .drop('Metric', 1)
+                                        .pipe(hgene_map)
+                                        .round()
+                                        .fillna(0)
+                                        .astype(int)
+                            )
+                        else:
+                            annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
+                                        .set_index("GeneID")
+                                        .drop('Metric', 1)
+                                        .round()
+                                        .fillna(0)
+                                        .astype(int)
+                            )
+
+                        # annot_mat = (data_obj.data.loc[ data_obj.data.GeneID.isin(X.index) ]
+                        #              .query('Metric == "{}"'.format(annotate))[['GeneID', *_cols]]
+                        #              .set_index('GeneID')
+                        #             .fillna(0)
+                        #             .astype(int)
+                        # )
                         annot_mat.columns.name = annotate
 
                     result = clusterplot(X,
@@ -1863,6 +1913,8 @@ def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, li
             if group_order is None:
                 group_order = np.nan
 
+            df['index'] = pd.Categorical(df['index'], df['index'].drop_duplicates(),
+                                         ordered=True)
             p = Rbarplot(df, average, group, group_order=group_order, title=title, ylab=ylab)
 
             grdevices.dev_off()

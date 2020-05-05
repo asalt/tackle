@@ -61,7 +61,7 @@ def plot_silhouette_scores(scores, start, end):
     return fig, ax
 
 
-def calc_optimal_clusters(data, start=2, end=20, random_state=None):
+def calc_optimal_clusters(data, start=4, end=20, random_state=None):
     best_score = -np.inf
     best_cluster = None
 
@@ -246,7 +246,7 @@ def calc_kmeans(data, nclusters, seed=None, max_autoclusters=30):
 
 def clusterplot(data, annot_mat=None,
                 cmap_name=None, dbscan=False, genes=None, highlight_gids=None, highlight_gid_names=None, gid_symbol=None,
-                nclusters=None, gene_symbols=None, z_score=None, standard_scale=None, mask=None,
+                nclusters=None, gene_symbols=None, z_score=None, z_score_by=None, standard_scale=None, mask=None,
                 show_missing_values=True, max_autoclusters=30, row_cluster=True,
                 seed=None, col_cluster=True, metadata=None, col_data=None, figsize=None,
                 normed=False, linkage='average',
@@ -254,7 +254,7 @@ def clusterplot(data, annot_mat=None,
                 metadata_colors=None, circle_col_markers=False, circle_col_marker_size=12,
                 force_optimal_ordering=False,
                 square=False, force_plot_genes=False,
-                main_title=None,
+                main_title=None, order_by_abundance=False
 ):
     """
     :nclusters: None, 'auto', or positive integer
@@ -266,6 +266,13 @@ def clusterplot(data, annot_mat=None,
           "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
                               "Bitstream Vera Sans", "sans-serif"],
     }
+
+    if order_by_abundance:
+        gene_order = data.mean(1).sort_values(ascending=False).index
+        data = data.loc[gene_order]
+        mask = mask.loc[gene_order]
+        annot_mat = annot_mat.loc[gene_order]
+
 
     sb.set_context('notebook')
     sb.set_palette('muted')
@@ -359,7 +366,7 @@ def clusterplot(data, annot_mat=None,
             # col_colors.loc[info] = colors
 
             mapping = dict()
-            for val in col_data[info].unique():
+            for val in sorted(col_data[info].unique()):
                 if pd.isna(val):
                     continue
                 if val == 'NA':
@@ -390,8 +397,7 @@ def clusterplot(data, annot_mat=None,
         assert all(data.index == mask.index)
         if annot_mat is not None:
             assert all(data.index == annot_mat.index)
-        # clustermap_symbols = [gid_symbol.get(x, _genemapper.symbol.get(x, '?'))
-        clustermap_symbols = [gid_symbol.get(x, _genemapper.symbol.get(x, x))
+        clustermap_symbols = [gid_symbol.get(str(x), _genemapper.symbol.get(str(x), str(x)))
                               for x in data.index]
         data.index = clustermap_symbols
         mask.index = clustermap_symbols
@@ -401,8 +407,20 @@ def clusterplot(data, annot_mat=None,
             row_colors.index = clustermap_symbols
 
     # if nclusters is not None or dbscan:
-    if z_score is not None:
-        data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
+    if standard_scale is not None:
+        if standard_scale == 1:
+            data_t = (data.T / data.max(1)).T
+        elif standard_scale == 0:
+            data_t = (data / data.max(1))
+    elif z_score is not None:
+        if z_score_by:
+            data_t = pd.concat([
+                sb.matrix.ClusterGrid.z_score(data[col_data[col_data[z_score_by]==x].index],
+                                                   z_score)
+                                              for x in col_data[z_score_by].unique()
+            ], sort=False, axis=1)
+        else:
+            data_t = sb.matrix.ClusterGrid.z_score(data, z_score)
         _minval = data_t.min().min()
         data_t = data_t.fillna(_minval)
         # data[ data < 0] = 0
@@ -600,20 +618,23 @@ def clusterplot(data, annot_mat=None,
     #     break
 
     # simple workaround, fix this:
-    plot_data = plot_data.groupby(plot_data.index).mean()
-    themask = mask.groupby(mask.index).mean()
+    if len(set(plot_data.index)) < len(plot_data.index):
+        plot_data = plot_data.groupby(plot_data.index).mean()
+        mask = mask.groupby(mask.index).mean()
+        if order_by_abundance:
+            plot_data = plot_data.loc[gene_order]
 
 
     if nclusters is not None: # put back in order again
         plot_data = plot_data.loc[clusters_categorical.index]
-        themask = themask.loc[clusters_categorical.index]
+        mask = mask.loc[clusters_categorical.index]
 
     # a minimal subclass of seaborn ClusterGrid for scaling.
     plotter = MyClusterGrid(plot_data,
                             figsize=figsize,
                             row_colors=row_colors if row_colors is not None and not row_colors.empty else None,
                             col_colors=col_colors if col_colors is not None and not col_colors.empty else None,
-                            mask=themask.loc[plot_data.index] if show_missing_values else None,
+                            mask=mask.loc[plot_data.index] if show_missing_values else None,
                             circle_col_markers=circle_col_markers,
                             circle_col_marker_size=circle_col_marker_size,
                             force_optimal_ordering=force_optimal_ordering,
