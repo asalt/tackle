@@ -1281,7 +1281,7 @@ class Data:
                 # export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
                 export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x,
                                                                       # _genemapper.symbol.get(x, '?')
-                                                                      _genemapper.symbol.get(x, x)
+                                                                      _genemapper.symbol.get(str(int(x)), x)
                 ))
                 order = ['GeneSymbol']  # index column is GeneID, add GeneSymbol
                 order += [x for x in export.columns if x not in order]
