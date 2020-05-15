@@ -267,12 +267,6 @@ def clusterplot(data, annot_mat=None,
                               "Bitstream Vera Sans", "sans-serif"],
     }
 
-    if order_by_abundance:
-        gene_order = data.mean(1).sort_values(ascending=False).index
-        data = data.loc[gene_order]
-        mask = mask.loc[gene_order]
-        annot_mat = annot_mat.loc[gene_order]
-
 
     sb.set_context('notebook')
     sb.set_palette('muted')
@@ -297,6 +291,14 @@ def clusterplot(data, annot_mat=None,
         mask = mask.reindex(_genes).fillna(True)
         if annot_mat is not None:
             annot_mat = annot_mat.reindex(_genes).fillna(0).astype(int)
+
+    if order_by_abundance:
+        gene_order = data.mean(1).sort_values(ascending=False).index
+        data = data.loc[gene_order]
+        mask = mask.loc[gene_order]
+        if annot_mat is not None:
+            annot_mat = annot_mat.loc[gene_order]
+
 
     if dbscan or nclusters:  # do not perform hierarchical clustering and KMeans (or DBSCAN)
         row_cluster = False
@@ -397,6 +399,10 @@ def clusterplot(data, annot_mat=None,
         assert all(data.index == mask.index)
         if annot_mat is not None:
             assert all(data.index == annot_mat.index)
+        try:
+            data.index = data.index.astype(int)
+        except ValueError:
+            data.index = subdf.index.map(maybe_int).astype(str)
         clustermap_symbols = [gid_symbol.get(str(x), _genemapper.symbol.get(str(x), str(x)))
                               for x in data.index]
         data.index = clustermap_symbols
@@ -410,8 +416,10 @@ def clusterplot(data, annot_mat=None,
     if standard_scale is not None:
         if standard_scale == 1:
             data_t = (data.T / data.max(1)).T
+            data_t = data_t.fillna(0)
         elif standard_scale == 0:
             data_t = (data / data.max(1))
+            data_t = data_t.fillna(0)
     elif z_score is not None:
         if z_score_by:
             data_t = pd.concat([
@@ -647,7 +655,6 @@ def clusterplot(data, annot_mat=None,
     if circle_col_markers:
         col_color_kws['linewidths'] = .5
         col_color_kws['linecolor'] = '#111111'
-
 
     g = plotter.plot(method=linkage, metric='euclidean',
                      row_cluster=row_cluster, col_cluster=col_cluster,

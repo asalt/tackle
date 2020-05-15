@@ -1247,7 +1247,7 @@ class Data:
                 # this makes sure we don't crash if any columns are missing
                 _cols = [x for x in cols if x in subdf]
 
-                subdf = (subdf.set_index([x for x in gene_metadata_cols if x in subdf])[_cols].rename(columns=renamer)) 
+                subdf = (subdf.set_index([x for x in gene_metadata_cols if x in subdf])[_cols].rename(columns=renamer))
 
                 metadata = dict(self.config[col])
                 metadata['name'] = col
@@ -1329,6 +1329,7 @@ class MyHeatMapper(HeatMapper):
             cc = np.linspace(cmin, cmax, 256)
             self.cmap = mpl.colors.ListedColormap(self.cmap(cc))
         self.cmap.set_bad(color='gray')
+        # self.cmap.set_bad(color='white')
 
     def plot(self, ax, cax, kws):
         """Draw the heatmap on the provided Axes."""
