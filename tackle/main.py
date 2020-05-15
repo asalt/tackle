@@ -862,13 +862,13 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
         if fig is not None:
             outname = outname_func('cluster_optimized_results')
             save_multiple(fig, outname, *file_fmts)
-        plt.close(fig)
+            plt.close(fig)
 
         fig = kmeans_res['silhouette'].get('fig')
         if fig is not None:
             outname = outname_func('{}clusters_silhouette'.format(kmeans_clusters))
             save_multiple(fig, outname, *file_fmts)
-        plt.close(fig)
+            plt.close(fig)
 
     if dbscan_res is not None:
         dbscan_data = dbscan_res['data']
@@ -881,6 +881,7 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
         if fig is not None:
             outname = outname_func('{}clusters_silhouette'.format(dbscan_clusters))
             save_multiple(fig, outname, *file_fmts)
+            plt.close(fig)
 
 
 
