@@ -1152,7 +1152,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
 
         namegen = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                          non_zeros=data_obj.non_zeros,
                           batch=data_obj.batch_applied,
                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
                           outpath=data_obj.outpath, cls=cls_comparison.strip('#'))

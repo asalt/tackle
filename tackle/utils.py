@@ -753,9 +753,13 @@ def assign_cols(df, name):
     valid_ixs = (x for x in df.index if not np.isnan(x))
     return df.loc[valid_ixs]
 
-def get_outname(plottype: str, name, taxon, non_zeros, colors_only, batch=None,
+def get_outname(plottype: str, name, taxon, non_zeros, colors_only=None, batch=None,
                 batch_method='parametric',
                 outpath='.', **kwargs):
+    """
+    :colors_only: does nothing, depreciated
+
+    """
     colors = 'colors_only' if colors_only else 'annotated'
 
     kwarg_values = list()
@@ -767,7 +771,7 @@ def get_outname(plottype: str, name, taxon, non_zeros, colors_only, batch=None,
     batch_str = '{}Batch_{}_'.format(batch_method, batch) if batch else ''
 
     '{}'.format(kwargs)
-    fname = '{}_{}_{}_{}_{}more_nonzero_{}{}'.format(name, plottype, taxon, colors, non_zeros,
+    fname = '{}_{}_{}_{}more_nonzero_{}{}'.format(name, plottype, taxon, non_zeros,
                                                      batch_str,
                                                      kwarg_string).strip('_')
     return os.path.join(outpath, fname)
