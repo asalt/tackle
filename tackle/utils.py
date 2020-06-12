@@ -761,6 +761,8 @@ def get_outname(plottype: str, name, taxon, non_zeros, colors_only=None, batch=N
 
     """
     colors = 'colors_only' if colors_only else 'annotated'
+    if 'missing_values' in kwargs:
+        kwargs.pop('missing_values')
 
     kwarg_values = list()
     for key, value in kwargs.items():
@@ -774,7 +776,10 @@ def get_outname(plottype: str, name, taxon, non_zeros, colors_only=None, batch=N
     fname = '{}_{}_{}_{}more_nonzero_{}{}'.format(name, plottype, taxon, non_zeros,
                                                      batch_str,
                                                      kwarg_string).strip('_')
-    return os.path.join(outpath, fname)
+    ret = os.path.join(outpath, fname)
+    if os.name == 'nt' and len(ret) >260:
+        ret = ret[:260]
+    return ret
 
 class TooManyCategories(Exception):
     pass
