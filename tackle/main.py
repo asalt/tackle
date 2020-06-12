@@ -318,6 +318,8 @@ def validate_configfile(experiment_file, **kwargs):
 @click.option('--data-dir', type=click.Path(exists=False, file_okay=False),
               default='./data/', show_default=True,
               help='location to store and read e2g files')
+@click.option('--only-load-local', default=False, is_flag=True, show_default=True,
+              help='Only try to load data locally, skip calls to iSPEC')
 @click.option('--file-format', type=click.Choice(('.png', '.pdf', '.svg')), default=('.png',),
               show_default=True, multiple=True, help='File format for any plots')
 @click.option('--funcats', type=str, default=None, show_default=True,
@@ -370,11 +372,11 @@ def validate_configfile(experiment_file, **kwargs):
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
-def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file, data_dir,
-         file_format, funcats, funcats_inverse, geneids, group, limma, block, pairs, ignore_geneids, ifot,
-         ifot_ki, ifot_tf, genefile_norm, median, name, normalize_across_species, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
-         sra, number_sra, impute_missing_values,
-         experiment_file):
+def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, covariate, cmap_file,
+         data_dir, only_load_local, file_format, funcats, funcats_inverse, geneids, group, limma,
+         block, pairs, ignore_geneids, ifot, ifot_ki, ifot_tf, genefile_norm, median, name,
+         normalize_across_species, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
+         sra, number_sra, impute_missing_values, experiment_file):
     """
     """
     # name, taxon, non_zeros, experiment_file):
@@ -509,6 +511,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     export_all=export_all,
                     cluster_annotate_cols=cluster_annotate_cols,
                     impute_missing_values=impute_missing_values,
+                    only_local=only_load_local,
     )
 
     outname = get_outname('metadata', name=data_obj.outpath_name, taxon=data_obj.taxon,
@@ -637,10 +640,12 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     save_multiple(g, outname, *file_fmts, dpi=96)
 
 @main.command('export')
-@click.option('--level', type=click.Choice(['all', 'align', 'area']), default='area',
+@click.option('--level', type=click.Choice(['all', 'align', 'area', 'SRA']), default=('area',),
+              multiple=True,
               help="""Export data table of the filtered list of gene products used for plotting
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
+              `SRA` returns data matrix with SRA values per gene product
               """)
 @click.option('--linear', default=False, show_default=True, is_flag=True, help='Export linear (not logged) values when exporting as area')
 @click.option('--genesymbols', default=False, is_flag=True, show_default=True,
@@ -651,7 +656,8 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 def export(ctx, level, genesymbols, linear):
 
     data_obj = ctx.obj['data_obj']
-    data_obj.perform_data_export(level, genesymbols=genesymbols, linear=linear)
+    for l in level:
+        data_obj.perform_data_export(l, genesymbols=genesymbols, linear=linear)
 
 @main.command('cluster')
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',

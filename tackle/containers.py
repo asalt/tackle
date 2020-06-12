@@ -189,6 +189,7 @@ class Data:
                  metrics_unnormed_area=True,
                  cluster_annotate_cols=None,
                  impute_missing_values=False,
+                 only_local=False,
 
     ):
         "docstring"
@@ -275,7 +276,7 @@ class Data:
             self.labeled_meta = read_config(additional_info, enforce=False)
 
         self.panel = None
-        self.load_data()
+        self.load_data(only_local=only_local)
 
         self._gid_symbol = None
 
@@ -467,10 +468,10 @@ class Data:
 
     @staticmethod
     @lru_cache()
-    def get_e2g(recno, runno, searchno, data_dir):
-        return ispec.E2G(recno, runno, searchno, data_dir=data_dir)
+    def get_e2g(recno, runno, searchno, data_dir, only_local=False):
+        return ispec.E2G(recno, runno, searchno, data_dir=data_dir, only_local=only_local)
 
-    def load_data(self):
+    def load_data(self, only_local=False):
 
         exps = OrderedDict()
         gid_funcat_mapping = dict()
@@ -498,7 +499,8 @@ class Data:
 
             labelquery = LABEL_MAPPER.get(label, 0)
 
-            exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir)
+            print('Getting', recno, runno, searchno, self.data_dir, only_local)
+            exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir, only_local=only_local)
 
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
                 exp.df.rename(columns={'LabelFLAG': 'EXPLabelFLAG'}, inplace=True)
@@ -1286,6 +1288,18 @@ class Data:
                 order = ['GeneSymbol']  # index column is GeneID, add GeneSymbol
                 order += [x for x in export.columns if x not in order]
             export[order].to_csv(outname, sep='\t')
+
+        elif level == 'SRA':
+            export = self.data.loc[ self.data.Metric=='SRA' ]
+
+            export['GeneSymbol'] = export.GeneID.map(lambda x: self.gid_symbol.get(x,
+                                                                      # _genemapper.symbol.get(x, '?')
+                                                                      _genemapper.symbol.get(str(int(x)), x)
+            ))
+            order = ['GeneID', 'GeneSymbol']  # add GeneSymbol
+            order += [x for x in export.columns if x not in order and x!='Metric']
+            export[order].to_csv(outname, sep='\t', index=False)
+
         print('Exported', outname)
 
 # ========================================================================================================= #
