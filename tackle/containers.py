@@ -1681,7 +1681,7 @@ class MyClusterGrid(ClusterGrid):
 
 
     def plot_dendrograms(self, row_cluster, col_cluster, metric, method,
-                         row_linkage, col_linkage, force_optimal_ordering):
+                         row_linkage, col_linkage, force_optimal_ordering, tree_kws=None):
         # Plot the row dendrogram
         if row_cluster:
             self.dendrogram_row = dendrogram(
