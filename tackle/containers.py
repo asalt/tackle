@@ -499,7 +499,7 @@ class Data:
 
             labelquery = LABEL_MAPPER.get(label, 0)
 
-            print('Getting', recno, runno, searchno, 'to/from' self.data_dir)
+            print('Getting', recno, runno, searchno, 'to/from', self.data_dir)
             exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir, only_local=only_local)
 
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
