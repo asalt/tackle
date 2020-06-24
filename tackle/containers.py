@@ -1829,7 +1829,7 @@ class MyDendrogramPlotter(sb.matrix._DendrogramPlotter):
 sb.matrix._DendrogramPlotter = MyDendrogramPlotter
 
 def dendrogram(data, linkage=None, axis=1, label=True, metric='euclidean',
-               method='average', rotate=False, ax=None, force_optimal_ordering=False
+               method='average', rotate=False, ax=None, force_optimal_ordering=False,
                tree_kws=None,
                ):
     """Draw a tree diagram of relationships within a matrix
