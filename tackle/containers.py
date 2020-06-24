@@ -1687,7 +1687,8 @@ class MyClusterGrid(ClusterGrid):
             self.dendrogram_row = dendrogram(
                 self.data2d, metric=metric, method=method, label=False, axis=0,
                 ax=self.ax_row_dendrogram, rotate=True, linkage=row_linkage,
-                force_optimal_ordering=force_optimal_ordering)
+                force_optimal_ordering=force_optimal_ordering,
+                tree_kws=tree_kws)
         else:
             self.ax_row_dendrogram.set_xticks([])
             self.ax_row_dendrogram.set_yticks([])
@@ -1696,7 +1697,8 @@ class MyClusterGrid(ClusterGrid):
             self.dendrogram_col = dendrogram(
                 self.data2d, metric=metric, method=method, label=False,
                 axis=1, ax=self.ax_col_dendrogram, linkage=col_linkage,
-                force_optimal_ordering=force_optimal_ordering)
+                force_optimal_ordering=force_optimal_ordering,
+                tree_kws=tree_kws)
         else:
             self.ax_col_dendrogram.set_xticks([])
             self.ax_col_dendrogram.set_yticks([])
@@ -1827,7 +1829,9 @@ class MyDendrogramPlotter(sb.matrix._DendrogramPlotter):
 sb.matrix._DendrogramPlotter = MyDendrogramPlotter
 
 def dendrogram(data, linkage=None, axis=1, label=True, metric='euclidean',
-               method='average', rotate=False, ax=None, force_optimal_ordering=False):
+               method='average', rotate=False, ax=None, force_optimal_ordering=False
+               tree_kws=None,
+               ):
     """Draw a tree diagram of relationships within a matrix
 
     Parameters
@@ -1866,9 +1870,10 @@ def dendrogram(data, linkage=None, axis=1, label=True, metric='euclidean',
                                   metric=metric, method=method,
                                   label=label, rotate=rotate,
                                   force_optimal_ordering=force_optimal_ordering)
+
     if ax is None:
         ax = plt.gca()
-    return plotter.plot(ax=ax)
+    return plotter.plot(ax=ax, tree_kws=tree_kws)
 
 
 
