@@ -499,7 +499,7 @@ class Data:
 
             labelquery = LABEL_MAPPER.get(label, 0)
 
-            print('Getting', recno, runno, searchno, self.data_dir, only_local)
+            print('Getting', recno, runno, searchno, 'to/from' self.data_dir)
             exp = self.get_e2g(recno, runno, searchno, data_dir=self.data_dir, only_local=only_local)
 
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
@@ -1289,8 +1289,10 @@ class Data:
                 order += [x for x in export.columns if x not in order]
             export[order].to_csv(outname, sep='\t')
 
-        elif level == 'SRA':
-            export = self.data.loc[ self.data.Metric=='SRA' ]
+        # elif level == 'SRA':
+        #     export = self.data.loc[ self.data.Metric=='SRA' ]
+        else:
+            export = self.data.loc[ self.data.Metric==level ]
 
             export['GeneSymbol'] = export.GeneID.map(lambda x: self.gid_symbol.get(x,
                                                                       # _genemapper.symbol.get(x, '?')
@@ -1606,14 +1608,16 @@ class MyClusterGrid(ClusterGrid):
 
     def plot(self, metric, method, colorbar_kws, row_cluster, col_cluster,
              row_linkage, col_linkage, row_color_kws=None, col_color_kws=None,
-             annot_kws=None, **kws):
+             annot_kws=None, tree_kws=None, **kws):
         colorbar_kws = {} if colorbar_kws is None else colorbar_kws
         row_color_kws = {} if row_color_kws is None else row_color_kws
         col_color_kws = {} if col_color_kws is None else col_color_kws
         annot_kws = {} if annot_kws is None else annot_kws
+        tree_kws = {} if tree_kws is None else tree_kws
         self.plot_dendrograms(row_cluster, col_cluster, metric, method,
                               row_linkage=row_linkage, col_linkage=col_linkage,
-                              force_optimal_ordering=self.force_optimal_ordering
+                              force_optimal_ordering=self.force_optimal_ordering,
+                              tree_kws=tree_kws
         )
         try:
             xind = self.dendrogram_col.reordered_ind

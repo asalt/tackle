@@ -430,6 +430,20 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
             if _q in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
                         'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
                 cluster_annotate_cols.append(_q)
+    if '--level' in sys.argv: # for data export
+        if cluster_annotate_cols is None:
+            cluster_annotate_cols = list()
+        _level_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--level"]
+        for i in _level_args:
+            try:
+                _q = sys.argv[i+1]
+            except IndexError:
+                continue
+            if _q in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
+                        'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
+                cluster_annotate_cols.append(_q)
+    if cluster_annotate_cols is not None:
+        cluster_annotate_cols = list(set(cluster_annotate_cols))
 
     # if all(x in [y.strip() for y in sys.argv] for x in ('cluster', '--annotate')):
         # if 'pca' in [x.strip() for x in sys.argv]:
@@ -640,7 +654,9 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     save_multiple(g, outname, *file_fmts, dpi=96)
 
 @main.command('export')
-@click.option('--level', type=click.Choice(['all', 'align', 'area', 'SRA']), default=('area',),
+@click.option('--level', type=click.Choice(['all', 'align', 'area', 'SRA',
+                                            'PeptideCount', 'PeptideCount_u2g']),
+              default=('area',),
               multiple=True,
               help="""Export data table of the filtered list of gene products used for plotting
               `all` returns all the data in long format
@@ -1212,11 +1228,12 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
         # expression = hgene_map(expression)[pheno[pheno[group].isin(groups).index]]
 
-        expression = data_obj.areas_log_shifted.copy().fillna('na')
-        expression.index.name = 'NAME'
+        expression = data_obj.areas_log_shifted.copy()
         if not no_homologene_remap:
             expression = hgene_map(expression)
         expression = expression[pheno[pheno[group].isin(groups)].index]
+        # expression = expression.fillna('na')
+        expression.index.name = 'NAME'
 
         collapse = 'true' if collapse==True else 'false'
 
