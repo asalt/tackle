@@ -582,7 +582,7 @@ def make_config(delimiter, excel, excel_sheetnumber, infer_inputfile, output, in
 
     from .Ini2Csv.main import Csv2Conf
 
-    SEP_DICT = {'.tab': '\t', '.tsv': '\t', '.ssv': ';', 'csv': ',',
+    SEP_DICT = {'tab': '\t', 'tsv': '\t', '.ssv': ';', 'csv': ',',
                 'xls': 'excel', 'xlsx': 'excel'
     }
 
@@ -1495,6 +1495,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     col_cluster = False
                     nclusters = None
                     legend_include, legend_exclude = None, None
+                    legend_exclude = ( 'PPI', 'Block' )
 
                     col_meta = data_obj.col_metadata
                     # cols in correct order
@@ -1610,7 +1611,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 @click.option('-r', '--rank-plots', default=False, is_flag=True, help='Plot rank plots for each gene set')
 @click.option('-s', '--statistic', type=click.Choice(('area.under.RES', 'Kolmogorov-Smirnov')),
               default='area.under.RES', show_default=True)
-@click.option('-x', '--extended-output', default=False, show_default=True,
+@click.option('-x', '--extended-output', default=False, show_default=True, is_flag=True,
               help="If True include additional stats on signature coverage, etc..")
 @click.option('-g', '--globalfdr', default=False, show_default=True,
               help="Calculate global FDR across all datasets.")
@@ -1674,6 +1675,7 @@ def ssGSEA(ctx, geneset, norm, combine_mode, weight, correl, perm, min_overlap, 
 @main.command('box')
 @click.option('--gene',
               default=None, show_default=True, multiple=True,
+              type=int,
               help="Gene to plot. Multiple allowed")
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,

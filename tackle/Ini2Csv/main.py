@@ -109,7 +109,7 @@ class Csv2Conf(object):
 
         if self.sep == 'excel':
             import pandas as pd
-            df = pd.read_excel(filename, sheet_name=self.excel_sheetnumber, dtype=str)
+            df = pd.read_excel(filename, sheet_name=self.excel_sheetnumber, dtype=str).fillna('')
             rows.append(df.columns.tolist())
             for _, row in df.iterrows():
                 rows.append(row.tolist())
