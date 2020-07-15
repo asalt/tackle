@@ -18,6 +18,8 @@ from seaborn.matrix import ClusterGrid
 from seaborn.matrix import _HeatMapper as HeatMapper
 from seaborn.matrix import _matrix_mask
 
+pd.NA = 'NA'
+
 z_score = ClusterGrid.z_score
 
 from . import utils
@@ -921,6 +923,8 @@ class Data:
         pheno = self.col_metadata.copy()
         for col in ('recno', 'runno', 'searchno'):
             pheno[col] = pheno[col].astype(str)
+        pd.NA = 'NA' # bugfix!!!!
+        import ipdb; ipdb.set_trace()
         r.assign('pheno', pheno)
 
         if self.covariate is not None:
