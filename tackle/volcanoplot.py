@@ -4,7 +4,11 @@ import itertools
 
 import numpy as np
 import pandas as pd
-pd.NA = 'NA'
+
+try:
+    pd.NA
+except AttributeError:
+    pd.NA = 'NA'
 
 from .utils import get_outname, parse_gid_file
 
