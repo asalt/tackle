@@ -4,6 +4,7 @@ library(graphics)
 scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
                        method = c("pearson", "kendall",
                                   "spearman"), colnames = NULL,
+                       colors_only = FALSE,
                        ...
                        )
 {
@@ -49,7 +50,14 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
       u <- par('usr')
       names(u) <- c("xleft", "xright", "ybottom", "ytop")
       do.call(rect, c(col = bgcolor, as.list(u)))
-      text( 0.5, 0.5, txt, cex = cex )
+
+      ## print(colors_only)
+      if (colors_only){
+        return
+      }
+      else{
+        text( 0.5, 0.5, txt, cex = cex )
+      }
       ## text( 0.5, 0.5, txt, cex = cex )
 
       }
@@ -58,6 +66,11 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
   diag.panel = function(x, ...){
     usr <- par("usr")
     on.exit(par(usr))
+
+    u <- par('usr')
+    names(u) <- c("xleft", "xright", "ybottom", "ytop")
+    do.call(rect, c(col = colors[length(colors)], as.list(u)))
+
     par(usr = c(0, 1, 0, 1))
     u <- par('usr')
     names(usr) <- c("xleft", "xright", "ybottom", "ytop")
@@ -77,12 +90,22 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
     text( 0.5, 0.5, txt, cex = cex, pos = 3 ) # text above center
   }
 
-  lower.panel = function(x, y, col = 'grey', cex=.8, smooth = FALSE, xmin = NULL, xmax = NULL, method = 'pearson', ...){
+  lower.panel = function(x, y, col = 'grey', cex=.8, smooth = FALSE, xmin = NULL, xmax = NULL, method = 'pearson', use = "pairwise.complete.obs", ...){
     ## usr <- par("usr")
     ## on.exit(par(usr))
     ## r <- raster()
 
-    points(x, y, col = '#4878cf33', cex=cex, xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
+    ## on.exit(par(usr))
+    ## par(usr = c(0, 1, 0, 1))
+    r <- cor(x, y, use = use, method = method)
+    bgcolor <- colors[findInterval(r, ii)]
+    u <- par('usr')
+    names(u) <- c("xleft", "xright", "ybottom", "ytop")
+    do.call(rect, c(col = bgcolor, as.list(u)))
+    ## col <- '#4878cf33'
+    col <- '#444444'
+    extra_vars <- list(...)
+    points(x, y, , cex=cex, col=col, xlim = c(xmin, xmax), ylim = c(xmin, xmax), pch=18)
     ## smoothScatter(x, y, add = TRUE, nbin=64, xlim = c(xmin, xmax), ylim = c(xmin, xmax), ...)
     ## (..., nbin=64,
     ##   nrpoints = 0,
@@ -90,6 +113,7 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
 
     ## abline(0, 1, col = '#444444bb', lty = 2, lwd = 2)
     abline(0, 1, col = '#44444466', lty = 2, lwd = 1)
+
 
   }
 
@@ -119,7 +143,7 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
   else pairs(x, gap = 0, smooth = FALSE, upper.panel = panel.cor, lower.panel = lower.panel,
              method = method, pch=20, col='#22222288', diag.panel = diag.panel,
              text.panel = text.panel, xmin = xmin, xmax = xmax,
-             xlim = c(xmin, xmax), ylim = c(xmin, xmax),
+             xlim = c(xmin, xmax), ylim = c(xmin, xmax), colors_only=colors_only,
               ## cex.labels = colnames(x),
               ...)
 }
