@@ -56,7 +56,8 @@ def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False,
             print("Saving", out, '...', end='', flush=True)
             grdevice(file=out, **gr_kw)
             Rscatterplot(ibaqs_log_shifted, method=stat,
-                        interactive=False
+                         interactive=False,
+                         colors_only=colors_only,
             )
             grdevices.dev_off()
             print('done.', flush=True)
