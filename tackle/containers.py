@@ -18,7 +18,10 @@ from seaborn.matrix import ClusterGrid
 from seaborn.matrix import _HeatMapper as HeatMapper
 from seaborn.matrix import _matrix_mask
 
-pd.NA = 'NA'
+try:
+    pd.NA
+except AttributeError:
+    pd.NA = 'NA'
 
 z_score = ClusterGrid.z_score
 
@@ -544,13 +547,13 @@ class Data:
 
             if (df.FunCats == '').all():
                 df['FunCats'] = df.GeneID.map(_genemapper.funcat).fillna('')
-
             if 'TaxonID' not in df or df.TaxonID.isna().any():
                 if 'TaxonID' in df:
                     loc = df[ df.TaxonID.isna() ].index
-                    df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(str(x)) for x in loc]
+                    # TODO read taxon in as a "string" to avoid upcast to float with missing values...
+                    df.loc[loc, 'TaxonID'] = [_genemapper.taxon.get(str(int(x))) for x in loc]
                 else:
-                    df.loc[:, 'TaxonID'] = [_genemapper.taxon.get(str(x)) for x in df.index]
+                    df.loc[:, 'TaxonID'] = [_genemapper.taxon.get(str(int(x))) for x in df.index]
 
 
             if labeltype == 'TMT' or labeltype == 'iTRAQ': # depreciated
@@ -637,7 +640,7 @@ class Data:
             _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
             if self.cluster_annotate_cols:
                 for x in self.cluster_annotate_cols:
-                    _cols.append(x)
+                    if x not in _cols: _cols.append(x)
             stacked_data = [ df[_cols].stack() for df in exps.values() ]
         else:
             stacked_data = [ df.stack() for df in exps.values() ]
@@ -923,8 +926,10 @@ class Data:
         pheno = self.col_metadata.copy()
         for col in ('recno', 'runno', 'searchno'):
             pheno[col] = pheno[col].astype(str)
-        pd.NA = 'NA' # bugfix!!!!
-        import ipdb; ipdb.set_trace()
+        try:
+            pd.NA
+        except AttributeError:
+            pd.NA = 'NA' # bugfix for pandas < 1.0
         r.assign('pheno', pheno)
 
         if self.covariate is not None:
@@ -1101,13 +1106,15 @@ class Data:
             results = dict()
             for coef, name in enumerate(contrasts_array, 1):
 
-                result = (r(""" topTable(fit2, n=Inf, sort.by='none', coef={}) """.format(coef))
+                result = (r(""" topTable(fit2, n=Inf, sort.by='none', coef={}, confint=TRUE) """.format(coef))
                           .rename(columns={'logFC':'log2_Fold_Change',
                                            'adj.P.Val': 'pAdj',
                                            'P.Value': 'pValue',
                           })
                 )
                 result['log2_Fold_Change'] = result['log2_Fold_Change'].apply(lambda x: x/np.log10(2))
+                result['CI.L'] = result['CI.L'].apply(lambda x: x/np.log10(2))
+                result['CI.R'] = result['CI.R'].apply(lambda x: x/np.log10(2))
 
                 # we ensure the order of result is equal to order of areas_log_shifted
                 # to preserve GeneID order
@@ -1203,6 +1210,52 @@ class Data:
 
         if level == 'all':
             self.df_filtered.sort_index(level=[0,1]).to_csv(outname, sep='\t')
+
+        elif level == 'MSPC':
+            # TODO: export ALL data, not just filtered
+            export = self.df_filtered.sort_index(level=[0,1])
+            data = list()
+            # cols = export.index.get_level_values(1).unique()
+            gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity']
+            for c in gene_metadata_cols:
+                try:
+                    export.loc[ idx[:, c], :] = (export.loc[ idx[:, c], :]
+                                                .fillna(method='ffill', axis=1,)
+                                                .fillna(method='bfill', axis=1,)
+                    )
+                except KeyError:
+                    pass
+
+            gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity']
+
+            cols = ['SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs', 'AreaSum_dstrAdj',
+                    'iBAQ_dstrAdj', 'iBAQ_dstrAdj_log10', 'iBAQ_dstrAdj_MED',
+                    'iBAQ_dstrAdj_MED_log10', 'iBAQ_dstrAdj_MED_log10_zscore',]
+
+            for col in export.columns:
+                renamer = {x: '{}_{}'.format(x, col) for x in cols}
+
+                subdf = (export.loc[idx[:, :], col].reset_index()
+                         .pivot(index='GeneID', columns='Metric')
+                )
+                if 'GeneID' in subdf:
+                    subdf = subdf.drop('GeneID',1)
+                subdf.columns = subdf.columns.droplevel(0)
+                subdf.index = subdf.index.map(maybe_int).astype(str)
+                subdf['GeneID'] = subdf['GeneID'].apply(maybe_int).astype(str)
+                # this makes sure we don't crash if any columns are missing
+                _cols = [x for x in cols if x in subdf]
+                subdf = (subdf.set_index([x for x in gene_metadata_cols if x in subdf])[_cols]
+                         .rename(columns=renamer))
+                data.append(subdf)
+
+            for_export = pd.concat(data, axis=1).reset_index()
+            for_export['GeneID'] = for_export['GeneID'].apply(maybe_int)
+            for_export['TaxonID'] = for_export['TaxonID'].apply(maybe_int)
+            print("Writing {}".format(outname))
+            for_export.to_csv(outname, sep='\t', index=False)
+
+
         elif level == 'align':
 
             export = self.df_filtered.sort_index(level=[0,1])

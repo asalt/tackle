@@ -52,7 +52,7 @@ from .clusterplot import clusterplot
 from .metrics import make_metrics
 from .pcaplot import pcaplot
 from .utils import *
-from .containers import Data
+from .containers import Data, GeneMapper
 from .barplot import barplot
 # from cluster_to_plotly import cluster_to_plotly
 
@@ -418,7 +418,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
     # this is needed now so we keep the proper column when loading data
     # the logic should work!
 
-    if '--annotate' in sys.argv and ('cluster' in sys.argv or 'gsea' in sys.argv):
+    if '--annotate' in sys.argv and any(x in sys.argv for x in ('cluster', 'cluster2', 'gsea')):
         cluster_annotate_cols = list()
         # _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
         _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
@@ -480,7 +480,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
         #     cluster_annotate_col = None
 
     export_all = False
-    if all(x in sys.argv for x in ('export', '--level')) and any(x in sys.argv for x in ('all', 'align')):
+    if all(x in sys.argv for x in ('export', '--level')) and any(x in sys.argv for x in ('all', 'align', 'MSPC')):
         #know this ahead of time, calculate more things during data load
         export_all = True
 
@@ -654,7 +654,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     save_multiple(g, outname, *file_fmts, dpi=96)
 
 @main.command('export')
-@click.option('--level', type=click.Choice(['all', 'align', 'area', 'SRA',
+@click.option('--level', type=click.Choice(['all', 'align', 'area', 'MSPC', 'SRA',
                                             'PeptideCount', 'PeptideCount_u2g']),
               default=('area',),
               multiple=True,
@@ -666,8 +666,6 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 @click.option('--linear', default=False, show_default=True, is_flag=True, help='Export linear (not logged) values when exporting as area')
 @click.option('--genesymbols', default=False, is_flag=True, show_default=True,
               help='Include GeneSymbols in data export when `level` is set to `area`')
-@click.option('--linear', default=False, is_flag=True, show_default=True,
-              help='linear transformation ')
 @click.pass_context
 def export(ctx, level, genesymbols, linear):
 
@@ -809,7 +807,6 @@ def cluster(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col
                          cmap_name=cmap,
                          highlight_gids=data_obj.highlight_gids,
                          highlight_gid_names=data_obj.highlight_gid_names,
-                         force_optimal_ordering=force_optimal_ordering,
                          force_plot_genes=force_plot_genes,
                          genes=genes,
                          gid_symbol=data_obj.gid_symbol,
@@ -952,6 +949,283 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     for name, fig in figs.items():
         outname = outname_func(name)
         save_multiple(fig, outname, *file_fmts)
+
+
+@main.command('cluster2')
+@click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
+                                               'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
+]), default=None, show_default=True )
+@click.option('--col-cluster/--no-col-cluster', default=True, is_flag=True, show_default=True,
+              help="""Cluster columns via hierarchical clustering.
+              Note this is overridden by specifying `nclusters`""")
+@click.option('--cmap', default=None, show_default=True)
+@click.option('--circle-col-markers', is_flag=True, default=False, show_default=True)
+@click.option('--circle-col-marker-size', default=60, show_default=True)
+@click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
+              help='''Optionally specify the figuresize (width, height) in inches
+              If not specified, tries to use a reasonable default depending on the number of
+              samples.
+              ''')
+@click.option('--add-human-ratios', default=False, is_flag=True, show_default=True)
+@click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""File of geneids to plot.
+              Should have 1 geneid per line. """)
+@click.option('--force-plot-genes', is_flag=True, default=False,
+              help="""
+              Will force display of all genes in `genefile` as missing values
+              """)
+@click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
+              help="Show Gene Symbols on clustermap")
+@click.option('--gene-symbol-fontsize', default=8, show_default=True,
+              help="Gene Symbol font size")
+@click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=True,
+              help="""Optional list of geneids to highlight by.
+              Should have 1 geneid per line. """)
+@click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
+@click.option('--legend-include', type=str, multiple=True,
+              help="""Specific entries in the config file to include in the legend.
+              (Default all are included)""")
+@click.option('--legend-exclude', type=str, multiple=True,
+              help="""Specific entries in the config file to ignore for the legend.
+              (Default all are included)""")
+@click.option('--linkage', type=click.Choice(['single', 'complete', 'average', 'weighted', 'centroid',
+                                              'median', 'ward']),
+              default='ward', show_default=True,
+              help='linkage method for hierarchical clustering'
+)
+@click.option('--main-title', default='', show_default=True)
+@click.option('--max-autoclusters', default=30, show_default=True, help="""Max number of clusters to try
+when `auto` is set for `--nclusters`""")
+@click.option('--nclusters', default=None, callback=validate_cluster_number, show_default=True,
+              help="""If specified by an integer, use that number of clusters via k-means clustering. If specified as `auto`, will try to find the optimal number of clusters""")
+@click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
+              help="Cluster rows via hierarchical clustering")
+@click.option('--order-by-abundance', default=False, is_flag=True, show_default=True)
+@click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
+              show_default=True)
+@click.option('--show-metadata/--hide-metadata', default=True, show_default=True,
+              is_flag=True,
+              help="""Show metadata on clustermap if present""")
+@click.option('--standard-scale', type=click.Choice(['None', '0', '1']),
+              default='None', show_default=True)
+@click.option('--show-missing-values/--hide-missing-values', default=True, is_flag=True, show_default=True,
+              help="""Whether or not to show missing values on the cluster plot and missing values""")
+@click.option('--z-score', type=click.Choice(['None', '0', '1']),
+              default='0', show_default=True)
+@click.option('--z-score-by', type=str, default=None, show_default=True)
+@click.pass_context
+def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col_cluster, figsize,
+             force_plot_genes,
+             genefile, gene_symbols,
+             gene_symbol_fontsize, highlight_geneids, linear, legend_include, legend_exclude, linkage,
+             max_autoclusters, nclusters,
+             main_title,
+             order_by_abundance,
+             row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score,
+             z_score_by,
+             add_human_ratios,
+):
+    data_obj = ctx.obj['data_obj']
+
+
+    if order_by_abundance and row_cluster:
+        print('Not ')
+
+    if not figsize:  # returns empty tuple if not specified
+        figsize = None
+
+    if nclusters is not None and dbscan:
+        raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
+
+    X = data_obj.areas_log_shifted
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
+        _tokeep = [x for x in genes if x in X.index]  # preserve order
+        # X = X.loc[set(X.index) & set(genes)]
+        X = X.loc[_tokeep]
+
+
+    if linear:
+        X = 10**X
+    symbols = [data_obj.gid_symbol.get(x, '?') for x in X.index]
+
+    genemapper = GeneMapper()
+    symbols = [data_obj.gid_symbol.get(x, genemapper.symbol.get(str(x), str(x)))
+               for x in X.index]
+    X = X.reset_index().assign(GeneSymbol=symbols)
+
+    # X = data_obj.areas_log_shifted.copy()
+    # X[data_obj.areas == 0] = 0 # fill the zeros back
+    # X[data_obj.mask] = np.NaN
+
+    data_obj.set_highlight_gids(highlight_geneids)
+    data_obj.standard_scale    = data_obj.clean_input(standard_scale)
+    data_obj.z_score           = data_obj.clean_input(z_score)
+
+    col_meta = data_obj.col_metadata.copy()
+    if add_human_ratios:
+        col_meta['HS_ratio'] = data_obj.taxon_ratios['9606']
+    _expids = ('recno', 'runno', 'searchno', 'label')
+
+    # valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.index)
+    valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.columns)
+    legend_include = [x for x in legend_include if x in (set(legend_include) & set(valid_entries))]
+    legend_exclude = set(legend_exclude) & set(valid_entries)
+    to_exclude = set(_expids) | set(legend_exclude)
+    if legend_include:
+        to_include = legend_include
+    else:
+        to_include = set(col_meta.columns) - to_exclude
+    # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
+    col_meta = col_meta[[x for x in col_meta.columns if x in to_include]]
+    col_meta.index.name = 'name'
+    col_meta = col_meta.reset_index()
+
+    annot_mat = np.nan
+    if annotate:
+
+        # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
+        _cols = [x for x in data_obj.data.columns if x not in ('Metric')]
+        annot_mat = (data_obj.data.loc[ (data_obj.data.GeneID.isin(X.GeneID.tolist())) &
+                                        (data_obj.data.Metric == annotate)][_cols]
+                     # .reset_index(level=1, drop=True)
+                     # .set_index('GeneID')
+                     .fillna(0)
+                     .astype(int)
+        )
+        # annot_mat.columns.name = annotate
+
+
+    try:
+        from rpy2.robjects import r
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+    except ModuleNotFoundError:
+        print("rpy2 needs to be installed")
+        return
+
+    pandas2ri.activate()
+    r_source = robjects.r['source']
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                          'R', 'clusterplot.R')
+
+    r_source(r_file)
+    grdevices = importr('grDevices')
+    cluster2 = robjects.r['cluster2']
+
+    # =================================================================
+    missing_values = 'masked' if show_missing_values else 'unmasked'
+    outname_func = partial(get_outname, name=data_obj.outpath_name,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                           batch=data_obj.batch_applied,
+                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                           outpath=data_obj.outpath, missing_values=missing_values)
+    # =================================================================
+
+    figheight = 12
+    if gene_symbols:  # make sure there is enough room for the symbols
+        figheight = max(((gene_symbol_fontsize+2)/72) * len(X), 12)
+        if figheight > 218: # maximum figheight in inches
+            FONTSIZE = max(218 / figheight, 6)
+            figheight = 218
+
+    plt_size = 6
+    min_figwidth = 4
+    figwidth  = max( min( len(X.columns) / 2, 16), min_figwidth )
+    gr_devices = {'.png': grdevices.png,
+                  '.pdf': grdevices.pdf,
+                  '.svg': grdevices.svg}
+    gr_kws = {'.png': dict(width=figwidth, height=figheight, units='in', res=300),
+              '.pdf': dict(width=figwidth, height=figheight,),
+              '.svg': dict(width=figwidth, height=figheight,)
+        }
+
+    metadata_colorsR = np.nan
+    # if data_obj.metadata_colors is not None:
+    #     # metadata_colorsR = robjects.ListVector([])
+    #     lists = list()
+    #     for key, x in data_obj.metadata_colors.items():
+    #         if key != 'response':
+    #             continue
+
+    #         newlistvals = robjects.ListVector({key:list(x.values())})
+    #         robjects.r.assign('newlist', newlistvals)
+    #         robjects.r.assign('names', list(x.keys()))
+    #         robjects.r('names(newlist[{}]) <- names'.format(key))
+
+    #         for k, v in x.items():
+    #             newlistvals = robjects.ListVector({key:list(v)})
+    #             robjects.r.assign('newlist', 'newlistvals')
+    #             robjects.r('names(newlist) <- names')
+    #             {key:x}
+    #             r.assign('')
+    #         lists.append({k:v})
+    #         rob
+    #         r.assign
+
+
+        # metadata_colorsR = robjects.ListVector(
+        #     [(key, robjects.ListVector((k,v)
+        #                                for k,v in x.items()))
+        #      for key,x  in data_obj.metadata_colors.items() if key=='response']
+        #     )
+
+
+    if X.empty:
+        print("No data!")
+        return
+    ret = cluster2(X,
+                   annot_mat=annot_mat,
+                   the_annotation=annotate or np.nan,
+                   cmap_name=cmap or np.nan,
+                   highlight_gids=data_obj.highlight_gids or np.nan,
+                   highlight_gid_names=data_obj.highlight_gid_names or np.nan,
+                   force_plot_genes=force_plot_genes,
+                   genes=genes or np.nan,
+                   show_gene_symbols=gene_symbols, z_score=data_obj.z_score,
+                   standard_scale=data_obj.standard_scale or np.nan,
+                   row_cluster=row_cluster, col_cluster=col_cluster,
+                   # metadata=data_obj.config if show_metadata else None,
+                   col_data = col_meta if show_metadata else np.nan,
+                   nclusters=nclusters or np.nan,
+                   max_autoclusters=max_autoclusters,
+                   show_missing_values=show_missing_values,
+                   main_title=main_title,
+                   # mask=data_obj.mask,
+                   # figsize=figsize,
+                   normed=data_obj.normed,
+                   linkage=linkage,
+                   gene_symbol_fontsize=gene_symbol_fontsize,
+                   # legend_include=legend_include,
+                   # legend_exclude=legend_exclude,
+                   order_by_abundance=order_by_abundance,
+                   seed=seed or np.nan,
+                   metadata_colors=metadata_colorsR or np.nan,
+                   # circle_col_markers=circle_col_markers,
+                   # circle_col_marker_size=circle_col_marker_size,
+                   z_score_by=z_score_by or np.nan,
+    )
+
+    outname = outname_func('clustermap')
+    for file_fmt in ctx.obj['file_fmts']:
+        grdevice = gr_devices[file_fmt]
+        gr_kw = gr_kws[file_fmt]
+        out = outname + file_fmt
+
+        grdevice(file=out, **gr_kw)
+        print("Saving", out, '...', end='', flush=True)
+
+        heatmap = ret.rx('heatmap')
+        print(heatmap)
+
+        grdevices.dev_off()
+        print('done.', flush=True)
+
+
 
 @main.command('metrics')
 @click.option('--full', is_flag=True, default=False,
@@ -1613,11 +1887,12 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
               default='area.under.RES', show_default=True)
 @click.option('-x', '--extended-output', default=False, show_default=True, is_flag=True,
               help="If True include additional stats on signature coverage, etc..")
-@click.option('-g', '--globalfdr', default=False, show_default=True,
+@click.option('-g', '--globalfdr', default=False, show_default=True, is_flag=True,
               help="Calculate global FDR across all datasets.")
 @click.option('--seed', type=int, default=2009,
               show_default=True, help='seed for reproducibility'
 )
+# @click.option('--z-score', default=False, is_flag=True, help='Z-score data before running ssGSEA')
 @click.pass_context
 def ssGSEA(ctx, geneset, norm, combine_mode, weight, correl, perm, min_overlap, extended_output,
            rank_plots, statistic, globalfdr, seed):
@@ -1631,6 +1906,8 @@ def ssGSEA(ctx, geneset, norm, combine_mode, weight, correl, perm, min_overlap, 
     metadata = data_obj.col_metadata
 
     expression = data_obj.areas_log_shifted
+    if z_score:
+        expression = expression.apply(sb.matrix.ClusterGrid.z_score, 0)
 
 
     namegen = partial(get_outname, name=data_obj.outpath_name, taxon=data_obj.taxon,
