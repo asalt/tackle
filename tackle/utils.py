@@ -447,6 +447,7 @@ def read_config(configfile, enforce=True):
 
 
     data = defaultdict(lambda : dict(runno=1, searchno=1, label='none'))  # does not retain order (no guarantee)
+                                                                          # as of py3.7 I believe it does
     for section_key in sections:
         section = config[section_key]
         other_fields = set(section.keys()) - set(FIELDS)
@@ -508,7 +509,18 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     rgx_digit = re.compile(r'\W?(\d+)\W?')
     rgx_word = re.compile('([A-Za-z]+\d*)(?=\W)')
     with open(gids, 'r') as f:
-        for line in f:
+        iterator = f
+        if gids.endswith('xlsx') or gids.endswith('xls'):
+            _df = pd.read_excel(gids)
+            _valid_cols = [x for x in [re.search('.*geneid.*', x, flags=re.I) for x in _df.columns]
+                          if x]
+            if _valid_cols and len(_valid_cols)==1:
+                _col = _valid_cols[0].group()
+                _df = _df[[_col]]
+            elif _valid_cols and len(_valid_cols>1):
+                raise ValueError('Cannot parse {}'.format(gids))
+            iterator = iter(_df.to_string(index=False).splitlines())
+        for line in iterator:
             if line.startswith('#') or not line.strip():
                 continue
 
@@ -617,13 +629,18 @@ def parse_metadata(metadata):
 
     for col in col_data.columns:
         col_data.loc[col_data[col].apply(isna_str), col] = np.NAN
-        # try:
-        #     col_data[col] = col_data[col].astype(float)
-        # except ValueError:
-        #     pass
-    for col in col_data.columns:
-        if not col_data[col].dtype == np.float:
-            col_data[col] = col_data[col].fillna('NA')
+        try:
+            col_data[col] = col_data[col].astype(float)
+        except ValueError:
+            pass
+        try:
+            col_data[col] = col_data[col].convert_dtypes()
+        except AttributeError:
+            pass # for pandas < 1.0
+    # do not think this is needed anymore
+    # for col in col_data.columns:
+    #     if not col_data[col].dtype == np.float:
+    #         col_data[col] = col_data[col].fillna('NA')
     return col_data
 
 
