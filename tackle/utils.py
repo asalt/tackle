@@ -200,6 +200,20 @@ def filter_sra(df, SRA='S', number_sra=1):
     # return df.loc[ gids.values ]
     return df.loc[ df.GeneID.isin(gids) ]
 
+def filter_upept(df, number=1):
+
+    # mask = ((df.loc[ idx[:, 'SRA'], :].isin(sra_list))
+
+    pept_table = (df.loc[ df.Metric=='PeptideCount_u2g']
+                  .drop('Metric', 1)
+                  .set_index('GeneID').astype(float)
+    )
+    to_keep = (pept_table > 1).sum(1).where(lambda x: x >3).dropna().index
+
+
+    # return df.loc[ gids.values ]
+    return df.loc[ df.GeneID.isin(to_keep) ]
+
 def filter_funcats(df_long, funcats):
 
     mask = (df_long.loc[ idx[:, 'FunCats'], df_long.columns[0] ].str.contains(funcats)
@@ -628,7 +642,7 @@ def parse_metadata(metadata):
     col_data = col_data.loc[[x for x in col_data.index if x not in expids]].T
 
     for col in col_data.columns:
-        col_data.loc[col_data[col].apply(isna_str), col] = np.NAN
+        # col_data.loc[col_data[col].apply(isna_str), col] = np.NAN
         try:
             col_data[col] = col_data[col].astype(float)
         except ValueError:

@@ -637,7 +637,7 @@ class Data:
         ## TODO can check to ensure not exporting all data and stack this smaller amount of data
 
         if not self.export_all:
-            _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area']
+            _cols = ['TaxonID', 'IDSet', 'GeneSymbol', 'iBAQ_dstrAdj', 'FunCats', 'SRA', 'area', 'PeptideCount_u2g']
             if self.cluster_annotate_cols:
                 for x in self.cluster_annotate_cols:
                     if x not in _cols: _cols.append(x)
@@ -697,6 +697,7 @@ class Data:
         df_filtered = (self.data.pipe(filter_observations, 'area',
                                       self.non_zeros, self.nonzero_subgroup, self.col_metadata)
                        .pipe(filter_sra, SRA=self.SRA, number_sra=self.number_sra)
+                       # .pipe(filter_upept, number=1)
                        .pipe(filter_func)
         )
         self.df_filtered = df_filtered.set_index(['GeneID', 'Metric'])
@@ -1071,7 +1072,6 @@ class Data:
                 r('cor <- corfit$consensus')
 
             fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
-
             # need to make valid R colnames
             variables = robjects.r('colnames(mod)')
             fixed_vars = [x.replace(':', '_',).replace(' ', '_').replace('-', '_')
@@ -1116,9 +1116,10 @@ class Data:
                 result['CI.L'] = result['CI.L'].apply(lambda x: x/np.log10(2))
                 result['CI.R'] = result['CI.R'].apply(lambda x: x/np.log10(2))
 
+                # DON'T NEED TO DO THIS ANYMORE
                 # we ensure the order of result is equal to order of areas_log_shifted
                 # to preserve GeneID order
-                result.index = self.areas_log_shifted.index
+                # result.index = self.areas_log_shifted.index
 
                 results[name] = result
 

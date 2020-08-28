@@ -664,14 +664,14 @@ def scatter(ctx, colors_only, shade_correlation, stat):
               `SRA` returns data matrix with SRA values per gene product
               """)
 @click.option('--linear', default=False, show_default=True, is_flag=True, help='Export linear (not logged) values when exporting as area')
-@click.option('--genesymbols', default=False, is_flag=True, show_default=True,
-              help='Include GeneSymbols in data export when `level` is set to `area`')
+@click.option('--genesymbols', default=False, is_flag=True, show_default=True, help='alias for --gene-symbols')
+@click.option('--gene-symbols', default=False, is_flag=True, show_default=True)
 @click.pass_context
 def export(ctx, level, genesymbols, linear):
 
     data_obj = ctx.obj['data_obj']
     for l in level:
-        data_obj.perform_data_export(l, genesymbols=genesymbols, linear=linear)
+        data_obj.perform_data_export(l, genesymbols=genesymbols or gene_symbols, linear=linear)
 
 @main.command('cluster')
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
@@ -950,7 +950,6 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
         outname = outname_func(name)
         save_multiple(fig, outname, *file_fmts)
 
-
 @main.command('cluster2')
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
                                                'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
@@ -991,8 +990,8 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               help="""Specific entries in the config file to ignore for the legend.
               (Default all are included)""")
 @click.option('--linkage', type=click.Choice(['single', 'complete', 'average', 'weighted', 'centroid',
-                                              'median', 'ward']),
-              default='ward', show_default=True,
+                                              'median', 'ward.D2']),
+              default='ward.D2', show_default=True,
               help='linkage method for hierarchical clustering'
 )
 @click.option('--main-title', default='', show_default=True)
@@ -1144,35 +1143,23 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
               '.svg': dict(width=figwidth, height=figheight,)
         }
 
-    metadata_colorsR = np.nan
-    # if data_obj.metadata_colors is not None:
-    #     # metadata_colorsR = robjects.ListVector([])
-    #     lists = list()
-    #     for key, x in data_obj.metadata_colors.items():
-    #         if key != 'response':
-    #             continue
+    metadata_colorsR = None
 
-    #         newlistvals = robjects.ListVector({key:list(x.values())})
-    #         robjects.r.assign('newlist', newlistvals)
-    #         robjects.r.assign('names', list(x.keys()))
-    #         robjects.r('names(newlist[{}]) <- names'.format(key))
+    if data_obj.metadata_colors is not None:
+        # metadata_colorsR = robjects.ListVector([])
+        lists = list()
+        for key, x in data_obj.metadata_colors.items():
+            # if key != 'response':
+            #     continue
+            # it works!
+            # actually needs to be an "atomic" vector and not a "list vector"
+            # this is taken care of in R..
+            # Unclear if this can be converted here. Calling R's `unlist` function on the resulting ListVector
+            # returns a numpy array with loss of names..
+            entry = robjects.vectors.ListVector({key: robjects.vectors.ListVector(x)})
+            lists.append(entry)
 
-    #         for k, v in x.items():
-    #             newlistvals = robjects.ListVector({key:list(v)})
-    #             robjects.r.assign('newlist', 'newlistvals')
-    #             robjects.r('names(newlist) <- names')
-    #             {key:x}
-    #             r.assign('')
-    #         lists.append({k:v})
-    #         rob
-    #         r.assign
-
-
-        # metadata_colorsR = robjects.ListVector(
-        #     [(key, robjects.ListVector((k,v)
-        #                                for k,v in x.items()))
-        #      for key,x  in data_obj.metadata_colors.items() if key=='response']
-        #     )
+        metadata_colorsR = lists
 
 
     if X.empty:
@@ -1181,7 +1168,7 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
     ret = cluster2(X,
                    annot_mat=annot_mat,
                    the_annotation=annotate or np.nan,
-                   cmap_name=cmap or np.nan,
+                   # cmap_name=cmap or np.nan,
                    highlight_gids=data_obj.highlight_gids or np.nan,
                    highlight_gid_names=data_obj.highlight_gid_names or np.nan,
                    force_plot_genes=force_plot_genes,
@@ -1342,6 +1329,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--gmt', type=click.Path(exists=True, dir_okay=False),
               help='Custom GMT geneset')
 @click.option('--only-human', is_flag=True, help='Only use human genes in a mixed species dataset')
+@click.option('--use-cluster2', is_flag=True, help='Use the new cluster2 heatmap routine to plot interesting pathways')
 @click.option('--geneset', type=click.Choice(('hallmark', 'go_biological', 'curated.CP.all',
                                               'curated.CP.KEGG', 'curated.CGP',
                                               'oncogenic.C6', 'curated.CP.BioCarta',
@@ -1366,6 +1354,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--rnd-type', type=click.Choice(('no_balance', 'equalize_and_balance')),
               default='no_balance', show_default=True)
 @click.option('--rnd-seed', default='timestamp', show_default=True)
+@click.option('--seed', default='alias for --rnd-seed', show_default=True)
 @click.option('--scoring-scheme', type=click.Choice(('weighted', 'classic', 'weighted_p2', 'weighted_p1.5')),
               default='weighted', show_default=True)
 @click.option('--set-max', default=500, show_default=True)
@@ -1384,12 +1373,36 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--no-homologene-remap', is_flag=True, default=False, help='If not a human species, do not map to human through homologene. Requires pairing with appropriate gene set file' )
 @click.pass_context
 def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, number_of_permutations, norm, permute,
-         plot_top_x, rnd_seed, rnd_type, scoring_scheme, sort, set_max, set_min, number, group,
-         plot_genes, plot_genes_sig, annotate, no_homologene_remap,
+         plot_top_x, rnd_seed, seed, rnd_type, scoring_scheme, sort, set_max, set_min, number, group,
+         plot_genes, plot_genes_sig, annotate, no_homologene_remap, use_cluster2,
 ):
     """
     Run GSEA on specified groups
     """
+
+    rnd_seed = rnd_seed or seed
+    # ===============================================================================================
+    if use_cluster2:
+        try:
+            from rpy2.robjects import r
+            import rpy2.robjects as robjects
+            from rpy2.robjects import pandas2ri
+            from rpy2.robjects.packages import importr
+        except ModuleNotFoundError:
+            print("rpy2 needs to be installed")
+            return
+
+        pandas2ri.activate()
+        r_source = robjects.r['source']
+        r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                            'R', 'clusterplot.R')
+
+        r_source(r_file)
+        grdevices = importr('grDevices')
+        cluster2 = robjects.r['cluster2']
+    # ===============================================================================================
+
+
 
     if '--gmt' in sys.argv and '--geneset' not in sys.argv:
         geneset = tuple()
@@ -1414,29 +1427,47 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
 
     nsamples = len(pheno.index)
+
     ngroups  = pheno[group].nunique()
-    # groups   = pheno[group].unique()
+    groups   = pheno[group].unique()
+    # classes = [grp.replace(' ', '_') for grp in pheno[group]]
+
+
+    # classes = pheno.groupby(group).groups
+
+    # # later
     # pheno_indicator = dict()
     # for ix, grp in enumerate(groups):
     #     pheno_indicator[grp] = ix
     # classes  = list(map(str, [pheno_indicator[grp] for grp in pheno.loc[group]]))
-    classes = [grp.replace(' ', '_') for grp in pheno[group]]
 
-    # cls_comparison = ''
-    # if ngroups == 2:  # reverse it
-    #     cls_comparison = '#{1}_versus_{0}'.format(*groups)
-    # elif ngroups != 2:
-    #     raise ValueError('Must have 2 groups')
+    # groupl = [x.strip() for x  in group.split('+')]
+    # ngroups = pheno.groupby(group).ngroups
+
+    cls_comparison = ''
+    if ngroups == 2:  # reverse it
+        cls_comparison = '#{1}_versus_{0}'.format(*groups)
+    elif ngroups != 2:
+        raise ValueError('Must have 2 groups')
 
     if ngroups < 2:
         raise ValueError('Must have at least 2 groups')
 
+
+
     import itertools
     for groups in itertools.combinations(pheno[group].unique(), 2):
+    # for groups in itertools.combinations(classes, 2):
 
+        # samples0 = classes[groups[0]]
+        # samples1 = classes[groups[1]]
 
         nsamples = pheno[pheno[group].isin(groups)].pipe(len)
-
+        # later
+        # nsamples = len(samples0) + len(samples1)
+        # group0 = '_'.join(groups[0])
+        # group1 = '_'.join(groups[1])
+        # cls_comparison = '#{1}_versus_{0}'.format(group0, group1)
         cls_comparison = '#{1}_versus_{0}'.format(*groups)
 
 
@@ -1818,41 +1849,129 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         # )
                         annot_mat.columns.name = annotate
 
-                    result = clusterplot(X,
-                                         main_title=main_title,
-                                         annot_mat=annot_mat,
-                                         cmap_name='RdBu_r',
-                                         highlight_gids=data_obj.highlight_gids,
-                                         highlight_gid_names=data_obj.highlight_gid_names,
-                                         force_optimal_ordering=True,
-                                         force_plot_genes=force_plot_genes,
-                                         genes=genes,
-                                         gid_symbol=data_obj.gid_symbol,
-                                         gene_symbols=True, z_score=z_score,
-                                         row_cluster=row_cluster, col_cluster=col_cluster,
-                                         # metadata=data_obj.config if show_metadata else None,
-                                         col_data=col_meta,
-                                         nclusters=nclusters,
-                                         show_missing_values=True,
-                                         mask=mask,
-                                         figsize=None,
-                                         normed=data_obj.normed,
-                                         gene_symbol_fontsize=12,
-                                         legend_include=legend_include,
-                                         legend_exclude=legend_exclude,
-                                         seed=1234,
-                                         metadata_colors=data_obj.metadata_colors,
-                                         circle_col_markers=True,
-                                         circle_col_marker_size=120,
-                                         square=False,
-                    )
-
-                    g = result['clustermap']['clustergrid']
 
 
-                    outname = outname_func('geneset', pathway=gs)
-                    save_multiple(g, outname, *file_fmts,)
-                    plt.close(g.fig)
+                    # result = clusterplot(X,
+                    if use_cluster2:
+
+
+                        r_source(r_file)
+                        grdevices = importr('grDevices')
+                        cluster2 = robjects.r['cluster2']
+
+
+                        # clean this section up..
+                        gene_symbols=True
+                        figheight = 12
+                        if gene_symbols:  # make sure there is enough room for the symbols
+                            figheight = max(((gene_symbol_fontsize+2)/72) * len(X), 12)
+                            if figheight > 218: # maximum figheight in inches
+                                FONTSIZE = max(218 / figheight, 6)
+                                figheight = 218
+
+                        plt_size = 6
+                        min_figwidth = 4
+                        figwidth  = max( min( len(X.columns) / 2, 16), min_figwidth )
+                        gr_devices = {'.png': grdevices.png,
+                                    '.pdf': grdevices.pdf,
+                                    '.svg': grdevices.svg}
+                        gr_kws = {'.png': dict(width=figwidth, height=figheight, units='in', res=300),
+                                '.pdf': dict(width=figwidth, height=figheight,),
+                                '.svg': dict(width=figwidth, height=figheight,)
+                            }
+
+                        metadata_colorsR = None
+
+                        if data_obj.metadata_colors is not None:
+                            # metadata_colorsR = robjects.ListVector([])
+                            lists = list()
+                            for key, x in data_obj.metadata_colors.items():
+                                entry = robjects.vectors.ListVector({key: robjects.vectors.ListVector(x)})
+                                lists.append(entry)
+
+                            metadata_colorsR = lists
+
+
+                        result = cluster2(X,
+                                          main_title=main_title,
+                                          annot_mat=annot_mat,
+                                          cmap_name='RdBu_r',
+                                          highlight_gids=data_obj.highlight_gids,
+                                          highlight_gid_names=data_obj.highlight_gid_names,
+                                          force_optimal_ordering=True,
+                                          force_plot_genes=force_plot_genes,
+                                          genes=genes,
+                                          gid_symbol=data_obj.gid_symbol,
+                                          gene_symbols=True, z_score=z_score,
+                                          row_cluster=row_cluster, col_cluster=col_cluster,
+                                          # metadata=data_obj.config if show_metadata else None,
+                                          col_data=col_meta,
+                                          nclusters=nclusters,
+                                          show_missing_values=True,
+                                          mask=mask,
+                                          figsize=None,
+                                          normed=data_obj.normed,
+                                          gene_symbol_fontsize=12,
+                                          legend_include=legend_include,
+                                          legend_exclude=legend_exclude,
+                                          seed=1234,
+                                          metadata_colors=data_obj.metadata_colorsR,
+                                          circle_col_markers=True,
+                                          circle_col_marker_size=120,
+                                          square=False,
+                        )
+                        outname = outname_func('geneset', pathway=gs)
+                        for file_fmt in ctx.obj['file_fmts']:
+                            grdevice = gr_devices[file_fmt]
+                            gr_kw = gr_kws[file_fmt]
+                            out = outname + file_fmt
+
+                            grdevice(file=out, **gr_kw)
+                            print("Saving", out, '...', end='', flush=True)
+
+                            heatmap = ret.rx('heatmap')
+                            print(heatmap)
+
+                            grdevices.dev_off()
+                            print('done.', flush=True)
+
+                    else:
+
+                        result = clusterplot(X,
+                                             main_title=main_title,
+                                             annot_mat=annot_mat,
+                                             cmap_name='RdBu_r',
+                                             highlight_gids=data_obj.highlight_gids,
+                                             highlight_gid_names=data_obj.highlight_gid_names,
+                                             force_optimal_ordering=True,
+                                             force_plot_genes=force_plot_genes,
+                                             genes=genes,
+                                             gid_symbol=data_obj.gid_symbol,
+                                             gene_symbols=True, z_score=z_score,
+                                             row_cluster=row_cluster, col_cluster=col_cluster,
+                                             # metadata=data_obj.config if show_metadata else None,
+                                             col_data=col_meta,
+                                             nclusters=nclusters,
+                                             show_missing_values=True,
+                                             mask=mask,
+                                             figsize=None,
+                                             normed=data_obj.normed,
+                                             gene_symbol_fontsize=12,
+                                             legend_include=legend_include,
+                                             legend_exclude=legend_exclude,
+                                             seed=1234,
+                                             metadata_colors=data_obj.metadata_colors,
+                                             circle_col_markers=True,
+                                             circle_col_marker_size=120,
+                                             square=False,
+                        )
+
+                        g = result['clustermap']['clustergrid']
+
+
+                        outname = outname_func('geneset', pathway=gs)
+                        save_multiple(g, outname, *file_fmts,)
+                        plt.close(g.fig)
 
 
 @main.command('ssGSEA')

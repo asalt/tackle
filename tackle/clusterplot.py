@@ -368,7 +368,7 @@ def clusterplot(data, annot_mat=None,
             # col_colors.loc[info] = colors
 
             mapping = dict()
-            for val in sorted(col_data[info].unique()):
+            for val in sorted(col_data[info].dropna().unique()):
                 if pd.isna(val):
                     continue
                 if val == 'NA':
@@ -741,7 +741,7 @@ def clusterplot(data, annot_mat=None,
     if col_colors is not None:
         # col_label_lengths = col_data.fillna('').applymap(len).max(1) + col_colors.nunique()
         # col_label_lengths = col_data.astype(str).applymap(len).max(0) + col_colors.nunique()
-        col_label_lengths = col_data.applymap(len).max(0) + col_colors.nunique()
+        col_label_lengths = col_data.astype(str).applymap(len).max(0) + col_colors.nunique()
         # widths = _calculate_box_sizes( col_colors.nunique() )
         # widths = _calculate_box_sizes( col_label_lengths, start_pos=-.2, end_pos=1.2 )
         widths = _calculate_box_sizes( col_label_lengths, start_pos=0.0, end_pos=1.1 )
@@ -761,6 +761,7 @@ def clusterplot(data, annot_mat=None,
             col_names       = col_labels.values
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()
+            import ipdb; ipdb.set_trace()
             for n, c in zip(col_names, label_colors):
                 if circle_col_markers:
                     handle = mpl.lines.Line2D(range(1), range(1), color="none", marker='o', markerfacecolor=c,
@@ -769,7 +770,10 @@ def clusterplot(data, annot_mat=None,
                 else:
                     handle = mpl.patches.Patch(color=c,)
                 handles.append(handle)
-                labels.append(n)
+                if pd.isna(n):
+                    labels.append('NA')
+                else:
+                    labels.append(n)
             ncols = max(len(col_names) // 3, 1)
             # if len(col_names) <= 10:
             #     ncols = max(len(col_names) // 3, 1)

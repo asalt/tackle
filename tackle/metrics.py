@@ -37,7 +37,6 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     sb.set_color_codes()
     sb.set_style('white', rc)
 
-
     data = data_obj.metric_values
 
     if before_filter:
