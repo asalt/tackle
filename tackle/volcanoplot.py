@@ -72,7 +72,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
         for ix, entry in enumerate(entries):
             groupres = list()
             for g in group:
-                if g.startswith(entry) and not any(g.startswith(e) for e in entries[ix+1:]):
+                if g.startswith(entry) and not any(g.startswith(e) for e in entries[ix+1:]) and False: # ignore this
                     i = g.find(entry)
                     if i != 0:continue
                     res = g[len(entry):]
@@ -111,7 +111,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
 
 
         # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
-        df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, x))
+        df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, gm.symbol.get(str(x), x)))
         df['FunCats']    = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ''))
         df['GeneDescription']    = df.index.map(lambda x: gm.description.get(str(x), ''))
         df.index.name = 'GeneID'
