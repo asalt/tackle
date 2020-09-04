@@ -978,9 +978,13 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               help="Show Gene Symbols on clustermap")
 @click.option('--gene-symbol-fontsize', default=8, show_default=True,
               help="Gene Symbol font size")
+@click.option('--gene-track', type=click.Path(exists=True, dir_okay=False),
+              help="""Optional list of geneids to make into a track
+              on the left side of the heatmap
+              Should have 1 geneid per line. """)
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=True,
-              help="""Optional list of geneids to highlight by.
+              help="""Optional list of geneids to annotate
               Should have 1 geneid per line. """)
 @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
 @click.option('--legend-include', type=str, multiple=True,
@@ -1018,7 +1022,8 @@ when `auto` is set for `--nclusters`""")
 def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col_cluster, figsize,
              force_plot_genes,
              genefile, gene_symbols,
-             gene_symbol_fontsize, highlight_geneids, linear, legend_include, legend_exclude, linkage,
+             gene_symbol_fontsize, geene_track,
+             highlight_geneids, linear, legend_include, legend_exclude, linkage,
              max_autoclusters, nclusters,
              main_title,
              order_by_abundance,
