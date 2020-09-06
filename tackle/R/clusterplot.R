@@ -29,10 +29,13 @@ order_colmeta <-function(annot, the_order, name='X'){
 
 cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
                      the_annotation=NA,
-                     genes=NA, highlight_gids=None, highlight_gid_names=NA,
-                     nclusters=None, show_gene_symbols=FALSE,
+                     genes=NA, highlight_gids=NA,
+                     highlight_gid_names=NA,
+                     gids_to_annotate=NA,
+                     nclusters=NA,
+                     show_gene_symbols=FALSE,
                      z_score=NA, z_score_by=NA, standard_scale=NA,
-                     mask=None, show_missing_values=TRUE, max_autoclusters=30,
+                     mask=NA, show_missing_values=TRUE, max_autoclusters=30,
                      row_cluster=TRUE, col_cluster=TRUE, seed=NA,
                      metadata=NA, col_data=NA, figsize=NA, normed=NA,
                      linkage='average', gene_symbol_fontsize=8,
@@ -165,6 +168,21 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
   }
   }
 
+  ## right gene symbol annotations
+  gene_annot <- NULL
+  if (!is.na(gids_to_annotate)) {
+    boolean_ixs <- toplot$GeneID %in% gids_to_annotate
+    ixs <- which(boolean_ixs) # note that dplyr pipe %>% to `which` does not work!!
+    thelabels <- toplot %>% filter(GeneID %in% gids_to_annotate) %>% pull(GeneSymbol)
+
+    gene_annot <- ComplexHeatmap::rowAnnotation(
+                                    genes = ComplexHeatmap::anno_mark(
+                                                              at = ixs,
+                                                              labels = thelabels
+                                                            )
+                                  )
+  }
+
   ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
                 name='mat',
                 ## row_split = cbind(kout_genes$cluster),
@@ -194,7 +212,8 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
                 column_names_side='top',
                 show_parent_dend_line=TRUE,
                 row_dend_width = unit(.8, "in"),
-                heatmap_legend_param=list(title='zscore')
+                heatmap_legend_param=list(title='zscore'),
+                right_annotation=gene_annot,
                 )
   draw(ht, padding = unit(c(10, 2, 2, 2), "mm"))
   if (!is.na(annot_mat)){

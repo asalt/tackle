@@ -978,14 +978,14 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               help="Show Gene Symbols on clustermap")
 @click.option('--gene-symbol-fontsize', default=8, show_default=True,
               help="Gene Symbol font size")
-@click.option('--gene-track', type=click.Path(exists=True, dir_okay=False),
-              help="""Optional list of geneids to make into a track
-              on the left side of the heatmap
-              Should have 1 geneid per line. """)
+@click.option('--gene-annot', type=click.Path(exists=True, dir_okay=False),
+              help="annotate")
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=True,
-              help="""Optional list of geneids to annotate
-              Should have 1 geneid per line. """)
+              help="""Optional list of geneids to make into a track
+              on the left side of the heatmap
+              Should have 1 geneid per line.
+              """)
 @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
 @click.option('--legend-include', type=str, multiple=True,
               help="""Specific entries in the config file to include in the legend.
@@ -1022,7 +1022,7 @@ when `auto` is set for `--nclusters`""")
 def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col_cluster, figsize,
              force_plot_genes,
              genefile, gene_symbols,
-             gene_symbol_fontsize, geene_track,
+             gene_symbol_fontsize, gene_annot,
              highlight_geneids, linear, legend_include, legend_exclude, linkage,
              max_autoclusters, nclusters,
              main_title,
@@ -1040,9 +1040,6 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
     if not figsize:  # returns empty tuple if not specified
         figsize = None
 
-    if nclusters is not None and dbscan:
-        raise click.BadOptionUsage('Cannot specify `nclusters` and use DBSCAN')
-
     X = data_obj.areas_log_shifted
     genes = None
     if genefile:
@@ -1050,6 +1047,10 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
+
+    gids_to_annotate = None
+    if gene_annot:
+        gids_to_annotate = parse_gid_file(gene_annot)
 
 
     if linear:
@@ -1166,6 +1167,13 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
 
         metadata_colorsR = lists
 
+    if gids_to_annotate:
+        # need to convert to a flat R vector
+        gids_to_annotate = robjects.vectors.StrVector([ str(x) for x in gids_to_annotate ])
+
+    # can we make sure this is always the case everywhere, it makes things much simpler and should
+    # avoid bugs
+    X['GeneID'] = X.GeneID.astype(str)
 
     if X.empty:
         print("No data!")
@@ -1176,6 +1184,7 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
                    # cmap_name=cmap or np.nan,
                    highlight_gids=data_obj.highlight_gids or np.nan,
                    highlight_gid_names=data_obj.highlight_gid_names or np.nan,
+                   gids_to_annotate=gids_to_annotate or np.nan,
                    force_plot_genes=force_plot_genes,
                    genes=genes or np.nan,
                    show_gene_symbols=gene_symbols, z_score=data_obj.z_score,
