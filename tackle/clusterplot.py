@@ -761,7 +761,6 @@ def clusterplot(data, annot_mat=None,
             col_names       = col_labels.values
             label_colors    = col_colors_t.loc[ix, col_labels.index].values
             handles, labels = list(), list()
-            import ipdb; ipdb.set_trace()
             for n, c in zip(col_names, label_colors):
                 if circle_col_markers:
                     handle = mpl.lines.Line2D(range(1), range(1), color="none", marker='o', markerfacecolor=c,

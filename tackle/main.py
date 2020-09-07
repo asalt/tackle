@@ -958,8 +958,8 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
 @click.option('--cmap', default=None, show_default=True)
-@click.option('--circle-col-markers', is_flag=True, default=False, show_default=True)
-@click.option('--circle-col-marker-size', default=60, show_default=True)
+# @click.option('--circle-col-markers', is_flag=True, default=False, show_default=True)
+# @click.option('--circle-col-marker-size', default=60, show_default=True)
 @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
               help='''Optionally specify the figuresize (width, height) in inches
               If not specified, tries to use a reasonable default depending on the number of
@@ -1019,7 +1019,7 @@ when `auto` is set for `--nclusters`""")
               default='0', show_default=True)
 @click.option('--z-score-by', type=str, default=None, show_default=True)
 @click.pass_context
-def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, col_cluster, figsize,
+def cluster2(ctx, annotate, cmap, col_cluster, figsize,
              force_plot_genes,
              genefile, gene_symbols,
              gene_symbol_fontsize, gene_annot,
@@ -1052,9 +1052,15 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
     if gene_annot:
         gids_to_annotate = parse_gid_file(gene_annot)
 
-
     if linear:
         X = 10**X
+
+    if standard_scale is not None:
+        if standard_scale == 1:
+            X = ((X.T / X.max(1)).T).fillna(0)
+        elif standard_scale == 0:
+            X = (X / X.max(1)).fillna(0)
+
     symbols = [data_obj.gid_symbol.get(x, '?') for x in X.index]
 
     genemapper = GeneMapper()
@@ -1124,13 +1130,19 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
 
     # =================================================================
     missing_values = 'masked' if show_missing_values else 'unmasked'
+    kws = {}
+    if linear:
+        kws['linear'] = 'linear'
     outname_func = partial(get_outname, name=data_obj.outpath_name,
-                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros,
                            batch=data_obj.batch_applied,
                            batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                           outpath=data_obj.outpath, missing_values=missing_values)
+                           outpath=data_obj.outpath, missing_values=missing_values,
+                           **kws
+    )
     # =================================================================
 
+    min_figwidth = 4
     if figsize is None: # either None or length 2 tuple
         figheight = 12
         if gene_symbols:  # make sure there is enough room for the symbols
@@ -1142,8 +1154,6 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
     else:
         figheight, figwidth = figsize
 
-    plt_size = 6
-    min_figwidth = 4
     gr_devices = {'.png': grdevices.png,
                   '.pdf': grdevices.pdf,
                   '.svg': grdevices.svg}
