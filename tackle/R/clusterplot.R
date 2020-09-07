@@ -34,7 +34,8 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
                      gids_to_annotate=NA,
                      nclusters=NA,
                      show_gene_symbols=FALSE,
-                     z_score=NA, z_score_by=NA, standard_scale=NA,
+                     z_score=NA, z_score_by=NA,
+                     standard_scale=NA,
                      mask=NA, show_missing_values=TRUE, max_autoclusters=30,
                      row_cluster=TRUE, col_cluster=TRUE, seed=NA,
                      metadata=NA, col_data=NA, figsize=NA, normed=NA,
@@ -45,7 +46,7 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
                      force_plot_genes=FALSE, main_title='',
                      order_by_abundance=FALSE){
 
-  if (!is.na(genes)){
+  if (!is.null(genes)){
     data <- data %>% filter(GeneID %in% genes)
   }
 
@@ -54,18 +55,28 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
 
   exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
     left_join(col_data, by='name', copy=TRUE)
-  if (z_score == '0' & is.na(z_score_by)){
+  if (is.null(z_score)){
+    # do nothing
+  }
+  else if (is.null(z_score_by) & z_score == '0') {
     exprs_long <- exprs_long %>% mutate(value = na_if(value,0)) %>% group_by(GeneID) %>%
       mutate(zscore = myzscore(value), zscore_impute=myzscore(value, remask=FALSE)) %>%
       ungroup
   }
-  else if (z_score == '0' & !is.na(z_score_by)){
+  else if (!is.null(z_score_by) & z_score == '0') {
     exprs_long <- exprs_long %>% mutate(value = na_if(value,0)) %>% group_by(GeneID, !!as.name(z_score_by)) %>%
       mutate(zscore = myzscore(value), zscore_impute=myzscore(value, remask=FALSE)) %>%
       ungroup
   }
+  ## else if (is.null(z_score)) {
+  ## }
 
-  toplot <- exprs_long %>% pivot_wider(id_cols=c(GeneID, GeneSymbol), values_from=zscore, names_from=name)
+  if (is.null(z_score)) {
+    toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = value, names_from = name)
+  }
+  else if (!is.null(z_score)) {
+    toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = zscore, names_from = name)
+  }
   col_order <- toplot %>% select(-GeneID, -GeneSymbol) %>% colnames
   col_data <- col_data %>% mutate(name = factor(name, levels=col_order, ordered=TRUE)) %>% arrange(name)
 
@@ -116,10 +127,10 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
 
 
   ## print(metadata_colors)
-  if (!is.na(metadata_colors)){
+  if (!is.null(metadata_colors)) {
     col_data_args[['col']] = list()
     ## print(names(metadata_colors[[1]]))
-    for (i in 1:length(metadata_colors)){
+    for (i in 1:length(metadata_colors)) {
       for (entry_name in names(metadata_colors[[i]])){
         entry_values <- names(metadata_colors[[i]][[entry_name]])
         ## print(entry_name)
@@ -146,19 +157,32 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
 
   ## print(colorRamp2(c(1,length(levels(col_data$HS_ratio))), c=c('white', 'black'))(1:8))
 
+  if (is.null(z_score)) {
+    quantiles <- exprs_long %>%
+      select(value) %>%
+      quantile(na.rm = TRUE, probs = seq(0, 1, .025))
+    minval <- quantiles[["2.5%"]]
+    maxval <- quantiles[["97.5%"]]
+    col <- colorRamp2(c(minval, 0, maxval), c("#FFFFCC", "orange", "red"))
+  }
+  else{
+    quantiles <- exprs_long %>%
+      select(z_score) %>%
+      quantile(na.rm = TRUE, probs = seq(0, 1, .025))
+    minval <- quantiles[["2.5%"]]
+    maxval <- quantiles[["97.5%"]]
+    col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
+  }
 
-  quantiles <- exprs_long %>% select(zscore) %>% quantile(na.rm=TRUE, probs=seq(0,1,.025))
-  minval <- quantiles[['2.5%']]
-  maxval <- quantiles[['97.5%']]
+  ## quantiles <- exprs_long %>% select(zscore) %>% quantile(na.rm=TRUE, probs=seq(0,1,.025))
   ## minval <- exprs_long %>% select(zscore) %>% min(na.rm=TRUE) *.95
   ## maxval <- exprs_long %>% select(zscore) %>% max(na.rm=TRUE) *.95
-  col = colorRamp2(c(minval,0,maxval), c('blue', "white", 'red'))
   ## print(minval)
   ## print(maxval)
   ## print(col)
 
   cell_fun <- NA
-  if (!is.na(annot_mat)){
+  if (!is.null(annot_mat)) {
     annot_mat <- annot_mat %>% mutate(GeneID = factor(GeneID, levels=toplot$GeneID, ordered=TRUE)) %>%
       arrange(GeneID)
     cell_fun <- function(j, i, x, y, width, height, fill) {
@@ -170,7 +194,7 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
 
   ## right gene symbol annotations
   gene_annot <- NULL
-  if (!is.na(gids_to_annotate)) {
+  if (!is.null(gids_to_annotate)) {
     boolean_ixs <- toplot$GeneID %in% gids_to_annotate
     ixs <- which(boolean_ixs) # note that dplyr pipe %>% to `which` does not work!!
     thelabels <- toplot %>% filter(GeneID %in% gids_to_annotate) %>% pull(GeneSymbol)
@@ -212,11 +236,11 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
                 column_names_side='top',
                 show_parent_dend_line=TRUE,
                 row_dend_width = unit(.8, "in"),
-                heatmap_legend_param=list(title='zscore'),
+                heatmap_legend_param=list(title = ifelse(is.null(z_score), 'log(iBAQ)', 'zscore')),
                 right_annotation=gene_annot,
                 )
-  draw(ht, padding = unit(c(10, 2, 2, 2), "mm"))
-  if (!is.na(annot_mat)){
+  ComplexHeatmap::draw(ht, padding = unit(c(10, 2, 2, 2), "mm"))
+  if (!is.null(annot_mat)) {
     decorate_heatmap_body("mat", {
       grid.text(paste('Annotation:', the_annotation), unit(1, "cm"), unit(-5, "mm"))
     })

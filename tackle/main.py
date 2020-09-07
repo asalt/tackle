@@ -1089,7 +1089,7 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
     col_meta.index.name = 'name'
     col_meta = col_meta.reset_index()
 
-    annot_mat = np.nan
+    annot_mat = None
     if annotate:
 
         # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
@@ -1131,16 +1131,19 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
                            outpath=data_obj.outpath, missing_values=missing_values)
     # =================================================================
 
-    figheight = 12
-    if gene_symbols:  # make sure there is enough room for the symbols
-        figheight = max(((gene_symbol_fontsize+2)/72) * len(X), 12)
-        if figheight > 218: # maximum figheight in inches
-            FONTSIZE = max(218 / figheight, 6)
-            figheight = 218
+    if figsize is None: # either None or length 2 tuple
+        figheight = 12
+        if gene_symbols:  # make sure there is enough room for the symbols
+            figheight = max(((gene_symbol_fontsize+2)/72) * len(X), 12)
+            if figheight > 218: # maximum figheight in inches
+                FONTSIZE = max(218 / figheight, 6)
+                figheight = 218
+        figwidth  = max( min( len(X.columns) / 2, 16), min_figwidth )
+    else:
+        figheight, figwidth = figsize
 
     plt_size = 6
     min_figwidth = 4
-    figwidth  = max( min( len(X.columns) / 2, 16), min_figwidth )
     gr_devices = {'.png': grdevices.png,
                   '.pdf': grdevices.pdf,
                   '.svg': grdevices.svg}
@@ -1179,20 +1182,22 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
         print("No data!")
         return
     ret = cluster2(X,
-                   annot_mat=annot_mat,
-                   the_annotation=annotate or np.nan,
+                   annot_mat=annot_mat or robjects.NULL,
+                   the_annotation=annotate or robjects.NULL,
+                   z_score=data_obj.z_score or robjects.NULL,
+                   z_score_by=z_score_by or robjects.NULL,
                    # cmap_name=cmap or np.nan,
-                   highlight_gids=data_obj.highlight_gids or np.nan,
-                   highlight_gid_names=data_obj.highlight_gid_names or np.nan,
-                   gids_to_annotate=gids_to_annotate or np.nan,
+                   highlight_gids=data_obj.highlight_gids or robjects.NULL,
+                   highlight_gid_names=data_obj.highlight_gid_names or robjects.NULL,
+                   gids_to_annotate=gids_to_annotate or robjects.NULL,
                    force_plot_genes=force_plot_genes,
-                   genes=genes or np.nan,
-                   show_gene_symbols=gene_symbols, z_score=data_obj.z_score,
-                   standard_scale=data_obj.standard_scale or np.nan,
+                   genes=genes or robjects.NULL,
+                   show_gene_symbols=gene_symbols,
+                   standard_scale=data_obj.standard_scale or robjects.NULL,
                    row_cluster=row_cluster, col_cluster=col_cluster,
                    # metadata=data_obj.config if show_metadata else None,
-                   col_data = col_meta if show_metadata else np.nan,
-                   nclusters=nclusters or np.nan,
+                   col_data = col_meta if show_metadata else robjects.NULL,
+                   nclusters=nclusters or robjects.NULL,
                    max_autoclusters=max_autoclusters,
                    show_missing_values=show_missing_values,
                    main_title=main_title,
@@ -1204,11 +1209,10 @@ def cluster2(ctx, annotate, cmap, circle_col_markers, circle_col_marker_size, co
                    # legend_include=legend_include,
                    # legend_exclude=legend_exclude,
                    order_by_abundance=order_by_abundance,
-                   seed=seed or np.nan,
-                   metadata_colors=metadata_colorsR or np.nan,
+                   seed=seed or robjects.NULL,
+                   metadata_colors=metadata_colorsR or robjects.NULL,
                    # circle_col_markers=circle_col_markers,
                    # circle_col_marker_size=circle_col_marker_size,
-                   z_score_by=z_score_by or np.nan,
     )
 
     outname = outname_func('clustermap')
