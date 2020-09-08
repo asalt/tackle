@@ -102,11 +102,17 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   ## ===============  ROW ANNOTATION ============================================
 
   if (!is.null(row_annot_df)) {
-    row_data_args <- as.list(row_annot_df)
+    row_annot_df[['GeneID']] <- rownames(row_annot_df)
+    row_annot_df <- row_annot_df %>%
+      mutate(GeneID = factor(row_annot_df[["GeneID"]], levels = data$GeneID, ordered = TRUE)) %>%
+      arrange(GeneID)
+
+    row_data_args <- as.list(select(row_annot_df, -GeneID))
     row_data_args[["na_col"]] <- "white"
+    row_data_args[["border"]] <- FALSE
     row_data_args[['which']] <- 'row'
     row_data_args[['annotation_legend_param']] <- list()
-    for (thename in names(row_annot_df)){
+    for (thename in names(select(row_annot_df, -GeneID))) {
       row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
     }
     row_data_args[["annotation_name_side"]] <- "top"
