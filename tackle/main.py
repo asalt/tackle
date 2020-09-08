@@ -1193,6 +1193,8 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
 
     metadata_colorsR = None
 
+    # TODO: IDEA - for all entries in the column and row data that do not have a predefined colormap,
+    # assign defaults here (otherwise ComplexHeatmap will assign random colors, which are not always good choices)
     if data_obj.metadata_colors is not None:
         # metadata_colorsR = robjects.ListVector([])
         lists = list()

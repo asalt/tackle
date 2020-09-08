@@ -1,4 +1,4 @@
-library(tidyverse)
+suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 library(cluster)
@@ -112,13 +112,17 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
     row_data_args[["border"]] <- FALSE
     row_data_args[['which']] <- 'row'
     row_data_args[['annotation_legend_param']] <- list()
+    ## rotate all legends to horizontal (place on bottom via draw, below)
     for (thename in names(select(row_annot_df, -GeneID))) {
-      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
+      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", nrow = 2)
     }
     row_data_args[["annotation_name_side"]] <- "top"
-    row_data_args[["gp"]] <- gpar(fontsize=8)
+    row_data_args[["gp"]] <- gpar(fontsize = 8, col = NA)
     row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 8)
-    row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+    row_data_args[['annotation_width']] <- unit(.15, 'in')
+
+
+
   }
   ## ===============  COLUMN ANNOTATION ============================================
 
@@ -134,6 +138,10 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   ## col_data_args <- as.list(col_data%>%select(response))
   col_data_args[['na_col']] = 'white'
 
+    for (thename in names(select(col_data, -name))) {
+        col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
+    }
+
   ## col_data_args[['col']] = list(
   ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
   ##   PAM50.Mar2020 = PAM50_colors ,
@@ -148,8 +156,11 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   ## )
 
   ## print(metadata_colors)
+
+  ## Custom colers
   if (!is.null(metadata_colors)) {
     col_data_args[['col']] = list()
+    row_data_args[["col"]] = list()
     ## print(names(metadata_colors[[1]]))
     for (i in 1:length(metadata_colors)) {
       for (entry_name in names(metadata_colors[[i]])){
@@ -158,15 +169,18 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
         ## print(entry_values)
         ## print(paste(entry_name, entry_values))
         col_data_args[['col']][[entry_name]] <- list()
+        row_data_args[["col"]][[entry_name]] <- list()
         for (key in entry_values){
             final_val <- metadata_colors[[i]][[entry_name]][[key]]
             ## print(paste(entry_name, key, final_val))
             ## print('****************')
-            col_data_args[['col']][[entry_name]][[key]] <- final_val[1]
+            col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
+            row_data_args[['col']][[entry_name]][[key]] <- final_val[1]
             ## need to make this atomic
             ## line 456  if(is.atomic(col)) {
         }
         col_data_args[['col']][[entry_name]] <- unlist(col_data_args[['col']][[entry_name]])
+        row_data_args[["col"]][[entry_name]] <- unlist(row_data_args[["col"]][[entry_name]])
         ## print(is.atomic(col_data_args[['col']][[entry_name]]))
         ## THIS IS FALSE< needs to be TRUE
       }
@@ -174,7 +188,12 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   }
   ## print(col_data_args)
 
+  ## ========================================================================
+  ## Now make the annotations, with all arguments populated
+  row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+
   col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
+  ## ========================================================================
 
   ## print(colorRamp2(c(1,length(levels(col_data$HS_ratio))), c=c('white', 'black'))(1:8))
 
@@ -182,7 +201,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
     quantiles <- exprs_long %>%
       select(value) %>%
       quantile(na.rm = TRUE, probs = seq(0, 1, .025))
-    minval <- quantiles[["2.5%"]]
+    ## minval <- quantiles[["2.5%"]]
+    minval <- 0
     maxval <- quantiles[["97.5%"]]
     col <- colorRamp2(c(minval, 0, maxval), c("#FFFFCC", "orange", "red"))
   }
@@ -223,7 +243,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
     gene_annot <- ComplexHeatmap::rowAnnotation(
                                     genes = ComplexHeatmap::anno_mark(
                                                               at = ixs,
-                                                              labels = thelabels
+                                                              labels = thelabels,
+                                                              labels_gp = gpar(fontsize=8)
                                                             )
                                   )
   }
@@ -249,8 +270,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                 clustering_distance_columns=dist_no_na,
                 row_labels=toplot$GeneSymbol,
                 row_names_gp = gpar(fontsize = gene_symbol_fontsize),
-                column_names_gp = gpar(fontsize = 10),
-                border=FALSE,
+                column_names_gp = gpar(fontsize = 9),
+                ## border = FALSE,
                 column_names_rot=90,
                 column_title = main_title,
                 column_title_side='top',
