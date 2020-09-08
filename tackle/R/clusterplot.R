@@ -27,21 +27,20 @@ order_colmeta <-function(annot, the_order, name='X'){
   res
 }
 
-cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
-                     the_annotation=NA,
-                     genes=NA, highlight_gids=NA,
-                     highlight_gid_names=NA,
-                     gids_to_annotate=NA,
-                     nclusters=NA,
+cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
+                     the_annotation=NULL,
+                     genes=NULL,
+                     row_annot_df=NULL,
+                     gids_to_annotate=NULL,
+                     nclusters=NULL,
                      show_gene_symbols=FALSE,
-                     z_score=NA, z_score_by=NA,
-                     standard_scale=NA,
-                     mask=NA, show_missing_values=TRUE, max_autoclusters=30,
+                     z_score=NULL, z_score_by=NULL,
+                     standard_scale=NULL,
+                     mask=NULL, show_missing_values=TRUE, max_autoclusters=30,
                      row_cluster=TRUE, col_cluster=TRUE, seed=NA,
-                     metadata=NA, col_data=NA, figsize=NA, normed=NA,
+                     metadata=NULL, col_data=NULL, figsize=NULL, normed=NULL,
                      linkage='average', gene_symbol_fontsize=8,
-                     legend_include=NA, legend_exclude=NA,
-                     metadata_colors=NA, circle_col_markers=FALSE,
+                     metadata_colors=NULL, circle_col_markers=FALSE,
                      circle_col_marker_size=12,
                      force_plot_genes=FALSE, main_title='',
                      order_by_abundance=FALSE){
@@ -77,8 +76,6 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
   else if (!is.null(z_score)) {
     toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = zscore, names_from = name)
   }
-  col_order <- toplot %>% select(-GeneID, -GeneSymbol) %>% colnames
-  col_data <- col_data %>% mutate(name = factor(name, levels=col_order, ordered=TRUE)) %>% arrange(name)
 
 
   ## if ('HS_ratio' %in% colnames(col_data)){
@@ -102,9 +99,29 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
   ##                                )
 
 
+  ## ===============  ROW ANNOTATION ============================================
 
+  if (!is.null(row_annot_df)) {
+    row_data_args <- as.list(row_annot_df)
+    row_data_args[["na_col"]] <- "white"
+    row_data_args[['which']] <- 'row'
+    row_data_args[['annotation_legend_param']] <- list()
+    for (thename in names(row_annot_df)){
+      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
+    }
+    row_data_args[["annotation_name_side"]] <- "top"
+    row_data_args[["gp"]] <- gpar(fontsize=8)
+    row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 8)
+    row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+  }
+  ## ===============  COLUMN ANNOTATION ============================================
 
-
+  col_order <- toplot %>%
+      select(-GeneID, -GeneSymbol) %>%
+      colnames()
+  col_data <- col_data %>%
+      mutate(name = factor(name, levels = col_order, ordered = TRUE)) %>%
+      arrange(name)
 
   ## Add more args here
   col_data_args <- as.list(col_data%>%select(-name))
@@ -123,8 +140,6 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
   ##     TNBC='red'
   ##   )
   ## )
-
-
 
   ## print(metadata_colors)
   if (!is.null(metadata_colors)) {
@@ -238,8 +253,9 @@ cluster2 <- function(data, annot_mat=NA, cmap_name=NA,
                 row_dend_width = unit(.8, "in"),
                 heatmap_legend_param=list(title = ifelse(is.null(z_score), 'log(iBAQ)', 'zscore')),
                 right_annotation=gene_annot,
+                left_annotation = row_annot
                 )
-  ComplexHeatmap::draw(ht, padding = unit(c(10, 2, 2, 2), "mm"))
+  ComplexHeatmap::draw(ht, heatmap_legend_side = 'bottom', padding = unit(c(10, 2, 2, 2), "mm"))
   if (!is.null(annot_mat)) {
     decorate_heatmap_body("mat", {
       grid.text(paste('Annotation:', the_annotation), unit(1, "cm"), unit(-5, "mm"))

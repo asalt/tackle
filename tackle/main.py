@@ -1031,6 +1031,29 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
              z_score_by,
              add_human_ratios,
 ):
+
+    # =================================================================
+
+    try:
+        from rpy2.robjects import r
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+    except ModuleNotFoundError:
+        print("rpy2 needs to be installed")
+        return
+
+    pandas2ri.activate()
+    r_source = robjects.r['source']
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                          'R', 'clusterplot.R')
+
+    r_source(r_file)
+    grdevices = importr('grDevices')
+    cluster2 = robjects.r['cluster2']
+
+    # =================================================================
+
     data_obj = ctx.obj['data_obj']
 
 
@@ -1072,7 +1095,33 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
     # X[data_obj.areas == 0] = 0 # fill the zeros back
     # X[data_obj.mask] = np.NaN
 
-    data_obj.set_highlight_gids(highlight_geneids)
+    # data_obj.set_highlight_gids(highlight_geneids)
+
+    row_annot_track = list()
+    # TODO parse and look for geneids
+    for file_ in highlight_geneids:
+        df_ = pd.read_csv(file_, sep='\t', header=None, dtype=str)
+        title_ = get_file_name(file_)
+        if len(df_.columns) != 2:
+            raise ValueError("""File {} should have two columns, first being GeneID,
+            second being corresponding value""".format(file_))
+        df_.columns = ['GeneID', title_]
+        df_ = df_.set_index('GeneID')
+        row_annot_track.append(df_)
+
+    if row_annot_track:
+        row_annot_df = pd.concat(row_annot_track, axis=1)
+        # make a dataframe that spans all genes about to be plotted
+        ixs_ = X.GeneID.astype(str)
+        missing_ = set(ixs_) - set(row_annot_df.index)
+        intersect_ixs_ = set(ixs_) & set(row_annot_df.index)
+        missing_df_ = pd.DataFrame(index=missing_, columns=row_annot_df.columns)
+        row_annot_df = (pd.concat([row_annot_df.loc[intersect_ixs_], missing_df_], axis=0)
+                        .fillna('')
+                        )
+
+
+
     data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     data_obj.z_score           = data_obj.clean_input(z_score)
 
@@ -1109,26 +1158,6 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         )
         # annot_mat.columns.name = annotate
 
-
-    try:
-        from rpy2.robjects import r
-        import rpy2.robjects as robjects
-        from rpy2.robjects import pandas2ri
-        from rpy2.robjects.packages import importr
-    except ModuleNotFoundError:
-        print("rpy2 needs to be installed")
-        return
-
-    pandas2ri.activate()
-    r_source = robjects.r['source']
-    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                          'R', 'clusterplot.R')
-
-    r_source(r_file)
-    grdevices = importr('grDevices')
-    cluster2 = robjects.r['cluster2']
-
-    # =================================================================
     missing_values = 'masked' if show_missing_values else 'unmasked'
     kws = {}
     if linear:
@@ -1191,39 +1220,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
     if X.empty:
         print("No data!")
         return
-    ret = cluster2(X,
-                   annot_mat=annot_mat or robjects.NULL,
-                   the_annotation=annotate or robjects.NULL,
-                   z_score=data_obj.z_score or robjects.NULL,
-                   z_score_by=z_score_by or robjects.NULL,
-                   # cmap_name=cmap or np.nan,
-                   highlight_gids=data_obj.highlight_gids or robjects.NULL,
-                   highlight_gid_names=data_obj.highlight_gid_names or robjects.NULL,
-                   gids_to_annotate=gids_to_annotate or robjects.NULL,
-                   force_plot_genes=force_plot_genes,
-                   genes=genes or robjects.NULL,
-                   show_gene_symbols=gene_symbols,
-                   standard_scale=data_obj.standard_scale or robjects.NULL,
-                   row_cluster=row_cluster, col_cluster=col_cluster,
-                   # metadata=data_obj.config if show_metadata else None,
-                   col_data = col_meta if show_metadata else robjects.NULL,
-                   nclusters=nclusters or robjects.NULL,
-                   max_autoclusters=max_autoclusters,
-                   show_missing_values=show_missing_values,
-                   main_title=main_title,
-                   # mask=data_obj.mask,
-                   # figsize=figsize,
-                   normed=data_obj.normed,
-                   linkage=linkage,
-                   gene_symbol_fontsize=gene_symbol_fontsize,
-                   # legend_include=legend_include,
-                   # legend_exclude=legend_exclude,
-                   order_by_abundance=order_by_abundance,
-                   seed=seed or robjects.NULL,
-                   metadata_colors=metadata_colorsR or robjects.NULL,
-                   # circle_col_markers=circle_col_markers,
-                   # circle_col_marker_size=circle_col_marker_size,
-    )
+
 
     outname = outname_func('clustermap')
     for file_fmt in ctx.obj['file_fmts']:
@@ -1234,8 +1231,42 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         grdevice(file=out, **gr_kw)
         print("Saving", out, '...', end='', flush=True)
 
-        heatmap = ret.rx('heatmap')
-        print(heatmap)
+        # heatmap = ret.rx('heatmap')
+        # print(heatmap)
+
+        # have to put this here to preserve the layout set by ComplexHeatmap::draw
+        ret = cluster2(X,
+                    annot_mat=annot_mat or robjects.NULL,
+                    the_annotation=annotate or robjects.NULL,
+                    z_score=data_obj.z_score or robjects.NULL,
+                    z_score_by=z_score_by or robjects.NULL,
+                    row_annot_df=row_annot_df,
+                    # cmap_name=cmap or np.nan,
+                    gids_to_annotate=gids_to_annotate or robjects.NULL,
+                    force_plot_genes=force_plot_genes,
+                    genes=genes or robjects.NULL,
+                    show_gene_symbols=gene_symbols,
+                    standard_scale=data_obj.standard_scale or robjects.NULL,
+                    row_cluster=row_cluster, col_cluster=col_cluster,
+                    # metadata=data_obj.config if show_metadata else None,
+                    col_data = col_meta if show_metadata else robjects.NULL,
+                    nclusters=nclusters or robjects.NULL,
+                    max_autoclusters=max_autoclusters,
+                    show_missing_values=show_missing_values,
+                    main_title=main_title,
+                    # mask=data_obj.mask,
+                    # figsize=figsize,
+                    normed=data_obj.normed,
+                    linkage=linkage,
+                    gene_symbol_fontsize=gene_symbol_fontsize,
+                    # legend_include=legend_include,
+                    # legend_exclude=legend_exclude,
+                    order_by_abundance=order_by_abundance,
+                    seed=seed or robjects.NULL,
+                    metadata_colors=metadata_colorsR or robjects.NULL,
+                    # circle_col_markers=circle_col_markers,
+                    # circle_col_marker_size=circle_col_marker_size,
+        )
 
         grdevices.dev_off()
         print('done.', flush=True)
