@@ -52,8 +52,13 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   ## print(data %>% pivot_longer(c(-GeneSymbol, -GeneID)))
   ## print(col_data)
 
-  exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
-    left_join(col_data, by='name', copy=TRUE)
+  exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) 
+
+  if (!is.null(col_data)){
+    exprs_long <- exprs_long %>% left_join(col_data, by='name', copy=TRUE)
+  }
+
+
   if (is.null(z_score)){
     # do nothing
   }
@@ -126,66 +131,70 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   }
   ## ===============  COLUMN ANNOTATION ============================================
 
-  col_order <- toplot %>%
-      select(-GeneID, -GeneSymbol) %>%
-      colnames()
-  col_data <- col_data %>%
-      mutate(name = factor(name, levels = col_order, ordered = TRUE)) %>%
-      arrange(name)
+  col_data_args <- NULL # will get defined if not is.na col_data
+  if (!is.null(col_data)) {
+	  col_order <- toplot %>%
+	      select(-GeneID, -GeneSymbol) %>%
+	      colnames()
+	  col_data <- col_data %>%
+	      mutate(name = factor(name, levels = col_order, ordered = TRUE)) %>%
+	      arrange(name)
 
-  ## Add more args here
-  col_data_args <- as.list(col_data%>%select(-name))
-  ## col_data_args <- as.list(col_data%>%select(response))
-  col_data_args[['na_col']] = 'white'
+	  ## Add more args here
+	  col_data_args <- as.list(col_data%>%select(-name))
+	  ## col_data_args <- as.list(col_data%>%select(response))
+	  col_data_args[['na_col']] = 'white'
 
-    for (thename in names(select(col_data, -name))) {
-        col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
-    }
+	    for (thename in names(select(col_data, -name))) {
+		col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
+	    }
 
-  ## col_data_args[['col']] = list(
-  ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
-  ##   PAM50.Mar2020 = PAM50_colors ,
-  ##   PAM50 = PAM50_colors ,
-  ##   response = response_colors,
-  ##   TNBCtype = Lehmann_TNBC_colors,
-  ##   cohort = c(
-  ##     HER2='purple',
-  ##     Luminal='blue',
-  ##     TNBC='red'
-  ##   )
-  ## )
+	  ## col_data_args[['col']] = list(
+	  ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
+	  ##   PAM50.Mar2020 = PAM50_colors ,
+	  ##   PAM50 = PAM50_colors ,
+	  ##   response = response_colors,
+	  ##   TNBCtype = Lehmann_TNBC_colors,
+	  ##   cohort = c(
+	  ##     HER2='purple',
+	  ##     Luminal='blue',
+	  ##     TNBC='red'
+	  ##   )
+	  ## )
 
-  ## print(metadata_colors)
+	  ## print(metadata_colors)
 
-  ## Custom colers
-  if (!is.null(metadata_colors)) {
-    col_data_args[['col']] = list()
-    row_data_args[["col"]] = list()
-    ## print(names(metadata_colors[[1]]))
-    for (i in 1:length(metadata_colors)) {
-      for (entry_name in names(metadata_colors[[i]])){
-        entry_values <- names(metadata_colors[[i]][[entry_name]])
-        ## print(entry_name)
-        ## print(entry_values)
-        ## print(paste(entry_name, entry_values))
-        col_data_args[['col']][[entry_name]] <- list()
-        row_data_args[["col"]][[entry_name]] <- list()
-        for (key in entry_values){
-            final_val <- metadata_colors[[i]][[entry_name]][[key]]
-            ## print(paste(entry_name, key, final_val))
-            ## print('****************')
-            col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
-            row_data_args[['col']][[entry_name]][[key]] <- final_val[1]
-            ## need to make this atomic
-            ## line 456  if(is.atomic(col)) {
-        }
-        col_data_args[['col']][[entry_name]] <- unlist(col_data_args[['col']][[entry_name]])
-        row_data_args[["col"]][[entry_name]] <- unlist(row_data_args[["col"]][[entry_name]])
-        ## print(is.atomic(col_data_args[['col']][[entry_name]]))
-        ## THIS IS FALSE< needs to be TRUE
-      }
-    }
-  }
+	  ## Custom colers
+	  if (!is.null(metadata_colors)) {
+	    col_data_args[['col']] = list()
+	    row_data_args[["col"]] = list()
+	    ## print(names(metadata_colors[[1]]))
+	    for (i in 1:length(metadata_colors)) {
+	      for (entry_name in names(metadata_colors[[i]])){
+		entry_values <- names(metadata_colors[[i]][[entry_name]])
+		## print(entry_name)
+		## print(entry_values)
+		## print(paste(entry_name, entry_values))
+		col_data_args[['col']][[entry_name]] <- list()
+		row_data_args[["col"]][[entry_name]] <- list()
+		for (key in entry_values){
+		    final_val <- metadata_colors[[i]][[entry_name]][[key]]
+		    ## print(paste(entry_name, key, final_val))
+		    ## print('****************')
+		    col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
+		    row_data_args[['col']][[entry_name]][[key]] <- final_val[1]
+		    ## need to make this atomic
+		    ## line 456  if(is.atomic(col)) {
+		}
+		col_data_args[['col']][[entry_name]] <- unlist(col_data_args[['col']][[entry_name]])
+		row_data_args[["col"]][[entry_name]] <- unlist(row_data_args[["col"]][[entry_name]])
+		## print(is.atomic(col_data_args[['col']][[entry_name]]))
+		## THIS IS FALSE< needs to be TRUE
+	      }
+	    }
+	  }
+		     }# if (!is.null(col_data))
+
   ## print(col_data_args)
 
   ## ========================================================================
@@ -195,7 +204,10 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   	row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
   }
 
-  col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
+  col_annot <- NULL
+  if (!is.null(col_data_args)) {
+  	col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
+  }
   ## ========================================================================
 
   ## print(colorRamp2(c(1,length(levels(col_data$HS_ratio))), c=c('white', 'black'))(1:8))

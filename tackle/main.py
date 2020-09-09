@@ -1144,8 +1144,11 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         to_include = set(col_meta.columns) - to_exclude
     # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
     col_meta = col_meta[[x for x in col_meta.columns if x in to_include]]
-    col_meta.index.name = 'name'
-    col_meta = col_meta.reset_index()
+    if col_meta.empty:
+        col_meta = None
+    else:
+        col_meta.index.name = 'name'
+        col_meta = col_meta.reset_index()
 
     annot_mat = None
     if annotate:
@@ -1226,6 +1229,9 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         print("No data!")
         return
 
+    col_data = None
+    if show_metadata and not col_meta is None: 
+        col_data = col_meta 
 
     outname = outname_func('clustermap')
     for file_fmt in ctx.obj['file_fmts']:
@@ -1246,6 +1252,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
                     z_score=z_score or robjects.NULL,
                     z_score_by=z_score_by or robjects.NULL,
                     row_annot_df=row_annot_df or robjects.NULL,
+                    col_data = col_data or robjects.NULL,
                     # cmap_name=cmap or np.nan,
                     gids_to_annotate=gids_to_annotate or robjects.NULL,
                     force_plot_genes=force_plot_genes,
@@ -1254,7 +1261,6 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
                     standard_scale=data_obj.standard_scale or robjects.NULL,
                     row_cluster=row_cluster, col_cluster=col_cluster,
                     # metadata=data_obj.config if show_metadata else None,
-                    col_data = col_meta if show_metadata else robjects.NULL,
                     nclusters=nclusters or robjects.NULL,
                     max_autoclusters=max_autoclusters,
                     show_missing_values=show_missing_values,
