@@ -1107,12 +1107,12 @@ class Data:
             for coef, name in enumerate(contrasts_array, 1):
 
                 result = (r(""" topTable(fit2, n=Inf, sort.by='none', coef={}, confint=TRUE) """.format(coef))
-                          .rename(columns={'logFC':'log2_Fold_Change',
+                          .rename(columns={'logFC':'log2_FC',
                                            'adj.P.Val': 'pAdj',
                                            'P.Value': 'pValue',
                           })
                 )
-                result['log2_Fold_Change'] = result['log2_Fold_Change'].apply(lambda x: x/np.log10(2))
+                result['log2_FC'] = result['log2_FC'].apply(lambda x: x/np.log10(2))
                 result['CI.L'] = result['CI.L'].apply(lambda x: x/np.log10(2))
                 result['CI.R'] = result['CI.R'].apply(lambda x: x/np.log10(2))
 

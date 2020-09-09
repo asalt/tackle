@@ -667,7 +667,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 @click.option('--genesymbols', default=False, is_flag=True, show_default=True, help='alias for --gene-symbols')
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True)
 @click.pass_context
-def export(ctx, level, genesymbols, linear):
+def export(ctx, level, genesymbols, gene_symbols, linear):
 
     data_obj = ctx.obj['data_obj']
     for l in level:
@@ -1031,6 +1031,8 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
              z_score_by,
              add_human_ratios,
 ):
+    if z_score == 'None':
+        z_score = None
 
     # =================================================================
 
@@ -1109,6 +1111,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         df_ = df_.set_index('GeneID')
         row_annot_track.append(df_)
 
+    row_annot_df = None
     if row_annot_track:
         row_annot_df = pd.concat(row_annot_track, axis=1)
         # make a dataframe that spans all genes about to be plotted
@@ -1122,8 +1125,8 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
 
 
 
-    data_obj.standard_scale    = data_obj.clean_input(standard_scale)
-    data_obj.z_score           = data_obj.clean_input(z_score)
+    # data_obj.standard_scale    = data_obj.clean_input(standard_scale)
+    # data_obj.z_score           = data_obj.clean_input(z_score)
 
     col_meta = data_obj.col_metadata.copy()
     if add_human_ratios:
@@ -1240,9 +1243,9 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         ret = cluster2(X,
                     annot_mat=annot_mat or robjects.NULL,
                     the_annotation=annotate or robjects.NULL,
-                    z_score=data_obj.z_score or robjects.NULL,
+                    z_score=z_score or robjects.NULL,
                     z_score_by=z_score_by or robjects.NULL,
-                    row_annot_df=row_annot_df,
+                    row_annot_df=row_annot_df or robjects.NULL,
                     # cmap_name=cmap or np.nan,
                     gids_to_annotate=gids_to_annotate or robjects.NULL,
                     force_plot_genes=force_plot_genes,
@@ -1328,8 +1331,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option('-n', '--number', type=int, default=35, show_default=True,
               help='Maximum number of significant genes to highlight (annotate) in plot'
 )
-@click.option('--number-by', type=click.Choice(('abs_log2_Fold_Change', 'log2_Fold_Change', 'pValue')),
-              default='log2_Fold_Change', show_default=True,
+@click.option('--number-by', type=click.Choice(('abs_log2_FC', 'log2_FC', 'pValue')),
+              default='log2_FC', show_default=True,
               help="""How to determine the top n genes to label on plot.
               `log2_Fold_Change` takes top n/2 genes that are up and down"""
 )

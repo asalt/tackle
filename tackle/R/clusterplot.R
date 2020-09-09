@@ -100,7 +100,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
 
   ## ===============  ROW ANNOTATION ============================================
-
+  row_data_args <- NULL
   if (!is.null(row_annot_df)) {
     row_annot_df[['GeneID']] <- rownames(row_annot_df)
     row_annot_df <- row_annot_df %>%
@@ -190,7 +190,10 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
   ## ========================================================================
   ## Now make the annotations, with all arguments populated
-  row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+  row_annot <- NULL
+  if (!is.null(row_data_args)) {
+  	row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+  }
 
   col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
   ## ========================================================================
@@ -208,7 +211,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   }
   else{
     quantiles <- exprs_long %>%
-      select(z_score) %>%
+      select(zscore) %>%
       quantile(na.rm = TRUE, probs = seq(0, 1, .025))
     minval <- quantiles[["2.5%"]]
     maxval <- quantiles[["97.5%"]]
