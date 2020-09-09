@@ -25,7 +25,7 @@ makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
   popViewport()
 }
 yaxis.choices <- c('pValue', 'pAdj')
-number_by.choices <- c('abs_log2_Fold_Change', 'log2_Fold_Change', 'pValue')
+number_by.choices <- c('abs_log2_FC', 'log2_FC', 'pValue')
 
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
@@ -34,7 +34,7 @@ volcanoplot <- function(X, max_labels = 35,
                         show_all = FALSE, yaxis = yaxis.choices,
                         group0 = '', group1 = '',
                         sig_metric = 'pAdj',
-                        number_by = 'abs_log2_Fold_Change',
+                        number_by = 'abs_log2_FC',
                         ...){
 
   POINT_SIZE <- 1.4
@@ -42,8 +42,8 @@ volcanoplot <- function(X, max_labels = 35,
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
   linear_fc_cutoff <- fc_cutoff
-  if (fc_cutoff > 0){
-    fc_cutoff <- log2(fc_cutoff)
+  if (fc_cutoff > 0) {
+    fc_cutoff <- abs(log2(fc_cutoff))
   }
 
   if (sig_metric == 'pAdj') {
@@ -61,7 +61,7 @@ volcanoplot <- function(X, max_labels = 35,
   ## X <- mutate(X, Sig = ifelse(X[,sig_metric] < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
   ##                             sig_filter_str, "N.S."))
 
-  Sig <- ifelse(X[,sig_metric] < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
+  Sig <- ifelse(X[,sig_metric] < sig& abs(X[, 'log2_FC']) > fc_cutoff,
                sig_filter_str, "N.S.")
   X[, 'Sig'] <- Sig
 
@@ -72,8 +72,8 @@ volcanoplot <- function(X, max_labels = 35,
   X[ , 'usd' ] = '#88888888'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
-  X[ (X[,sig_metric] < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
-  X[ (X[,sig_metric] < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
+  X[ (X[,sig_metric] < sig & X$log2_FC < -fc_cutoff), 'usd' ] = 'blue'
+  X[ (X[,sig_metric] < sig & X$log2_FC >  fc_cutoff), 'usd' ] = 'red'
   X[ X$highlight == TRUE, 'usd' ] = 'purple'
   ## X[ X$highlight == TRUE, 'usd' ] = 'red'
   X[, 'usd'] <- as.factor(X[, 'usd'])
@@ -91,25 +91,25 @@ volcanoplot <- function(X, max_labels = 35,
   ##                  max_labels
   ##                  )
 
-  if (number_by == 'abs_log2_Fold_Change'){
+  if (number_by == 'abs_log2_FC'){
 
-    to_label <- head(order(abs(X[ X$highlight==TRUE, 'log2_Fold_Change']), X[X$highlight==TRUE, 'pValue'],
+    to_label <- head(order(abs(X[ X$highlight==TRUE, 'log2_FC']), X[X$highlight==TRUE, 'pValue'],
                            decreasing=c(TRUE, FALSE)
                            ),
                max_labels
          )
     max_labels <- max_labels - length(to_label)
 
-    to_label <- head(order( abs(X[, 'log2_Fold_Change']), X[, 'pValue'], decreasing = c(TRUE, FALSE) ),
+    to_label <- head(order( abs(X[, 'log2_FC']), X[, 'pValue'], decreasing = c(TRUE, FALSE) ),
                      max_labels
                      )
   }
-  else if (number_by == 'log2_Fold_Change'){
+  else if (number_by == 'log2_FC'){
 
-    to_label1 <- head(order( (X[, 'log2_Fold_Change']), X[, 'pValue'], decreasing = c(TRUE, FALSE) ),
+    to_label1 <- head(order( (X[, 'log2_FC']), X[, 'pValue'], decreasing = c(TRUE, FALSE) ),
                       round(max_labels/2)
                       )
-    to_label2 <- head(order( (X[, 'log2_Fold_Change']), X[, 'pValue'], decreasing = c(FALSE, FALSE) ),
+    to_label2 <- head(order( (X[, 'log2_FC']), X[, 'pValue'], decreasing = c(FALSE, FALSE) ),
                       round(max_labels/2)
                       )
     to_label <- c(to_label1, to_label2)
@@ -117,14 +117,14 @@ volcanoplot <- function(X, max_labels = 35,
   }
   else{
 
-    to_label <- head(order(abs(X[ X$highlight==TRUE, 'pValue']), X[X$highlight==TRUE, 'log2_Fold_Change'],
+    to_label <- head(order(abs(X[ X$highlight==TRUE, 'pValue']), X[X$highlight==TRUE, 'log2_FC'],
                            decreasing=c(TRUE, FALSE)
                            ),
                      max_labels
                      )
     max_labels <- max_labels - length(to_label)
 
-    to_label <- head(order( X[, 'pValue'], abs(X[, 'log2_Fold_Change']), decreasing = c(FALSE, TRUE) ),
+    to_label <- head(order( X[, 'pValue'], abs(X[, 'log2_FC']), decreasing = c(FALSE, TRUE) ),
                      max_labels
                      )
   }
@@ -140,7 +140,7 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
   ymax <- max(-log10(X[, ploty])) * 1.05
-  xmax <- X[, 'log2_Fold_Change'] %>% abs %>% max
+  xmax <- X[, 'log2_FC'] %>% abs %>% max
 
   ## ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
   ratio_sig <- paste0( dim( X[X$Sig == sig_filter_str,] )[1], '/', dim(X)[1] )
@@ -148,7 +148,7 @@ volcanoplot <- function(X, max_labels = 35,
   ## footnote <- ''
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
-  p = ggplot(X, aes(log2_Fold_Change, -log10(get(ploty)), col=usd)) +
+  p = ggplot(X, aes(log2_FC, -log10(get(ploty)), col=usd)) +
     theme_base() +
     geom_point(size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
     geom_point(data=X[X$highlight==TRUE,], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
