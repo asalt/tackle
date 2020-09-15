@@ -120,7 +120,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
     row_data_args[['annotation_legend_param']] <- list()
     ## rotate all legends to horizontal (place on bottom via draw, below)
     for (thename in names(select(row_annot_df, -GeneID))) {
-      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", nrow = 2)
+      ## row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", nrow = 2)
+      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
     }
     row_data_args[["annotation_name_side"]] <- "top"
     row_data_args[["gp"]] <- gpar(fontsize = 8, col = NA)
