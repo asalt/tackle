@@ -43,6 +43,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      metadata_colors=NULL, circle_col_markers=FALSE,
                      circle_col_marker_size=12,
                      force_plot_genes=FALSE, main_title='',
+                     title_fontsize=12,
                      order_by_abundance=FALSE){
 
   if (!is.null(genes)){
@@ -133,21 +134,23 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
   col_data_args <- NULL # will get defined if not is.na col_data
   if (!is.null(col_data)) {
-	  col_order <- toplot %>%
-	      select(-GeneID, -GeneSymbol) %>%
-	      colnames()
-	  col_data <- col_data %>%
-	      mutate(name = factor(name, levels = col_order, ordered = TRUE)) %>%
-	      arrange(name)
+    col_order <- toplot %>%
+      select(-GeneID, -GeneSymbol) %>%
+      colnames()
+    col_data <- col_data %>%
+      filter(name %in% colnames(data)) %>%
+      mutate(name = factor(name, levels = col_order, ordered = TRUE)) %>%
+      arrange(name)
 
-	  ## Add more args here
-	  col_data_args <- as.list(col_data%>%select(-name))
-	  ## col_data_args <- as.list(col_data%>%select(response))
-	  col_data_args[['na_col']] = 'white'
 
-	    for (thename in names(select(col_data, -name))) {
-		col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
-	    }
+    ## Add more args here
+    col_data_args <- as.list(col_data %>% select(-name))
+    ## col_data_args <- as.list(col_data%>%select(response))
+    col_data_args[['na_col']] <- 'white'
+
+    for (thename in names(select(col_data, -name))) {
+      col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
+    }
 
 	  ## col_data_args[['col']] = list(
 	  ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
@@ -193,19 +196,19 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 	      }
 	    }
 	  }
-		     }# if (!is.null(col_data))
+  	     }# if (!is.null(col_data))
 
   ## print(col_data_args)
 
   ## ========================================================================
   ## Now make the annotations, with all arguments populated
   row_annot <- NULL
-  if (!is.null(row_data_args)) {
-  	row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+  if (!is.null(row_annot_df)) { # only if we have row data to plot
+    row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
   }
 
-  col_annot <- NULL
-  if (!is.null(col_data_args)) {
+  col_annot_df <- NULL
+  if (!is.null(col_data)) {
   	col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
   }
   ## ========================================================================
@@ -289,15 +292,17 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                 ## border = FALSE,
                 column_names_rot=90,
                 column_title = main_title,
+                column_title_gp = gpar(fontsize=title_fontsize),
                 column_title_side='top',
                 column_names_side='top',
                 show_parent_dend_line=TRUE,
-                row_dend_width = unit(.8, "in"),
+                row_dend_width = unit(1.2, "in"),
                 heatmap_legend_param=list(title = ifelse(is.null(z_score), 'log(iBAQ)', 'zscore')),
                 right_annotation=gene_annot,
                 left_annotation = row_annot
                 )
-  ComplexHeatmap::draw(ht, heatmap_legend_side = 'bottom', padding = unit(c(10, 2, 2, 2), "mm"))
+  ComplexHeatmap::draw(ht, heatmap_legend_side = 'right', padding = unit(c(10, 2, 2, 2), "mm"))
+
   if (!is.null(annot_mat)) {
     decorate_heatmap_body("mat", {
       grid.text(paste('Annotation:', the_annotation), unit(1, "cm"), unit(-5, "mm"))

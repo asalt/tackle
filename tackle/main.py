@@ -1229,7 +1229,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         print("No data!")
         return
 
-    col_data = None
+    col_data = robjects.NULL
     if show_metadata and not col_meta is None: 
         col_data = col_meta 
 
@@ -1252,7 +1252,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
                     z_score=z_score or robjects.NULL,
                     z_score_by=z_score_by or robjects.NULL,
                     row_annot_df=row_annot_df or robjects.NULL,
-                    col_data = col_data or robjects.NULL,
+                    col_data = col_data,
                     # cmap_name=cmap or np.nan,
                     gids_to_annotate=gids_to_annotate or robjects.NULL,
                     force_plot_genes=force_plot_genes,
@@ -1424,7 +1424,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--rnd-type', type=click.Choice(('no_balance', 'equalize_and_balance')),
               default='no_balance', show_default=True)
 @click.option('--rnd-seed', default='timestamp', show_default=True)
-@click.option('--seed', default='alias for --rnd-seed', show_default=True)
+@click.option('--seed', help='alias for --rnd-seed', show_default=True, default=None)
 @click.option('--scoring-scheme', type=click.Choice(('weighted', 'classic', 'weighted_p2', 'weighted_p1.5')),
               default='weighted', show_default=True)
 @click.option('--set-max', default=500, show_default=True)
@@ -1450,7 +1450,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
     Run GSEA on specified groups
     """
 
-    rnd_seed = rnd_seed or seed
+    rnd_seed = seed or rnd_seed 
     # ===============================================================================================
     if use_cluster2:
         try:
@@ -1517,8 +1517,8 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
     cls_comparison = ''
     if ngroups == 2:  # reverse it
         cls_comparison = '#{1}_versus_{0}'.format(*groups)
-    elif ngroups != 2:
-        raise ValueError('Must have 2 groups')
+    # elif ngroups != 2:
+    #     raise ValueError('Must have 2 groups')
 
     if ngroups < 2:
         raise ValueError('Must have at least 2 groups')
@@ -1738,9 +1738,13 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
             if gsea_sig.empty:
                 print('No gene sets to plot!')
                 # return
-            tokeep = gsea_sig.NES.sort_values(ascending=False).head(number).index
-            idx = [x for x in gsea_sig.index if x in tokeep]
+            cutoff_val = min(abs(gsea_sig.head(number)['NES']))
+            tokeep1 = gsea_sig.query('NES>0 & abs(NES)>=@cutoff_val').NES.sort_values(ascending=False).head(number).index
+            tokeep2 = gsea_sig.query('NES<0 & abs(NES)>=@cutoff_val').NES.sort_values(ascending=False).head(number).index
+            idx = [x for y in [tokeep1, tokeep2] for x in y]
             gsea_sig = gsea_sig.loc[idx]
+            # gesa_sig = gsea_sig.sort_values(by='NES', ascending=False)
+            # import ipdb; ipdb.set_trace()
 
             gsea_sig['color'] = gsea_sig['FWER p-val'].apply(lambda x:
                                     mpl.colors.to_hex( cmap(cnorm(powernorm(x))) )
@@ -1831,8 +1835,13 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         name = the_geneset[0]
                         # need to do this because GSEA.jar capitalizes all geneset names in output table
                         name = str.upper(name)
-                        genes = the_geneset[2:]
-                        genesets[name] = genes
+                        # genes = the_geneset[2:]
+
+                        thefile = glob.glob(os.path.join(new_folder, '{}*.xls'.format(name)))
+                        if len(thefile) != 1:
+                            continue # should be OK
+                        gsea_res_ = pd.read_table(thefile[0])
+                        genesets[name] = gsea_res_[gsea_res_['CORE ENRICHMENT']=='Yes'].PROBE.astype(str).tolist()
 
                 # heatmap of individual gene sets
 
@@ -1864,8 +1873,15 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     force_plot_genes = False
                     gs = row['GS<br> follow link to MSigDB']
 
-                    genes = [maybe_int(x) for x in genesets[gs]]
-                    z_score = 0
+
+                    # not this
+                    # genes = [maybe_int(x) for x in genesets[gs]]
+                    try:
+                        genes = genesets[gs]
+                    except KeyError:
+                        continue # GSEA limits how many results it outputs.
+                        # This can happen when there are many differential pathways  
+                    z_score = '0'
                     row_cluster = True
                     col_cluster = False
                     nclusters = None
@@ -1884,7 +1900,25 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
                     _expids = ('recno', 'runno', 'searchno', 'label')
                     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
+                    if col_meta.empty:
+                        col_meta = robjects.NULL
+                    else:
+                        col_meta.index.name = 'name'
+                        col_meta = col_meta.reset_index()
                     main_title = '{}\nNES: {:.2f} FWER pval: {:.2f}'.format(gs, row['NES'], row['FWER p-val'])
+                    title_fontsize = 12 
+                    if len(gs) > 30:
+                        title_fontsize -= 1
+                    if len(gs) > 40:
+                        title_fontsize -= 1
+
+                    X.index = X.index.astype(str)
+                    X.index.name = 'GeneID'
+                    genemapper = GeneMapper()
+                    symbols = [data_obj.gid_symbol.get(x, genemapper.symbol.get(str(x), str(x)))
+                            for x in X.index]
+                    X = X.reset_index().assign(GeneSymbol=symbols)
+                    X['GeneID'] = X.GeneID.astype(str)
 
 
                     annot_mat = None
@@ -1933,15 +1967,19 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         # clean this section up..
                         gene_symbols=True
                         figheight = 12
+                        gene_symbol_fontsize = 8
+                        min_figheight = 6.5
                         if gene_symbols:  # make sure there is enough room for the symbols
-                            figheight = max(((gene_symbol_fontsize+2)/72) * len(X), 12)
+                            figheight = max( ((gene_symbol_fontsize+2)/72) * len(genes), min_figheight) 
+                            # len(genes), not len(X)!
                             if figheight > 218: # maximum figheight in inches
-                                FONTSIZE = max(218 / figheight, 6)
+                                gene_symbol_fontsize = max(218 / figheight, 6)
                                 figheight = 218
 
                         plt_size = 6
                         min_figwidth = 4
-                        figwidth  = max( min( len(X.columns) / 2, 16), min_figwidth )
+                        figwidth  = max( min( len(X.columns) / 2, 16), min_figwidth ) + 1 # add an inch for annotations
+
                         gr_devices = {'.png': grdevices.png,
                                     '.pdf': grdevices.pdf,
                                     '.svg': grdevices.svg}
@@ -1961,35 +1999,6 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
                             metadata_colorsR = lists
 
-
-                        result = cluster2(X,
-                                          main_title=main_title,
-                                          annot_mat=annot_mat,
-                                          cmap_name='RdBu_r',
-                                          highlight_gids=data_obj.highlight_gids,
-                                          highlight_gid_names=data_obj.highlight_gid_names,
-                                          force_optimal_ordering=True,
-                                          force_plot_genes=force_plot_genes,
-                                          genes=genes,
-                                          gid_symbol=data_obj.gid_symbol,
-                                          gene_symbols=True, z_score=z_score,
-                                          row_cluster=row_cluster, col_cluster=col_cluster,
-                                          # metadata=data_obj.config if show_metadata else None,
-                                          col_data=col_meta,
-                                          nclusters=nclusters,
-                                          show_missing_values=True,
-                                          mask=mask,
-                                          figsize=None,
-                                          normed=data_obj.normed,
-                                          gene_symbol_fontsize=12,
-                                          legend_include=legend_include,
-                                          legend_exclude=legend_exclude,
-                                          seed=1234,
-                                          metadata_colors=data_obj.metadata_colorsR,
-                                          circle_col_markers=True,
-                                          circle_col_marker_size=120,
-                                          square=False,
-                        )
                         outname = outname_func('geneset', pathway=gs)
                         for file_fmt in ctx.obj['file_fmts']:
                             grdevice = gr_devices[file_fmt]
@@ -1999,8 +2008,35 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                             grdevice(file=out, **gr_kw)
                             print("Saving", out, '...', end='', flush=True)
 
-                            heatmap = ret.rx('heatmap')
-                            print(heatmap)
+                            # heatmap = ret.rx('heatmap')
+                            # print(heatmap)
+
+                            # have to put this here to preserve the call to ComplexHeatmap::draw in clusterplot.R
+
+                            result = cluster2(X,
+                                              main_title=main_title,
+                                              title_fontsize=title_fontsize,
+                                              annot_mat=annot_mat or robjects.NULL,
+                                              # cmap_name='RdBu_r',
+                                              # highlight_gids=data_obj.highlight_gids,
+                                              # highlight_gid_names=data_obj.highlight_gid_names,
+                                              # force_optimal_ordering=True,
+                                              # force_plot_genes=force_plot_genes,
+                                              genes=genes,
+                                              # gid_symbol=data_obj.gid_symbol,
+                                              show_gene_symbols=True,
+                                              z_score=z_score,
+                                              row_cluster=row_cluster,
+                                              col_cluster=col_cluster,
+                                              # metadata=data_obj.config if show_metadata else None,
+                                              col_data=col_meta,
+                                              # nclusters=nclusters,
+                                              show_missing_values=True,
+                                              # normed=data_obj.normed,
+                                              gene_symbol_fontsize=gene_symbol_fontsize,
+                                              seed=1234,
+                                              metadata_colors=metadata_colorsR or robjects.NULL,
+                            )
 
                             grdevices.dev_off()
                             print('done.', flush=True)
