@@ -42,9 +42,9 @@ volcanoplot <- function(X, max_labels = 35,
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
   linear_fc_cutoff <- fc_cutoff
-  if (fc_cutoff > 0) {
-    fc_cutoff <- abs(log2(fc_cutoff))
-  }
+  ## if (fc_cutoff > 0) {
+  ##   fc_cutoff <- abs(log2(fc_cutoff))
+  ## }
 
   if (sig_metric == 'pAdj') {
     sig_filter_str <- paste0('FDR<', sig)
@@ -61,7 +61,8 @@ volcanoplot <- function(X, max_labels = 35,
   ## X <- mutate(X, Sig = ifelse(X[,sig_metric] < sig& abs(X[, 'log2_Fold_Change']) > fc_cutoff,
   ##                             sig_filter_str, "N.S."))
 
-  Sig <- ifelse(X[,sig_metric] < sig& abs(X[, 'log2_FC']) > fc_cutoff,
+  X$FC <- 2^abs(X[, "log2_FC"])
+  Sig <- ifelse(X[,sig_metric] < sig& abs(X[, 'FC']) > fc_cutoff,
                sig_filter_str, "N.S.")
   X[, 'Sig'] <- Sig
 
@@ -72,8 +73,8 @@ volcanoplot <- function(X, max_labels = 35,
   X[ , 'usd' ] = '#88888888'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
-  X[ (X[,sig_metric] < sig & X$log2_FC < -fc_cutoff), 'usd' ] = 'blue'
-  X[ (X[,sig_metric] < sig & X$log2_FC >  fc_cutoff), 'usd' ] = 'red'
+  X[ (X[,sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC<0), 'usd' ] = 'blue'
+  X[ (X[,sig_metric] < sig & X$FC >  fc_cutoff & X$log2_FC>0), 'usd' ] = 'red'
   X[ X$highlight == TRUE, 'usd' ] = 'purple'
   ## X[ X$highlight == TRUE, 'usd' ] = 'red'
   X[, 'usd'] <- as.factor(X[, 'usd'])
@@ -148,6 +149,11 @@ volcanoplot <- function(X, max_labels = 35,
   ## footnote <- ''
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
+  annot_size <- 5
+  max_nchar <- max(nchar(group0), nchar(group1))
+  if ((max_nchar) > 15) annot_size <- annot_size - .5
+  if ((max_nchar) > 25) annot_size <- annot_size - .5
+
   p = ggplot(X, aes(log2_FC, -log10(get(ploty)), col=usd)) +
     theme_base() +
     geom_point(size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
@@ -160,6 +166,7 @@ volcanoplot <- function(X, max_labels = 35,
                     segment.size = .35, segment.alpha = .4
                     ) +
     annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
+             size=annot_size,
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),
          y=ylabel_full,
