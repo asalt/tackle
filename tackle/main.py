@@ -1111,7 +1111,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         df_ = df_.set_index('GeneID')
         row_annot_track.append(df_)
 
-    row_annot_df = None
+    row_annot_df = robjects.NULL
     if row_annot_track:
         row_annot_df = pd.concat(row_annot_track, axis=1)
         # make a dataframe that spans all genes about to be plotted
@@ -1251,7 +1251,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
                     the_annotation=annotate or robjects.NULL,
                     z_score=z_score or robjects.NULL,
                     z_score_by=z_score_by or robjects.NULL,
-                    row_annot_df=row_annot_df or robjects.NULL,
+                    row_annot_df=row_annot_df,
                     col_data = col_data,
                     # cmap_name=cmap or np.nan,
                     gids_to_annotate=gids_to_annotate or robjects.NULL,
