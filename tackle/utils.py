@@ -540,6 +540,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
 
             try:
                 gid = float(line.strip())
+                gid = str(int(gid))
                 gid_out.append(gid)
             except ValueError:
                 # try regex
@@ -651,11 +652,25 @@ def parse_metadata(metadata):
             col_data[col] = col_data[col].convert_dtypes()
         except AttributeError:
             pass # for pandas < 1.0
+
     # do not think this is needed anymore
     # for col in col_data.columns:
     #     if not col_data[col].dtype == np.float:
     #         col_data[col] = col_data[col].fillna('NA')
     return col_data
+
+def clean_categorical(col_data):
+
+    for col in col_data:
+        if isinstance(col_data[col], pd.CategoricalDtype):
+            # check to make sure categories are strings
+            cats = col_data[col].cat.categories
+            if not(all(isinstance(x, str) for x in
+                       cats)):
+                newcats = [str(x) for x in cats] # do not need?
+                newvalues = [str(x) for x in col_data[col]]
+                col_data[col] = pd.CategoricalDtype(newvalues)
+        return col_data
 
 
 class iFOT:

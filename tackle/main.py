@@ -1102,7 +1102,10 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
     row_annot_track = list()
     # TODO parse and look for geneids
     for file_ in highlight_geneids:
-        df_ = pd.read_csv(file_, sep='\t', header=None, dtype=str)
+        if file_.endswith('xlsx') or file_.endswith('xls'):
+            df_ = pd.read_excel(file_, header=None, dtype=str)
+        else:
+            df_ = pd.read_csv(file_, sep='\t', header=None, dtype=str)
         title_ = get_file_name(file_)
         if len(df_.columns) != 2:
             raise ValueError("""File {} should have two columns, first being GeneID,
@@ -1128,6 +1131,7 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
     # data_obj.standard_scale    = data_obj.clean_input(standard_scale)
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
+    # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
     col_meta = data_obj.col_metadata.copy()
     if add_human_ratios:
         col_meta['HS_ratio'] = data_obj.taxon_ratios['9606']
@@ -1230,8 +1234,9 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         return
 
     col_data = robjects.NULL
-    if show_metadata and not col_meta is None: 
-        col_data = col_meta 
+    if show_metadata and not col_meta is None:
+        # cannot convert Categorical column of Integers to Category in py2r
+        col_data = col_meta.pipe(clean_categorical) # does this fix the problem?
 
     outname = outname_func('clustermap')
     for file_fmt in ctx.obj['file_fmts']:
