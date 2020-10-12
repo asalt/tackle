@@ -883,7 +883,7 @@ def hgene_map(expression, boolean=False):
                           reverse=True)[0]
 
 
-    homologene = (pd.read_table(homologene_f, header=None,
+    homologene = (pd.read_table(homologene_f, header=None, dtype=str,
                                 names=('Homologene', 'TaxonID', 'GeneID',
                                        'Symbol', 'ProteinGI', 'ProteinAccession'))
     )
@@ -891,12 +891,12 @@ def hgene_map(expression, boolean=False):
     hgene_query = homologene[ homologene.GeneID.isin(expression.index) ]
     if hgene_query.TaxonID.nunique() > 1:
         raise ValueError('No support for multi-species GSEA')
-    if hgene_query.TaxonID.nunique() == 1 and hgene_query.TaxonID.unique()[0] != 9606:
+    if hgene_query.TaxonID.nunique() == 1 and hgene_query.TaxonID.unique()[0] != "9606":
         # remap
         print('Remapping {} GeneIDs to human'.format(hgene_query.TaxonID.unique()[0]))
         gid_hgene = hgene_query[['GeneID', 'Homologene']].set_index('GeneID')['Homologene'].to_dict()
-        hgene_hugid = (homologene.query('TaxonID==9606') [['GeneID', 'Homologene']]
-                    .set_index('Homologene')['GeneID'].to_dict()
+        hgene_hugid = (homologene.query('TaxonID=="9606"') [['GeneID', 'Homologene']]
+                       .set_index('Homologene')['GeneID'].to_dict()
         )
         expression.index = expression.index.map( lambda x: hgene_hugid.get( gid_hgene.get(x) ))
     else:

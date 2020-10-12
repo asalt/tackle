@@ -950,6 +950,91 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
         outname = outname_func(name)
         save_multiple(fig, outname, *file_fmts)
 
+
+@main.command('pca2')
+@click.option('--annotate', default=False, show_default=True, is_flag=True,
+              help="Annotate points on PC plot")
+@click.option('--frame', is_flag=True, default=False, show_default=True)
+# @click.option('--annotate', type=click.Choice(['t', 'norm', 'k'])
+@click.option('--max-pc', default=2, show_default=True,
+              help='Maximum PC to plot. Plots all combinations up to this number.')
+@click.option('--color', default='', show_default=True, is_flag=False,
+              help="What meta entry to color PCA")
+@click.option('--marker', default='', show_default=True, is_flag=False,
+              help="What meta entry to mark PCA")
+@click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=False,
+              help="""File of geneids to plot.
+              Should have 1 geneid per line. """)
+@click.pass_context
+def pca(ctx, annotate, frame, max_pc, color, marker, genefile):
+
+    try:
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+    except ModuleNotFoundError:
+        print("rpy2 needs to be installed")
+        return
+
+    data_obj = ctx.obj['data_obj']
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
+
+    X = data_obj.areas_log_shifted
+    X.index = X.index.astype(str)
+    col_meta = data_obj.col_metadata.copy()
+
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
+        _tokeep = [x for x in genes if x in X.index]  # preserve order
+        X = X.loc[_tokeep]
+
+    # now convert to correct orientation
+    # variable <color> <shape> gene1 gene2 gene3 ...
+
+    # dfm = df.melt(id_vars=['GeneID', 'GeneSymbol'])
+    dfm = (X.reset_index().melt(id_vars=['GeneID']).merge(col_meta, left_on='variable', right_index=True)
+           .fillna(0)
+    )
+    if color in dfm:
+        dfm[color] = dfm[color].astype(str)
+    if marker in dfm:
+        dfm[marker] = dfm[marker].astype(str)
+
+    robjects.pandas2ri.activate()
+    r_source = robjects.r['source']
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                          'R', 'pcaplot.R')
+    r_source(r_file)
+    pca2 = robjects.r['pca2']
+
+    # ======================================
+    outname_func = partial(get_outname, name=data_obj.outpath_name,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros,
+                           batch=data_obj.batch_applied,
+                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                           outpath=data_obj.outpath,
+    )
+    # ======================================
+
+    file_fmts = ctx.obj['file_fmts']
+    pca2(dfm,
+         color = color or robjects.NULL,
+         shape = marker or robjects.NULL,
+         outfiletypes = np.array(file_fmts),
+         outname = outname_func('pca2'),
+         label = annotate,
+         showframe = frame,
+         max_pc = max_pc,
+    )
+
+
+
 @main.command('cluster2')
 @click.option('--annotate', type=click.Choice(['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
                                                'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA'
@@ -958,6 +1043,8 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               help="""Cluster columns via hierarchical clustering.
               Note this is overridden by specifying `nclusters`""")
 @click.option('--cmap', default=None, show_default=True)
+@click.option('--cut-by', default=None, show_default=True, help="""metadata variable to cut the heatmap
+              into segments""")
 # @click.option('--circle-col-markers', is_flag=True, default=False, show_default=True)
 # @click.option('--circle-col-marker-size', default=60, show_default=True)
 @click.option('--figsize', nargs=2, type=float, default=None, show_default=True,
@@ -1002,7 +1089,14 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 @click.option('--max-autoclusters', default=30, show_default=True, help="""Max number of clusters to try
 when `auto` is set for `--nclusters`""")
 @click.option('--nclusters', default=None, callback=validate_cluster_number, show_default=True,
-              help="""If specified by an integer, use that number of clusters via k-means clustering. If specified as `auto`, will try to find the optimal number of clusters""")
+              help="""If specified by an integer, use that number of clusters via k-means clustering.
+             NOT_IMPLEMENTED: If specified as `auto`, will try to find the optimal number of clusters""")
+@click.option('--cluster-func', default='none', show_default=True,
+              type=click.Choice(['none', 'Kmeans', 'PAM']),
+              help = """Function used to break data into k distinct clusters,
+              k is specified by `n-clusters`
+              """
+)
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster rows via hierarchical clustering")
 @click.option('--order-by-abundance', default=False, is_flag=True, show_default=True)
@@ -1019,12 +1113,12 @@ when `auto` is set for `--nclusters`""")
               default='0', show_default=True)
 @click.option('--z-score-by', type=str, default=None, show_default=True)
 @click.pass_context
-def cluster2(ctx, annotate, cmap, col_cluster, figsize,
+def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
              force_plot_genes,
              genefile, gene_symbols,
              gene_symbol_fontsize, gene_annot,
              highlight_geneids, linear, legend_include, legend_exclude, linkage,
-             max_autoclusters, nclusters,
+             max_autoclusters, nclusters, cluster_func,
              main_title,
              order_by_abundance,
              row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score,
@@ -1033,6 +1127,8 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
 ):
     if z_score == 'None':
         z_score = None
+    if cluster_func == 'none':
+        cluster_func = None
 
     # =================================================================
 
@@ -1060,18 +1156,21 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
 
 
     if order_by_abundance and row_cluster:
-        print('Not ')
+        raise NotImplementedError('Not Implemented !')
 
     if not figsize:  # returns empty tuple if not specified
         figsize = None
 
     X = data_obj.areas_log_shifted
+    X.index = X.index.astype(str)
+
     genes = None
     if genefile:
         genes = parse_gid_file(genefile)
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
+    # print(len(X))
 
     gids_to_annotate = None
     if gene_annot:
@@ -1135,7 +1234,10 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
     col_meta = data_obj.col_metadata.copy()
     if add_human_ratios:
         col_meta['HS_ratio'] = data_obj.taxon_ratios['9606']
-    _expids = ('recno', 'runno', 'searchno', 'label')
+    # _expids = ('recno', 'runno', 'searchno', 'label')
+    _expids = ['recno', 'runno', 'searchno',]
+    if ('label' in col_meta.columns) and (col_meta['label'].nunique() == 1):
+        _expids.append('label')
 
     # valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.index)
     valid_entries = validate_in_config(*legend_include, *legend_exclude, valid_entries=col_meta.columns)
@@ -1154,6 +1256,17 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         col_meta.index.name = 'name'
         col_meta = col_meta.reset_index()
 
+    ## ============================================================
+    if cut_by is not None:
+        _to_none = True
+        if col_meta is not None and cut_by in col_meta.columns:
+            _to_none = False
+        if _to_none:
+            print('{} not in column metadata'.format(cut_by))
+            cut_by = None
+
+
+    ## ============================================================
     annot_mat = None
     if annotate:
 
@@ -1238,7 +1351,11 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
         # cannot convert Categorical column of Integers to Category in py2r
         col_data = col_meta.pipe(clean_categorical) # does this fix the problem?
 
-    outname = outname_func('clustermap')
+    if cluster_func is not None:
+        outname = outname_func('clustermap_{}_{}'.format(cluster_func, nclusters))
+    else:
+        outname = outname_func('clustermap')
+
     for file_fmt in ctx.obj['file_fmts']:
         grdevice = gr_devices[file_fmt]
         gr_kw = gr_kws[file_fmt]
@@ -1252,40 +1369,53 @@ def cluster2(ctx, annotate, cmap, col_cluster, figsize,
 
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
         ret = cluster2(X,
-                    annot_mat=annot_mat or robjects.NULL,
-                    the_annotation=annotate or robjects.NULL,
-                    z_score=z_score or robjects.NULL,
-                    z_score_by=z_score_by or robjects.NULL,
-                    row_annot_df=row_annot_df,
-                    col_data = col_data,
-                    # cmap_name=cmap or np.nan,
-                    gids_to_annotate=gids_to_annotate or robjects.NULL,
-                    force_plot_genes=force_plot_genes,
-                    genes=genes or robjects.NULL,
-                    show_gene_symbols=gene_symbols,
-                    standard_scale=data_obj.standard_scale or robjects.NULL,
-                    row_cluster=row_cluster, col_cluster=col_cluster,
-                    # metadata=data_obj.config if show_metadata else None,
-                    nclusters=nclusters or robjects.NULL,
-                    max_autoclusters=max_autoclusters,
-                    show_missing_values=show_missing_values,
-                    main_title=main_title,
-                    # mask=data_obj.mask,
-                    # figsize=figsize,
-                    normed=data_obj.normed,
-                    linkage=linkage,
-                    gene_symbol_fontsize=gene_symbol_fontsize,
-                    # legend_include=legend_include,
-                    # legend_exclude=legend_exclude,
-                    order_by_abundance=order_by_abundance,
-                    seed=seed or robjects.NULL,
-                    metadata_colors=metadata_colorsR or robjects.NULL,
-                    # circle_col_markers=circle_col_markers,
-                    # circle_col_marker_size=circle_col_marker_size,
+                       cut_by = cut_by or robjects.NULL,
+                       annot_mat=annot_mat or robjects.NULL,
+                       the_annotation=annotate or robjects.NULL,
+                       z_score=z_score or robjects.NULL,
+                       z_score_by=z_score_by or robjects.NULL,
+                       row_annot_df=row_annot_df,
+                       col_data = col_data,
+                       # cmap_name=cmap or np.nan,
+                       gids_to_annotate=gids_to_annotate or robjects.NULL,
+                       force_plot_genes=force_plot_genes,
+                       # genes=genes or robjects.NULL, # this has been filtered above
+                       show_gene_symbols=gene_symbols,
+                       standard_scale=data_obj.standard_scale or robjects.NULL,
+                       row_cluster=row_cluster, col_cluster=col_cluster,
+                       # metadata=data_obj.config if show_metadata else None,
+                       nclusters=nclusters or robjects.NULL,
+                       cluster_func=cluster_func or robjects.NULL,
+                       max_autoclusters=max_autoclusters,
+                       show_missing_values=show_missing_values,
+                       main_title=main_title,
+                       # mask=data_obj.mask,
+                       # figsize=figsize,
+                       normed=data_obj.normed,
+                       linkage=linkage,
+                       gene_symbol_fontsize=gene_symbol_fontsize,
+                       # legend_include=legend_include,
+                       # legend_exclude=legend_exclude,
+                       order_by_abundance=order_by_abundance,
+                       seed=seed or robjects.NULL,
+                       metadata_colors=metadata_colorsR or robjects.NULL,
+                       # circle_col_markers=circle_col_markers,
+                       # circle_col_marker_size=circle_col_marker_size,
         )
 
         grdevices.dev_off()
         print('done.', flush=True)
+
+        discrete_clusters = ret.rx2('discrete_clusters')
+
+        if discrete_clusters is not robjects.NULL:
+            the_clusters = discrete_clusters[0]
+            X['Cluster'] = the_clusters
+
+            name = outname_func('{}_{}'.format(cluster_func, nclusters)) + '.tsv'
+            X[['GeneID', 'GeneSymbol', 'Cluster']].sort_values(by='Cluster').to_csv(name, sep='\t', index=False)
+
+
 
 
 
@@ -1455,7 +1585,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
     Run GSEA on specified groups
     """
 
-    rnd_seed = seed or rnd_seed 
+    rnd_seed = seed or rnd_seed
     # ===============================================================================================
     if use_cluster2:
         try:
@@ -1609,6 +1739,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
         # expression = hgene_map(expression)[pheno[pheno[group].isin(groups).index]]
 
         expression = data_obj.areas_log_shifted.copy()
+        expression.index = expression.index.astype(str)
         if not no_homologene_remap:
             expression = hgene_map(expression)
         expression = expression[pheno[pheno[group].isin(groups)].index]
@@ -1742,14 +1873,14 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
 
             if gsea_sig.empty:
                 print('No gene sets to plot!')
+                continue
                 # return
-            cutoff_val = min(abs(gsea_sig.head(number)['NES']))
+            cutoff_val = min(abs(gsea_sig.head(number)['NES'].dropna()))
             tokeep1 = gsea_sig.query('NES>0 & abs(NES)>=@cutoff_val').NES.sort_values(ascending=False).head(number).index
             tokeep2 = gsea_sig.query('NES<0 & abs(NES)>=@cutoff_val').NES.sort_values(ascending=False).head(number).index
             idx = [x for y in [tokeep1, tokeep2] for x in y]
             gsea_sig = gsea_sig.loc[idx]
             # gesa_sig = gsea_sig.sort_values(by='NES', ascending=False)
-            # import ipdb; ipdb.set_trace()
 
             gsea_sig['color'] = gsea_sig['FWER p-val'].apply(lambda x:
                                     mpl.colors.to_hex( cmap(cnorm(powernorm(x))) )
@@ -1772,6 +1903,9 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
             #     nes_range = max(abs(gsea_sig.NES.max()), 2.5)
 
             figwidth = np.round(nes_range*2.5, decimals=1)
+            # edge case when nes_range is zero??
+            if np.isnan(figwidth):
+                figwidth = 4 #??
 
 
             figheight = max(4, min(gsea_sig.pipe(len) // 1.25, 14))
@@ -1786,8 +1920,12 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
             # ax1 = plt.subplot(gs[1])
             # cax = plt.subplot(gs[1:])
             cax = fig.add_subplot(gs[1:])
-            gsea_sig['NES'].fillna(0).plot.barh(ax=ax0, color=gsea_sig.color, edgecolor='#222222',
-                                                linewidth=2)
+            # should always work now
+            try:
+                gsea_sig['NES'].fillna(0).plot.barh(ax=ax0, color=gsea_sig.color, edgecolor='#222222',
+                                                    linewidth=2)
+            except Exception as e:
+                continue ## ?? unforseen error
             ax0.axvline(color='#222222')
             # gsea_sig['NES_group1'].fillna(0).plot.barh(colormap=cmap, ax=ax1)
             # ax1.set_yticklabels(())
@@ -1885,13 +2023,24 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         genes = genesets[gs]
                     except KeyError:
                         continue # GSEA limits how many results it outputs.
-                        # This can happen when there are many differential pathways  
+                        # This can happen when there are many differential pathways
                     z_score = '0'
                     row_cluster = True
                     col_cluster = False
                     nclusters = None
-                    legend_include, legend_exclude = None, None
-                    legend_exclude = ( 'PPI', 'Block' )
+
+                    # legend_include, legend_exclude = None, None
+                    # legend_exclude = ( 'PPI', 'Block', 'label', 'rep')
+
+                    # # legend_include = [x for x in legend_include if x in (set(legend_include) & set(valid_entries))]
+                    # # legend_exclude = set(legend_exclude) & set(valid_entries)
+                    # # to_exclude = set(_expids) | set(legend_exclude)
+                    # if legend_include:
+                    #     to_include = legend_include
+                    # else:
+                    #     to_include = set(col_meta.columns) - to_exclude
+                    # # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
+
 
                     col_meta = data_obj.col_metadata
                     # cols in correct order
@@ -1903,7 +2052,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     else:
                         mask = data_obj.mask[expression.columns][_cols]
 
-                    _expids = ('recno', 'runno', 'searchno', 'label')
+                    _expids = ('recno', 'runno', 'searchno', 'label', 'rep')
                     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
                     if col_meta.empty:
                         col_meta = robjects.NULL
@@ -1911,7 +2060,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         col_meta.index.name = 'name'
                         col_meta = col_meta.reset_index()
                     main_title = '{}\nNES: {:.2f} FWER pval: {:.2f}'.format(gs, row['NES'], row['FWER p-val'])
-                    title_fontsize = 12 
+                    title_fontsize = 12
                     if len(gs) > 30:
                         title_fontsize -= 1
                     if len(gs) > 40:
@@ -1968,6 +2117,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         grdevices = importr('grDevices')
                         cluster2 = robjects.r['cluster2']
 
+                        row_annot_df = None
 
                         # clean this section up..
                         gene_symbols=True
@@ -1975,7 +2125,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         gene_symbol_fontsize = 8
                         min_figheight = 6.5
                         if gene_symbols:  # make sure there is enough room for the symbols
-                            figheight = max( ((gene_symbol_fontsize+2)/72) * len(genes), min_figheight) 
+                            figheight = max( ((gene_symbol_fontsize+2)/72) * len(genes), min_figheight)
                             # len(genes), not len(X)!
                             if figheight > 218: # maximum figheight in inches
                                 gene_symbol_fontsize = max(218 / figheight, 6)
@@ -2003,6 +2153,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                                 lists.append(entry)
 
                             metadata_colorsR = lists
+                        print(metadata_colorsR)
 
                         outname = outname_func('geneset', pathway=gs)
                         for file_fmt in ctx.obj['file_fmts']:
@@ -2021,6 +2172,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                             result = cluster2(X,
                                               main_title=main_title,
                                               title_fontsize=title_fontsize,
+                                              metadata_colors=metadata_colorsR or robjects.NULL,
                                               annot_mat=annot_mat or robjects.NULL,
                                               # cmap_name='RdBu_r',
                                               # highlight_gids=data_obj.highlight_gids,
@@ -2040,7 +2192,6 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                                               # normed=data_obj.normed,
                                               gene_symbol_fontsize=gene_symbol_fontsize,
                                               seed=1234,
-                                              metadata_colors=metadata_colorsR or robjects.NULL,
                             )
 
                             grdevices.dev_off()

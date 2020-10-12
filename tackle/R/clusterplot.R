@@ -3,26 +3,29 @@ suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 library(cluster)
 
-myzscore <- function(value, minval=NA, remask=TRUE){
-  mask <- is.na(value)
-  if (is.na(minval)) minval <- min(value, na.rm=TRUE)
-  value[is.na(value)] <- minval
-  out = scale(value)
-  if (remask==TRUE)
-    out[mask] <- NA
-  return(out)
+myzscore <- function(value, minval = NA, remask = TRUE) {
+    mask <- is.na(value)
+    if (is.na(minval)) minval <- min(value, na.rm = TRUE)
+    value[is.na(value)] <- minval
+    out <- scale(value)
+    if (remask == TRUE) {
+          out[mask] <- NA
+      }
+    return(out)
 }
 
-dist_no_na <- function(mat){
-  mat[is.na(mat)] <- min(mat, na.rm=TRUE)
-  edist <- dist(mat)
-  return(edist)
+dist_no_na <- function(mat) {
+    mat[is.na(mat)] <- min(mat, na.rm = TRUE)
+    edist <- dist(mat)
+    return(edist)
 }
 
-order_colmeta <-function(annot, the_order, name='X'){
+order_colmeta <- function(annot, the_order, name = "X") {
   ## see https://stackoverflow.com/a/26003971 for !!name:=something magic
-  res <- annot %>% filter(get(name) %in% the_order) %>%
-    mutate(!!name:=factor(get(name), levels=the_order, ordered=TRUE)) %>%
+  res <- annot %>%
+    filter(get(name) %in% the_order) %>%
+    mutate(!!name := factor(get(name), levels = the_order,
+                            ordered = TRUE)) %>%
     arrange(get(name))
   res
 }
@@ -33,6 +36,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      row_annot_df=NULL,
                      gids_to_annotate=NULL,
                      nclusters=NULL,
+                     cluster_func=NULL,
                      show_gene_symbols=FALSE,
                      z_score=NULL, z_score_by=NULL,
                      standard_scale=NULL,
@@ -44,7 +48,14 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      circle_col_marker_size=12,
                      force_plot_genes=FALSE, main_title='',
                      title_fontsize=12,
+                     cut_by=NULL,
                      order_by_abundance=FALSE){
+
+  if (!is.null(cluster_func)){
+    if (cluster_func == 'PAM') cluster_func <- cluster::pam
+    else if (cluster_func == "Kmeans") cluster_func <- kmeans
+    ## ?
+  }
 
   if (!is.null(genes)){
     data <- data %>% filter(GeneID %in% genes)
@@ -53,7 +64,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   ## print(data %>% pivot_longer(c(-GeneSymbol, -GeneID)))
   ## print(col_data)
 
-  exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) 
+  exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID))
 
   if (!is.null(col_data)){
     exprs_long <- exprs_long %>% left_join(col_data, by='name', copy=TRUE)
@@ -153,51 +164,51 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
       col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
     }
 
-	  ## col_data_args[['col']] = list(
-	  ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
-	  ##   PAM50.Mar2020 = PAM50_colors ,
-	  ##   PAM50 = PAM50_colors ,
-	  ##   response = response_colors,
-	  ##   TNBCtype = Lehmann_TNBC_colors,
-	  ##   cohort = c(
-	  ##     HER2='purple',
-	  ##     Luminal='blue',
-	  ##     TNBC='red'
-	  ##   )
-	  ## )
+    ## col_data_args[['col']] = list(
+    ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
+    ##   PAM50.Mar2020 = PAM50_colors ,
+    ##   PAM50 = PAM50_colors ,
+    ##   response = response_colors,
+    ##   TNBCtype = Lehmann_TNBC_colors,
+    ##   cohort = c(
+    ##     HER2='purple',
+    ##     Luminal='blue',
+    ##     TNBC='red'
+    ##   )
+    ## )
 
-	  ## print(metadata_colors)
+    ## print(metadata_colors)
 
-	  ## Custom colers
-	  if (!is.null(metadata_colors)) {
-	    col_data_args[['col']] = list()
-	    row_data_args[["col"]] = list()
-	    ## print(names(metadata_colors[[1]]))
-	    for (i in 1:length(metadata_colors)) {
-	      for (entry_name in names(metadata_colors[[i]])){
-		entry_values <- names(metadata_colors[[i]][[entry_name]])
-		## print(entry_name)
-		## print(entry_values)
-		## print(paste(entry_name, entry_values))
-		col_data_args[['col']][[entry_name]] <- list()
-		row_data_args[["col"]][[entry_name]] <- list()
-		for (key in entry_values){
-		    final_val <- metadata_colors[[i]][[entry_name]][[key]]
-		    ## print(paste(entry_name, key, final_val))
-		    ## print('****************')
-		    col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
-		    row_data_args[['col']][[entry_name]][[key]] <- final_val[1]
-		    ## need to make this atomic
-		    ## line 456  if(is.atomic(col)) {
-		}
-		col_data_args[['col']][[entry_name]] <- unlist(col_data_args[['col']][[entry_name]])
-		row_data_args[["col"]][[entry_name]] <- unlist(row_data_args[["col"]][[entry_name]])
-		## print(is.atomic(col_data_args[['col']][[entry_name]]))
-		## THIS IS FALSE< needs to be TRUE
-	      }
-	    }
-	  }
-  	     }# if (!is.null(col_data))
+    ## Custom colers
+    if (!is.null(metadata_colors)) {
+      col_data_args[['col']] = list()
+      row_data_args[["col"]] = list()
+      ## print(names(metadata_colors[[1]]))
+      for (i in 1:length(metadata_colors)) {
+        for (entry_name in names(metadata_colors[[i]])){
+    entry_values <- names(metadata_colors[[i]][[entry_name]])
+    ## print(entry_name)
+    ## print(entry_values)
+    ## print(paste(entry_name, entry_values))
+    col_data_args[['col']][[entry_name]] <- list()
+    row_data_args[["col"]][[entry_name]] <- list()
+    for (key in entry_values){
+        final_val <- metadata_colors[[i]][[entry_name]][[key]]
+        ## print(paste(entry_name, key, final_val))
+        ## print('****************')
+        col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
+        row_data_args[['col']][[entry_name]][[key]] <- final_val[1]
+        ## need to make this atomic
+        ## line 456  if(is.atomic(col)) {
+    }
+    col_data_args[['col']][[entry_name]] <- unlist(col_data_args[['col']][[entry_name]])
+    row_data_args[["col"]][[entry_name]] <- unlist(row_data_args[["col"]][[entry_name]])
+    ## print(is.atomic(col_data_args[['col']][[entry_name]]))
+    ## THIS IS FALSE< needs to be TRUE
+        }
+      }
+    }
+         }# if (!is.null(col_data))
 
   ## print(col_data_args)
 
@@ -210,7 +221,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
   col_annot_df <- NULL
   if (!is.null(col_data)) {
-  	col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
+    col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
   }
   ## ========================================================================
 
@@ -263,16 +274,35 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                                     genes = ComplexHeatmap::anno_mark(
                                                               at = ixs,
                                                               labels = thelabels,
-                                                              labels_gp = gpar(fontsize=8)
+                                                              labels_gp = gpar(fontsize = 6)
                                                             )
                                   )
   }
 
+
+  ## now do kmeans / pam clustering if specified
+  discrete_clusters <- NULL
+  if (!is.null(cluster_func)) {
+      set.seed(1234)
+      discrete_clusters <- cluster_func(toplot %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
+      ## browser()
+      discrete_clusters <- cbind(discrete_clusters$cluster)
+  }
+
+  column_split <- NULL
+  #test:
+  ## cut_by <- 'response'
+  if (!is.null(cut_by)){
+    column_split <-  col_data[[cut_by]]
+  }
+
   ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
                 name='mat',
-                ## row_split = cbind(kout_genes$cluster),
+                row_split = discrete_clusters$cluster,
                 ## column_split = cbind(kout_samples$cluster),
+                column_split = column_split,
                 col = col,
+                border = TRUE,
                 cell_fun = cell_fun,
                 ## top_annotation=hc,
                 ## right_annotation=gene_annot,
@@ -310,7 +340,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
     })
   }
 
-  ret <- list(heatmap=ht)
+  ret <- list(heatmap = ht, discrete_clusters = discrete_clusters)
   ret
 
 }
