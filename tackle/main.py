@@ -967,7 +967,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               help="""File of geneids to plot.
               Should have 1 geneid per line. """)
 @click.pass_context
-def pca(ctx, annotate, frame, max_pc, color, marker, genefile):
+def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 
     try:
         import rpy2.robjects as robjects
@@ -987,6 +987,14 @@ def pca(ctx, annotate, frame, max_pc, color, marker, genefile):
     X.index = X.index.astype(str)
     col_meta = data_obj.col_metadata.copy()
 
+    # ======================================
+    outname_func = partial(get_outname, name=data_obj.outpath_name,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros,
+                           batch=data_obj.batch_applied,
+                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                           outpath=data_obj.outpath,
+    )
+    # ======================================
 
     genes = None
     if genefile:
@@ -1001,6 +1009,7 @@ def pca(ctx, annotate, frame, max_pc, color, marker, genefile):
     dfm = (X.reset_index().melt(id_vars=['GeneID']).merge(col_meta, left_on='variable', right_index=True)
            .fillna(0)
     )
+    # dfm.to_csv(outname_func('pca_input')+'.tsv', sep='\t', index=False)
     if color in dfm:
         dfm[color] = dfm[color].astype(str)
     if marker in dfm:
@@ -1013,14 +1022,6 @@ def pca(ctx, annotate, frame, max_pc, color, marker, genefile):
     r_source(r_file)
     pca2 = robjects.r['pca2']
 
-    # ======================================
-    outname_func = partial(get_outname, name=data_obj.outpath_name,
-                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros,
-                           batch=data_obj.batch_applied,
-                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                           outpath=data_obj.outpath,
-    )
-    # ======================================
 
     file_fmts = ctx.obj['file_fmts']
     pca2(dfm,
