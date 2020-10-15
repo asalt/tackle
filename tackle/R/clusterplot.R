@@ -89,9 +89,14 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
   if (is.null(z_score)) {
     toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = value, names_from = name)
+    ## deal with this later
+    tocluster <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol),
+                                            values_from = value, names_from = name)
   }
   else if (!is.null(z_score)) {
     toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = zscore, names_from = name)
+    tocluster <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol),
+                                            values_from = zscore_impute, names_from = name)
   }
 
 
@@ -284,9 +289,11 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   discrete_clusters <- NULL
   if (!is.null(cluster_func)) {
       set.seed(1234)
-      discrete_clusters <- cluster_func(toplot %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
-      ## browser()
-      discrete_clusters <- cbind(discrete_clusters$cluster)
+      discrete_clusters <- cluster_func(tocluster %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
+      ## discrete_clusters <- cbind(discrete_clusters$cluster)
+      ## TODO fix this!
+      row_cluster <- FALSE
+
   }
 
   column_split <- NULL
@@ -295,6 +302,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   if (!is.null(cut_by)){
     column_split <-  col_data[[cut_by]]
   }
+
 
   ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
                 name='mat',
@@ -332,6 +340,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                 right_annotation=gene_annot,
                 left_annotation = row_annot
                 )
+
   ComplexHeatmap::draw(ht, heatmap_legend_side = 'right', padding = unit(c(10, 2, 2, 2), "mm"))
 
   if (!is.null(annot_mat)) {
