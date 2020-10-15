@@ -726,7 +726,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster rows via hierarchical clustering")
 @click.option('--order-by-abundance', default=False, is_flag=True, show_default=True)
-@click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
+@click.option('--seed', default=1234, help='seed for kmeans clustering', callback=validate_seed,
               show_default=True)
 @click.option('--show-metadata/--hide-metadata', default=True, show_default=True,
               is_flag=True,
@@ -1101,7 +1101,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster rows via hierarchical clustering")
 @click.option('--order-by-abundance', default=False, is_flag=True, show_default=True)
-@click.option('--seed', default=None, help='seed for kmeans clustering', callback=validate_seed,
+@click.option('--seed', default=1234, help='seed for kmeans clustering', callback=validate_seed,
               show_default=True)
 @click.option('--show-metadata/--hide-metadata', default=True, show_default=True,
               is_flag=True,
