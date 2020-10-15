@@ -171,6 +171,7 @@ volcanoplot <- function(X, max_labels = 35,
     labs(x = expression(paste('log'[2], ' Fold Change')),
          y=ylabel_full,
          caption = footnote) +
+    theme_classic() +
     theme(plot.caption = element_text(color = grey(.5), size=10)) +
     ylim(0, ymax)
 

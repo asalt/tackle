@@ -1481,7 +1481,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option('-o', '--only-sig', default=False, is_flag=True, show_default=True,
               help='Only export genes that are significantly different (based on set cutoff)'
 )
-@click.option('-s', '--scale', type=float, default=1.2, show_default=True,
+@click.option('-s', '--scale', type=float, default=1.5, show_default=True,
               help='To what extent to scale the labels'
 )
 @click.option('--sig', type=float, default=.05, show_default=True,
