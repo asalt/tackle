@@ -48,7 +48,7 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
                     label.label = label_column,
                     frame = showframe,
                     label.size = 3,
-                    size = 2,
+                    size = 4,
                     x = x1, y = x2
                     ) +
         ggplot2::theme_classic(base_size = 16)
