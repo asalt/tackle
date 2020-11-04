@@ -191,6 +191,9 @@ def validate_seed(ctx, param, value):
     if value == 'None' or value is None:
         return None
 
+    if isinstance(value, (int, float)):
+        return int(value)
+
     elif value.isdigit():
         return int(value)
 
@@ -368,7 +371,6 @@ def validate_configfile(experiment_file, **kwargs):
 @click.option('--unique-pepts', default=0, show_default=True, type=int,
               help='number of unique peptides required per gene. Also must satisfy the nonzero argument.')
 @click.option('--nonzero-subgroup', type=str, default=None, help='')
-@click.option('--impute-missing-values', default=False, show_default=True, is_flag=True)
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument('experiment_file', type=Path_or_Subcommand(exists=True, dir_okay=False))
 @click.pass_context
@@ -376,7 +378,7 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
          data_dir, only_load_local, file_format, funcats, funcats_inverse, geneids, group, limma,
          block, pairs, ignore_geneids, ifot, ifot_ki, ifot_tf, genefile_norm, median, name,
          normalize_across_species, result_dir, taxon, non_zeros, nonzero_subgroup, unique_pepts,
-         sra, number_sra, impute_missing_values, experiment_file):
+         sra, number_sra, experiment_file):
     """
     """
     # name, taxon, non_zeros, experiment_file):
@@ -524,7 +526,6 @@ def main(ctx, additional_info, batch, batch_nonparametric, batch_noimputation, c
                     metrics_unnormed_area=metrics_unnormed_area, ignore_geneids=ignore_geneids,
                     export_all=export_all,
                     cluster_annotate_cols=cluster_annotate_cols,
-                    impute_missing_values=impute_missing_values,
                     only_local=only_load_local,
     )
 
@@ -1006,8 +1007,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     # variable <color> <shape> gene1 gene2 gene3 ...
 
     # dfm = df.melt(id_vars=['GeneID', 'GeneSymbol'])
-    dfm = (X.reset_index().melt(id_vars=['GeneID']).merge(col_meta, left_on='variable', right_index=True)
-           .fillna(0)
+    dfm = (X.fillna(0).reset_index().melt(id_vars=['GeneID']).merge(col_meta, left_on='variable', right_index=True)
     )
     # dfm.to_csv(outname_func('pca_input')+'.tsv', sep='\t', index=False)
     if color in dfm:
@@ -1023,6 +1023,58 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     pca2 = robjects.r['pca2']
 
 
+    # # columns to assign colors:
+    # metadata_color_list = list()
+    # for metacat in (color, marker):
+    #     if not metacat:
+    #         continue
+    #     if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
+    #         mapping = data_obj.metadata_colors[metacat]
+    #         # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
+    #         metadata_color_list.append(mapping)
+    #     else:
+    #         ncolors = col_meta[metacat].nunique()
+    #         cmap = sb.color_palette(n_colors=ncolors)
+    #         color_iter = map(mpl.colors.rgb2hex, cmap)
+    #         themapping = {x: c for x,c in zip(col_meta[metacat].unique(), color_iter)}
+    #         # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
+    #         metadata_color_list.append(themapping)
+    # metadata_colorframe = pd.DataFrame(metadata_color_list)
+
+    # columns to assign colors:
+    metadata_color_list = list()
+    # for metacat in (color, marker):
+    if color:
+        if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
+            mapping = data_obj.metadata_colors[color]
+            # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
+            color_list = robjects.vectors.ListVector(mapping)
+        else:
+            ncolors = col_meta[color].nunique()
+            cmap = sb.color_palette(n_colors=ncolors)
+            color_iter = map(mpl.colors.rgb2hex, cmap)
+            themapping = {x: c for x,c in zip(col_meta[color].unique(), color_iter)}
+            # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
+            color_list = robjects.vectors.ListVector(themapping)
+
+    # if marker:
+    #     if data_obj.metadata_colors is not None and marker in data_obj.metadata_colors:
+    #         mapping = data_obj.metadata_colors[marker]
+    #         # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
+    #         marker_list = robjects.vectors.ListVector(mapping)
+    #     else:
+    #         ncolors = col_meta[marker].nunique()
+    #         cmap = sb.color_palette(n_colors=ncolors)
+    #         color_iter = map(mpl.colors.rgb2hex, cmap)
+    #         themapping = {x: c for x,c in zip(col_meta[marker].unique(), color_iter)}
+    #         # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
+    #         marker_list = robjects.vectors.ListVector(mapping)
+
+
+
+    # metadata_colorframe = pd.DataFrame(metadata_color_list)
+
+
     file_fmts = ctx.obj['file_fmts']
     pca2(dfm,
          color = color or robjects.NULL,
@@ -1032,6 +1084,8 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
          label = annotate,
          showframe = frame,
          max_pc = max_pc,
+         color_list=color_list,
+         marker_list=robjects.NULL,
     )
 
 
@@ -1064,7 +1118,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
               """)
 @click.option('--gene-symbols', default=False, is_flag=True, show_default=True,
               help="Show Gene Symbols on clustermap")
-@click.option('--gene-symbol-fontsize', default=8, show_default=True,
+@click.option('--gene-symbol-fontsize', default=8, show_default=True, type=float,
               help="Gene Symbol font size")
 @click.option('--gene-annot', type=click.Path(exists=True, dir_okay=False),
               help="annotate")
@@ -1074,6 +1128,19 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
               on the left side of the heatmap
               Should have 1 geneid per line.
               """)
+@click.option('--volcano-file', type=click.Path(exists=True, dir_okay=False),
+              default=None, show_default=True, multiple=True,
+              help="""tackle volcanoplot output tsv file (or files, specifying multiple times)
+              to subselect genes meeting certain thresholds
+              """
+)
+@click.option('--volcano-filter-params',
+              type=(float, float, click.Choice(['pValue', 'pAdj'])),
+              default=(4, 0.05, 'pAdj')
+)
+@click.option('--volcano-topn', default=np.Inf, show_default=True,
+              help='Top n to plot total'
+)
 @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
 @click.option('--legend-include', type=str, multiple=True,
               help="""Specific entries in the config file to include in the legend.
@@ -1101,7 +1168,7 @@ when `auto` is set for `--nclusters`""")
 @click.option('--row-cluster/--no-row-cluster', default=True, is_flag=True, show_default=True,
               help="Cluster rows via hierarchical clustering")
 @click.option('--order-by-abundance', default=False, is_flag=True, show_default=True)
-@click.option('--seed', default=1234, help='seed for kmeans clustering', callback=validate_seed,
+@click.option('--seed', default='1234', help='seed for kmeans clustering', callback=validate_seed,
               show_default=True)
 @click.option('--show-metadata/--hide-metadata', default=True, show_default=True,
               is_flag=True,
@@ -1122,6 +1189,9 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
              max_autoclusters, nclusters, cluster_func,
              main_title,
              order_by_abundance,
+             volcano_file,
+             volcano_filter_params,
+             volcano_topn,
              row_cluster, seed, show_metadata, standard_scale, show_missing_values, z_score,
              z_score_by,
              add_human_ratios,
@@ -1132,7 +1202,6 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         cluster_func = None
 
     # =================================================================
-
     try:
         from rpy2.robjects import r
         import rpy2.robjects as robjects
@@ -1172,6 +1241,30 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
     # print(len(X))
+
+    ## filter by volcano output
+    _tmp = list()
+    _fc, _pval, _ptype = volcano_filter_params
+    for f in volcano_file:
+        _df = pd.read_table(f)
+        if np.isfinite(volcano_topn):
+            _df = pd.concat([
+                _df.sort_values(by='log2_FC', ascending=False).head(int(volcano_topn/2)),
+                _df.sort_values(by='log2_FC', ascending=False).tail(int(volcano_topn/2))
+            ])
+        _df = _df[ (abs(_df['log2_FC']) >  np.log2(_fc)) &
+                  (_df[_ptype] < _pval)
+        ]
+        _tmp.append(_df)
+    if _tmp:
+        _dfs = pd.concat(_tmp)
+        _genes = _dfs.GeneID.astype(str).unique()
+        _tokeep = [x for x in _genes if x in X.index]  # preserve order
+        # X = X.loc[set(X.index) & set(genes)]
+        X = X.loc[_tokeep]
+
+
+
 
     gids_to_annotate = None
     if gene_annot:
@@ -1214,7 +1307,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         df_ = df_.set_index('GeneID')
         row_annot_track.append(df_)
 
-    row_annot_df = robjects.NULL
+    row_annot_df = None
     if row_annot_track:
         row_annot_df = pd.concat(row_annot_track, axis=1)
         # make a dataframe that spans all genes about to be plotted
@@ -1232,7 +1325,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
-    col_meta = data_obj.col_metadata.copy()
+    col_meta = data_obj.col_metadata.copy().fillna('')
     if add_human_ratios:
         col_meta['HS_ratio'] = data_obj.taxon_ratios['9606']
     # _expids = ('recno', 'runno', 'searchno', 'label')
@@ -1268,7 +1361,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
 
 
     ## ============================================================
-    annot_mat = None
+    annot_mat = robjects.NULL
     if annotate:
 
         # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
@@ -1280,7 +1373,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
                      .fillna(0)
                      .astype(int)
         )
-        # annot_mat.columns.name = annotate
+        annot_mat.columns.name = annotate
 
     missing_values = 'masked' if show_missing_values else 'unmasked'
     kws = {}
@@ -1315,25 +1408,55 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
               '.svg': dict(width=figwidth, height=figheight,)
         }
 
-    metadata_colorsR = None
 
     # TODO: IDEA - for all entries in the column and row data that do not have a predefined colormap,
     # assign defaults here (otherwise ComplexHeatmap will assign random colors, which are not always good choices)
-    if data_obj.metadata_colors is not None:
-        # metadata_colorsR = robjects.ListVector([])
-        lists = list()
-        for key, x in data_obj.metadata_colors.items():
-            # if key != 'response':
-            #     continue
-            # it works!
-            # actually needs to be an "atomic" vector and not a "list vector"
-            # this is taken care of in R..
-            # Unclear if this can be converted here. Calling R's `unlist` function on the resulting ListVector
-            # returns a numpy array with loss of names..
-            entry = robjects.vectors.ListVector({key: robjects.vectors.ListVector(x)})
-            lists.append(entry)
 
-        metadata_colorsR = lists
+
+    metadata_colorsR = None
+    metadata_color_lists = None
+
+    # columns to assign colors:
+    metacats = col_meta.dtypes[ col_meta.dtypes.isin(['string', 'object'])].index
+    metacats = col_meta.dtypes[ (col_meta.dtypes == 'string') | (col_meta.dtypes == 'object')].index
+    gene_metacats = None
+    if row_annot_df is not None:
+        metacats = set(metacats) | set(row_annot_df.columns)
+    metadata_color_list = list()
+    for metacat in metacats:
+        if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
+        # metadata_colorsR = robjects.ListVector([])
+            # for key, x in data_obj.metadata_colors.items():
+            mapping = data_obj.metadata_colors[metacat]
+            entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
+            metadata_color_list.append(entry)
+            # for value in :  # value is a key-value mapping
+                # returns a numpy array with loss of names..
+                # entry = robjects.vectors.ListVector({key: robjects.vectors.ListVector(x)})
+                # if key != 'response':
+                #     continue
+                # it works!
+                # actually needs to be an "atomic" vector and not a "list vector"
+                # this is taken care of in R..
+                # Unclear if this can be converted here. Calling R's `unlist` function on the resulting ListVector
+        else:
+            ncolors = col_meta[metacat].nunique()
+            cmap = sb.color_palette(n_colors=ncolors)
+            color_iter = map(mpl.colors.rgb2hex, cmap)
+            themapping = {x: c for x,c in zip(col_meta[metacat].unique(), color_iter)}
+            try:
+                entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
+            except Exception as e: ## ???
+                pass
+                # import ipdb; ipdb.set_trace()
+            metadata_color_list.append(entry)
+
+
+    if metadata_color_list:
+        metadata_colorsR = metadata_color_list
+
+    # print(metadata_color_list)
+    # ========================================================
 
     if gids_to_annotate:
         # need to convert to a flat R vector
@@ -1357,6 +1480,10 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
     else:
         outname = outname_func('clustermap')
 
+    # rpy2 does not map None to robjects.NULL
+    if row_annot_df is None:
+        row_annot_df = robjects.NULL
+
     for file_fmt in ctx.obj['file_fmts']:
         grdevice = gr_devices[file_fmt]
         gr_kw = gr_kws[file_fmt]
@@ -1371,7 +1498,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
         ret = cluster2(X,
                        cut_by = cut_by or robjects.NULL,
-                       annot_mat=annot_mat or robjects.NULL,
+                       annot_mat=annot_mat,
                        the_annotation=annotate or robjects.NULL,
                        z_score=z_score or robjects.NULL,
                        z_score_by=z_score_by or robjects.NULL,
@@ -1407,14 +1534,15 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         grdevices.dev_off()
         print('done.', flush=True)
 
-        discrete_clusters = ret.rx2('discrete_clusters')
+        # this doesn't work yet, fix it later
+        # discrete_clusters = ret.rx2('discrete_clusters')
 
-        if discrete_clusters is not robjects.NULL:
-            the_clusters = discrete_clusters[0]
-            X['Cluster'] = the_clusters
+        # if discrete_clusters is not robjects.NULL:
+        #     the_clusters = discrete_clusters[0]
+        #     X['Cluster'] = the_clusters
 
-            name = outname_func('{}_{}'.format(cluster_func, nclusters)) + '.tsv'
-            X[['GeneID', 'GeneSymbol', 'Cluster']].sort_values(by='Cluster').to_csv(name, sep='\t', index=False)
+            # name = outname_func('{}_{}'.format(cluster_func, nclusters)) + '.tsv'
+            # X[['GeneID', 'GeneSymbol', 'Cluster']].sort_values(by='Cluster').to_csv(name, sep='\t', index=False)
 
 
 
@@ -1498,6 +1626,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option('--formula', default=None, show_default=True,
               help="""more complex linear regression formula for use with limma.
               Supersedes `group` option""")
+@click.option('--impute-missing-values', default=False, show_default=True, is_flag=True)
 @click.option('--contrasts', default=None, show_default=True,)
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
@@ -1508,6 +1637,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
               ''')
 @click.pass_context
 def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, sig_metric, scale,
+            impute_missing_values,
             p_adj, highlight_geneids, formula, contrasts, genefile, figsize,):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -1525,7 +1655,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
                 only_sig=only_sig, sig=sig, sig_metric=sig_metric, yaxis=yaxis, scale=scale,
                 formula=formula, contrasts=contrasts,
                 genes=genes, width=width, height=height,
-                highlight_geneids=highlight_geneids, )
+                highlight_geneids=highlight_geneids, impute_missing_values=impute_missing_values)
 
 
 
@@ -2053,7 +2183,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     else:
                         mask = data_obj.mask[expression.columns][_cols]
 
-                    _expids = ('recno', 'runno', 'searchno', 'label', 'rep')
+                    _expids = ('recno', 'runno', 'searchno', 'label', 'rep', 'techrep')
                     col_meta = col_meta[[x for x in col_meta.columns if x not in _expids]]
                     if col_meta.empty:
                         col_meta = robjects.NULL
@@ -2083,22 +2213,41 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                                     # .reset_index(level=1, drop=True)
                         if not no_homologene_remap:
 
-                            annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
-                                        .set_index("GeneID")
-                                        .drop('Metric', 1)
-                                        .pipe(hgene_map)
-                                        .round()
+                            ## TODO cleanup
+                            # annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
+                            #             .set_index("GeneID")
+                            #             .drop('Metric', 1)
+                            #             .pipe(hgene_map)
+                            #             .round()
+                            #             .fillna(0)
+                            #             .astype(int)
+                            # )
+
+                            _cols = [x for x in data_obj.data.columns if x not in ('Metric')]
+                            annot_mat = (data_obj.data.loc[ (data_obj.data.GeneID.isin(X.GeneID.tolist())) &
+                                                            (data_obj.data.Metric == annotate)][_cols]
+                                        # .reset_index(level=1, drop=True)
+                                        # .set_index('GeneID')
                                         .fillna(0)
                                         .astype(int)
                             )
+                            # remove columns that aren't in the comparison
+                            _toremove = set(annot_mat.columns) - set(X.columns)
+                            _keep = [x for x in annot_mat.columns if x not in _toremove ]
+                            annot_mat = annot_mat[_keep]
+
+
                         else:
-                            annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
-                                        .set_index("GeneID")
-                                        .drop('Metric', 1)
-                                        .round()
-                                        .fillna(0)
-                                        .astype(int)
-                            )
+                            ##TODO implement
+                            raise NotImplementedError("")
+
+                            # annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
+                            #             .set_index("GeneID")
+                            #             .drop('Metric', 1)
+                            #             .round()
+                            #             .fillna(0)
+                            #             .astype(int)
+                            # )
 
                         # annot_mat = (data_obj.data.loc[ data_obj.data.GeneID.isin(X.index) ]
                         #              .query('Metric == "{}"'.format(annotate))[['GeneID', *_cols]]
@@ -2113,6 +2262,10 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     # result = clusterplot(X,
                     if use_cluster2:
 
+
+                        # rpy2 complient
+                        if annot_mat is None:
+                            annot_mat = robjects.NULL
 
                         r_source(r_file)
                         grdevices = importr('grDevices')
@@ -2144,17 +2297,32 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                                 '.svg': dict(width=figwidth, height=figheight,)
                             }
 
+                        # need to clean up
                         metadata_colorsR = None
+                        metadata_color_lists = None
+                        metacats = col_meta.dtypes[ (col_meta.dtypes == 'string') | (col_meta.dtypes == 'object')].index
 
-                        if data_obj.metadata_colors is not None:
+                        metadata_color_list = list()
+                        for metacat in metacats:
+                            if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
                             # metadata_colorsR = robjects.ListVector([])
-                            lists = list()
-                            for key, x in data_obj.metadata_colors.items():
-                                entry = robjects.vectors.ListVector({key: robjects.vectors.ListVector(x)})
-                                lists.append(entry)
+                                # for key, x in data_obj.metadata_colors.items():
+                                mapping = data_obj.metadata_colors[metacat]
+                                entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
+                                metadata_color_list.append(entry)
+                            else:
+                                ncolors = col_meta[metacat].nunique()
+                                cmap = sb.color_palette(n_colors=ncolors)
+                                color_iter = map(mpl.colors.rgb2hex, cmap)
+                                themapping = {x: c for x,c in zip(col_meta[metacat].unique(), color_iter)}
+                                try:
+                                    entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
+                                except Exception as e: ## ???
+                                    return
+                                metadata_color_list.append(entry)
 
-                            metadata_colorsR = lists
-                        print(metadata_colorsR)
+                        if metadata_color_list:
+                            metadata_colorsR = metadata_color_list
 
                         outname = outname_func('geneset', pathway=gs)
                         for file_fmt in ctx.obj['file_fmts']:
@@ -2174,7 +2342,8 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                                               main_title=main_title,
                                               title_fontsize=title_fontsize,
                                               metadata_colors=metadata_colorsR or robjects.NULL,
-                                              annot_mat=annot_mat or robjects.NULL,
+                                              annot_mat=annot_mat,
+                                              the_annotation=annotate or robjects.NULL,
                                               # cmap_name='RdBu_r',
                                               # highlight_gids=data_obj.highlight_gids,
                                               # highlight_gid_names=data_obj.highlight_gid_names,
@@ -2271,13 +2440,15 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
               help="If True include additional stats on signature coverage, etc..")
 @click.option('-g', '--globalfdr', default=False, show_default=True, is_flag=True,
               help="Calculate global FDR across all datasets.")
+@click.option('--z-score/--no-z-score', default=True, show_default=True, is_flag=True,
+              help="Calculate global FDR across all datasets.")
 @click.option('--seed', type=int, default=2009,
               show_default=True, help='seed for reproducibility'
 )
 # @click.option('--z-score', default=False, is_flag=True, help='Z-score data before running ssGSEA')
 @click.pass_context
 def ssGSEA(ctx, geneset, norm, combine_mode, weight, correl, perm, min_overlap, extended_output,
-           rank_plots, statistic, globalfdr, seed):
+           rank_plots, statistic, globalfdr, seed, z_score):
     """
     Run ssGSEA with specified geneset
     """
@@ -2424,7 +2595,8 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
         if linear:
             df = df.apply(lambda x: np.power(10, x))
         elif z_score:
-            df = sb.matrix.ClusterGrid.z_score(X, 0)
+            #TODO: fix this
+            df = sb.matrix.ClusterGrid.z_score(df, 0)
 
         for col in ('runno', 'searchno'):
             df[col] = df[col].astype(str)
@@ -2453,11 +2625,107 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
     #         xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order
     # )
 
+@main.command('dendrogram')
+@click.option('--color')
+@click.option('--marker')
+@click.pass_context
+def dendrogram(ctx, color, marker):
+
+    figwidth = 10
+    figheight = 10
+    try:
+        import rpy2.robjects as robjects
+    except ModuleNotFoundError:
+        print("rpy2 needs to be installed")
+        return
+
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
+
+
+
+    data_obj = ctx.obj['data_obj']
+
+
+    # genes = None
+    # if genefile:
+    #     genes = parse_gid_file(genefile)
+
+    X = data_obj.areas_log_shifted
+    X.index = X.index.astype(str)
+    col_meta = data_obj.col_metadata.copy()
+    col_meta.index.name = 'name'
+    col_meta = col_meta.reset_index()
+
+    # ======================================
+    outname_func = partial(get_outname, name=data_obj.outpath_name,
+                           taxon=data_obj.taxon, non_zeros=data_obj.non_zeros,
+                           batch=data_obj.batch_applied,
+                           batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                           outpath=data_obj.outpath,
+    )
+    # ======================================
+
+    # genes = None
+    # if genefile:
+    #     genes = parse_gid_file(genefile)
+    #     _tokeep = [x for x in genes if x in X.index]  # preserve order
+    #     X = X.loc[_tokeep]
+
+    # now convert to correct orientation
+    # variable <color> <shape> gene1 gene2 gene3 ...
+
+    # dfm = df.melt(id_vars=['GeneID', 'GeneSymbol'])
+    # dfm = (X.fillna(0).reset_index().melt(id_vars=['GeneID']).merge(col_meta, left_on='variable', right_index=True)
+    # )
+    # dfm.to_csv(outname_func('pca_input')+'.tsv', sep='\t', index=False)
+
+    if color in col_meta:
+        col_meta[color] = col_meta[color].astype(str)
+    if marker in col_meta:
+        col_meta[marker] = col_meta[marker].astype(str)
+
+    grdevices = importr('grDevices')
+    robjects.pandas2ri.activate()
+    r_source = robjects.r['source']
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                          'R', 'dend.R')
+
+    gr_devices = {'.png': grdevices.png,
+                  '.pdf': grdevices.pdf,
+                  '.svg': grdevices.svg}
+    gr_kws = {'.png': dict(width=figwidth, height=figheight, units='in', res=300),
+              '.pdf': dict(width=figwidth, height=figheight,),
+              '.svg': dict(width=figwidth, height=figheight,)
+        }
+
+
+    r_source(r_file)
+    plotdend = robjects.r['plotdend']
+    outname = outname_func('dend')
+
+    for file_fmt in ctx.obj['file_fmts']:
+        grdevice = gr_devices[file_fmt]
+        gr_kw = gr_kws[file_fmt]
+        out = outname + file_fmt
+
+        grdevice(file=out, **gr_kw)
+        print("Saving", out, '...', end='', flush=True)
+
+        plotdend(X.reset_index(),
+                 col_data=col_meta,
+                 color = color or robjects.NULL,
+                 shape = marker or robjects.NULL,
+        )
+        grdevices.dev_off()
+        print('done.', flush=True)
+
 
 
 @main.command('bar')
 @click.option('--gene',
               default=None, show_default=True, multiple=True,
+              type=str,
               help="Gene to plot. Multiple allowed")
 @click.option('--genefile', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,

@@ -8,7 +8,7 @@ library(ggfortify)
 pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
                  color=NULL, shape=NULL, label=FALSE,
                  showframe = TRUE, frame.type = 't',
-                 max_pc = 2
+                 max_pc = 2, color_list = NULL, marker_list = NULL
                  ) {
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
@@ -47,10 +47,16 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
                     label = label, label.repel = label_repel,
                     label.label = label_column,
                     frame = showframe,
+                    ## frame.colour = color,
+                    ## frame.type = 'convex',
+                    frame.alpha = .5,
+                    scale_color_manual=color_list,
                     label.size = 3,
                     size = 4,
                     x = x1, y = x2
                     ) +
+        ggplot2::scale_color_manual(values = color_list) +
+        ggplot2::scale_fill_manual(values = color_list) +
         ggplot2::theme_classic(base_size = 16)
       print(p)
 

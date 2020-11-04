@@ -110,7 +110,7 @@ def ssGSEA(expression, metadata,
 
         ssGSEA2 = robjects.r['ssGSEA2']
         ssGSEA2(f.name,
-                output_prefix=output_prefix,
+                output_prefix=os.path.abspath(output_prefix),
                 gene_set_databases=geneset_file,
                 sample_norm_type=norm,
                 weight=weight,

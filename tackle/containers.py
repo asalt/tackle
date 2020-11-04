@@ -510,6 +510,9 @@ class Data:
             if 'EXPLabelFLAG' not in exp.df and 'LabelFLAG' in exp.df:
                 exp.df.rename(columns={'LabelFLAG': 'EXPLabelFLAG'}, inplace=True)
             df = exp.df.query('EXPLabelFLAG==@labelquery').copy()
+            # TODO fix this in bcmproteomics
+            df.index = df.index.astype('int').astype('str')
+
 
             if 'SRA' not in df or df.SRA.isna().any(): # some old grouper experiments don't have it
                 df = assign_sra(df)
@@ -1003,7 +1006,7 @@ class Data:
         return df
 
     # def calc_padj(self):
-    def stat_model(self, formula=None, contrasts_str=None):
+    def stat_model(self, formula=None, contrasts_str=None, impute_missing_values=False):
         """
         Still work in progress.
 
@@ -1034,7 +1037,24 @@ class Data:
                               'R', 'pvalue_cov.R')
         r_source(r_file)
 
-        r.assign('edata', self.areas_log_shifted.fillna(0))
+        mat = self.areas_log_shifted
+        if impute_missing_values:
+
+            downshift, scale = 1.8, .8
+
+            inpute_plotname = get_outname('distribution_ds_{:.2g}_scale_{:.2g}'.format(downshift, scale),
+                                          name=self.outpath_name, taxon=self.taxon, non_zeros=self.non_zeros,
+                                          colors_only=self.colors_only, batch=self.batch_applied, batch_method = 'parametric'
+                                          if not self.batch_nonparametric else 'nonparametric', outpath=self.outpath)
+
+            # mat[self.mask] = np.nan
+            mat[mat==0] = np.nan
+            mat = utils.impute_missing(mat, downshift=downshift, scale=scale, make_plot=True)
+            plt.savefig(inpute_plotname+'.png', dpi=90)
+            plt.close(plt.gcf())
+
+
+        r.assign('edata', mat)
 
         # pheno = self.col_metadata.T
         pheno = self.col_metadata.copy()
@@ -1091,6 +1111,9 @@ class Data:
 
             elif contrasts_str:
                 contrasts_array = [ x.strip() for x in contrasts_str.split(',') if x.strip()]
+
+            # robjects.r('print(mod)')
+            # robjects.r('print(fit)')
 
             robjects.r.assign('contrasts_array', contrasts_array)
 

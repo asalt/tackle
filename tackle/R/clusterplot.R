@@ -47,7 +47,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      metadata_colors=NULL, circle_col_markers=FALSE,
                      circle_col_marker_size=12,
                      force_plot_genes=FALSE, main_title='',
-                     title_fontsize=12,
+                     title_fontsize=9,
                      cut_by=NULL,
                      order_by_abundance=FALSE){
 
@@ -201,21 +201,29 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
         final_val <- metadata_colors[[i]][[entry_name]][[key]]
         ## print(paste(entry_name, key, final_val))
         ## print('****************')
-        col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
-        row_data_args[['col']][[entry_name]][[key]] <- final_val[1]
+        if (entry_name %in% names(col_data_args)){
+          col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
+        }
+        ## if (entry_name == 'IDG') browser()
+        if (entry_name %in% names(row_data_args)) { # cannot put color mappings that do not exist
+          if (key %in% row_data_args[[entry_name]]) {
+            row_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
+          }
+        }
         ## need to make this atomic
         ## line 456  if(is.atomic(col)) {
     }
     col_data_args[['col']][[entry_name]] <- unlist(col_data_args[['col']][[entry_name]])
     row_data_args[["col"]][[entry_name]] <- unlist(row_data_args[["col"]][[entry_name]])
     ## print(is.atomic(col_data_args[['col']][[entry_name]]))
-    ## THIS IS FALSE< needs to be TRUE
+    ## THIS NEEDS TO BE TRUE
         }
       }
     }
          }# if (!is.null(col_data))
 
   ## print(col_data_args)
+  ## print(row_data_args)
 
   ## ========================================================================
   ## Now make the annotations, with all arguments populated

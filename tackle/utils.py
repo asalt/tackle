@@ -546,7 +546,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
                 # try regex
                 try:
                     gid = rgx_digit.search(line).group(1)
-                    gid_out.append(int(gid))
+                    gid_out.append(str(int(gid))) ## can make this better
                 except AttributeError:
                     # warn('Could not parse GeneID from line {}'.format(line))
                     # pass

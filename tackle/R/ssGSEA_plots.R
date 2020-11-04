@@ -19,7 +19,7 @@ library(gplots)
 
 make_heatmap <- function(input_ds, geneset='hallmark', basedir='.'){
 
-  input_ds <- '/mnt/e/projects/ELLIS-POL_TNBC/scripts/results/KIP_breastcancer_baseline/mednorm/ssGSEA/hallmark/input_dataset.gct'
+  ## input_ds <- '/mnt/e/projects/ELLIS-POL_TNBC/scripts/results/KIP_breastcancer_baseline/mednorm/ssGSEA/hallmark/input_dataset.gct'
 
   input_gct <- parse_gctx(input_ds)
 
@@ -61,41 +61,54 @@ make_heatmap <- function(input_ds, geneset='hallmark', basedir='.'){
       pivot_longer(-GeneSet, names_to='id', values_to='pval', )
 
   gsea_long <- gsea_score %>% as.data.frame %>% rownames_to_column('GeneSet') %>%
-      pivot_longer(-GeneSet, names_to='id', values_to='GSEA_Score', )  %>%
+    pivot_longer(-GeneSet, names_to='id', values_to='GSEA_Score', ) %>%
+    group_by(GeneSet) %>%
+    mutate(GSEA_Score_Z = scale(GSEA_Score)) %>%
+    ungroup() %>%
       left_join(gsea_pvall, by=c('GeneSet', 'id')) %>%
       left_join(gsea_rawpvall, by=c('GeneSet', 'id')) %>%
       mutate(log_FDRpVal = -log10(FDR_pval), log_pVal = -log10(pval))
 
-  metrics <- gsea_long %>% select(-id) %>% group_by(GeneSet) %>% summarize_each(funs(mean, sd)) %>%
+  ## browser()
+  metrics <- gsea_long %>% dplyr::select(-id) %>% group_by(GeneSet) %>% summarize_each(funs(mean, sd)) %>%
       arrange(log_FDRpVal_sd)
 
   ## filter by greater than 1st quartile of logFDRpVal standard deviation
   ## cutoffs <- summary(metrics$log_FDRpVal_sd)
   cutoffs <- summary(metrics$GSEA_Score_sd)
   ## mostdiff <- metrics %>% filter(GSEA_Score_sd > cutoffs[3]) %>% select(GeneSet)
-  mostdiff <- metrics %>% select(GeneSet)
+  mostdiff <- metrics %>% dplyr::select(GeneSet)
 
   ## ## gene set names
   ## all_gs <- rownames(gsea_score)
 
   toplot_l <- gsea_long
   toplot_l <- gsea_long %>% filter(GeneSet %in% mostdiff$GeneSet)
-  toplot <- toplot_l %>% pivot_wider(id_cols='GeneSet', names_from='id', values_from='GSEA_Score')
+  toplot <- toplot_l %>% pivot_wider(id_cols='GeneSet', names_from='id', values_from='GSEA_Score_Z')
   sigs_mat <- toplot_l %>% pivot_wider(id_cols='GeneSet', names_from='id', values_from='FDR_pval')
 
 
-  annot <- apply(sigs_mat%>%select(-GeneSet), 1:2, function(x) ifelse( x < .05, '*', ''))
+  annot <- apply(sigs_mat%>%dplyr::select(-GeneSet), 1:2, function(x) ifelse( x < .05, '*', ''))
 
   col_meta <- gsea_score_gct@cdesc
 
-  minval <- toplot %>% select(-GeneSet) %>% min(na.rm=TRUE) *.95
-  maxval <- toplot %>% select(-GeneSet) %>% max(na.rm=TRUE) *.95
+  ## minval <- toplot %>% select(-GeneSet) %>% min(na.rm=TRUE) *.95
+  ## maxval <- toplot %>% select(-GeneSet) %>% max(na.rm=TRUE) *.95
+  quantiles <- toplot %>%
+    dplyr::select(-GeneSet) %>%
+    quantile(na.rm = TRUE, probs = seq(0, 1, .025))
+  minval <- quantiles[["2.5%"]]
+  maxval <- quantiles[["97.5%"]]
   ## col <- colorRamp2(c(minval, 0, maxval), c("#377EB8", "white", "#E41A1C"))
   col <- colorRamp2(c(minval,0,maxval), c('blue', "white", 'red'))
-  print(minval)
-  print(maxval)
+  ## print(minval)
+  ## print(maxval)
 
-  ht <- Heatmap(toplot %>% select(-GeneSet),
+  ## source('clusterplot.R')
+  ## browser()
+  ## cluster2(toplot)
+
+  ht <- Heatmap(toplot %>% dplyr::select(-GeneSet),
                 ## row_split = cbind(kout_genes$cluster),
                 ## column_split = cbind(col_meta$SampleCluster),
                 col = col,
@@ -107,6 +120,7 @@ make_heatmap <- function(input_ds, geneset='hallmark', basedir='.'){
                 ## left_annotation = row_annot,
                 ## top_annotation=col_annot, ##TODO: add this back
                 column_title_rot = 0,
+                ## cluster_columns=TRUE,
                 cluster_columns=TRUE,
                 cluster_rows=TRUE,
                 cluster_column_slices = TRUE,
@@ -263,7 +277,7 @@ make_plots <- function(input.ds, gene.set.database, basedir='.', geneset='hallma
 
 
             plot( data.expr, pch=20, col='darkgrey', lwd=4, type='l', xlab='rank', ylab='expression', main=paste(gs.name, samp.name, sep='\n'), ylim=range(data.expr), yaxs='i')
-						abline(h=0, lty='dashed', lwd=2, col='grey70')
+            abline(h=0, lty='dashed', lwd=2, col='grey70')
 
             ## #########################################################
             ##  ptm signatures?
@@ -300,7 +314,7 @@ make_plots <- function(input.ds, gene.set.database, basedir='.', geneset='hallma
                 ## regular gene set
                 loc <- which(gn %in% signat[[gs.name]])
                 rug(loc, col=my.col2rgb('darkred',  50), side=3, lwd=2, ticksize=0.02)
-								points(loc, data.expr[loc], col=my.col2rgb('darkred',  150), pch=16, cex=2)
+                points(loc, data.expr[loc], col=my.col2rgb('darkred',  150), pch=16, cex=2)
 
                 ## box plot
                 loc.quart <- quantile(loc)
@@ -321,8 +335,8 @@ make_plots <- function(input.ds, gene.set.database, basedir='.', geneset='hallma
                  legend=paste('nes=', round(score, 3), ' (p.adj=', round(pval, 5), ')', sep=''),
                  bty='n', inset=.22, cex=1.25)
 
-	}
-	par(mfrow=c(1, 1))
-	dev.off()
+  }
+  par(mfrow=c(1, 1))
+  dev.off()
     } ## end loop over gene sets
 }

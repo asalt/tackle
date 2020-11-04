@@ -21,6 +21,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                 genes=None,
                 sig_metric='pAdj', number_by='log2_FC', yaxis='pAdj', scale=1.2,
                 highlight_geneids=None, formula=None, contrasts=None,
+                impute_missing_values=False,
                 width=5, height=5):
 
     data_obj = ctx.obj['data_obj']
@@ -60,7 +61,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             )
             groups[grp] = samples
 
-    results = data_obj.stat_model(formula=formula, contrasts_str=contrasts)
+    results = data_obj.stat_model(formula=formula, contrasts_str=contrasts, impute_missing_values=impute_missing_values)
 
     meta = data_obj.col_metadata
 
