@@ -5,7 +5,7 @@ import json
 from functools import lru_cache
 from datetime import datetime
 import operator as op
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 import itertools
 from functools import partial
 from warnings import warn
@@ -463,6 +463,26 @@ class Data:
         self._metric_values[name]['PSMs']     = psms
         self._metric_values[name]['Peptides'] = peptides
         self._metric_values[name]['Area']     = df[area_column].where(lambda x: x > 0 ).dropna().values
+
+        # digestion efficiency
+        allpepts = [y for x in df.PeptidePrint.apply(lambda x: x.split('_')).values
+                    for y  in x]
+        allpepts = set(allpepts)
+        ## trypsin/P
+        miscut_regex = re.compile('[kr].*[kr]', re.I)
+
+        # trypsin
+        cutsite_regex = re.compile("([KR](?=[^P]))", re.I)
+        miscuts = [len(cutsite_regex.findall(x)) for x in allpepts]
+        counter = Counter(miscuts)
+        self._metric_values[name]['Trypsin'] = counter
+
+        # trypsin/P
+        cutsite_regex = re.compile('[kr](?=.)', re.I)
+        miscuts = [len(cutsite_regex.findall(x)) for x in allpepts]
+        counter = Counter(miscuts)
+        self._metric_values[name]['Trypsin/P'] = counter
+
 
         # if self.metrics_unnormed_area:
         #     self._metric_values[name]['Area']     = df.AreaSum_dstrAdj.where(lambda x: x > 0 ).dropna().values

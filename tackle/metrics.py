@@ -60,6 +60,46 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     peptides = pd.DataFrame(data=[data[n]['Peptides'] for n in data.keys()], index=data.keys())
     area = OrderedDict((n, data[n]['Area']) for n in data.keys())
 
+    # ========================================================================
+
+    trypsin = OrderedDict((n, data[n]['Trypsin']) for n in data.keys())
+    trypsin = pd.DataFrame(trypsin)
+    trypsin_df = trypsin.apply(lambda x: x/sum(x))
+
+    trypsinP = OrderedDict((n, data[n]['Trypsin/P']) for n in data.keys())
+    trypsinP = pd.DataFrame(trypsinP).fillna(0)
+    trypsinP_df = trypsinP.apply(lambda x: x/sum(x))
+    # trypsinP_df.index.name = 'miscuts'
+    # trypsinP_df = trypsin_df.reset_index()
+
+    trypsin_dfr  = trypsin_df.melt(var_name='name', value_name='Trypsin', ignore_index=False)
+    trypsin_dfr.index.name = 'miscuts'
+    trypsin_dfr = trypsin_dfr.reset_index()
+    trypsinP_dfr = trypsinP_df.melt(var_name='name', value_name='Trypsin/P', ignore_index=False)
+    trypsinP_dfr.index.name = 'miscuts'
+    trypsinP_dfr = trypsinP_dfr.reset_index()
+
+    miscut_frame = pd.DataFrame.merge(
+        trypsin_dfr,
+        trypsinP_dfr,
+        on=['miscuts', 'name'],
+        how='outer'
+    ).sort_values(by=['miscuts', 'name'])
+
+
+    export_name = get_outname('miscut_ratio', name=data_obj.outpath_name, taxon=data_obj.taxon,
+                              non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
+                              batch=data_obj.batch_applied,
+                              batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
+                              outpath=data_obj.outpath,
+    )
+    miscut_frame.to_csv(export_name+'.tsv', sep='\t', index=False)
+
+
+    # ========================================================================
+
+
+
     frames = list()
     area_name = 'AreaSum_dstrAdj' if before_norm else 'AreaSum_dstrAdj_normed'
     for name, value in area.items():
