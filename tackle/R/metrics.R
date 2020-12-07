@@ -44,6 +44,7 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
                                 fill=factor(SRA_metric, levels=c('A', 'R', 'S')))) +
     geom_bar(stat="identity") +
     scale_fill_manual(values=c('firebrick', 'gold', 'darkgreen')) +
+    guides(fill = guide_legend(reverse = TRUE)) +
     geom_text(aes(y=cumsum, label=SRA, color=SRA_metric), size=1.44*annot_scale,
               vjust=1.6, show.legend=FALSE) +
     scale_colour_manual(values=c("white", "black", 'white')) +

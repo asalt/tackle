@@ -57,7 +57,19 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
                     ) +
         ggplot2::scale_color_manual(values = color_list) +
         ggplot2::scale_fill_manual(values = color_list) +
-        ggplot2::theme_classic(base_size = 16)
+        ggplot2::theme_classic(base_size = 20) +
+        coord_fixed(ratio = 1) +
+        guides(color = guide_legend(override.aes = list(shape=15, linetype = 'solid')))+
+        theme(axis.line.x = element_line(size=1),
+              ## axis.line.x.bottom = element_line(size=1),
+              axis.line.y = element_line(size=1),
+              ## axis.line.y.right = element_line(size=1),
+        ) +
+        scale_x_continuous(sec.axis = sec_axis(~.)) + # hack: https://stackoverflow.com/questions/63055640/how-to-keep-top-and-bottom-axes-in-ggplot-while-removing-the-panel-border
+        scale_y_continuous(sec.axis = sec_axis(~.)) +
+        geom_hline(yintercept = 0, color = "grey50", show.legend = NA) +
+        geom_vline(xintercept = 0, color = "grey50" )
+
       print(p)
 
 
@@ -68,3 +80,6 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
   }
 
 }
+
+        ## annotate(geom = "segment", y = Inf, yend = Inf, x = -Inf, xend = Inf, size = 1) +
+        ##     annotate(geom = "segment", y = Inf, yend = Inf, x = -Inf, xend = Inf, size = 1)
