@@ -23,6 +23,7 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
                 highlight_geneids=None, formula=None, contrasts=None,
                 impute_missing_values=False,
                 width=5, height=5):
+    print(sig_metric)
 
     data_obj = ctx.obj['data_obj']
     gm = GeneMapper()

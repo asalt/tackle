@@ -1136,9 +1136,9 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 )
 @click.option('--volcano-filter-params',
               type=(float, float, click.Choice(['pValue', 'pAdj'])),
-              default=(4, 0.05, 'pAdj')
+              default=(4, 0.05, 'pAdj'), show_default=True,
 )
-@click.option('--volcano-topn', default=np.Inf, show_default=True,
+@click.option('--volcano-topn', default=9999, show_default=True,
               help='Top n to plot total'
 )
 @click.option('--linear', default=False, is_flag=True, help='Plot linear values (default log10)')
@@ -1302,7 +1302,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         title_ = get_file_name(file_)
         if len(df_.columns) != 2:
             raise ValueError("""File {} should have two columns, first being GeneID,
-            second being corresponding value""".format(file_))
+            second being corresponding value. No headers""".format(file_))
         df_.columns = ['GeneID', title_]
         df_ = df_.set_index('GeneID')
         row_annot_track.append(df_)
@@ -1388,7 +1388,7 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
     )
     # =================================================================
 
-    min_figwidth = 4
+    min_figwidth = 5
     if figsize is None: # either None or length 2 tuple
         figheight = 12
         if gene_symbols:  # make sure there is enough room for the symbols
@@ -1440,6 +1440,8 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
                 # this is taken care of in R..
                 # Unclear if this can be converted here. Calling R's `unlist` function on the resulting ListVector
         else:
+            if metacat not in col_meta:
+                continue
             ncolors = col_meta[metacat].nunique()
             cmap = sb.color_palette(n_colors=ncolors)
             color_iter = map(mpl.colors.rgb2hex, cmap)
@@ -1448,7 +1450,6 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
                 entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
             except Exception as e: ## ???
                 pass
-                # import ipdb; ipdb.set_trace()
             metadata_color_list.append(entry)
 
 
@@ -1534,6 +1535,15 @@ def cluster2(ctx, annotate, cmap, cut_by, col_cluster, figsize,
         grdevices.dev_off()
         print('done.', flush=True)
 
+    if isinstance(ret[1], pd.DataFrame):
+        # import ipdb; ipdb.set_trace()
+        cluster_metrics = ret[1].sort_values(by=['cluster', 'sil_width'],
+                                             ascending=[True, False]
+        )
+        out = outname + '.tsv'
+        print('saving', out)
+        cluster_metrics.to_csv(out, index=False, sep='\t')
+
         # this doesn't work yet, fix it later
         # discrete_clusters = ret.rx2('discrete_clusters')
 
@@ -1618,7 +1628,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option('--sig-metric', type=click.Choice(('pValue', 'pAdj')), default='pAdj', show_default=True,
               help='Whether to use pValue or B.H. pAdj value for gene highlighting cutoff'
 )
-@click.option('--p-adj/--p-value', default=True, is_flag=True, show_default=True,
+@click.option('--p-value/--p-adj', default=True, is_flag=True, show_default=True,
               help="Whether to plot padj or pvalue on volcano plot (does not change underlying data)")
 @click.option('--highlight-geneids', type=click.Path(exists=True, dir_okay=False),
               default=None, show_default=True, multiple=False,
@@ -1638,12 +1648,13 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.pass_context
 def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, sig_metric, scale,
             impute_missing_values,
-            p_adj, highlight_geneids, formula, contrasts, genefile, figsize,):
+            p_value, highlight_geneids, formula, contrasts, genefile, figsize,):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
     from .volcanoplot import volcanoplot
-    yaxis = 'pAdj' if p_adj else 'pValue'
+    # yaxis = 'pAdj' if p_adj else 'pValue'
+    yaxis = 'pValue' if p_value else 'pAdj'
 
     genes = None
     if genefile:
@@ -2626,10 +2637,15 @@ def box(ctx, group, group_order, retain_order, cmap, gene, genefile, linear, z_s
     # )
 
 @main.command('dendrogram')
-@click.option('--color')
+@click.option('--color', multiple = True)
 @click.option('--marker')
+@click.option('--linkage', type=click.Choice(['single', 'complete', 'average', 'weighted', 'centroid',
+                                              'median', 'ward.D2']),
+              default='ward.D2', show_default=True,
+              help='linkage method for hierarchical clustering'
+)
 @click.pass_context
-def dendrogram(ctx, color, marker):
+def dendrogram(ctx, color, marker, linkage):
 
     figwidth = 10
     figheight = 10
@@ -2680,8 +2696,9 @@ def dendrogram(ctx, color, marker):
     # )
     # dfm.to_csv(outname_func('pca_input')+'.tsv', sep='\t', index=False)
 
-    if color in col_meta:
-        col_meta[color] = col_meta[color].astype(str)
+    for c in color:
+        if c in col_meta:
+            col_meta[c] = col_meta[c].astype(str)
     if marker in col_meta:
         col_meta[marker] = col_meta[marker].astype(str)
 
@@ -2714,8 +2731,10 @@ def dendrogram(ctx, color, marker):
 
         plotdend(X.reset_index(),
                  col_data=col_meta,
-                 color = color or robjects.NULL,
+                 # color = np.array(color) or robjects.NULL,
+                 color = np.array(color),
                  shape = marker or robjects.NULL,
+                 linkage = linkage
         )
         grdevices.dev_off()
         print('done.', flush=True)
@@ -2813,10 +2832,13 @@ def bar(ctx, average, group, group_order, retain_order, cmap, gene, genefile, li
         df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
 
 
-        plt_height = 6
-        plt_width = len(df) // 2
-        plt_width = max(9, plt_width)
-        plt_width = min(24, plt_width)
+        if not figsize:
+            plt_height = 5
+            plt_width = len(df) // 2
+            plt_width = max(5, plt_width)
+            plt_width = min(24, plt_width)
+        else:
+            plt_width, plt_height = figsize
 
         gr_devices = {'.png': grdevices.png,
                     '.pdf': grdevices.pdf,
