@@ -57,15 +57,35 @@ plotdend <- function(data, col_data, color=NULL, shape=NULL, linkage='average'){
 
   circos.initialize("foo", xlim = c(0, n))
 
+  thelabels <- labels(dend)
+  the_cexs <- list()
+  for (i in 1:length(thelabels)) {
+    thelabel <- thelabels[i]
+    thelength <- nchar(thelabel)
+
+    if (thelength < 13) {
+      the_cexs[[i]] <- 1.4
+
+    } else if (thelength >= 13 & thelength < 17 ) {
+      the_cexs[[i]] <- 1.0
+    } else {
+
+      the_cexs[[i]] <- 0.7
+    }
+  }
+  the_cexs <- unlist(the_cexs)
+
+  ## browser()
   circos.track(ylim = c(0, 1), panel.fun = function(x, y) {
-    circos.text(1:n-0.5, rep(0, n), labels(dend), col = labels_colors(dend),
-                facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+    circos.text(1:n-0.5, rep(0, n), thelabels, col = labels_colors(dend),
+                cex=the_cexs,
+                facing = "clockwise", niceFacing = TRUE, adj = c(0.46, 0.5))
   }, bg.border = NA, track.height = 0.1)
 
 
   for (i in 1:length(color_numeric_factors)) {
     color_numeric_factor <- color_numeric_factors[[i]]
-    print(i)
+    ## print(i)
       circos.track(ylim = c(0, 1), cell.padding = c(.02, 1, .02, 1), panel.fun = function(x, y) {
           circos.rect(1:n - 0.8, rep(.5, n), 1:n - 0.2, .3, col = color_numeric_factor, border = NA)
       }, bg.border = NA)
@@ -81,10 +101,10 @@ plotdend <- function(data, col_data, color=NULL, shape=NULL, linkage='average'){
   lgds <- list()
   xs <- c(10, 20, 30)
 
-  ## for (i in 1:length(color)){
+  ## for (i in 1:length(color)) {
 
   lgd_subtype <- Legend(
-      at = unique(labs[[thecolor]]),
+      at = unique(labs[[color[1]]]),
         type = "points",
       legend_gp = gpar(col = unique(color_numeric_factor)),
       title_position = "topleft", title = ""
