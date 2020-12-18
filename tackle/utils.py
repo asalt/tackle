@@ -740,7 +740,7 @@ def normalize(df, name='name', ifot=False, ifot_ki=False, ifot_tf=False, median=
     # df[outcol] = df['iBAQ_dstrAdj'] / norm_  # use generic 'area' name for all normalization procedures
     # return df
 
-def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignored_geneid_subset=None):
+def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignored_geneid_subset=None, fix_histones=True):
 
     if funcats:  # do this after possible normalization
         df = df[df['FunCats'].fillna('').str.contains(funcats, case=False)]
@@ -752,6 +752,9 @@ def genefilter(df, funcats=None, funcats_inverse=None, geneid_subset=None, ignor
         tokeep = set(df.index) - set(ignored_geneid_subset)
         df = df.loc[tokeep]
     # valid_ixs = (x for x in df.index if not np.isnan(x))
+    # if fix_histones:
+    #     tmp = df.query('GeneSymbol.str.contains("HIST")')
+    #     import ipdb; ipdb.set_trace()
     valid_ixs = (x for x in df.index if not pd.isna(x))
     return df.loc[valid_ixs]
 
@@ -899,6 +902,7 @@ def hgene_map(expression, boolean=False):
                        .set_index('Homologene')['GeneID'].to_dict()
         )
         expression.index = expression.index.map( lambda x: hgene_hugid.get( gid_hgene.get(x) ))
+        expression = expression.loc[[x for x in expression.index if x]]
     else:
         return expression
     # _expression = expression.loc[ expression.index.dropna(), pheno[pheno[group].isin(groups)].index]
