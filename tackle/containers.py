@@ -86,7 +86,8 @@ class GeneMapper:
     def __init__(self):
         self.file = os.path.join( os.path.split(os.path.abspath(__file__))[0],
                                   # 'data', 'genetable_hsmmgg.tab'
-                                  'data', 'genetable20200501.tsv'
+                                  # 'data', 'genetable20200501.tsv'
+                                  'data', 'genetable20201208.tsv'
         )
         self._df = None
         self._symbol = None
@@ -1114,7 +1115,7 @@ class Data:
             fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             # need to make valid R colnames
             variables = robjects.r('colnames(mod)')
-            fixed_vars = [x.replace(':', '_',).replace(' ', '_').replace('-', '_')
+            fixed_vars = [x.replace(':', '_',).replace(' ', '_').replace('-', '_').replace('+', '_')
                           for x in variables
             ]
             robjects.r.assign('fixed_vars', fixed_vars)
@@ -1132,7 +1133,8 @@ class Data:
             elif contrasts_str:
                 contrasts_array = [ x.strip() for x in contrasts_str.split(',') if x.strip()]
 
-            # robjects.r('print(mod)')
+            # import ipdb; ipdb.set_trace()
+            robjects.r('print(mod)')
             # robjects.r('print(fit)')
 
             robjects.r.assign('contrasts_array', contrasts_array)
@@ -1261,14 +1263,16 @@ class Data:
             data = list()
             # cols = export.index.get_level_values(1).unique()
             gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity']
+            # TODO fix this
             for c in gene_metadata_cols:
                 try:
                     export.loc[ idx[:, c], :] = (export.loc[ idx[:, c], :]
                                                 .fillna(method='ffill', axis=1,)
                                                 .fillna(method='bfill', axis=1,)
                     )
-                except KeyError:
-                    pass
+                except KeyError: # BAD
+                    print('KeyError!')
+                    # pass
 
             gene_metadata_cols = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity']
 
@@ -1335,7 +1339,11 @@ class Data:
 
 
             for ix, col in enumerate(export.columns, 1):
-                renamer = {x: '{}_{}'.format(x, ix) for x in cols}
+
+                identifier = self.col_metadata.loc[col][['recno', 'runno', 'searchno', 'label']].to_dict()
+
+                renamer = {x: '{}_{}_{}_{recno}_{runno}_{searchno}_{label}'.format(x, ix, col, **identifier)
+                           for x in cols}
 
                 subdf = (export.loc[idx[:, :], col].reset_index()
                          .pivot(index='GeneID', columns='Metric')
