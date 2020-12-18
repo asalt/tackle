@@ -13,156 +13,200 @@ import pandas as pd
 import seaborn as sb
 
 
-
 from .utils import get_outname, save_multiple, genefilter, filter_sra, filter_taxon
 
 from .containers import TAXON_MAPPER
 
 idx = pd.IndexSlice
 
-plt.rcParams['pdf.fonttype'] = 42
-plt.rcParams['ps.fonttype'] = 42
-plt.rcParams['svg.fonttype'] = 'none'
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+plt.rcParams["svg.fonttype"] = "none"
 
-def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, full=False):
 
-    rc = {'font.family': 'sans-serif',
-          "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
-                              "Bitstream Vera Sans", "sans-serif"],
-          'legend.frameon': True,
+def make_metrics(
+    data_obj, file_fmts, before_filter=False, before_norm=False, full=False
+):
+
+    rc = {
+        "font.family": "sans-serif",
+        "font.sans-serif": [
+            "DejaVu Sans",
+            "Arial",
+            "Liberation Sans",
+            "Bitstream Vera Sans",
+            "sans-serif",
+        ],
+        "legend.frameon": True,
     }
 
-    sb.set_context('talk')
-    sb.set_palette('muted')
+    sb.set_context("talk")
+    sb.set_palette("muted")
     sb.set_color_codes()
-    sb.set_style('white', rc)
+    sb.set_style("white", rc)
 
     data = data_obj.metric_values
 
     if before_filter:
-        kws = dict(before='filter')
-        taxon = 'all'
+        kws = dict(before="filter")
+        taxon = "all"
     else:
-        kws = dict(after='filter')
+        kws = dict(after="filter")
         taxon = data_obj.taxon
 
-    outname = get_outname('metrics', name=data_obj.outpath_name, taxon=taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                          batch=data_obj.batch_applied,
-                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          outpath=data_obj.outpath,
-                          **kws
+    outname = get_outname(
+        "metrics",
+        name=data_obj.outpath_name,
+        taxon=taxon,
+        non_zeros=data_obj.non_zeros,
+        colors_only=data_obj.colors_only,
+        batch=data_obj.batch_applied,
+        batch_method="parametric"
+        if not data_obj.batch_nonparametric
+        else "nonparametric",
+        outpath=data_obj.outpath,
+        **kws
     )
 
-    sra = pd.DataFrame(data=[data[n]['SRA'] for n in data.keys()], index=data.keys())
-    gpg = pd.DataFrame(data=[data[n]['GPGroups'] for n in data.keys()], index=data.keys())
-    psms = pd.DataFrame(data=[data[n]['PSMs'] for n in data.keys()], index=data.keys())
-    peptides = pd.DataFrame(data=[data[n]['Peptides'] for n in data.keys()], index=data.keys())
-    area = OrderedDict((n, data[n]['Area']) for n in data.keys())
+    sra = pd.DataFrame(data=[data[n]["SRA"] for n in data.keys()], index=data.keys())
+    gpg = pd.DataFrame(
+        data=[data[n]["GPGroups"] for n in data.keys()], index=data.keys()
+    )
+    psms = pd.DataFrame(data=[data[n]["PSMs"] for n in data.keys()], index=data.keys())
+    peptides = pd.DataFrame(
+        data=[data[n]["Peptides"] for n in data.keys()], index=data.keys()
+    )
+    area = OrderedDict((n, data[n]["Area"]) for n in data.keys())
 
     # ========================================================================
 
-    trypsin = OrderedDict((n, data[n]['Trypsin']) for n in data.keys())
+    trypsin = OrderedDict((n, data[n]["Trypsin"]) for n in data.keys())
     trypsin = pd.DataFrame(trypsin)
-    trypsin_df = trypsin.apply(lambda x: x/sum(x))
+    trypsin_df = trypsin.apply(lambda x: x / sum(x))
 
-    trypsinP = OrderedDict((n, data[n]['Trypsin/P']) for n in data.keys())
+    trypsinP = OrderedDict((n, data[n]["Trypsin/P"]) for n in data.keys())
     trypsinP = pd.DataFrame(trypsinP).fillna(0)
-    trypsinP_df = trypsinP.apply(lambda x: x/sum(x))
+    trypsinP_df = trypsinP.apply(lambda x: x / sum(x))
     # trypsinP_df.index.name = 'miscuts'
     # trypsinP_df = trypsin_df.reset_index()
 
-    trypsin_dfr  = trypsin_df.melt(var_name='name', value_name='Trypsin', ignore_index=False)
-    trypsin_dfr.index.name = 'miscuts'
+    trypsin_dfr = trypsin_df.melt(
+        var_name="name", value_name="Trypsin", ignore_index=False
+    )
+    trypsin_dfr.index.name = "miscuts"
     trypsin_dfr = trypsin_dfr.reset_index()
-    trypsinP_dfr = trypsinP_df.melt(var_name='name', value_name='Trypsin/P', ignore_index=False)
-    trypsinP_dfr.index.name = 'miscuts'
+    trypsinP_dfr = trypsinP_df.melt(
+        var_name="name", value_name="Trypsin/P", ignore_index=False
+    )
+    trypsinP_dfr.index.name = "miscuts"
     trypsinP_dfr = trypsinP_dfr.reset_index()
 
     miscut_frame = pd.DataFrame.merge(
-        trypsin_dfr,
-        trypsinP_dfr,
-        on=['miscuts', 'name'],
-        how='outer'
-    ).sort_values(by=['miscuts', 'name'])
+        trypsin_dfr, trypsinP_dfr, on=["miscuts", "name"], how="outer"
+    ).sort_values(by=["miscuts", "name"])
 
-
-    export_name = get_outname('miscut_ratio', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                              non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                              batch=data_obj.batch_applied,
-                              batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                              outpath=data_obj.outpath,
+    export_name = get_outname(
+        "miscut_ratio",
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        colors_only=data_obj.colors_only,
+        batch=data_obj.batch_applied,
+        batch_method="parametric"
+        if not data_obj.batch_nonparametric
+        else "nonparametric",
+        outpath=data_obj.outpath,
     )
-    miscut_frame.to_csv(export_name+'.tsv', sep='\t', index=False)
-
+    miscut_frame.to_csv(export_name + ".tsv", sep="\t", index=False)
 
     # ========================================================================
 
-
-
     frames = list()
-    area_name = 'AreaSum_dstrAdj' if before_norm else 'AreaSum_dstrAdj_normed'
+    area_name = "AreaSum_dstrAdj" if before_norm else "AreaSum_dstrAdj_normed"
     for name, value in area.items():
         frame = pd.Series(value).to_frame(area_name).multiply(1e9).apply(np.log10)
-        frame['Name'] = name
+        frame["Name"] = name
         frames.append(frame)
     area_df = pd.concat(frames)
 
-    to_export = pd.concat([sra[['S', 'R', 'A']], gpg.rename(columns={0: 'GPGroups'}),
-                           psms.rename(columns={x:x+'_psms' for x in psms.columns}).fillna(0),
-                           peptides.rename(columns={x:x+'_peptides' for x in psms.columns})
-    ], axis=1).fillna(0).astype(int)
-
-    export_name = get_outname('metrics', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                              non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                              batch=data_obj.batch_applied,
-                              batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                              outpath=data_obj.outpath,
+    to_export = (
+        pd.concat(
+            [
+                sra[["S", "R", "A"]],
+                gpg.rename(columns={0: "GPGroups"}),
+                psms.rename(columns={x: x + "_psms" for x in psms.columns}).fillna(0),
+                peptides.rename(columns={x: x + "_peptides" for x in psms.columns}),
+            ],
+            axis=1,
+        )
+        .fillna(0)
+        .astype(int)
     )
-    to_export.to_csv(export_name+'.tab', sep='\t', index=True)
 
+    export_name = get_outname(
+        "metrics",
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        colors_only=data_obj.colors_only,
+        batch=data_obj.batch_applied,
+        batch_method="parametric"
+        if not data_obj.batch_nonparametric
+        else "nonparametric",
+        outpath=data_obj.outpath,
+    )
+    to_export.to_csv(export_name + ".tab", sep="\t", index=True)
 
     # ==================================================================
     from rpy2.robjects import r
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
+
     pandas2ri.activate()
-    r_source = robjects.r['source']
-    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0],
-                            'R', 'metrics.R')
+    r_source = robjects.r["source"]
+    r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "metrics.R")
     r_source(r_file)
-    Rmetrics = robjects.r['metrics']
-    Rmetrics(to_export, savename=export_name, exts=[x.lstrip('.') for x in file_fmts ])
+    Rmetrics = robjects.r["metrics"]
+    Rmetrics(to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts])
     # ==================================================================
 
-    ggridges = importr('ggridges')
-    rboxplot = r['boxplot']
+    ggridges = importr("ggridges")
+    rboxplot = r["boxplot"]
     rboxplot
 
     import rpy2.robjects.lib.ggplot2 as gg
 
-    plot = gg.ggplot(area_df) +\
-         gg.aes_string(y='Name', x=area_name) +\
-         ggridges.stat_density_ridges(quantile_lines=True, alpha=.8) +\
-         gg.theme_classic(base_size=12)
+    plot = (
+        gg.ggplot(area_df)
+        + gg.aes_string(y="Name", x=area_name)
+        + ggridges.stat_density_ridges(quantile_lines=True, alpha=0.8)
+        + gg.theme_classic(base_size=12)
+    )
     plot.plot()
 
-    outname = get_outname('metrics_dist', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                          batch=data_obj.batch_applied,
-                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          outpath=data_obj.outpath,
-                          after='filter'
-                          # **kws
+    outname = get_outname(
+        "metrics_dist",
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        colors_only=data_obj.colors_only,
+        batch=data_obj.batch_applied,
+        batch_method="parametric"
+        if not data_obj.batch_nonparametric
+        else "nonparametric",
+        outpath=data_obj.outpath,
+        after="filter"
+        # **kws
     )
     for ffmt in file_fmts:
-        plot.save(outname+ffmt)
-
+        plot.save(outname + ffmt)
 
     # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
 
-    green = 'darkgreen'; yellow = 'gold'; red ='firebrick'
+    green = "darkgreen"
+    yellow = "gold"
+    red = "firebrick"
 
     # fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12,8), sharex=True, sharey=False)
     # fig = plt.figure(figsize=(18,10))
@@ -236,67 +280,91 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     # save_multiple(fig, outname, *file_fmts)
 
     if full:  # also plot info from PSMs
-        raise NotImplementedError('Not yet')
-        return # not done
+        raise NotImplementedError("Not yet")
+        return  # not done
         config = data_obj.config
         data_dir = data_obj.data_dir
 
         psms = OrderedDict()
         for name, record in config.items():
-            if name.startswith('__'):
+            if name.startswith("__"):
                 continue
-            recno = record.get('recno')
-            runno = record.get('runno')
-            searchno = record.get('searcno')
-            df = ispec.PSMs(recno, runno, searchno, data_dir=data_dir).df.query('oriFLAG==1')
+            recno = record.get("recno")
+            runno = record.get("runno")
+            searchno = record.get("searcno")
+            df = ispec.PSMs(recno, runno, searchno, data_dir=data_dir).df.query(
+                "oriFLAG==1"
+            )
 
-            df.index = pd.to_timedelta( df.RTmin, unit='m' )
+            df.index = pd.to_timedelta(df.RTmin, unit="m")
 
             psms[name] = df
 
-
-
         nrows = len(psms)
 
-        m = max([ pd.Timedelta(df.RTmin.max(), unit='m') for df in psms.values() ])
+        m = max([pd.Timedelta(df.RTmin.max(), unit="m") for df in psms.values()])
 
         fig = plt.figure(figsize=(12, 8))
-        gs = gridspec.GridSpec(nrows, 3, width_ratios=(3,1,3), left=.1, right=.9, bottom=.1, top=.9)
+        gs = gridspec.GridSpec(
+            nrows, 3, width_ratios=(3, 1, 3), left=0.1, right=0.9, bottom=0.1, top=0.9
+        )
         # plot IDs/min over time
         prev_ax = None
         for ix, (name, df) in enumerate(psms.items()):
             if prev_ax:
                 # ax = fig.add_subplot(gs[ix, 0], sharex=prev_ax, sharey=prev_ax)
-                ax = fig.add_subplot(gs[ix, 0],  sharey=prev_ax)
+                ax = fig.add_subplot(gs[ix, 0], sharey=prev_ax)
             else:
                 ax = fig.add_subplot(gs[ix, 0])
             # df.index = pd.to_timedelta( df.RTmin, unit='m' )
             df.loc[m] = np.NaN
-            g = df.groupby([ pd.Grouper(freq='Min'), ])
+            g = df.groupby(
+                [
+                    pd.Grouper(freq="Min"),
+                ]
+            )
             g.size().plot(ax=ax)
             label_ax = fig.add_subplot(gs[ix, 1])
-            label_ax.annotate(name, xy=(0.5, 0.5), xycoords='axes fraction',
-                              va='center', ha='center', size=12
+            label_ax.annotate(
+                name,
+                xy=(0.5, 0.5),
+                xycoords="axes fraction",
+                va="center",
+                ha="center",
+                size=12,
             )
             sb.despine(ax=label_ax, left=True, bottom=True)
             plt.setp(label_ax.get_xticklabels(), visible=False)
             plt.setp(label_ax.get_yticklabels(), visible=False)
-            ax.xaxis.grid(True, lw=.25, color='grey', ls=':')
-            if ix < nrows-1:
+            ax.xaxis.grid(True, lw=0.25, color="grey", ls=":")
+            if ix < nrows - 1:
                 plt.setp(ax.get_xticklabels(), visible=False)
-                ax.set_xlabel('')
+                ax.set_xlabel("")
             sb.despine(ax=ax)
             prev_ax = ax
 
-
     # ==========================  gene count overlap ============================================
-    bins = (.001, .10, .15, .20, .25, .3, .40, .50, .60, .75, .80, .90, 1.00)
+    bins = (
+        0.001,
+        0.10,
+        0.15,
+        0.20,
+        0.25,
+        0.3,
+        0.40,
+        0.50,
+        0.60,
+        0.75,
+        0.80,
+        0.90,
+        1.00,
+    )
     ncols = len(data_obj.data.columns)
-    fracs = [ x/ncols for x in range(1, ncols+1) ]
+    fracs = [x / ncols for x in range(1, ncols + 1)]
     bin_indices = sorted(set(np.searchsorted(bins, fracs)))
     bins_kept = [0, *[bins[x] for x in bin_indices], 1.1]
 
-    df = data_obj.data.pipe(filter_sra, SRA='S')
+    df = data_obj.data.pipe(filter_sra, SRA="S")
     ## Below doesn't work, always returns after filter since before_filter data not saved
     ## for this purpose.
     ## will require explicit saving like the other data.
@@ -320,56 +388,55 @@ def make_metrics(data_obj, file_fmts, before_filter=False, before_norm=False, fu
     #     )
 
     # counts = (df.loc[ idx[:, 'SRA'], :]
-    counts = (df.loc[ df.Metric=='SRA']
-              .where(lambda x: x == 'S')
-              .count(1)
-    )
+    counts = df.loc[df.Metric == "SRA"].where(lambda x: x == "S").count(1)
 
     count_frac = counts / ncols
-    bin_labels = ['≥ {:.0%}'.format(x) for x in bins_kept[:-1]]
-    bin_labels[0]  = '> 0%'
-    bin_labels[-1] = '100%'
+    bin_labels = ["≥ {:.0%}".format(x) for x in bins_kept[:-1]]
+    bin_labels[0] = "> 0%"
+    bin_labels[-1] = "100%"
     # bin_labels.append('100%')
-    count_frac_binned = pd.cut(count_frac, bins_kept, include_lowest=True, right=False, labels=bin_labels)
-    summary = (count_frac_binned.value_counts().sort_index(ascending=False)
-               .where(lambda x: x > 0).dropna()
-               .cumsum()
+    count_frac_binned = pd.cut(
+        count_frac, bins_kept, include_lowest=True, right=False, labels=bin_labels
+    )
+    summary = (
+        count_frac_binned.value_counts()
+        .sort_index(ascending=False)
+        .where(lambda x: x > 0)
+        .dropna()
+        .cumsum()
     )
 
-    new_rc = {'xtick.labelsize': 14,
-              'ytick.labelsize': 14,
-              'font.size': 14
-    }
+    new_rc = {"xtick.labelsize": 14, "ytick.labelsize": 14, "font.size": 14}
     matplotlib.rcParams.update(new_rc)
     fig, ax = plt.subplots()
-    summary.plot.bar(ax=ax, color='b')
-    ax.set_ylabel('Gene Counts (Strict)')
-    ax.grid(True, axis='y', linewidth=.5, color='#444444', ls='--')
+    summary.plot.bar(ax=ax, color="b")
+    ax.set_ylabel("Gene Counts (Strict)")
+    ax.grid(True, axis="y", linewidth=0.5, color="#444444", ls="--")
     # sb.set()
     # matplotlib.rc('xtick', labelsize=14)
     # matplotlib.rc('xtick', labelsize=14)
     # matplotlib.rc('ytick', labelsize=14)
     # matplotlib.rc('font', size=14)
-    fig.autofmt_xdate(ha='center')
+    fig.autofmt_xdate(ha="center")
     fig.tight_layout()
 
     # Note change this to taxon=taxon when updated
     # also right now always returns after filter
-    outname = get_outname('metrics_genecounts', name=data_obj.outpath_name, taxon=data_obj.taxon,
-                          non_zeros=data_obj.non_zeros, colors_only=data_obj.colors_only,
-                          batch=data_obj.batch_applied,
-                          batch_method = 'parametric' if not data_obj.batch_nonparametric else 'nonparametric',
-                          outpath=data_obj.outpath,
-                          after='filter'
-                          # **kws
+    outname = get_outname(
+        "metrics_genecounts",
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        colors_only=data_obj.colors_only,
+        batch=data_obj.batch_applied,
+        batch_method="parametric"
+        if not data_obj.batch_nonparametric
+        else "nonparametric",
+        outpath=data_obj.outpath,
+        after="filter"
+        # **kws
     )
     save_multiple(fig, outname, *file_fmts)
-
-
-
-
-
-
 
     # # ==========================  gene count overlap
     # # this is just not practical when the number of experiments grows.
