@@ -15,7 +15,7 @@ from .utils import get_outname, parse_gid_file
 from .containers import GeneMapper
 
 def fix_name(x):
-    return x.replace(':', '_').replace(' ', '_').replace('/','dv')
+    return x.replace(':', '_').replace(' ', '_').replace('/','dv').replace('+','')
 
 def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.05,
                 genes=None,

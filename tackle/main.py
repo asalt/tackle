@@ -1700,7 +1700,7 @@ def volcano(ctx, foldchange, expression_data, number, number_by, only_sig, sig, 
 @click.option('--plot-top-x', default=10, show_default=True)
 @click.option('--rnd-type', type=click.Choice(('no_balance', 'equalize_and_balance')),
               default='no_balance', show_default=True)
-@click.option('--rnd-seed', default='timestamp', show_default=True)
+@click.option('--rnd-seed', default=1234, show_default=True)
 @click.option('--seed', help='alias for --rnd-seed', show_default=True, default=None)
 @click.option('--scoring-scheme', type=click.Choice(('weighted', 'classic', 'weighted_p2', 'weighted_p1.5')),
               default='weighted', show_default=True)
@@ -1726,6 +1726,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
     """
     Run GSEA on specified groups
     """
+    use_cluster2 = True
 
     rnd_seed = seed or rnd_seed
     # ===============================================================================================
@@ -2171,18 +2172,6 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                     col_cluster = False
                     nclusters = None
 
-                    # legend_include, legend_exclude = None, None
-                    # legend_exclude = ( 'PPI', 'Block', 'label', 'rep')
-
-                    # # legend_include = [x for x in legend_include if x in (set(legend_include) & set(valid_entries))]
-                    # # legend_exclude = set(legend_exclude) & set(valid_entries)
-                    # # to_exclude = set(_expids) | set(legend_exclude)
-                    # if legend_include:
-                    #     to_include = legend_include
-                    # else:
-                    #     to_include = set(col_meta.columns) - to_exclude
-                    # # col_meta = col_meta.loc[[x for x in col_meta.index if x not in _expids]]
-
 
                     col_meta = data_obj.col_metadata
                     # cols in correct order
@@ -2335,6 +2324,8 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                         if metadata_color_list:
                             metadata_colorsR = metadata_color_list
 
+
+
                         outname = outname_func('geneset', pathway=gs)
                         for file_fmt in ctx.obj['file_fmts']:
                             grdevice = gr_devices[file_fmt]
@@ -2348,6 +2339,7 @@ def gsea(ctx, show_result, collapse, gmt, only_human, geneset, metric, mode, num
                             # print(heatmap)
 
                             # have to put this here to preserve the call to ComplexHeatmap::draw in clusterplot.R
+
 
                             result = cluster2(X,
                                               main_title=main_title,
