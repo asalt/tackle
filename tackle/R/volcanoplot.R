@@ -151,10 +151,13 @@ volcanoplot <- function(X, max_labels = 35,
 
   annot_size <- 5
   max_nchar <- max(nchar(group0), nchar(group1))
+  print(max_nchar)
   if ((max_nchar) > 15) annot_size <- annot_size - .5
-  if ((max_nchar) > 25) annot_size <- annot_size - .5
+  if ((max_nchar) > 25) annot_size <- annot_size - .75
+  if ((max_nchar) > 30) annot_size <- annot_size - 1.5
+  print(annot_size)
 
-  p = ggplot(X, aes(log2_FC, -log10(get(ploty)), col=usd)) +
+  p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), col=usd)) +
     theme_base() +
     geom_point(size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
     geom_point(data=X[X$highlight==TRUE,], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
