@@ -4,10 +4,23 @@ suppressPackageStartupMessages(library(circlize))
 library(cluster)
 
 myzscore <- function(value, minval = NA, remask = TRUE) {
-    mask <- is.na(value)
-    if (is.na(minval)) minval <- min(value, na.rm = TRUE)
-    value[is.na(value)] <- minval
-    out <- scale(value)
+
+  mask <- is.na(value)
+  if (is.na(minval)) minval <- min(value, na.rm = TRUE)
+
+
+  value[is.na(value)] <- minval
+  out <- scale(value)
+
+  # if all NA:
+  if (sum(!is.finite(out)) == length(out)){
+    out[,1] <- 0
+  }
+
+    ## if (sum(!is.finite(value)) == length(value)) {
+    ##   value[!is.finite(value)] <- 0
+    ## }
+
     if (remask == TRUE) {
           out[mask] <- NA
       }
@@ -50,6 +63,9 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      title_fontsize=9,
                      cut_by=NULL,
                      order_by_abundance=FALSE){
+
+  # preserve column order if col_cluster is disabled
+  col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE)
 
   if (!is.null(cluster_func)){
     if (cluster_func == 'PAM') cluster_func <- cluster::pam
@@ -295,12 +311,26 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
   ## now do kmeans / pam clustering if specified
   discrete_clusters <- NULL
+  sil_df <- NULL
   if (!is.null(cluster_func)) {
       set.seed(1234)
-      discrete_clusters <- cluster_func(tocluster %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
-      ## discrete_clusters <- cbind(discrete_clusters$cluster)
+      ## X <- dplyr::select(tocluster, -GeneID, -GeneSymbol) %>% as.matrix
+      X <- tocluster[, 3:length(tocluster)]
+      clusters <- cluster_func(X, nclusters)
+      discrete_clusters <- cbind(clusters$cluster)
+      ## discrete_clusters <- cluster_func(tocluster %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
       ## TODO fix this!
-      row_cluster <- FALSE
+      ## this is fixed??
+      ## row_cluster <- FALSE
+
+
+      dis <- dist_no_na(X)^2
+      sil <- silhouette(clusters$cluster, dis)
+      sil_df <- cbind(toplot$GeneID, toplot$GeneSymbol, sil) %>%
+          as.data.frame() %>%
+          rename(GeneID = V1, GeneSymbol = V2)
+          ## arrange(c(cluster, sil_width))
+
 
   }
 
@@ -312,9 +342,12 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   }
 
 
-  ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
+  ## print(head(toplot[col_data$name]))
+
+  ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
+  ht <- Heatmap(toplot[col_data$name],
                 name='mat',
-                row_split = discrete_clusters$cluster,
+                row_split = discrete_clusters,
                 ## column_split = cbind(kout_samples$cluster),
                 column_split = column_split,
                 col = col,
@@ -327,6 +360,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                 column_title_rot = 0,
                 cluster_columns=col_cluster,
                 cluster_rows=row_cluster,
+                cluster_row_slices=TRUE,
                 cluster_column_slices = TRUE,
                 show_row_names=show_gene_symbols,
                 clustering_method_rows=linkage,
@@ -357,7 +391,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
     })
   }
 
-  ret <- list(heatmap = ht, discrete_clusters = discrete_clusters)
+  ret <- list(heatmap = ht, sil_df)
   ret
 
 }
