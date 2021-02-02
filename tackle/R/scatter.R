@@ -19,7 +19,7 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
     dev.new(width = plt_size, height = plt_size)
   }
 
-  ii <- seq(-1, 1, .10)
+  ii <- seq(0, 1, .10)
   colors = colorRampPalette(c('blue', 'white', 'red'))(length(ii))
 
 

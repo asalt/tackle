@@ -20,6 +20,8 @@ barplot <- function(df, average=FALSE, group=NA, group_order=NA, title = '', yla
 
   ## geom_dotplot(binaxis='y', stackdir='center',  dotsize=.5, position=position_dodge(0.8), alpha=.5) +
 
+  ## if (!is.na(group)) df[[group]] <- make.names(df[[group]]) %>% gsub('\\.', '', . )
+  ## if (!is.na(group_order)) group_order <- make.names(group_order) %>% gsub("\\.", "", .)
 
   if (!is.na(group) & average==TRUE){
     # the order is important here, sd before mean, because we're renaming Expression
@@ -27,17 +29,30 @@ barplot <- function(df, average=FALSE, group=NA, group_order=NA, title = '', yla
     colnames(df)[1] <- 'index'
     group <- 'index' # we rename it here since that's now our averaged column
   }
+  ## TODO fix when group is null
 
 
   ## I'm bad at reordering things
-  if (!is.na(group_order) & average==FALSE){
+  if (!is.na(group_order) & average==FALSE) {
     df[[group]] <- factor(df[[group]], levels=group_order, ordered=TRUE)
-    df <- df %>% mutate(index=fct_reorder(index, as.numeric(get(group)))
-                        )
+    ## df <- df %>% mutate(index=fct_reorder(index, as.numeric(get(group))))
+    df <- arrange(df, get(group))
     df$index <- factor(df$index, levels=df$index, ordered=TRUE)
-  } else if (!is.na(group_order) & average == TRUE){
+
+  } else if (!is.na(group_order) & average == TRUE) {
     df[[group]] <- factor(df[[group]], levels=group_order, ordered=TRUE)
     df <- arrange(df, as.numeric(df$index))
+  } else if (is.na(group_order) & average==FALSE) {
+    # automatic ordering
+
+
+    df[[group]] <- factor(df[[group]], ordered = TRUE)
+    df <- df %>% arrange(!!!group)
+    ## TODO: fix this
+    ## df[['index']] <- factor(df[['index']], ordered = TRUE)
+    ## df <- arrange(df, as.numeric(df$index))
+    ##??
+    df <- df %>% mutate(index = factor(index, ordered = TRUE))
   }
 
 
@@ -50,12 +65,15 @@ barplot <- function(df, average=FALSE, group=NA, group_order=NA, title = '', yla
 
   ## p <- ggplot(data = df, aes(x=factor(index, level=df$index), y=Expression, fill=get(group))) +
   ## p <- ggplot(data = df, aes(x=index, y=Expression, fill=get(group))) +
+
+    ## scale_fill_manual(values = c("#999999", "#E69F00", "#56B4E9")) +
+
   p <- ggplot(data = df, aes_string(x='index', y='Expression', fill=group)) +
     geom_bar(stat='identity') +
     xlab(NULL) + ylab(ylab) + ggtitle(title) +
     theme_light()+
     guides(fill=guide_legend(title='')) +
-    labs(title=title) +
+    labs(title=title, reverse=TRUE) +
     theme(
       text = element_text(size=16),
       legend.position='bottom',

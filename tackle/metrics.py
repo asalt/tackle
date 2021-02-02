@@ -177,6 +177,8 @@ def make_metrics(
 
     import rpy2.robjects.lib.ggplot2 as gg
 
+    area_df['Name'] = pd.Categorical(area_df['Name'], ordered=True)
+
     plot = (
         gg.ggplot(area_df)
         + gg.aes_string(y="Name", x=area_name)

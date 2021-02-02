@@ -28,7 +28,7 @@ myzscore <- function(value, minval = NA, remask = TRUE) {
 }
 
 dist_no_na <- function(mat) {
-    mat[is.na(mat)] <- min(mat, na.rm = TRUE)
+    mat[is.na(mat)] <- min(mat, na.rm = TRUE)*.9
     edist <- dist(mat)
     return(edist)
 }
@@ -65,7 +65,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      order_by_abundance=FALSE){
 
   # preserve column order if col_cluster is disabled
-  col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE)
+  col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE, levels=col_data$name)
 
   if (!is.null(cluster_func)){
     if (cluster_func == 'PAM') cluster_func <- cluster::pam
@@ -83,7 +83,10 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID))
 
   if (!is.null(col_data)){
-    exprs_long <- exprs_long %>% left_join(col_data, by='name', copy=TRUE)
+    exprs_long <- exprs_long %>% left_join(col_data, by='name', copy=TRUE) %>%
+      mutate(name = factor(name, levels=col_data$name, ordered = TRUE))
+
+
   }
 
 
@@ -262,7 +265,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
       quantile(na.rm = TRUE, probs = seq(0, 1, .025))
     ## minval <- quantiles[["2.5%"]]
     minval <- 0
-    maxval <- quantiles[["97.5%"]]
+    ## maxval <- quantiles[["97.5%"]]
+    maxval <- quantiles[["95%"]]
     col <- colorRamp2(c(minval, 0, maxval), c("#FFFFCC", "orange", "red"))
   }
   else{
@@ -303,7 +307,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                                     genes = ComplexHeatmap::anno_mark(
                                                               at = ixs,
                                                               labels = thelabels,
-                                                              labels_gp = gpar(fontsize = 6)
+                                                              labels_gp = gpar(fontsize = 9)
                                                             )
                                   )
   }
@@ -343,6 +347,7 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
 
   ## print(head(toplot[col_data$name]))
+  ## browser()
 
   ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
   ht <- Heatmap(toplot[col_data$name],
@@ -383,15 +388,19 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                 left_annotation = row_annot
                 )
 
-  ComplexHeatmap::draw(ht, heatmap_legend_side = 'right', padding = unit(c(10, 2, 2, 2), "mm"))
+  ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = 'right', padding = unit(c(10, 2, 2, 2), "mm"))
+  ht_row_order <- row_order(ht)
 
   if (!is.null(annot_mat)) {
+    xunit <- ifelse(row_cluster == TRUE, 1, 2.4)
+    print(xunit)
     decorate_heatmap_body("mat", {
-      grid.text(paste('Annotation:', the_annotation), unit(1, "cm"), unit(-5, "mm"))
+      grid.text(paste('Annotation:', the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
     })
   }
 
-  ret <- list(heatmap = ht, sil_df)
+
+  ret <- list(heatmap = ht, sil_df, ht_row_order)
   ret
 
 }

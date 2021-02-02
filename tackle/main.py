@@ -989,6 +989,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
         non_zeros=data_obj.non_zeros,
         colors_only=colors_only,
         batch=data_obj.batch_applied,
+        stat=stat,
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
@@ -1019,7 +1020,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 @click.option(
     "--level",
     type=click.Choice(
-        ["all", "align", "area", "MSPC", "SRA", "PeptideCount", "PeptideCount_u2g"]
+        ["all", "align", "area", "MSPC", "SRA", "PeptideCount", "PeptideCount_u2g", 'zscore']
     ),
     default=("area",),
     multiple=True,
@@ -1755,6 +1756,9 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     help="Show Gene Symbols on clustermap",
 )
 @click.option(
+    "--genesymbols", default=False, is_flag=True,
+    help='Alias for --gene-symbols')
+@click.option(
     "--gene-symbol-fontsize",
     default=8,
     show_default=True,
@@ -1793,6 +1797,13 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 )
 @click.option(
     "--volcano-topn", default=9999, show_default=True, help="Top n to plot total"
+)
+@click.option('--cluster-file', type=(click.Path(exists=True, dir_okay=False), int),
+              default=(None, 0),
+              show_default=True,
+              multiple = False,
+    help="""make clusterplot for a specific subcluster"""
+
 )
 @click.option(
     "--linear", default=False, is_flag=True, help="Plot linear values (default log10)"
@@ -1895,6 +1906,7 @@ def cluster2(
     force_plot_genes,
     genefile,
     gene_symbols,
+    genesymbols,
     gene_symbol_fontsize,
     gene_annot,
     highlight_geneids,
@@ -1910,6 +1922,7 @@ def cluster2(
     volcano_file,
     volcano_filter_params,
     volcano_topn,
+        cluster_file,
     row_cluster,
     seed,
     show_metadata,
@@ -1919,6 +1932,12 @@ def cluster2(
     z_score_by,
     add_human_ratios,
 ):
+
+
+    filename_kwargs = dict()
+
+    if genesymbols is True and gene_symbols is False:
+        gene_symbols = True
     if z_score == "None":
         z_score = None
     if cluster_func == "none":
@@ -1989,6 +2008,20 @@ def cluster2(
         _tokeep = [x for x in _genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
+
+    if cluster_file[0] is not None:
+        _df = pd.read_table(cluster_file[0])
+        _thecluster = cluster_file[1]
+        if 'cluster' not in _df:
+            raise ValueError('improper cluster file, does not have column `cluster`')
+        if _thecluster not in _df['cluster']:
+            raise ValueError(f"cluster {_thecluster} not in {cluster_file[0]}")
+        _genes = _df[ _df['cluster'] == _thecluster ]['GeneID'].astype(str)
+        _tokeep = [x for x in _genes if x in X.index]
+        X = X.loc[_tokeep]
+        filename_kwargs['subcluster'] = _thecluster
+        main_title += f"\nCluster {_thecluster}"
+
 
     gids_to_annotate = None
     if gene_annot:
@@ -2111,11 +2144,11 @@ def cluster2(
             .fillna(0).astype(int)
         )
         annot_mat.columns.name = annotate
+        filename_kwargs['annotate'] = annotate
 
     missing_values = "masked" if show_missing_values else "unmasked"
-    kws = {}
     if linear:
-        kws["linear"] = "linear"
+        filename_kws["linear"] = "linear"
     outname_func = partial(
         get_outname,
         name=data_obj.outpath_name,
@@ -2125,9 +2158,10 @@ def cluster2(
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        linkage=linkage,
         outpath=data_obj.outpath,
         missing_values=missing_values,
-        **kws,
+        **filename_kwargs
     )
     # =================================================================
 
@@ -2156,7 +2190,7 @@ def cluster2(
         ),
     }
 
-    # TODO: IDEA - for all entries in the column and row data that do not have a predefined colormap,
+    # DONE: IDEA - for all entries in the column and row data that do not have a predefined colormap,
     # assign defaults here (otherwise ComplexHeatmap will assign random colors, which are not always good choices)
 
     metadata_colorsR = None
@@ -2291,13 +2325,22 @@ def cluster2(
         print("done.", flush=True)
 
     if isinstance(ret[1], pd.DataFrame):
-        # import ipdb; ipdb.set_trace()
-        cluster_metrics = ret[1].sort_values(
-            by=["cluster", "sil_width"], ascending=[True, False]
-        )
+
+
+        # cluster_metrics = ret[1].sort_values(
+        #     by=["cluster", "sil_width"], ascending=[True, False]
+        # )
+
+        row_orders = ret[2]
+        the_orders = [row_orders.rx2(str(n))-1 for n in row_orders.names] # subtract 1  for zero indexing
+        the_orders = [x for y in the_orders for x in y]
+
+        cluster_metrics = ret[1].iloc[the_orders]
+
         out = outname + ".tsv"
         print("saving", out)
         cluster_metrics.to_csv(out, index=False, sep="\t")
+
 
         # this doesn't work yet, fix it later
         # discrete_clusters = ret.rx2('discrete_clusters')
@@ -3297,10 +3340,12 @@ def gsea(
                         gs, row["NES"], row["FWER p-val"]
                     )
                     title_fontsize = 12
+                    if len(gs) > 20:
+                        title_fontsize -= 1
                     if len(gs) > 30:
                         title_fontsize -= 1
                     if len(gs) > 40:
-                        title_fontsize -= 1
+                        title_fontsize -= 2
 
                     X.index = X.index.astype(str)
                     X.index.name = "GeneID"
@@ -4266,6 +4311,7 @@ def bar(
                 group = np.nan
             if group_order is None:
                 group_order = np.nan
+
 
             df["index"] = pd.Categorical(
                 df["index"], df["index"].drop_duplicates(), ordered=True

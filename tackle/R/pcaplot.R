@@ -8,14 +8,16 @@ library(ggfortify)
 pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
                  color=NULL, shape=NULL, label=FALSE,
                  showframe = TRUE, frame.type = 't',
-                 max_pc = 2, color_list = NULL, marker_list = NULL
+                 max_pc = 2, color_list = NULL, marker_list = NULL,
+                 names_from = "GeneID",
+                 ...
                  ) {
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
   ##   left_join(col_data, by='name')
 
   forpca <- data %>%
-    pivot_wider(id_cols=c(variable, !!color, !!shape), names_from=GeneID, values_from=value)
+    pivot_wider(id_cols=c(variable, !!color, !!shape), names_from= !!names_from, values_from=value)
 
 
     ## mutate(!!color = as.character(color), !!shape = as.character(!!shape))
@@ -75,7 +77,7 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
 
       out <- paste0(outname, paste0('pc', x1), '_vs_', paste0('pc', x2), ext)
       print(paste("Saving", out))
-      ggplot2::ggsave(out, p, width = 7, height = 7)
+      ggplot2::ggsave(out, p, width = 9, height = 8)
     }
   }
 

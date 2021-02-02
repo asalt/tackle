@@ -28,6 +28,7 @@ from bcmproteomics_ext import ispec
 
 # sb.set_context('notebook', font_scale=1.8)
 
+
 idx = pd.IndexSlice
 
 N_COLORS = 100
@@ -38,7 +39,7 @@ STEP = 0.2
 
 def maybe_int(x):
     try:
-        return int(x)
+        return str(int(x))
     except ValueError:
         # warn('Value {} cannot be converted to int'.format(x))
         return x
@@ -666,6 +667,17 @@ def fillna_meta(df, index_col):
     #                                 .fillna(method='bfill', axis=1)
     # )
 
+def standardize_meta(df):
+
+    gm = GeneMapper()
+    df["GeneSymbol"] = df.index.map(
+        lambda x: gm.symbol.get(str(x), x)
+    )
+    df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
+    df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
+    # return df
+
+
 
 DEFAULT_NAS = [
     "-1.#IND",
@@ -850,7 +862,6 @@ def genefilter(
     # valid_ixs = (x for x in df.index if not np.isnan(x))
     # if fix_histones:
     #     tmp = df.query('GeneSymbol.str.contains("HIST")')
-    #     import ipdb; ipdb.set_trace()
     valid_ixs = (x for x in df.index if not pd.isna(x))
     return df.loc[valid_ixs]
 
@@ -1080,3 +1091,7 @@ def named_temp(*args, **kwargs):
             os.unlink(f.name)
         except OSError:
             pass
+
+
+
+from .containers import GeneMapper

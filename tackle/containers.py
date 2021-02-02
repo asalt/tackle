@@ -24,9 +24,18 @@ except AttributeError:
     pd.NA = "NA"
 
 z_score = ClusterGrid.z_score
+# python implementation of my R implementation
+def my_zscore(x, minval=None, remask=True):
+    mask = x.isna()
 
-from . import utils
-from .utils import *
+    if minval is None:
+        minval = x.dropna().min()
+    x = x.fillna(minval)
+    ret = z_score(x)
+    if remask:
+        ret.loc[mask] = np.nan
+    return ret
+
 
 idx = pd.IndexSlice
 
@@ -50,6 +59,10 @@ LABEL_MAPPER = {
     "130N": 1301,
     "131N": 1310,
     "131C": 1311,
+    "132N": 1321,
+    "132C": 1320,
+    "133N": 1331,
+    "133C": 1330,
     "1260": 1260,
     "1270": 1270,
     "1271": 1271,
@@ -61,6 +74,10 @@ LABEL_MAPPER = {
     "1301": 1301,
     "1310": 1310,
     "1311": 1311,
+    "1320": 1320,
+    "1321": 1321,
+    "1330": 1330,
+    "1331": 1331,
     "131": 1310,
     "113": 113,
     "114": 114,
@@ -517,9 +534,13 @@ class Data:
     @staticmethod
     @lru_cache()
     def get_e2g(recno, runno, searchno, data_dir, only_local=False):
-        return ispec.E2G(
+        e2g = ispec.E2G(
             recno, runno, searchno, data_dir=data_dir, only_local=only_local
         )
+        e2g.df["GeneID"] = e2g.df["GeneID"].apply(maybe_int)
+        e2g.df.index = e2g.df.GeneID
+        standardize_meta(e2g.df)
+        return e2g
 
     def load_data(self, only_local=False):
 
@@ -1297,7 +1318,6 @@ class Data:
                     x.strip() for x in contrasts_str.split(",") if x.strip()
                 ]
 
-            # import ipdb; ipdb.set_trace()
             robjects.r("print(mod)")
             # robjects.r('print(fit)')
 
@@ -1701,19 +1721,32 @@ class Data:
 
         # elif level == 'SRA':
         #     export = self.data.loc[ self.data.Metric=='SRA' ]
+        elif level == 'zscore':  # export zscore of the data
+            # do sturf
+            export = (
+                self.df_filtered.loc[idx[:, 'area'], :]
+                .apply(my_zscore, axis=1)
+                .reset_index()
+                )
+
+            #     .apply(z_score, axis=1)
+            #     .reset_index()
+            # )
+
+
         else:
             export = self.data.loc[self.data.Metric == level]
 
-            export["GeneSymbol"] = export.GeneID.map(
-                lambda x: self.gid_symbol.get(
-                    x,
-                    # _genemapper.symbol.get(x, '?')
-                    _genemapper.symbol.get(str(int(x)), x),
-                )
+        export["GeneSymbol"] = export.GeneID.map(
+            lambda x: self.gid_symbol.get(
+                x,
+                # _genemapper.symbol.get(x, '?')
+                _genemapper.symbol.get(str(int(x)), x),
             )
-            order = ["GeneID", "GeneSymbol"]  # add GeneSymbol
-            order += [x for x in export.columns if x not in order and x != "Metric"]
-            export[order].to_csv(outname, sep="\t", index=False)
+        )
+        order = ["GeneID", "GeneSymbol"]  # add GeneSymbol
+        order += [x for x in export.columns if x not in order and x != "Metric"]
+        export[order].to_csv(outname, sep="\t", index=False)
 
         print("Exported", outname)
 
@@ -1823,6 +1856,7 @@ class MyHeatMapper(HeatMapper):
         ax.invert_yaxis()
 
 
+import seaborn as sb
 sb.matrix._HeatMapper = MyHeatMapper
 from seaborn import heatmap
 from seaborn import despine
@@ -2487,3 +2521,7 @@ def dendrogram(
 
     #     # print(axis, ':', ratios)
     #     return ratios
+
+
+from . import utils
+from .utils import *
