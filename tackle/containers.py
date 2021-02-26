@@ -1735,20 +1735,21 @@ class Data:
 
 
         else:
+            # export some other column of data
             export = self.data.loc[self.data.Metric == level]
 
-        export["GeneSymbol"] = export.GeneID.map(
-            lambda x: self.gid_symbol.get(
-                x,
-                # _genemapper.symbol.get(x, '?')
-                _genemapper.symbol.get(str(int(x)), x),
+            export["GeneSymbol"] = export.GeneID.map(
+                lambda x: self.gid_symbol.get(
+                    x,
+                    # _genemapper.symbol.get(x, '?')
+                    _genemapper.symbol.get(str(int(x)), x),
+                )
             )
-        )
-        order = ["GeneID", "GeneSymbol"]  # add GeneSymbol
-        order += [x for x in export.columns if x not in order and x != "Metric"]
-        export[order].to_csv(outname, sep="\t", index=False)
+            order = ["GeneID", "GeneSymbol"]  # add GeneSymbol
+            order += [x for x in export.columns if x not in order and x != "Metric"]
+            export[order].to_csv(outname, sep="\t", index=False)
 
-        print("Exported", outname)
+            print("Exported", outname)
 
 
 # ========================================================================================================= #
