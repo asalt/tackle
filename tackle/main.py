@@ -2010,7 +2010,20 @@ def cluster2(
         X = X.loc[_tokeep]
 
     if cluster_file[0] is not None:
-        _df = pd.read_table(cluster_file[0])
+        if cluster_file[0].endswith('xlsx'):
+            _df = pd.read_excel(cluster_file[0])
+        else:
+            _df = pd.read_table(cluster_file[0])
+
+        _df = _df.rename(columns={
+            'Cluster': 'cluster',
+            'Kmeans_Cluster': 'cluster',
+            'kmeans_cluster': 'cluster',
+            'kmeans_Cluster': 'cluster',
+            'Kmeans_cluster': 'cluster',
+            'PAM_cluster': 'cluster',
+        })
+
         _thecluster = cluster_file[1]
         if 'cluster' not in _df:
             raise ValueError('improper cluster file, does not have column `cluster`')
@@ -4322,6 +4335,141 @@ def bar(
 
             grdevices.dev_off()
             print("done.", flush=True)
+
+
+@main.command("genecorr")
+@click.option(
+    '-g', "--gene",
+    default=None,
+    show_default=True,
+    multiple=True,
+    type=str,
+    help="Gene to plot. Multiple allowed",
+)
+@click.option(
+    "--genefile",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    show_default=True,
+    multiple=False,
+    help="""File of geneids to plot.
+              Should have 1 geneid per line. """,
+)
+@click.option('-m', "--method",
+              type=click.Choice(['pearson', 'spearman']),
+              default = 'spearman',
+              show_default=True,
+              help="correlation algorithm to use"
+)
+@click.option("--fillna/--no-fillna",
+              is_flag=True,
+              default = True, show_default=True,
+              help="""whether or not to replace missing observations with zero
+              Recommended to keep on with Spearman correlation metric,
+              and off when using Pearson correlation metric.
+              """
+)
+@click.pass_context
+def genecorr(
+    ctx,
+        gene, genefile,
+        method,
+        fillna,
+):
+    """
+    calculate gene-gene expression correlations
+    """
+
+    data_obj = ctx.obj["data_obj"]
+    metadata = data_obj.col_metadata
+    if genefile:
+        gene = gene + tuple(parse_gid_file(genefile))
+    if len(gene) == 0:
+        raise ValueError("Must supply at least 1 gene")
+
+    outpath = os.path.join(data_obj.outpath, "corr")
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+
+    outfunc = partial(
+        get_outname,
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        colors_only=data_obj.colors_only,
+        batch=data_obj.batch_applied,
+        batch_method="parametric"
+        if not data_obj.batch_nonparametric
+        else "nonparametric",
+        outpath=outpath,
+    )
+    # if color is not None and average is not None:
+    #     raise ValueError('Cannot specify color and average at the same time.')
+
+    data = data_obj.areas_log_shifted.copy()
+    data[data_obj.areas == 0] = 0  # fill the zeros back
+    data[data_obj.mask] = np.NaN
+    data.index = data.index.astype(str)
+
+    for g in gene:
+        if g not in data.index:
+            warn("GeneID {} not in dataset, skipping..".format(g))
+            continue
+
+
+        query = data.loc[g]
+        corr_title = f"{method}"
+        if fillna:
+            data = data.fillna(0)
+            corr_title = f"{method}_0fill"
+
+        corr = data.T.corrwith(query, method=method).sort_values(ascending=False).to_frame(corr_title)
+
+
+
+        symbol = data_obj.gid_symbol.get(
+            g,
+        )
+        if symbol is None:
+            symbol = gm.symbol.get(g, "")
+
+        outname = outfunc("corr_{}_{}_{}{}".format(g, symbol, method, "_0fill" if fillna else ''))
+
+        corr.to_csv(outname+'.tsv', sep='\t', index=True)
+        print(f"Wrote {outname}.tsv")
+
+
+        # df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
+
+
+        # for file_fmt in ctx.obj["file_fmts"]:
+        #     grdevice = gr_devices[file_fmt]
+        #     gr_kw = gr_kws[file_fmt]
+
+        #     out = outname + file_fmt
+
+        #     grdevice(file=out, **gr_kw)
+        #     print("Saving", out, "...", end="", flush=True)
+
+        #     # cannot pass None to r func?
+        #     if average is None:
+        #         average = np.nan
+        #     if group is None:
+        #         group = np.nan
+        #     if group_order is None:
+        #         group_order = np.nan
+
+
+        #     df["index"] = pd.Categorical(
+        #         df["index"], df["index"].drop_duplicates(), ordered=True
+        #     )
+        #     p = Rbarplot(
+        #         df, average, group, group_order=group_order, title=title, ylab=ylab
+        #     )
+
+        #     grdevices.dev_off()
+        #     print("done.", flush=True)
+
 
 
 # @main.command('bar')

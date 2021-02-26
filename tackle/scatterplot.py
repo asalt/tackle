@@ -28,6 +28,10 @@ def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False,
     except ModuleNotFoundError:
         _viaR = False
 
+    cor_mat = ibaqs_log_shifted.T.corr(method=stat)
+    f = outname+'_corr.tsv'
+    cor_mat.to_csv(f, sep='\t')
+
     if _viaR:
         pandas2ri.activate()
         r_source = robjects.r['source']
@@ -62,7 +66,7 @@ def scatterplot(ibaqs_log_shifted, mask=None, stat='pearson', colors_only=False,
             grdevices.dev_off()
             print('done.', flush=True)
 
-        return None
+        return
 
 
     # xymin = 0
