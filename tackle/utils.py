@@ -1017,7 +1017,7 @@ class DefaultOrderedDict(OrderedDict):
         )
 
 
-def hgene_map(expression, boolean=False):
+def hgene_map(expression, keep_orig=False, boolean=False):
 
     # get most recent, sort by name and take last
     homologene_f = sorted(
@@ -1059,10 +1059,14 @@ def hgene_map(expression, boolean=False):
             .set_index("Homologene")["GeneID"]
             .to_dict()
         )
+        orig = expression.index
         expression.index = expression.index.map(
             lambda x: hgene_hugid.get(gid_hgene.get(x))
         )
-        expression = expression.loc[[x for x in expression.index if x]]
+        if keep_orig == True:
+            expression['GeneID_orig'] = orig
+        else:
+            expression = expression.loc[[x for x in expression.index if x]]
     else:
         return expression
     # _expression = expression.loc[ expression.index.dropna(), pheno[pheno[group].isin(groups)].index]
@@ -1072,8 +1076,8 @@ def hgene_map(expression, boolean=False):
     if _expression.index.nunique() < len(_expression.index):
         # take mean of nonzero values
         _expression = _expression.replace(0, np.nan).groupby(_expression.index).mean()
-        if boolean:
-            _expression = _expression.applymap(bool)
+    if boolean:
+        _expression = _expression.applymap(bool)
     return _expression
 
 
