@@ -1798,7 +1798,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 )
 @click.option(
     "--volcano-file",
-    type=click.Path_or_Glob(exists=True, dir_okay=False),
+    type=Path_or_Glob(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=True,
