@@ -186,6 +186,22 @@ class int_or_ratio(click.ParamType):
                 )
             return val
 
+class Path_or_Glob(click.Path):
+
+    def __init__(self, *args, **kwargs):
+        super(Path_or_Glob, self).__init__(*args, **kwargs)
+
+    def convert(self, value, param, ctx):
+
+        try:
+            return click.Path.convert(self, value, param, ctx)
+        except click.BadParameter as e:
+            globres = glob.glob(value)
+            if not globres:
+                e.show()
+                sys.exit(1)
+
+
 
 def validate_cluster_number(ctx, param, value):
 
@@ -1733,7 +1749,8 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 @click.option("--add-human-ratios", default=False, is_flag=True, show_default=True)
 @click.option(
     "--genefile",
-    type=click.Path(exists=True, dir_okay=False),
+    # type=click.Path(exists=True, dir_okay=False),
+    type=Path_or_Glob(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=False,
@@ -1781,7 +1798,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 )
 @click.option(
     "--volcano-file",
-    type=click.Path(exists=True, dir_okay=False),
+    type=click.Path_or_Glob(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=True,
