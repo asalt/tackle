@@ -15,6 +15,7 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
   ##   left_join(col_data, by='name')
+  #TODO: fix bug when `color` or `shape` is set to an r function (e.g. `repeat`)
 
   forpca <- data %>%
     pivot_wider(id_cols=c(variable, !!color, !!shape), names_from= !!names_from, values_from=value)

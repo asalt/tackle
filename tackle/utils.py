@@ -532,6 +532,14 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     :gids: collection of files to read and extract geneids
     :symbol_gid_mapping: optional dictionary that maps symbols to geneid"""
 
+    if gids.endswith('.csv'):
+        _df = pd.read_csv(gids)
+    elif gids.endswith('.tsv'):
+        _df = pd.read_table(gids)
+        if 'GeneID' in _df:
+            return _df.GeneID
+
+
     from .containers import GeneMapper
 
     genemapper = GeneMapper()

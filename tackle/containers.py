@@ -63,6 +63,7 @@ LABEL_MAPPER = {
     "132C": 1320,
     "133N": 1331,
     "133C": 1330,
+    "134": 1340,
     "1260": 1260,
     "1270": 1270,
     "1271": 1271,
@@ -78,7 +79,23 @@ LABEL_MAPPER = {
     "1321": 1321,
     "1330": 1330,
     "1331": 1331,
-    "131": 1310,
+    "131" : 1310,
+    1260: "TMT_126",
+    1270: "TMT_127_C",
+    1271: "TMT_127_N",
+    1280: "TMT_128_C",
+    1281: "TMT_128_N",
+    1290: "TMT_129_C",
+    1291: "TMT_129_N",
+    1300: "TMT_130_C",
+    1301: "TMT_130_N",
+    1310: "TMT_131_C",
+    1311: "TMT_131_N",
+    1321: "TMT_132_C",
+    1320: "TMT_132_N",
+    1331: "TMT_133_C",
+    1330: "TMT_133_N",
+    1340: "TMT_134",
     "113": 113,
     "114": 114,
     "115": 115,
@@ -560,8 +577,19 @@ class Data:
             runno = record.get("runno")
             searchno = record.get("searchno")
             label = record.get("label")
-            if label and label not in LABEL_MAPPER:
+            #if label and label not in LABEL_MAPPER:
 
+            labelquery = LABEL_MAPPER.get(label, label)
+
+            print("Getting", recno, runno, searchno, label, "to/from", self.data_dir)
+            exp = self.get_e2g(
+                recno, runno, searchno, data_dir=self.data_dir, only_local=only_local
+            )
+
+            if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
+                exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
+            df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
+            if df.empty:
                 warn(
                     "\n"
                     + "#" * 80
@@ -574,16 +602,6 @@ class Data:
                 )
                 continue
 
-            labelquery = LABEL_MAPPER.get(label, 0)
-
-            print("Getting", recno, runno, searchno, "to/from", self.data_dir)
-            exp = self.get_e2g(
-                recno, runno, searchno, data_dir=self.data_dir, only_local=only_local
-            )
-
-            if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
-                exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
-            df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             # TODO fix this in bcmproteomics
             df.index = df.index.astype("int").astype("str")
 

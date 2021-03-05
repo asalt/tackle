@@ -2176,6 +2176,9 @@ def cluster2(
         annot_mat.columns.name = annotate
         filename_kwargs['annotate'] = annotate
 
+    if z_score_by is not None:
+        filename_kwargs['z_score_by']= z_score_by
+
     missing_values = "masked" if show_missing_values else "unmasked"
     if linear:
         filename_kws["linear"] = "linear"

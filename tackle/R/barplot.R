@@ -15,6 +15,7 @@ barplot <- function(df, average=FALSE, group=NA, group_order=NA, title = '', yla
   ## colnames(dfl) <- 'Expression'
   ## dfl <- dfl %>% merge(select(meta, PDX, E2.dependence, Tumor, treat), by=0)
 
+  ## browser()
 
   df[is.na(df$Expression), 'Expression'] <- 0
 
