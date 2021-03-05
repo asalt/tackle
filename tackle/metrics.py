@@ -91,12 +91,12 @@ def make_metrics(
     # trypsinP_df = trypsin_df.reset_index()
 
     trypsin_dfr = trypsin_df.melt(
-        var_name="name", value_name="Trypsin", ignore_index=False
+        var_name="name", value_name="Trypsin"
     )
     trypsin_dfr.index.name = "miscuts"
     trypsin_dfr = trypsin_dfr.reset_index()
     trypsinP_dfr = trypsinP_df.melt(
-        var_name="name", value_name="Trypsin/P", ignore_index=False
+        var_name="name", value_name="Trypsin/P"
     )
     trypsinP_dfr.index.name = "miscuts"
     trypsinP_dfr = trypsinP_dfr.reset_index()
