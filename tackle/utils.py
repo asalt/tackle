@@ -28,6 +28,8 @@ from bcmproteomics_ext import ispec
 
 # sb.set_context('notebook', font_scale=1.8)
 
+def fix_name(x):
+    return x.replace(":", "_").replace(" ", "_").replace("/", "dv").replace("+", "")
 
 idx = pd.IndexSlice
 
@@ -35,6 +37,29 @@ N_COLORS = 100
 # r_colors = sb.color_palette("coolwarm", n_colors=N_COLORS+1)
 r_colors = sb.color_palette("RdBu_r", n_colors=N_COLORS + 1)
 STEP = 0.2
+
+import logging
+
+def _get_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    fh = logging.FileHandler("tackle.log")
+    # fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
+
 
 
 def maybe_int(x):
@@ -533,11 +558,13 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     :symbol_gid_mapping: optional dictionary that maps symbols to geneid"""
 
     if gids.endswith('.csv'):
-        _df = pd.read_csv(gids)
+        _df = pd.read_csv(gids, dtype='str')
     elif gids.endswith('.tsv'):
-        _df = pd.read_table(gids)
+        _df = pd.read_table(gids, dtype='str')
         if 'GeneID' in _df:
             return _df.GeneID
+    # elif gids.endswith('.txt'):  # try to parse plain text file
+
 
 
     from .containers import GeneMapper
@@ -571,8 +598,12 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
     # rgx_digit = re.compile(r'(?<=\W)(\d+)(?=\W)')
     rgx_digit = re.compile(r"\W?(\d+)\W?")
     rgx_word = re.compile("([A-Za-z]+\d*)(?=\W)")
-    with open(gids, "r") as f:
-        iterator = f
+    with open(gids, "r") as iterator: # try to parse file
+        # SPLITCHAR = None
+        # if ',' in f:
+        #     SPLITCHAR = ','
+        # iterator = .split(SPLITCHAR)
+        # iterator = f
         if gids.endswith("xlsx") or gids.endswith("xls"):
             _df = pd.read_excel(gids)
             _valid_cols = [
@@ -590,25 +621,26 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
             if line.startswith("#") or not line.strip():
                 continue
 
+            linestrip = line.strip()
             try:
-                gid = float(line.strip())
+                gid = float(linestrip)
                 gid = str(int(gid))
                 gid_out.append(gid)
             except ValueError:
                 # try regex
                 try:
-                    gid = rgx_digit.search(line).group(1)
+                    gid = rgx_digit.search(linestrip).group(1)
                     gid_out.append(str(int(gid)))  ## can make this better
                 except AttributeError:
                     # warn('Could not parse GeneID from line {}'.format(line))
                     # pass
 
-                    if line.strip().isalnum():
-                        gid = regex_symbol_xtract(line)
+                    if linestrip.isalnum():
+                        gid = regex_symbol_xtract(linestrip)
                         if gid:
                             gid_out.append(gid)
                         continue
-
+            import ipdb; ipdb.set_trace()
                     # try symbol mapping
                     # TODO: expand from just human
                     # genesymbol = rgx_word.search(line)

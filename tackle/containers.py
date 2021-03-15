@@ -36,6 +36,30 @@ def my_zscore(x, minval=None, remask=True):
         ret.loc[mask] = np.nan
     return ret
 
+import logging
+
+def _get_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    fh = logging.FileHandler("tackle.log")
+    # fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
+
+logger = _get_logger()
+
 
 idx = pd.IndexSlice
 
@@ -118,11 +142,12 @@ def join_and_create_path(*strings, verbose=True):
             print("Created new directory: {}".format(os.path.abspath(path)))
     return path
 
+PWD = os.path.split(os.path.abspath(__file__))[0]
 
 class GeneMapper:
     def __init__(self):
         self.file = os.path.join(
-            os.path.split(os.path.abspath(__file__))[0],
+            PWD,
             # 'data', 'genetable_hsmmgg.tab'
             # 'data', 'genetable20200501.tsv'
             "data",
@@ -166,8 +191,45 @@ class GeneMapper:
             self._taxon = self.df["TaxonID"].to_dict()
         return self._taxon
 
+class Annotations:
+    def __init__(self):
+        self.file = os.path.join(
+            PWD, "data", "combined_annotations.tsv"
+        )
+        if not os.path.exists(self.file):
+            logger.error(f"Could not find {self.file}")
+            return
+        logger.info(f"Loading annotations file {self.file}")
+        self.df = pd.read_table(self.file, dtype=str)
 
-_genemapper = GeneMapper()
+        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+
+    @property
+    def categories(self):
+        return self._categories
+
+    def get_annot(self, cat):
+
+        df = self.df
+        if cat not in df:
+            raise ValueError("{cat} must be one of {self.categories}")
+        return df[ ~df[cat].isna() ]
+
+
+_genemapper = None
+def get_gene_mapper(cls=GeneMapper):
+    global _genemapper
+    if _genemapper is None:
+        _genemapper = GeneMapper()
+    return _genemapper
+
+_annotmapper = None
+def get_annotation_mapper(cls=Annotations):
+    global _annotmapper
+    if _annotmapper is None:
+        _annotmapper = Annotations()
+    return _annotmapper
+
 
 
 def assign_sra(df):
@@ -197,6 +259,7 @@ def assign_sra(df):
 class Data:
     def __init__(
         self,
+            annotations=None,
         additional_info=None,
         batch=None,
         batch_nonparametric=False,
@@ -254,6 +317,7 @@ class Data:
         if experiment_file is None:
             raise ValueError("Must specify valid experiment_file")
 
+        self.annotations = annotations
         self.additional_info = additional_info
         self.batch = batch
         self.batch_nonparametric = batch_nonparametric
@@ -915,7 +979,9 @@ class Data:
         gids = tuple(gids)
         self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
 
-        if self.impute_missing_values:
+        # if self.impute_missing_values or 1:
+        if self.impute_missing_values :
+            import ipdb; ipdb.set_trace()
             # downshift=2.
             # scale = .5
             downshift, scale = 1.8, 0.8
@@ -948,10 +1014,15 @@ class Data:
 
         # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
         else:
+            # self._areas_log = np.log10(
+            #     self._areas.replace(0, np.NAN)
+            #     .fillna(self.minval / 2)
+            #     .divide(self.minval / 2)
+            # )
             self._areas_log = np.log10(
                 self._areas.replace(0, np.NAN)
-                .fillna(self.minval / 2)
-                .divide(self.minval / 2)
+                .fillna(self.minval )
+                .divide(self.minval )
             )
 
         self._areas_log.index.name = "GeneID"
@@ -1182,20 +1253,28 @@ class Data:
         df.index = data.index
         # df.index = [maybe_int(x) for x in df.index]
         df.columns = data.columns
+
+        # ===============================================================================
+        # TODO:why do this?
         # reassign mask - ComBat can impute some NA values
-        # TODO: resolve this for normed data
+        # : resolve this for normed data
         # if not self.normed: # ??
-        if not self.batch_noimputation:  # else leave old mask
-            thresh = (
-                self.areas_log_shifted[(~self.mask) & (self._areas_log_shifted > 0)]
-                .min()
-                .min()
-            )
-            new_mask = df[self.mask] <= thresh
-            new_mask.columns = self._areas_log_shifted.columns
-            self._mask = new_mask
+
+        # if not self.batch_noimputation:  # else leave old mask
+        #     thresh = (
+        #         self.areas_log_shifted[(~self.mask) & (self._areas_log_shifted > 0)]
+        #         .min()
+        #         .min()
+        #     )
+        #     new_mask = df[self.mask] <= thresh
+        #     new_mask.columns = self._areas_log_shifted.columns
+        #     self._mask = new_mask
+
+        # fill in combat funny values back to zero
+        # df[self.mask] = 0
 
         # self._areas_log_shifted = df.dropna(how='any')
+
         df = df.dropna(how="any")
         # self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
         # self._areas_log_shifted.columns = self._areas.columns  # r changes certain characters in column names
@@ -1262,11 +1341,16 @@ class Data:
                 outpath=self.outpath,
             )
 
-            # mat[self.mask] = np.nan
-            mat[mat == 0] = np.nan
+            mask_values = mat[self.mask].copy()
+
+            mat[self.mask] = np.nan
+            # mat[mat == 0] = np.nan
             mat = utils.impute_missing(
                 mat, downshift=downshift, scale=scale, make_plot=True
             )
+            # now add back the mask values?
+            #- this might be important when batch correction is performed, otherwise should have no effect?
+            # mat = mat + mask_values.fillna(0)
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 

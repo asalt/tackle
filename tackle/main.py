@@ -46,7 +46,7 @@ sb.set_style("white", rc)
 sb.set_palette("muted")
 sb.set_color_codes()
 
-__version__ = "0.42r2"
+__version__ = "0.5.0"
 
 from bcmproteomics_ext import ispec
 
@@ -56,8 +56,9 @@ from .scatterplot import scatterplot
 from .clusterplot import clusterplot
 from .metrics import make_metrics
 from .pcaplot import pcaplot
+from .utils import fix_name
 from .utils import *
-from .containers import Data, GeneMapper
+from .containers import Data, GeneMapper, get_annotation_mapper, get_gene_mapper
 from .barplot import barplot
 
 # from cluster_to_plotly import cluster_to_plotly
@@ -65,6 +66,31 @@ from .barplot import barplot
 sys.setrecursionlimit(10000)
 
 TAXON_MAPPER = {"human": 9606, "mouse": 10090, "celegans": 6239}
+
+
+## what is the smarter way to do this?
+import logging
+
+def _get_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+
+    fh = logging.FileHandler("tackle.log")
+    # fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
+logger = _get_logger()
 
 
 def run(data_obj):
@@ -387,6 +413,11 @@ def validate_configfile(experiment_file, **kwargs):
     return  # all passed
 
 
+ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF",
+                       "RTK", "MATRISOME", "SurfaceLabel", "CellMembrane", "Secreted",
+                       "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", )
+
+
 # @gui_option
 @click.group(chain=True)
 @click.option(
@@ -394,6 +425,11 @@ def validate_configfile(experiment_file, **kwargs):
     type=click.Path(exists=True, dir_okay=False),
     default=None,
     help=".ini file with metadata for isobaric data used for scatter and PCA plots",
+)
+@click.option('--annotations',
+              type=click.Choice(ANNOTATION_CHOICES),
+              multiple=True, default=None,
+              help="analyses to be performed on subsets of genes"
 )
 @click.option(
     "--batch",
@@ -591,6 +627,7 @@ def validate_configfile(experiment_file, **kwargs):
 def main(
     ctx,
     additional_info,
+        annotations,
     batch,
     batch_nonparametric,
     batch_noimputation,
@@ -718,39 +755,6 @@ def main(
     if cluster_annotate_cols is not None:
         cluster_annotate_cols = list(set(cluster_annotate_cols))
 
-    # if all(x in [y.strip() for y in sys.argv] for x in ('cluster', '--annotate')):
-    # if 'pca' in [x.strip() for x in sys.argv]:
-
-    #     _pca_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'pca'][0]
-    #     _cluster_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'cluster'][0]
-    #     _gsea_arg = [i for i, x in enumerate(sys.argv) if x.strip() == 'gsea'][0]
-    #     # can be 1 or more annot arg. We want the one greater than cluster and not PCA
-    #     _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
-    #     for a in _annot_args:
-    #         if (a > _cluster_arg and _cluster_arg < _pca_arg and a < _pca_arg and \
-    #             (a < _gsea_arg and _cluster_arg < _gsea_arg) or\
-    #         if (a > _cluster_arg and _cluster_arg < _pca_arg and a < _pca_arg and \
-    #             (a > _gsea_arg and _cluster_arg > _gsea_arg) or\
-    #            (a > _cluster_arg and _cluster_arg > _pca_arg and a > _pca_arg ) or\
-    #            (a > _gsea_arg and _gsea_arg > _pca_arg and a > _pca_arg) :
-    #             _annot_arg = a #and we're done
-    #             print(_cluster_arg, _pca_arg, _gsea_arg, _annot_arg)
-    #             break
-    #     else: # we make it out of the loop and don't find --annotate associated with cluster
-    #         _annot_arg = None
-
-    # else:
-    #     # _annot_arg = [i for i, x in enumerate(sys.argv) if x.strip() == '--annotate'][0]
-    #     _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == '--annotate']
-
-    # if _annot_arg:
-    #     # cluster_annotate_col = sys.argv[_annot_arg+1].strip()
-    #     cluster_annotate_cols = [sys.argv[_annot_arg+1].strip() for _annot_arg in _annot_args]
-
-    # if cluster_annotate_col not in ['PSMs', 'PSMs_u2g', 'PeptideCount', 'PeptideCount_S',
-    #                                 'PeptideCount_S_u2g', 'PeptideCount_u2g', 'SRA']:
-    #     cluster_annotate_col = None
-
     export_all = False
     if all(x in sys.argv for x in ("export", "--level")) and any(
         x in sys.argv for x in ("all", "align", "MSPC")
@@ -780,6 +784,7 @@ def main(
 
     data_obj = Data(
         additional_info=additional_info,
+        annotations=annotations,
         batch=batch,
         batch_nonparametric=batch_nonparametric,
         batch_noimputation=batch_noimputation,
@@ -1331,7 +1336,7 @@ def cluster(
 
     result = clusterplot(
         X,
-        annot_mat=annot_mat,
+        annot_mat=annot_mat or robjects.NULL,
         cmap_name=cmap,
         highlight_gids=data_obj.highlight_gids,
         highlight_gid_names=data_obj.highlight_gid_names,
@@ -2159,7 +2164,7 @@ def cluster2(
             cut_by = None
 
     ## ============================================================
-    annot_mat = robjects.NULL
+    annot_mat = None
     if annotate:
 
         # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
@@ -2296,27 +2301,19 @@ def cluster2(
         # cannot convert Categorical column of Integers to Category in py2r
         col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
 
-    if cluster_func is not None:
-        outname = outname_func("clustermap_{}_{}".format(cluster_func, nclusters))
-    else:
-        outname = outname_func("clustermap")
 
     # rpy2 does not map None to robjects.NULL
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
-    for file_fmt in ctx.obj["file_fmts"]:
-        grdevice = gr_devices[file_fmt]
-        gr_kw = gr_kws[file_fmt]
-        out = outname + file_fmt
-
+    def plot_and_save(X, out, grdevice, gr_kws=None, annot_mat=None, **kws):
+        if gr_kws is None:
+            gr_kws = dict()
         grdevice(file=out, **gr_kw)
         print("Saving", out, "...", end="", flush=True)
-
-        # heatmap = ret.rx('heatmap')
-        # print(heatmap)
-
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
+        if annot_mat is None:
+            annot_mat = robjects.NULL
         ret = cluster2(
             X,
             cut_by=cut_by or robjects.NULL,
@@ -2357,24 +2354,57 @@ def cluster2(
         grdevices.dev_off()
         print("done.", flush=True)
 
-    if isinstance(ret[1], pd.DataFrame):
+        if isinstance(ret[1], pd.DataFrame): ## save clustering results
+
+            row_orders = ret[2]
+            the_orders = [row_orders.rx2(str(n))-1 for n in row_orders.names] # subtract 1  for zero indexing
+            the_orders = [x for y in the_orders for x in y]
+
+            cluster_metrics = ret[1].iloc[the_orders]
+
+            out = outname + ".tsv"
+            print("saving", out)
+            cluster_metrics.to_csv(out, index=False, sep="\t")
+
+    # ==============================================================================================
+
+    outname_kws = dict()
+    if cluster_func is not None:
+        outname_kws[cluster_func] = nclusters
+    outname = outname_func("clustermap", **outname_kws)
+
+    for file_fmt in ctx.obj["file_fmts"]:
+        grdevice = gr_devices[file_fmt]
+        gr_kw = gr_kws[file_fmt]
+        out = outname + file_fmt
+        annot_mat_to_pass = annot_mat
+        if len(X) > 300 and not gene_symbols:
+            annot_mat_to_pass = None
+            logger.info(f"number of genes is {len(X)} >> 300, skipping annotation")
+        plot_and_save(X, out, grdevice, gr_kws, annot_mat=annot_mat_to_pass)
+
+        if data_obj.annotations is None:
+            continue
+
+        annotator = get_annotation_mapper()
+        for annotation in data_obj.annotations:
+            annot_df = annotator.get_annot(annotation)
+
+            # expand for homologene
+            subX = X[ X.GeneID.isin(annot_df.GeneID) ]
+            if annot_mat is not None:
+                sub_annot_mat = annot_mat[ annot_mat.GeneID.isin(subX.GeneID)]
+
+            out = outname_func("clustermap", geneset = fix_name(annotation), **outname_kws ) + file_fmt
+            plot_and_save(subX, out, grdevice, gr_kws, main_title = annotation, annot_mat = sub_annot_mat            )
+
+        # heatmap = ret.rx('heatmap')
+        # print(heatmap)
+
+    # ==============================================================================================
 
 
-        # cluster_metrics = ret[1].sort_values(
-        #     by=["cluster", "sil_width"], ascending=[True, False]
-        # )
-
-        row_orders = ret[2]
-        the_orders = [row_orders.rx2(str(n))-1 for n in row_orders.names] # subtract 1  for zero indexing
-        the_orders = [x for y in the_orders for x in y]
-
-        cluster_metrics = ret[1].iloc[the_orders]
-
-        out = outname + ".tsv"
-        print("saving", out)
-        cluster_metrics.to_csv(out, index=False, sep="\t")
-
-
+    # ==============================================================================================
         # this doesn't work yet, fix it later
         # discrete_clusters = ret.rx2('discrete_clusters')
 
@@ -2615,6 +2645,10 @@ def volcano(
     if genefile:
         genes = parse_gid_file(genefile)
 
+    gids_to_highlight = None
+    if highlight_geneids is not None:
+        gids_to_highlight = parse_gid_file(highlight_geneids)
+
     width, height = figsize
 
     volcanoplot(
@@ -2633,7 +2667,7 @@ def volcano(
         genes=genes,
         width=width,
         height=height,
-        highlight_geneids=highlight_geneids,
+        highlight_geneids=gids_to_highlight,
         impute_missing_values=impute_missing_values,
     )
 
