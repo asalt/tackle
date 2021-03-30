@@ -37,7 +37,8 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
     if group:
         cols = data_obj.col_metadata.groupby(group).groups
     else:
-        cols = {col: [col] for col in data_obj.data.columns}
+        # cols = {col: [col] for col in data_obj.data.columns if col }
+        cols = {col: [col] for col in data_obj.col_metadata.index}
 
     # ensure not more combinations than reasonable to calculate (12 experiments/groups)
     num_combos = calc_combos(min(len(cols), 20))
@@ -56,6 +57,7 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
 
         # res = (filter_observations(data_obj.data[col], 'area', nonzero_value=non_zeros)
 
+        # res = (filter_observations(data_obj.data[['GeneID', 'Metric', *col]], 'area', nonzero_value=non_zeros)
         res = (filter_observations(data_obj.data[['GeneID', 'Metric', *col]], 'area', nonzero_value=non_zeros)
                .pipe(filter_sra)
                # .loc[ idx[:, 'SRA'], :]
@@ -72,50 +74,70 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
         #        .rename(columns={'level_0':'GeneID', 'level_1': 'SRA'})
         # )
 
-        overlap_dict[name] = res
-
-    de = DataExtractor(overlap_dict, 'GeneID' )
-
-    # ensure overlap is small enough to be reasonable for display
-    maxiter, bound_min, size = 1e3, 0, np.inf
-    iiter = 0
-    while size > maxsize:  # no more than that! default 15
-        iiter += 1
-        bound_min += 1
-        filtered_intersections = de.get_filtered_intersections(sort_by='size',
-                                                               inters_size_bounds=(bound_min, np.inf),
-                                                               inters_degree_bounds=(0, np.inf) )
-        size = min(size, len(filtered_intersections[0]))
-        # print(size, len(filtered_intersections[0]), min(filtered_intersections[0]))
-        if iiter > maxiter:
-            click.echo('Could not find small enough overlap...Skipping')
-            return
-
-    pyupset_res = make_upset(overlap_dict, unique_keys=('GeneID',), h_ratio=2, v_ratio=2.25,
-                             dot_size=180, figsize=figsize, bound_min=bound_min)
-    fig = pyupset_res['figure']
-
-    save_multiple(fig, outname, *file_fmts)
+        overlap_dict[name] = res.GeneID.tolist()
 
 
-    # export gene membership
+    from rpy2.robjects import r
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
 
-    all_intersections = de.get_filtered_intersections(sort_by='size',
-                                                      inters_size_bounds=(0, np.inf),
-                                                      inters_degree_bounds=(0, np.inf) )
+    grdevices = importr("grDevices")
+    complex_heatmap = importr('ComplexHeatmap')
+    cmat = complex_heatmap.make_comb_mat(robjects.ListVector(overlap_dict))
+    upset_plot = complex_heatmap.UpSet(cmat)
 
 
-    membership_df = (pd.DataFrame.from_dict(
-        {'|'.join(membership) : de.inters_df_dict[ membership ]['GeneID']
-         for membership in all_intersections[1]
-        },
-        orient='columns'
-    )
-                     .melt(var_name='Sample_Set', value_name='GeneID')
-                     .dropna()
-    )
 
-    membership_df['GeneID'] = membership_df['GeneID'].astype(int)
+    grdevices.png(outname+'.png')
+    complex_heatmap.draw(upset_plot)
+    grdevices.dev_off()
+    return # temporary
 
-    print('Saving {}+.tsv'.format(outname))
-    membership_df.to_csv(outname+'.tsv', index=False, sep='\t')
+
+
+    # de = DataExtractor(overlap_dict, 'GeneID' )
+
+    # # ensure overlap is small enough to be reasonable for display
+    # maxiter, bound_min, size = 1e3, 0, np.inf
+    # iiter = 0
+    # while size > maxsize:  # no more than that! default 15
+    #     iiter += 1
+    #     bound_min += 1
+    #     filtered_intersections = de.get_filtered_intersections(sort_by='size',
+    #                                                            inters_size_bounds=(bound_min, np.inf),
+    #                                                            inters_degree_bounds=(0, np.inf) )
+    #     size = min(size, len(filtered_intersections[0]))
+    #     # print(size, len(filtered_intersections[0]), min(filtered_intersections[0]))
+    #     if iiter > maxiter:
+    #         click.echo('Could not find small enough overlap...Skipping')
+    #         return
+
+    # pyupset_res = make_upset(overlap_dict, unique_keys=('GeneID',), h_ratio=2, v_ratio=2.25,
+    #                          dot_size=180, figsize=figsize, bound_min=bound_min)
+    # fig = pyupset_res['figure']
+
+    # save_multiple(fig, outname, *file_fmts)
+
+
+    # # export gene membership
+
+    # all_intersections = de.get_filtered_intersections(sort_by='size',
+    #                                                   inters_size_bounds=(0, np.inf),
+    #                                                   inters_degree_bounds=(0, np.inf) )
+
+
+    # membership_df = (pd.DataFrame.from_dict(
+    #     {'|'.join(membership) : de.inters_df_dict[ membership ]['GeneID']
+    #      for membership in all_intersections[1]
+    #     },
+    #     orient='columns'
+    # )
+    #                  .melt(var_name='Sample_Set', value_name='GeneID')
+    #                  .dropna()
+    # )
+
+    # membership_df['GeneID'] = membership_df['GeneID'].astype(int)
+
+    # print('Saving {}+.tsv'.format(outname))
+    # membership_df.to_csv(outname+'.tsv', index=False, sep='\t')
