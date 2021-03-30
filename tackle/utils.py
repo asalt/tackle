@@ -640,7 +640,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
                         if gid:
                             gid_out.append(gid)
                         continue
-            import ipdb; ipdb.set_trace()
+            # import ipdb; ipdb.set_trace()
                     # try symbol mapping
                     # TODO: expand from just human
                     # genesymbol = rgx_word.search(line)

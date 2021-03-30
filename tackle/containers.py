@@ -1,7 +1,17 @@
+import logging
+from .utils import *
+from . import utils
+from scipy.cluster import hierarchy
+from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
+from seaborn import despine
+from seaborn import heatmap
+import seaborn as sb
+from six import string_types
 import sys
 import os
 import re
 import json
+from collections.abc import Iterable
 from functools import lru_cache
 from datetime import datetime
 import operator as op
@@ -25,6 +35,8 @@ except AttributeError:
 
 z_score = ClusterGrid.z_score
 # python implementation of my R implementation
+
+
 def my_zscore(x, minval=None, remask=True):
     mask = x.isna()
 
@@ -36,7 +48,6 @@ def my_zscore(x, minval=None, remask=True):
         ret.loc[mask] = np.nan
     return ret
 
-import logging
 
 def _get_logger():
     logger = logging.getLogger(__name__)
@@ -57,6 +68,7 @@ def _get_logger():
     logger.addHandler(fh)
     logger.addHandler(ch)
     return logger
+
 
 logger = _get_logger()
 
@@ -103,7 +115,7 @@ LABEL_MAPPER = {
     "1321": 1321,
     "1330": 1330,
     "1331": 1331,
-    "131" : 1310,
+    "131": 1310,
     1260: "TMT_126",
     1270: "TMT_127_C",
     1271: "TMT_127_N",
@@ -142,7 +154,9 @@ def join_and_create_path(*strings, verbose=True):
             print("Created new directory: {}".format(os.path.abspath(path)))
     return path
 
+
 PWD = os.path.split(os.path.abspath(__file__))[0]
+
 
 class GeneMapper:
     def __init__(self):
@@ -191,6 +205,7 @@ class GeneMapper:
             self._taxon = self.df["TaxonID"].to_dict()
         return self._taxon
 
+
 class Annotations:
     def __init__(self):
         self.file = os.path.join(
@@ -198,11 +213,12 @@ class Annotations:
         )
         if not os.path.exists(self.file):
             logger.error(f"Could not find {self.file}")
-            return
+            return self
         logger.info(f"Loading annotations file {self.file}")
         self.df = pd.read_table(self.file, dtype=str)
 
-        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+        self._categories = [
+            x for x in self.df if x not in ("GeneID", "GeneSymbol")]
 
     @property
     def categories(self):
@@ -213,23 +229,85 @@ class Annotations:
         df = self.df
         if cat not in df:
             raise ValueError("{cat} must be one of {self.categories}")
-        return df[ ~df[cat].isna() ]
+        return df[~df[cat].isna()]
+
+
+class HGeneMapper:
+    def __init__(self):
+
+        homologene_f = sorted(
+            glob.glob(
+                os.path.join(
+                    PWD, "data", "homologene*data"
+                )
+            ),
+            reverse=True,
+        )[0]
+        self.file = homologene_f
+        logger.info(f"Loading annotations file {self.file}")
+
+        homologene = pd.read_table(
+            homologene_f,
+            header=None,
+            dtype=str,
+            names=(
+                "Homologene",
+                "TaxonID",
+                "GeneID",
+                "Symbol",
+                "ProteinGI",
+                "ProteinAccession",
+            ),
+        )
+        self.df = homologene
+
+    def map_to_human(self, gids):
+        homologene = self.df
+        hgene_query = homologene[homologene.GeneID.isin(gids)]
+        gid_hgene = (
+            hgene_query[["GeneID", "Homologene"]]
+            .set_index("GeneID")["Homologene"]
+            .to_dict()
+        )
+        hgene_hugid = (
+            homologene.query('TaxonID=="9606"')[["GeneID", "Homologene"]]
+            .set_index("Homologene")["GeneID"]
+            .to_dict()
+        )
+
+        results = {x: hgene_hugid.get(gid_hgene.get(x)) for x in gids}
+        return results
 
 
 _genemapper = None
+
+
 def get_gene_mapper(cls=GeneMapper):
     global _genemapper
     if _genemapper is None:
         _genemapper = GeneMapper()
     return _genemapper
 
+_genemapper = get_gene_mapper()
+
 _annotmapper = None
+
+
 def get_annotation_mapper(cls=Annotations):
     global _annotmapper
     if _annotmapper is None:
         _annotmapper = Annotations()
     return _annotmapper
 
+
+_hgenemapper = None
+
+
+def get_hgene_mapper(cls=HGeneMapper):
+    global _hgenemapper
+    if _hgenemapper is None:
+        _hgenemapper = HGeneMapper()
+    return _hgenemapper
 
 
 def assign_sra(df):
@@ -248,12 +326,39 @@ def assign_sra(df):
     df.loc[(df["IDSet"] == 2) & (df["IDGroup"] <= 3), "SRA"] = "S"
 
     df.loc[
-        (df["IDSet"] == 1) & (df["SRA"] != "S") & (df["IDGroup_u2g"] <= 5), "SRA"
+        (df["IDSet"] == 1) & (df["SRA"] != "S") & (
+            df["IDGroup_u2g"] <= 5), "SRA"
     ] = "R"
 
-    df.loc[(df["IDSet"] == 2) & (df["SRA"] != "S") & (df["IDGroup"] <= 5), "SRA"] = "R"
+    df.loc[(df["IDSet"] == 2) & (df["SRA"] != "S")
+           & (df["IDGroup"] <= 5), "SRA"] = "R"
 
     return df
+
+
+def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
+    annotator = get_annotation_mapper()
+    overlap = set(annotator.df.GeneID) & set(df.GeneID)
+    if overlap == len(df):  # human data
+        dfout = df.merge(annotator.df[[annotations]], on='GeneID')
+        return dfout
+
+    logger.info(f"Trying to map genes to hs through homologene")
+    hgene_mapper = get_hgene_mapper()
+    hg_gene_dict = hgene_mapper.map_to_human(df.GeneID)
+
+    hg_gene_df = pd.DataFrame.from_dict(
+        hg_gene_dict, orient='index', columns=['GeneID_hs'])
+    dfout = (df.merge(hg_gene_df, left_on='GeneID', right_index=True, how='left').
+             merge(
+        annotator.df[['GeneID', *annotations]].rename(columns=dict(GeneID='GeneID_hs')), on='GeneID_hs',
+        how='left'
+    )
+    )
+    front = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity',
+             *annotations]
+    col_order = [*front, *[x for x in dfout if x not in front]]
+    return dfout[col_order]
 
 
 class Data:
@@ -373,7 +478,8 @@ class Data:
         )
         self.gid_funcat_mapping = None  # loaded with data
 
-        self.impute_missing_values = impute_missing_values  # use gaussian distribution 2 sd down from mean of data
+        # use gaussian distribution 2 sd down from mean of data
+        self.impute_missing_values = impute_missing_values
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -532,7 +638,8 @@ class Data:
         for key, value in self.config[name].items():
             if key.isdigit():
                 df = (
-                    exp.df[exp.df.EXPLabelFLAG == int(key)].set_index(["GeneID"])
+                    exp.df[exp.df.EXPLabelFLAG == int(
+                        key)].set_index(["GeneID"])
                     # .pipe(filter_and_assign, value, funcats, geneid_subset)
                     .pipe(assign_cols, value)
                 )
@@ -591,7 +698,7 @@ class Data:
             y for x in df.PeptidePrint.apply(lambda x: x.split("_")).values for y in x
         ]
         allpepts = set(allpepts)
-        ## trypsin/P
+        # trypsin/P
         miscut_regex = re.compile("[kr].*[kr]", re.I)
 
         # trypsin
@@ -641,17 +748,19 @@ class Data:
             runno = record.get("runno")
             searchno = record.get("searchno")
             label = record.get("label")
-            #if label and label not in LABEL_MAPPER:
+            # if label and label not in LABEL_MAPPER:
 
             labelquery = LABEL_MAPPER.get(label, label)
 
-            print("Getting", recno, runno, searchno, label, "to/from", self.data_dir)
+            print("Getting", recno, runno, searchno,
+                  label, "to/from", self.data_dir)
             exp = self.get_e2g(
                 recno, runno, searchno, data_dir=self.data_dir, only_local=only_local
             )
 
             if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
-                exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
+                exp.df.rename(
+                    columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             if df.empty:
                 warn(
@@ -705,7 +814,8 @@ class Data:
             df["GeneID"] = df["GeneID"].apply(maybe_int)
 
             funcats_dict = (
-                df.drop_duplicates("GeneID").set_index("GeneID")["FunCats"].to_dict()
+                df.drop_duplicates("GeneID").set_index(
+                    "GeneID")["FunCats"].to_dict()
             )
             gid_funcat_mapping.update(funcats_dict)
 
@@ -782,7 +892,7 @@ class Data:
             if taxon_filter is None:
                 filter_func = dummy_filter
             else:
-                filter_func = lambda x: x[x["TaxonID"] == taxon_filter]
+                def filter_func(x): return x[x["TaxonID"] == taxon_filter]
             if (
                 self.metrics
                 and not self.metrics_after_filter
@@ -829,7 +939,7 @@ class Data:
 
         # self.multi = pd.concat(exps.values(), keys=exps.keys())
         self.exps = exps
-        ## TODO can check to ensure not exporting all data and stack this smaller amount of data
+        # TODO can check to ensure not exporting all data and stack this smaller amount of data
 
         if not self.export_all:
             _cols = [
@@ -892,7 +1002,8 @@ class Data:
                     self.data.Metric == "GeneSymbol", self.data.columns[0:3]
                 ]
                 # sel.index = sel.index.droplevel(1)
-                self._gid_symbol = sel.set_index("GeneID")[sel.columns[-1]].to_dict()
+                self._gid_symbol = sel.set_index(
+                    "GeneID")[sel.columns[-1]].to_dict()
             except KeyError:
                 return dict()
             # self._gid_symbol = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
@@ -980,8 +1091,9 @@ class Data:
         self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
 
         # if self.impute_missing_values or 1:
-        if self.impute_missing_values :
-            import ipdb; ipdb.set_trace()
+        if self.impute_missing_values:
+            import ipdb
+            ipdb.set_trace()
             # downshift=2.
             # scale = .5
             downshift, scale = 1.8, 0.8
@@ -1021,8 +1133,8 @@ class Data:
             # )
             self._areas_log = np.log10(
                 self._areas.replace(0, np.NAN)
-                .fillna(self.minval )
-                .divide(self.minval )
+                .fillna(self.minval)
+                .divide(self.minval)
             )
 
         self._areas_log.index.name = "GeneID"
@@ -1056,7 +1168,8 @@ class Data:
             ctrl_exps = list()
 
             for ix, g in metadata.groupby(group):
-                ctrl_exp = g[g[label] == control].index[0]  # should only be one
+                # should only be one
+                ctrl_exp = g[g[label] == control].index[0]
                 ctrl_exps.append(ctrl_exp)
                 # to_normalize = list(set(g.index) - set([ctrl_exp]))
                 to_normalize = g.index
@@ -1064,9 +1177,11 @@ class Data:
                     self._areas_log_shifted[ctrl_exp].fillna(0) + 1e-20, axis="index"
                 )
             self._areas = (
-                areas.drop(ctrl_exps, axis=1).where(lambda x: x != 0).dropna(how="all")
+                areas.drop(ctrl_exps, axis=1).where(
+                    lambda x: x != 0).dropna(how="all")
             )
-            self.minval_log = self._areas.replace(0, np.NAN).stack().dropna().min()
+            self.minval_log = self._areas.replace(
+                0, np.NAN).stack().dropna().min()
             finite = self._areas.pipe(np.isfinite)
 
             # have to take care of number/0 case
@@ -1077,7 +1192,8 @@ class Data:
             # not sure if this is right, can check:
             # sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
             sample_cols = self.col_metadata.columns
-            sample_ixs = [x for x in self.col_metadata.index if x not in ctrl_exps]
+            sample_ixs = [
+                x for x in self.col_metadata.index if x not in ctrl_exps]
 
             self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
             self._mask = self.mask[sample_ixs]
@@ -1091,8 +1207,10 @@ class Data:
                     frame_log = self.impute_missing(frame).reset_index()
                 else:
                     minval = frame.replace(0, np.NAN).stack().dropna().min()
-                    frame_log = np.log10(frame.replace(0, np.NAN).fillna(minval / 2))
-                    minval_log = frame_log.replace(0, np.NAN).stack().dropna().min()
+                    frame_log = np.log10(frame.replace(
+                        0, np.NAN).fillna(minval / 2))
+                    minval_log = frame_log.replace(
+                        0, np.NAN).stack().dropna().min()
                     shift_val = np.ceil(np.abs(minval_log))
                     frame_log = (
                         frame_log.fillna(minval_log / 2) + shift_val
@@ -1106,7 +1224,8 @@ class Data:
             self.df_filtered = pd.concat([self.df_filtered, *new_cols])
 
         if self.batch is not None:
-            self._areas_log_shifted = self.batch_normalize(self.areas_log_shifted)
+            self._areas_log_shifted = self.batch_normalize(
+                self.areas_log_shifted)
             # try batch normalization via ComBat
             if (
                 self.export_all and not self.normed
@@ -1119,8 +1238,10 @@ class Data:
                     )
                     # get rid of "Metric" index level, batch_normalize not expecting it
                     res = self.batch_normalize(frame, prior_plot=False)
-                    self.df_filtered.loc[idx[:, col + "_log10"], :] = res.values
-                    self.df_filtered.loc[idx[:, col], :] = np.power(res, 10).values
+                    self.df_filtered.loc[idx[:, col +
+                                             "_log10"], :] = res.values
+                    self.df_filtered.loc[idx[:, col],
+                                         :] = np.power(res, 10).values
             elif self.export_all and self.normed:
                 warn(
                     """No support for full export with norm channel. Please ignore
@@ -1213,7 +1334,8 @@ class Data:
                 else "nonparametric",
                 outpath=self.outpath,
             )
-            grdevices.png(file=outname + ".png", width=5, height=5, units="in", res=300)
+            grdevices.png(file=outname + ".png", width=5,
+                          height=5, units="in", res=300)
         else:
             plot_prior = False
         res = sva.ComBat(
@@ -1237,7 +1359,8 @@ class Data:
             )
         except ValueError:  # rpy2.9.5 support
             df = pd.DataFrame(
-                index=data.index, columns=data.columns, data=pandas2ri.ri2py(res)
+                index=data.index, columns=data.columns, data=pandas2ri.ri2py(
+                    res)
             )
 
         # df = pandas2ri.ri2py(res)
@@ -1349,7 +1472,7 @@ class Data:
                 mat, downshift=downshift, scale=scale, make_plot=True
             )
             # now add back the mask values?
-            #- this might be important when batch correction is performed, otherwise should have no effect?
+            # - this might be important when batch correction is performed, otherwise should have no effect?
             # mat = mat + mask_values.fillna(0)
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
@@ -1391,7 +1514,8 @@ class Data:
                 r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
                 r("cor <- corfit$consensus")
 
-            fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
+            fit = r(
+                """fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             # need to make valid R colnames
             variables = robjects.r("colnames(mod)")
             fixed_vars = [
@@ -1451,9 +1575,12 @@ class Data:
                         "P.Value": "pValue",
                     }
                 )
-                result["log2_FC"] = result["log2_FC"].apply(lambda x: x / np.log10(2))
-                result["CI.L"] = result["CI.L"].apply(lambda x: x / np.log10(2))
-                result["CI.R"] = result["CI.R"].apply(lambda x: x / np.log10(2))
+                result["log2_FC"] = result["log2_FC"].apply(
+                    lambda x: x / np.log10(2))
+                result["CI.L"] = result["CI.L"].apply(
+                    lambda x: x / np.log10(2))
+                result["CI.R"] = result["CI.R"].apply(
+                    lambda x: x / np.log10(2))
 
                 # DON'T NEED TO DO THIS ANYMORE
                 # we ensure the order of result is equal to order of areas_log_shifted
@@ -1519,6 +1646,7 @@ class Data:
             )
             # self.
             # t test on every gene set
+
             def ttest_func(row):
                 t, p = ttest_rel_cov(row[cols0], row[cols1], ncov=ncov)
                 return p
@@ -1658,7 +1786,11 @@ class Data:
             for_export = pd.concat(data, axis=1).reset_index()
             for_export["GeneID"] = for_export["GeneID"].apply(maybe_int)
             for_export["TaxonID"] = for_export["TaxonID"].apply(maybe_int)
-            print("Writing {}".format(outname))
+            # annotations
+            if self.annotations:
+                for_export = add_annotations(for_export, self.annotations)
+
+            logger.info(f"Writing {outname}")
             for_export.to_csv(outname, sep="\t", index=False)
 
         elif level == "align":
@@ -1817,7 +1949,8 @@ class Data:
                         _genemapper.symbol.get(str(int(x)), x),
                     )
                 )
-                order = ["GeneSymbol"]  # index column is GeneID, add GeneSymbol
+                # index column is GeneID, add GeneSymbol
+                order = ["GeneSymbol"]
                 order += [x for x in export.columns if x not in order]
             export[order].to_csv(outname, sep="\t")
 
@@ -1829,12 +1962,11 @@ class Data:
                 self.df_filtered.loc[idx[:, 'area'], :]
                 .apply(my_zscore, axis=1)
                 .reset_index()
-                )
+            )
 
             #     .apply(z_score, axis=1)
             #     .reset_index()
             # )
-
 
         else:
             # export some other column of data
@@ -1855,8 +1987,6 @@ class Data:
 
 
 # ========================================================================================================= #
-
-from six import string_types
 
 
 class MyHeatMapper(HeatMapper):
@@ -1959,11 +2089,7 @@ class MyHeatMapper(HeatMapper):
         ax.invert_yaxis()
 
 
-import seaborn as sb
 sb.matrix._HeatMapper = MyHeatMapper
-from seaborn import heatmap
-from seaborn import despine
-from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
 
 
 class _ScatterMapper(MyHeatMapper):
@@ -2109,7 +2235,8 @@ class MyClusterGrid(ClusterGrid):
         self.circle_col_markers = circle_col_markers
         self.circle_col_marker_size = circle_col_marker_size
 
-        self.data2d = self.format_data(self.data, pivot_kws, z_score, standard_scale)
+        self.data2d = self.format_data(
+            self.data, pivot_kws, z_score, standard_scale)
 
         self.mask = _matrix_mask(self.data2d, mask)
 
@@ -2130,8 +2257,10 @@ class MyClusterGrid(ClusterGrid):
             data, col_colors, axis=1
         )
 
-        width_ratios = self.dim_ratios(self.row_colors, figsize=figsize, axis=0)
-        height_ratios = self.dim_ratios(self.col_colors, figsize=figsize, axis=1)
+        width_ratios = self.dim_ratios(
+            self.row_colors, figsize=figsize, axis=0)
+        height_ratios = self.dim_ratios(
+            self.col_colors, figsize=figsize, axis=1)
         nrows = 3 if self.col_colors is None else 4
         ncols = 3 if self.row_colors is None else 4
         self.gs = gridspec.GridSpec(
@@ -2152,9 +2281,11 @@ class MyClusterGrid(ClusterGrid):
         self.ax_col_colors = None
 
         if self.row_colors is not None:
-            self.ax_row_colors = self.fig.add_subplot(self.gs[nrows - 1, ncols - 2])
+            self.ax_row_colors = self.fig.add_subplot(
+                self.gs[nrows - 1, ncols - 2])
         if self.col_colors is not None:
-            self.ax_col_colors = self.fig.add_subplot(self.gs[nrows - 2, ncols - 1])
+            self.ax_col_colors = self.fig.add_subplot(
+                self.gs[nrows - 2, ncols - 1])
 
         self.ax_heatmap = self.fig.add_subplot(self.gs[nrows - 1, ncols - 1])
 
@@ -2283,7 +2414,7 @@ class MyClusterGrid(ClusterGrid):
 
         annot = None
         if "annot" in kws and isinstance(kws["annot"], pd.DataFrame):
-            ## not working for some reason:
+            # not working for some reason:
             annot = kws.pop("annot").iloc[yind, xind]
             # annot = kws.pop('annot').loc[self.data2d.index, self.data2d.columns]
         elif "annot" in kws:
@@ -2494,9 +2625,6 @@ class MyClusterGrid(ClusterGrid):
             despine(self.ax_col_colors, left=True, bottom=True)
 
 
-from scipy.cluster import hierarchy
-
-
 class MyDendrogramPlotter(sb.matrix._DendrogramPlotter):
     def __init__(
         self,
@@ -2624,7 +2752,3 @@ def dendrogram(
 
     #     # print(axis, ':', ratios)
     #     return ratios
-
-
-from . import utils
-from .utils import *
