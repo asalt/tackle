@@ -46,7 +46,7 @@ sb.set_style("white", rc)
 sb.set_palette("muted")
 sb.set_color_codes()
 
-__version__ = "0.5.0"
+__version__ = "0.5.01"
 
 from bcmproteomics_ext import ispec
 
@@ -58,7 +58,7 @@ from .metrics import make_metrics
 from .pcaplot import pcaplot
 from .utils import fix_name
 from .utils import *
-from .containers import Data, GeneMapper, get_annotation_mapper, get_gene_mapper
+from .containers import Data, GeneMapper, get_annotation_mapper, get_gene_mapper, get_hgene_mapper
 from .barplot import barplot
 
 # from cluster_to_plotly import cluster_to_plotly
@@ -882,6 +882,7 @@ def main(
     )
     params = dict(ctx.params)
     params["file_format"] = " | ".join(params["file_format"])
+    params["annotations"] = " | ".join(params["annotations"])
     param_df = pd.DataFrame(params, index=[analysis_name]).T
     param_df.to_csv(outname, sep="\t")
 
@@ -1956,7 +1957,7 @@ def cluster2(
 ):
 
 
-    filename_kwargs = dict()
+    outname_kws = dict()
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
@@ -2054,7 +2055,7 @@ def cluster2(
         _genes = _df[ _df['cluster'] == _thecluster ]['GeneID'].astype(str)
         _tokeep = [x for x in _genes if x in X.index]
         X = X.loc[_tokeep]
-        filename_kwargs['subcluster'] = _thecluster
+        outname_kws['subcluster'] = _thecluster
         main_title += f"\nCluster {_thecluster}"
 
 
@@ -2066,9 +2067,9 @@ def cluster2(
         X = 10 ** X
 
     if standard_scale is not None:
-        if standard_scale == 1:
+        if standard_scale == 1 or standard_scale == '1':
             X = ((X.T / X.max(1)).T).fillna(0)
-        elif standard_scale == 0:
+        elif standard_scale == 0 or standard_scale == '0':
             X = (X / X.max(1)).fillna(0)
 
     symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
@@ -2179,14 +2180,15 @@ def cluster2(
             .fillna(0).astype(int)
         )
         annot_mat.columns.name = annotate
-        filename_kwargs['annotate'] = annotate
+        outname_kws['annotate'] = annotate
 
     if z_score_by is not None:
-        filename_kwargs['z_score_by']= z_score_by
+        outname_kws['z_score_by']= z_score_by
 
     missing_values = "masked" if show_missing_values else "unmasked"
     if linear:
-        filename_kws["linear"] = "linear"
+        outname_kws["linear"] = "linear"
+    #
     outname_func = partial(
         get_outname,
         name=data_obj.outpath_name,
@@ -2199,7 +2201,6 @@ def cluster2(
         linkage=linkage,
         outpath=data_obj.outpath,
         missing_values=missing_values,
-        **filename_kwargs
     )
     # =================================================================
 
@@ -2306,7 +2307,8 @@ def cluster2(
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
-    def plot_and_save(X, out, grdevice, gr_kws=None, annot_mat=None, **kws):
+    def plot_and_save(X, out, grdevice, gr_kws=None, annot_mat=None, main_title=None,
+                      **kws):
         if gr_kws is None:
             gr_kws = dict()
         grdevice(file=out, **gr_kw)
@@ -2314,8 +2316,12 @@ def cluster2(
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
         if annot_mat is None:
             annot_mat = robjects.NULL
-        ret = cluster2(
-            X,
+        if main_title is None:
+            main_title = robjects.NULL
+
+
+        call_kws = dict(
+            data=X,
             cut_by=cut_by or robjects.NULL,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
@@ -2347,8 +2353,12 @@ def cluster2(
             order_by_abundance=order_by_abundance,
             seed=seed or robjects.NULL,
             metadata_colors=metadata_colorsR or robjects.NULL,
-            # circle_col_markers=circle_col_markers,
-            # circle_col_marker_size=circle_col_marker_size,
+            )
+        call_kws.update(kws)
+
+
+        ret = cluster2(
+            **call_kws
         )
 
         grdevices.dev_off()
@@ -2378,10 +2388,24 @@ def cluster2(
         gr_kw = gr_kws[file_fmt]
         out = outname + file_fmt
         annot_mat_to_pass = annot_mat
-        if len(X) > 300 and not gene_symbols:
+        if len(X) > 300 and annotate:
             annot_mat_to_pass = None
             logger.info(f"number of genes is {len(X)} >> 300, skipping annotation")
-        plot_and_save(X, out, grdevice, gr_kws, annot_mat=annot_mat_to_pass)
+            if 'annotate' in outname_kws:
+                outname_kws.pop('annotate')
+
+        #################################################################
+        ##                          make plot                          ##
+        #################################################################
+
+
+        plot_and_save(X, out, grdevice, gr_kws, annot_mat=annot_mat_to_pass,
+                      main_title=main_title)
+
+
+        ##################################################################
+        ##                     plot any annotations                     ##
+        ##################################################################
 
         if data_obj.annotations is None:
             continue
@@ -2390,13 +2414,30 @@ def cluster2(
         for annotation in data_obj.annotations:
             annot_df = annotator.get_annot(annotation)
 
-            # expand for homologene
             subX = X[ X.GeneID.isin(annot_df.GeneID) ]
-            if annot_mat is not None:
-                sub_annot_mat = annot_mat[ annot_mat.GeneID.isin(subX.GeneID)]
+            if subX.empty: # try mapping to homologene
+                logger.info(f"Trying to map genes to hs through homologene")
+                hgene_mapper = get_hgene_mapper()
+                hg_gene_dict = hgene_mapper.map_to_human(X.GeneID)
+                hs_genes = set(hg_gene_dict.values())
+                _annot_genes = set(annot_df.GeneID) & set(hg_gene_dict.values())
+                _tokeep = [k for k,v in hg_gene_dict.items() if v in _annot_genes]
+                _tokeep = set(_tokeep)
+                logger.info(f"Successfully remapped {len(_tokeep)} genes to {len(hs_genes)} hs genes")
+                subX = X[ X.GeneID.isin(_tokeep)]
+
+            sub_annot_mat = None
+            if annotate and annot_mat is not None:
+                sub_annot_mat = annot_mat[ annot_mat.GeneID.isin(subX.GeneID) ]
+            _show_gene_symbols = False
+            if len(subX) < 101:
+                _show_gene_symbols = True
+                logger.info(f"number of genes is {len(X)} << 101, adding symbols. Use <future feature> to override>.")
 
             out = outname_func("clustermap", geneset = fix_name(annotation), **outname_kws ) + file_fmt
-            plot_and_save(subX, out, grdevice, gr_kws, main_title = annotation, annot_mat = sub_annot_mat            )
+            plot_and_save(subX, out, grdevice, gr_kws, main_title = annotation, annot_mat = sub_annot_mat,
+                          show_gene_symbols=_show_gene_symbols)
+
 
         # heatmap = ret.rx('heatmap')
         # print(heatmap)
