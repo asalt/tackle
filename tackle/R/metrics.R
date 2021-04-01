@@ -1,8 +1,7 @@
-library(dplyr)
-library(ggplot2)
-library(ggpubr)
-## library(stringr)
-library(tidyr)
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(tidyr))
 
 
 metrics <- function(df, savename=NULL, exts=NULL, ...){
@@ -55,7 +54,7 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
           legend.title=element_text(size=8),
           legend.text = element_text(size=8),
           ) +
-    labs(fill='SRA\nMetric') +
+    labs(fill='SRA\nMetric', y = 'Gene Products') +
   xlab(NULL)
 
 
@@ -66,7 +65,7 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
     theme_classic() +
     theme(text = element_text(size=12),
           axis.text.x=element_blank(),
-          ) +
+          )
     xlab(NULL)
 
 
