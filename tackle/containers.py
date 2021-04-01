@@ -211,9 +211,9 @@ class Annotations:
         self.file = os.path.join(
             PWD, "data", "combined_annotations.tsv"
         )
-        if not os.path.exists(self.file):
+        if not os.path.exists(self.file) or True:
             logger.error(f"Could not find {self.file}")
-            return self
+            return
         logger.info(f"Loading annotations file {self.file}")
         self.df = pd.read_table(self.file, dtype=str)
 
@@ -291,7 +291,6 @@ def get_gene_mapper(cls=GeneMapper):
 _genemapper = get_gene_mapper()
 
 _annotmapper = None
-
 
 def get_annotation_mapper(cls=Annotations):
     global _annotmapper
@@ -1092,8 +1091,6 @@ class Data:
 
         # if self.impute_missing_values or 1:
         if self.impute_missing_values:
-            import ipdb
-            ipdb.set_trace()
             # downshift=2.
             # scale = .5
             downshift, scale = 1.8, 0.8

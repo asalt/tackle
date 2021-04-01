@@ -2410,8 +2410,8 @@ def cluster2(
         if data_obj.annotations is None:
             continue
 
-        annotator = get_annotation_mapper()
         for annotation in data_obj.annotations:
+            annotator = get_annotation_mapper()
             annot_df = annotator.get_annot(annotation)
 
             subX = X[ X.GeneID.isin(annot_df.GeneID) ]
