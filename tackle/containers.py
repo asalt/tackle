@@ -211,7 +211,7 @@ class Annotations:
         self.file = os.path.join(
             PWD, "data", "combined_annotations.tsv"
         )
-        if not os.path.exists(self.file) or True:
+        if not os.path.exists(self.file):
             logger.error(f"Could not find {self.file}")
             return
         logger.info(f"Loading annotations file {self.file}")
