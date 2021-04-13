@@ -83,9 +83,17 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
     from rpy2.robjects.packages import importr
 
     grdevices = importr("grDevices")
+    grid = importr("grid")
     complex_heatmap = importr('ComplexHeatmap')
     cmat = complex_heatmap.make_comb_mat(robjects.ListVector(overlap_dict))
-    upset_plot = complex_heatmap.UpSet(cmat)
+    upset_plot = complex_heatmap.UpSet(cmat,
+                                       top_annotation = complex_heatmap.upset_top_annotation(cmat,
+                                       height = grid.unit(2, 'in') ,
+                                       annotation_name_rot=90),
+    right_annotation = complex_heatmap.upset_right_annotation(cmat,
+                                                              width = grid.unit(1.5, 'in'))
+    )
+
 
 
 
