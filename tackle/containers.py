@@ -85,6 +85,7 @@ TAXON_MAPPER = {
 LABEL_MAPPER = {
     "none": 0,  # hard coded number IDs for labels
     "126": 1260,
+    "126C": 1260,
     "127C": 1270,
     "127N": 1271,
     "128C": 1280,
@@ -354,7 +355,7 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
         how='left'
     )
     )
-    front = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', 'GeneCapacity',
+    front = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', #'GeneCapacity',
              *annotations]
     col_order = [*front, *[x for x in dfout if x not in front]]
     return dfout[col_order]
@@ -1718,7 +1719,7 @@ class Data:
                 "GeneSymbol",
                 "GeneDescription",
                 "FunCats",
-                "GeneCapacity",
+                # "GeneCapacity",
             ]
             # TODO fix this
             for c in gene_metadata_cols:
@@ -1744,7 +1745,7 @@ class Data:
                 "GeneSymbol",
                 "GeneDescription",
                 "FunCats",
-                "GeneCapacity",
+                # "GeneCapacity",
             ]
 
             cols = [
@@ -1760,8 +1761,38 @@ class Data:
                 "iBAQ_dstrAdj_MED_log10_zscore",
             ]
 
+            # keep track of all observed records to determine whether or not to report QUAl columns
+            records = set()
+            ndistinct_records = self.col_metadata.drop_duplicates(['recno', 'runno', 'searchno']).pipe(len)
             for col in export.columns:
-                renamer = {x: "{}_{}".format(x, col) for x in cols}
+
+                identifier = self.col_metadata.loc[col][
+                    ["recno", "runno", "searchno", "label"]
+                ].to_dict()
+
+                _rec, _run, _search, _label = identifier['recno'], identifier['runno'], identifier['searchno'], identifier['label']
+                _id= f"{_rec}_{_run}_{_search}"
+                # if _id in records: # do not re-write QUAL data
+                #     if col in ['SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs']:
+                #         continue
+
+                renamer = {
+                    x: f"{x}_{_rec}_{_run}_{_search}_{_label}_{col}"
+                    for x in cols
+                }
+
+                if ndistinct_records < self.col_metadata.pipe(len):
+                    # simply annotate QUAL columns with rec_run_search identifier
+
+                    renamer.update({
+                        x: f"{x}_{_rec}_{_run}_{_search}"
+                        for x in ['SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs']
+                    })
+
+
+
+
+                #renamer = {x: "{}_{}".format(x, col) for x in cols}
 
                 subdf = (
                     export.loc[idx[:, :], col]
@@ -1773,11 +1804,19 @@ class Data:
                 subdf.columns = subdf.columns.droplevel(0)
                 subdf.index = subdf.index.map(maybe_int).astype(str)
                 subdf["GeneID"] = subdf["GeneID"].apply(maybe_int).astype(str)
+
                 # this makes sure we don't crash if any columns are missing
                 _cols = [x for x in cols if x in subdf]
+                # check if we have already exported QUAL data for a given rec_run_search
+                if _id in records:
+                    logger.debug(f'QUAL data for {_id} already exported, not repeating')
+                    _cols = [x for x in _cols if x not in ('SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs')]
+                records |= {_id}
+
                 subdf = subdf.set_index([x for x in gene_metadata_cols if x in subdf])[
                     _cols
                 ].rename(columns=renamer)
+
                 data.append(subdf)
 
             for_export = pd.concat(data, axis=1).reset_index()
@@ -1802,7 +1841,7 @@ class Data:
                 "GeneSymbol",
                 "GeneDescription",
                 "FunCats",
-                "GeneCapacity",
+                #"GeneCapacity",
             ]
             for c in gene_metadata_cols:
                 try:
