@@ -66,6 +66,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                      circle_col_marker_size=12,
                      force_plot_genes=FALSE, main_title='',
                      title_fontsize=9,
+                     cluster_row_slices=TRUE,
+                     cluster_col_slices=TRUE,
                      cut_by=NULL,
                      order_by_abundance=FALSE){
 
@@ -353,6 +355,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
 
   ## print(head(toplot[col_data$name]))
   ## browser()
+  print('##################################3')
+  print(cluster_col_slices)
 
   ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
   ht <- Heatmap(toplot[col_data$name],
@@ -370,8 +374,8 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
                 column_title_rot = 0,
                 cluster_columns=col_cluster,
                 cluster_rows=row_cluster,
-                cluster_row_slices=TRUE,
-                cluster_column_slices = TRUE,
+                cluster_row_slices=cluster_row_slices,
+                cluster_column_slices = cluster_col_slices,
                 show_row_names=show_gene_symbols,
                 clustering_method_rows=linkage,
                 clustering_method_columns=linkage,

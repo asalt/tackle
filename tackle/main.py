@@ -415,7 +415,7 @@ def validate_configfile(experiment_file, **kwargs):
 
 ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF",
                        "RTK", "MATRISOME", "SurfaceLabel", "CellMembrane", "Secreted",
-                       "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", )
+                       "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", '_all' )
 
 
 # @gui_option
@@ -426,7 +426,7 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF",
     default=None,
     help=".ini file with metadata for isobaric data used for scatter and PCA plots",
 )
-@click.option('--annotations',
+@click.option('-a', '--annotations',
               type=click.Choice(ANNOTATION_CHOICES),
               multiple=True, default=None,
               help="analyses to be performed on subsets of genes"
@@ -754,6 +754,9 @@ def main(
                 cluster_annotate_cols.append(_q)
     if cluster_annotate_cols is not None:
         cluster_annotate_cols = list(set(cluster_annotate_cols))
+
+    if annotations is not None and '_all' in annotations :
+        annotations = [x for x in ANNOTATION_CHOICES if x not in ('_all')]
 
     export_all = False
     if all(x in sys.argv for x in ("export", "--level")) and any(
@@ -1724,6 +1727,20 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     show_default=True,
 )
 @click.option(
+    "--cluster-col-slices/--no-cluster-col-slices",
+    default=True,
+    is_flag=True,
+    show_default=True,
+    help="whether or not to cluster col slices",
+)
+@click.option(
+    "--cluster-row-slices/--no-cluster-row-slices",
+    default=True,
+    is_flag=True,
+    show_default=True,
+    help="whether or not to cluster row slices",
+)
+@click.option(
     "--col-cluster/--no-col-cluster",
     default=True,
     is_flag=True,
@@ -1815,12 +1832,14 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 @click.option(
     "--volcano-filter-params",
     type=(float, float, click.Choice(["pValue", "pAdj"])),
-    default=(4, 0.05, "pAdj"),
+    default=(0, 1, "pAdj"),
     show_default=True,
 )
 @click.option(
-    "--volcano-topn", default=9999, show_default=True, help="Top n to plot total"
+    "--volcano-topn", default=99, show_default=True, help="Top n to plot total"
 )
+@click.option("--volcano-sortby", default='log2_FC', type=click.Choice(['log2_FC', 'pValue', 'pAdj']),
+              show_default=True)
 @click.option('--cluster-file', type=(click.Path(exists=True, dir_okay=False), int),
               default=(None, 0),
               show_default=True,
@@ -1925,6 +1944,8 @@ def cluster2(
     cmap,
     cut_by,
     col_cluster,
+        cluster_row_slices,
+        cluster_col_slices,
     figsize,
     force_plot_genes,
     genefile,
@@ -1945,6 +1966,7 @@ def cluster2(
     volcano_file,
     volcano_filter_params,
     volcano_topn,
+        volcano_sortby,
         cluster_file,
     row_cluster,
     seed,
@@ -2015,10 +2037,10 @@ def cluster2(
         if np.isfinite(volcano_topn):
             _df = pd.concat(
                 [
-                    _df.sort_values(by="log2_FC", ascending=False).head(
+                    _df.sort_values(by=volcano_sortby, ascending=False).head(
                         int(volcano_topn / 2)
                     ),
-                    _df.sort_values(by="log2_FC", ascending=False).tail(
+                    _df.sort_values(by=volcano_sortby, ascending=False).tail(
                         int(volcano_topn / 2)
                     ),
                 ]
@@ -2122,7 +2144,7 @@ def cluster2(
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
-    col_meta = data_obj.col_metadata.copy().fillna("")
+    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
     if add_human_ratios:
         col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
     # _expids = ('recno', 'runno', 'searchno', 'label')
@@ -2350,6 +2372,8 @@ def cluster2(
             gene_symbol_fontsize=gene_symbol_fontsize,
             # legend_include=legend_include,
             # legend_exclude=legend_exclude,
+            cluster_row_slices=cluster_row_slices,
+            cluster_col_slices=cluster_col_slices,
             order_by_abundance=order_by_abundance,
             seed=seed or robjects.NULL,
             metadata_colors=metadata_colorsR or robjects.NULL,
