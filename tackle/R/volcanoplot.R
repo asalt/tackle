@@ -1,5 +1,6 @@
 # Load packages
 suppressMessages(library(dplyr))
+suppressMessages(library(stringr))
 suppressMessages(library(ggplot2))
 suppressMessages(library(ggthemes))
 suppressMessages(library(ggrepel))
@@ -149,13 +150,15 @@ volcanoplot <- function(X, max_labels = 35,
   ## footnote <- ''
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
-  annot_size <- 5
+  annot_size <- 4.0
   max_nchar <- max(nchar(group0), nchar(group1))
-  print(max_nchar)
-  if ((max_nchar) > 15) annot_size <- annot_size - .5
+    group0 <- str_replace(group0, "\\+", " \\+\n")
+    group1 <- str_replace(group1, "\\+", " \\+\n")
+  #print(max_nchar)
+  if ((max_nchar) > 12) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
-  if ((max_nchar) > 30) annot_size <- annot_size - 1.5
-  print(annot_size)
+  if ((max_nchar) > 35) annot_size <- annot_size - .5
+  #print(annot_size)
 
   p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), col=usd)) +
     theme_base() +
@@ -168,7 +171,7 @@ volcanoplot <- function(X, max_labels = 35,
                     box.padding = .1, cex = label_cex,
                     segment.size = .35, segment.alpha = .4
                     ) +
-    annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
+    annotate("text",  c(-xmax, xmax), c(0, 0), label = c(group0, group1),
              size=annot_size,
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),
