@@ -1,6 +1,7 @@
 # Load packages
 suppressMessages(library(dplyr))
 suppressMessages(library(ggplot2))
+suppressMessages(library(stringr))
 suppressMessages(library(ggthemes))
 suppressMessages(library(ggrepel))
 
@@ -35,6 +36,7 @@ volcanoplot <- function(X, max_labels = 35,
                         group0 = '', group1 = '',
                         sig_metric = 'pAdj',
                         number_by = 'abs_log2_FC',
+                        max_fc=NULL,
                         ...){
 
   POINT_SIZE <- 1.4
@@ -69,14 +71,16 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## X[ , 'usd' ] = '#222222bb'
   ## X[ , 'usd' ] = '#22222222'
-  ## X[ , 'usd' ] = '#22222288'
-  X[ , 'usd' ] = '#88888888'
+  X[ , 'usd' ] = '#22222288'
+  ## X[ , 'usd' ] = '#88888888'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[ (X[,sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC<0), 'usd' ] = 'blue'
   X[ (X[,sig_metric] < sig & X$FC >  fc_cutoff & X$log2_FC>0), 'usd' ] = 'red'
-  X[ X$highlight == TRUE, 'usd' ] = "#67ff3d"
-  ## X[ X$highlight == TRUE, 'usd' ] = 'red'
+  ## X[ X$highlight == TRUE, 'usd' ] = "#67ff3d"
+  ## X[ X$highlight == TRUE, 'usd' ] = "purple"
+  ## X[ X$highlight == TRUE, 'usd' ] = "#00ab25"
+  X[ X$highlight == TRUE, 'usd' ] = 'red'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
@@ -107,41 +111,54 @@ volcanoplot <- function(X, max_labels = 35,
   }
   else if (number_by == 'log2_FC'){
 
-    to_label1 <- head(order( (X[, 'log2_FC']), X[, 'pValue'], decreasing = c(TRUE, FALSE) ),
-                      round(max_labels/2)
-                      )
-    to_label2 <- head(order( (X[, 'log2_FC']), X[, 'pValue'], decreasing = c(FALSE, FALSE) ),
-                      round(max_labels/2)
-                      )
+    to_label1 <- X%>%filter(log2_FC<0 & FC>fc_cutoff & Sig !='N.S.') %>% arrange(log2_FC) %>% head(round(max_labels, 2)) %>% rownames
+    to_label2 <- X%>%filter(log2_FC>0 & FC>fc_cutoff & Sig !='N.S.') %>% arrange(-log2_FC) %>% head(round(max_labels, 2)) %>% rownames
+
+  # to_label1 <- head(order( (X[, 'log2_FC']), X[, 'pValue'], decreasing = c(TRUE, FALSE) ),
+  #                     round(max_labels/2)
+  #                     )
+  #   to_label2 <- head(order( (X[, 'log2_FC']), X[, 'pValue'], decreasing = c(FALSE, FALSE) ),
+  #                     round(max_labels/2)
+  #                     )
+
     to_label <- c(to_label1, to_label2)
 
   }
   else{
 
-    to_label <- head(order(abs(X[ X$highlight==TRUE, 'pValue']), X[X$highlight==TRUE, 'log2_FC'],
-                           decreasing=c(TRUE, FALSE)
-                           ),
-                     max_labels
-                     )
-    max_labels <- max_labels - length(to_label)
+    # to_label <- head(order(abs(X[ X$highlight==TRUE, 'pValue']), X[X$highlight==TRUE, 'log2_FC'],
+    #                        decreasing=c(TRUE, FALSE)
+    #                        ),
+    #                  max_labels
+    #                  )
+    # max_labels <- max_labels - length(to_label)
 
-    to_label <- head(order( X[, 'pValue'], abs(X[, 'log2_FC']), decreasing = c(FALSE, TRUE) ),
-                     max_labels
-                     )
-  }
+  #   to_label <- head(order( X[, 'pValue'], abs(X[, 'log2_FC']), decreasing = c(FALSE, TRUE) ),
+  #                    max_labels
+  #                    )
+
+    to_label1 <- X%>%filter(log2_FC<0 & FC>fc_cutoff & Sig !='N.S.') %>% arrange(pValue) %>% head(round(max_labels, 2)) %>% rownames
+    to_label2 <- X%>%filter(log2_FC>0 & FC>fc_cutoff & Sig !='N.S.') %>% arrange(pValue) %>% head(round(max_labels, 2)) %>% rownames
+    to_label <- c(to_label1, to_label2)
+   }
 
 
-  X[, 'label'] <- FALSE  # new column
-  X[to_label, 'label'] <- TRUE  # label these
 
+  X[, "label"] <- FALSE # new column
+  X[to_label, "label"] <- TRUE # label these
   if (show_all == FALSE){
     X[ X[, 'Sig'] == 'N.S.', 'label'] <- FALSE
   }
-
+  # except these?
+  X[X$highlight == TRUE, "label"] <- TRUE
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
-  ymax <- max(-log10(X[, ploty])) * 1.05
+  ymax <- max(-log10(X[, ploty])) * 1.08
   xmax <- X[, 'log2_FC'] %>% abs %>% max
+
+  if (!is.null(max_fc)) {
+    xmax <- max_fc + .2
+  }
 
   ## ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
   ratio_sig <- paste0( dim( X[X$Sig == sig_filter_str,] )[1], '/', dim(X)[1] )
@@ -149,12 +166,13 @@ volcanoplot <- function(X, max_labels = 35,
   ## footnote <- ''
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
-  annot_size <- 5
+  annot_size <- 4
   max_nchar <- max(nchar(group0), nchar(group1))
-  print(max_nchar)
+  group0 <- str_replace(group0, "\\+", " \\+\n") %>% str_replace(":", "\n")
+  group1 <- str_replace(group1, "\\+", " \\+\n") %>%str_replace(":", "\n")
   if ((max_nchar) > 15) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
-  if ((max_nchar) > 30) annot_size <- annot_size - 1.5
+  if ((max_nchar) > 35) annot_size <- annot_size - .5
   print(annot_size)
 
   p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), col=usd)) +
@@ -162,21 +180,25 @@ volcanoplot <- function(X, max_labels = 35,
     geom_point(size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
     geom_point(data=X[X$highlight==TRUE,], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch=pch) +
     scale_colour_identity() +
+    ylim(0, ymax) +
+    xlim(-xmax - .2, xmax + .2) +
     geom_text_repel(data = X[X$label==TRUE, ],
-                    aes(label = GeneSymbol),  min.segment.length = .05,
-                    point.padding = 1e-6,
+                    aes(label = GeneSymbol),  min.segment.length = .15,
+                    point.padding = 1e-3,
                     box.padding = .1, cex = label_cex,
                     segment.size = .35, segment.alpha = .4
                     ) +
-    annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
+    #annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
+    annotate("text",  c(-xmax, xmax), c(0,0), label = c(group0, group1),
              size=annot_size,
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),
          y=ylabel_full,
          caption = footnote) +
     theme_classic() +
-    theme(plot.caption = element_text(color = grey(.5), size=10)) +
-    ylim(0, ymax)
+    theme(plot.caption = element_text(color = grey(.5), size=10))
+
+
 
   print(p)
 
