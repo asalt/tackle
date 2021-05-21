@@ -3,12 +3,12 @@
 """
 import sys
 import os
-import re
-import json
+#  import re
+#  import json
 import glob
 from datetime import datetime
-import operator as op
-from collections import OrderedDict
+#  import operator as op
+#  from collections import OrderedDict
 from functools import partial
 import copy
 import subprocess
@@ -16,27 +16,27 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
-from scipy import stats
+#  from scipy import stats
 
 import matplotlib
 
 matplotlib.use("Agg")
-from matplotlib import gridspec
-import matplotlib.pyplot as plt
-from matplotlib.offsetbox import AnchoredText
+#  # from matplotlib import gridspec
+#  import matplotlib.pyplot as plt
+#  from matplotlib.offsetbox import AnchoredText
 import seaborn as sb
-from seaborn.distributions import _freedman_diaconis_bins
-import click
+#  from seaborn.distributions import _freedman_diaconis_bins
+#  import click
 
 # try:
 #     from quick import gui_option
 # except ModuleNotFoundError:
 #     pass
 
-# rc = {'font.family': 'serif',
-#       'font.serif': ['Times', 'Palatino', 'serif']}
-# sb.set_context('paper')
-# sb.set_style('white', rc)
+rc = {'font.family': 'serif',
+      'font.serif': ['Times', 'Palatino', 'serif']}
+sb.set_context('paper')
+sb.set_style('white', rc)
 
 rc = {
     "font.family": "sans-serif",
@@ -413,7 +413,7 @@ def validate_configfile(experiment_file, **kwargs):
     return  # all passed
 
 
-ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF",
+ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", "NUCLEUS",
                        "RTK", "MATRISOME", "SurfaceLabel", "CellMembrane", "Secreted",
                        "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", '_all' )
 
@@ -2454,9 +2454,9 @@ def cluster2(
             if annotate and annot_mat is not None:
                 sub_annot_mat = annot_mat[ annot_mat.GeneID.isin(subX.GeneID) ]
             _show_gene_symbols = False
-            if len(subX) < 101:
+            if len(subX) < 141:
                 _show_gene_symbols = True
-                logger.info(f"number of genes is {len(X)} << 101, adding symbols. Use <future feature> to override>.")
+                logger.info(f"number of genes is {len(subX)} << 101, adding symbols. Use <future feature> to override>.")
 
             out = outname_func("clustermap", geneset = fix_name(annotation), **outname_kws ) + file_fmt
             plot_and_save(subX, out, grdevice, gr_kws, main_title = annotation, annot_mat = sub_annot_mat,
@@ -2967,7 +2967,8 @@ def gsea(
     expression.index.name = "NAME"
     # if only_human:
 
-    pheno = data_obj.col_metadata
+    pheno = data_obj.col_metadata.copy()
+    pheno[group] = pheno[group].str.replace('-', '_')
 
     nsamples = len(pheno.index)
 
@@ -2985,6 +2986,10 @@ def gsea(
 
     # groupl = [x.strip() for x  in group.split('+')]
     # ngroups = pheno.groupby(group).ngroups
+
+    # java GSEA cannot navigate paths with hyphens
+    expression.columns = expression.columns.str.replace('-', '_')
+    pheno.index = pheno.index.str.replace('-', '_')
 
     cls_comparison = ""
     if ngroups == 2:  # reverse it
@@ -3009,6 +3014,10 @@ def gsea(
         # group0 = '_'.join(groups[0])
         # group1 = '_'.join(groups[1])
         # cls_comparison = '#{1}_versus_{0}'.format(group0, group1)
+
+        #hack for abbvie
+        if groups[0][0:3] != groups[1][0:3]: continue
+
         cls_comparison = "#{1}_versus_{0}".format(*groups)
 
         namegen = partial(
@@ -3081,6 +3090,8 @@ def gsea(
 
         expression = data_obj.areas_log_shifted.copy()
         expression.index = expression.index.astype(str)
+        # java GSEA cannot navigate paths with hyphens
+        expression.columns = expression.columns.str.replace('-', '_')
         if not no_homologene_remap:
             expression = hgene_map(expression)
         expression = expression[pheno[pheno[group].isin(groups)].index]
@@ -3174,18 +3185,21 @@ def gsea(
                 with open(param_file, "w") as f:
                     f.write(params)
 
-                res = subprocess.run(
-                    [
-                        "java",
-                        "-Xmx8192m",
-                        "-cp",
-                        gsea_jar,
-                        "xtools.gsea.Gsea",
-                        "-param_file",
-                        param_file,
-                    ],
-                    # stdout=subprocess.PIPE
-                )
+                try:
+                    res = subprocess.run(
+                        [
+                            "java",
+                            "-Xmx8192m",
+                            "-cp",
+                            gsea_jar,
+                            "xtools.gsea.Gsea",
+                            "-param_file",
+                            param_file,
+                        ],
+                        # stdout=subprocess.PIPE
+                    )
+                except subprocess.CalledProcessError:
+                    continue
 
                 res.check_returncode()
 
@@ -3400,8 +3414,7 @@ def gsea(
                 outpath = os.path.join(
                     data_obj.outpath, "GSEA_pathways", cls_comparison.strip("#")
                 )
-                if not os.path.exists(outpath):
-                    os.makedirs(outpath)
+                outpath = os.path.abspath(outpath)
 
                 missing_values = "masked"
                 outname_func = partial(
@@ -3425,6 +3438,7 @@ def gsea(
                     iter_ = gsea_sig.iterrows()
 
                 # for ix, row in gsea_sig.iterrows():
+                #_expression = data_obj.areas_log_shifted
                 for ix, row in iter_:
 
                     force_plot_genes = False
@@ -3442,7 +3456,8 @@ def gsea(
                     col_cluster = False
                     nclusters = None
 
-                    col_meta = data_obj.col_metadata
+                    #col_meta = data_obj.col_metadata.copy()
+                    col_meta = pheno
                     # cols in correct order
                     _cols = (
                         col_meta[col_meta[group] == groups[0]].index.tolist()
@@ -3452,12 +3467,14 @@ def gsea(
                     X = expression.replace(0, np.nan).dropna(0, "all")[
                         _cols
                     ]  # drop if all zero
+                    _mask = data_obj.mask.copy()
+                    _mask.columns = _mask.columns.str.replace('-', '_')
                     if not no_homologene_remap:
-                        mask = data_obj.mask[expression.columns].pipe(
+                        mask = _mask[expression.columns].pipe(
                             hgene_map, boolean=True
                         )[_cols]
                     else:
-                        mask = data_obj.mask[expression.columns][_cols]
+                        mask = _mask[expression.columns][_cols]
 
                     _expids = ("recno", "runno", "searchno", "label", "rep", "techrep")
                     col_meta = col_meta[
@@ -3520,6 +3537,7 @@ def gsea(
                                 # .set_index('GeneID')
                                 .fillna(0).astype(int)
                             )
+                            annot_mat.columns = annot_mat.columns.str.replace('-', '_')
                             # remove columns that aren't in the comparison
                             _toremove = set(annot_mat.columns) - set(X.columns)
                             _keep = [x for x in annot_mat.columns if x not in _toremove]
@@ -4274,7 +4292,7 @@ to arrange data. For use in conjunction with `--group`
 Any valid, qualitative, colormap? """,
 )
 @click.option(
-    "--linear", default=False, is_flag=True, help="Plot linear values (default log10)"
+    "--linear/--log", default=True, is_flag=True, help="Plot linear values (default log10)"
 )
 @click.option(
     "--z-score",

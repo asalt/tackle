@@ -84,39 +84,39 @@ TAXON_MAPPER = {
 
 LABEL_MAPPER = {
     "none": 0,  # hard coded number IDs for labels
-    "126": 1260,
-    "126C": 1260,
-    "127C": 1270,
-    "127N": 1271,
-    "128C": 1280,
-    "128N": 1281,
-    "129C": 1290,
-    "129N": 1291,
-    "130C": 1300,
-    "130N": 1301,
-    "131N": 1310,
-    "131C": 1311,
-    "132N": 1321,
-    "132C": 1320,
-    "133N": 1331,
-    "133C": 1330,
-    "134": 1340,
-    "1260": 1260,
-    "1270": 1270,
-    "1271": 1271,
-    "1280": 1280,
-    "1281": 1281,
-    "1290": 1290,
-    "1291": 1291,
-    "1300": 1300,
-    "1301": 1301,
-    "1310": 1310,
-    "1311": 1311,
-    "1320": 1320,
-    "1321": 1321,
-    "1330": 1330,
-    "1331": 1331,
-    "131": 1310,
+    "126":  [1260,'TMT_126', 'TMT126'],
+    "126C": [1260,'TMT_126', 'TMT126'],
+    "127C": [1270,'TMT_127C','TMT_127_C'],
+    "127N": [1271,'TMT_127N','TMT_127_N'],
+    "128C": [1280,'TMT_128C','TMT_128_C'],
+    "128N": [1281,'TMT_128N','TMT_128_N'],
+    "129C": [1290,'TMT_129C','TMT_129_C'],
+    "129N": [1291,'TMT_129N','TMT_129_N'],
+    "130C": [1300,'TMT_130C','TMT_130_C'],
+    "130N": [1301,'TMT_130N','TMT_130_N'],
+    "131N": [1310,'TMT_131N','TMT_131_N'],
+    "131C": [1311,'TMT_131C','TMT_131_C'],
+    "132N": [1321,'TMT_132N','TMT_132_N'],
+    "132C": [1320,'TMT_132C','TMT_132_C'],
+    "133N": [1331,'TMT_133N','TMT_133_N'],
+    "133C": [1330,'TMT_133C','TMT_133_C'],
+    "134":  [1340,'TMT_134', 'TMT126'],
+    "1260": [1260,'TMT_126', 'TMT126'],
+    "1270": [1270,'TMT_126', 'TMT126'],
+    "1271": [1271,'TMT_126', 'TMT126'],
+    "1280": [1280,'TMT_126', 'TMT126'],
+    "1281": [1281,'TMT_126', 'TMT126'],
+    "1290": [1290,'TMT_126', 'TMT126'],
+    "1291": [1291,'TMT_126', 'TMT126'],
+    "1300": [1300,'TMT_126', 'TMT126'],
+    "1301": [1301,'TMT_126', 'TMT126'],
+    "1310": [1310,'TMT_126', 'TMT126'],
+    "1311": [1311,'TMT_126', 'TMT126'],
+    "1320": [1320,'TMT_126', 'TMT126'],
+    "1321": [1321,'TMT_126', 'TMT126'],
+    "1330": [1330,'TMT_126', 'TMT126'],
+    "1331": [1331,'TMT_126', 'TMT126'],
+    "131":  [1310,'TMT_126', 'TMT126'],
     1260: "TMT_126",
     1270: "TMT_127_C",
     1271: "TMT_127_N",
@@ -217,6 +217,8 @@ class Annotations:
             return
         logger.info(f"Loading annotations file {self.file}")
         self.df = pd.read_table(self.file, dtype=str)
+        self.df['NUCLEUS'] = self.df['CYTO_NUC'].isin(['NUCLEUS', 'BOTH'])
+        self.df['NUCLEUS'] = self.df['NUCLEUS'].replace(False, '')
 
         self._categories = [
             x for x in self.df if x not in ("GeneID", "GeneSymbol")]
@@ -228,6 +230,9 @@ class Annotations:
     def get_annot(self, cat):
 
         df = self.df
+
+        #if cat == 'NUC':
+            #return df[(~df['CYTO_NUC'].isna()) & (df['CYTO_NUC'] != 'CYTOPLASM') ]
         if cat not in df:
             raise ValueError("{cat} must be one of {self.categories}")
         return df[~df[cat].isna()]
@@ -509,6 +514,7 @@ class Data:
         self._gid_symbol = None
 
         self.panel_filtered = None
+
         self.filter_data()
 
         # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
@@ -761,7 +767,8 @@ class Data:
             if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
                 exp.df.rename(
                     columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
-            df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
+            #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
+            df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
             if df.empty:
                 warn(
                     "\n"
@@ -837,6 +844,7 @@ class Data:
                 exps = self._assign_labeled(
                     record, exp, exps, name, self.funcats, self.geneid_subset
                 )
+
             if self.normalize_across_species:
 
                 df["area"] = normalize(
@@ -1318,6 +1326,7 @@ class Data:
         batch = pheno[self.batch]
         # res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
         #                  mod=mod, par_prior=True, mean_only=False)
+        #prior_plot, plot_prior = False, False
         if not self.batch_nonparametric and prior_plot:
             plot_prior = True
             outname = get_outname(
