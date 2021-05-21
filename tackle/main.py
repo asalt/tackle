@@ -3016,7 +3016,7 @@ def gsea(
         # cls_comparison = '#{1}_versus_{0}'.format(group0, group1)
 
         #hack for abbvie
-        if groups[0][0:3] != groups[1][0:3]: continue
+        # if groups[0][0:3] != groups[1][0:3]: continue
 
         cls_comparison = "#{1}_versus_{0}".format(*groups)
 
