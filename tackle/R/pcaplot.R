@@ -45,6 +45,8 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
     for (ext in outfiletypes) {
 
 
+      #.....
+      # TODO redo
       p <- autoplot(pca_res,
                     data = forpca, colour = color, shape = shape,
                     label = label, label.repel = label_repel,
@@ -54,9 +56,10 @@ pca2 <- function(data, outname = 'pca', outfiletypes = c('.pdf'),
                     ## frame.type = 'convex',
                     frame.alpha = .5,
                     scale_color_manual=color_list,
-                    label.size = 3,
+                    label.size = 2.5,
                     size = 4,
-                    x = x1, y = x2
+                    x = x1, y = x2,
+                    max.overlaps=Inf
                     ) +
         ggplot2::scale_color_manual(values = color_list) +
         ggplot2::scale_fill_manual(values = color_list) +
