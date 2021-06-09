@@ -28,6 +28,15 @@ from bcmproteomics_ext import ispec
 
 # sb.set_context('notebook', font_scale=1.8)
 
+METACOLS = ("GeneID", "TaxonID", "GeneSymbol", "FunCats")
+
+
+TAXON_MAPPER = {
+    "human": 9606,
+    "mouse": 10090,
+    "celegans": 6239,
+}
+
 def fix_name(x):
     return x.replace(":", "_").replace(" ", "_").replace("/", "dv").replace("+", "")
 
@@ -60,7 +69,7 @@ def _get_logger():
     logger.addHandler(ch)
     return logger
 
-
+logger = _get_logger()
 
 def maybe_int(x):
     try:
@@ -135,7 +144,7 @@ def impute_missing(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot
 #     return panel.loc[:, indices, :]
 
 
-def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None):
+def filter_observations(df, nonzero_value, subgroup=None, metadata=None):
     """
     format is:
                          Sample1  Sample2  Sample3 ..
@@ -162,7 +171,8 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
         #         .dropna())
 
         mask = (
-            df.loc[df.Metric == column][columns]
+            #df.loc[df.Metric == column][columns]
+            df[columns]
             .fillna(0)
             .where(lambda x: x != 0)
             .count(1)
@@ -171,12 +181,15 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
         )
 
         # gids = mask.index.get_level_values(0)
-        gids = df.loc[mask.index].GeneID.values
+        #gids = df.loc[mask.index].GeneID.values
+        return df.loc[mask.index]
+        #gids = df.loc[mask.index]
 
         # return df.loc[ gids.values ]
-        return df[df.GeneID.isin(gids)]
+        #return df.loc[pd.IndexSlice[df.GeneID.isin(gids)], ]
 
     else:
+        raise NotImplementedError
 
         all_gids = set()
 
@@ -188,7 +201,8 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
                 threshold = len(columns) * nonzero_value
 
             mask = (
-                df.loc[df.Metric == column][columns]
+                #df.loc[df.Metric == column][columns]
+                df.loc[columns]
                 .fillna(0)
                 .where(lambda x: x != 0)
                 .count(1)
@@ -205,8 +219,9 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
 
             # gids = mask.index.get_level_values(0)
             all_gids |= set(gids)
-        return df[df.GeneID.isin(all_gids)]
+        # return df[df.GeneID.isin(all_gids)]
 
+        return df.loc[pd.IndexSlice[df.GeneID.isin(all_gids)], ]
         # return df.loc[ idx[tuple(all_gids), :], : ]
 
 
@@ -543,6 +558,12 @@ def read_config(configfile, enforce=True):
             print(section_key, "does not have recno defined, skipping")
             data.pop(section_key)
 
+        recno = section.get("recno")
+        runno = section.get("runno")
+        searchno = section.get("searchno")
+        label = section.get("label", "none")
+        data[section_key]['experiment_id'] = f"{recno}_{runno}_{searchno}_{label}"
+
     ordered_data = OrderedDict()
     for key in sections:
         if key not in data.keys():
@@ -821,6 +842,172 @@ class iFOT:
 ifot_normalizer = iFOT()
 
 UNANNOTATED_TIDS = (6239,)
+
+def load_data(project, job):
+
+    #import ipdb; ipdb.set_trace()
+
+    experiment_metadata = project.data['experiment_metadata']
+
+    if 'edata' in job.data:
+        logger.info('loading from local')
+        if 'experiment_metadata' not in job.data: # hacky
+            job.data['experiment_metadata'] = experiment_metadata
+        return job.data['edata']
+
+
+    all_data = dict()
+    for expid, dtable in project.data.e2g.items():
+        exp_name = project.doc[expid]
+        if not isinstance(dtable, pd.DataFrame):
+            continue
+        if job.doc.normalize_individual:
+
+            for taxonid in dtable.TaxonID.unique():
+                if taxonid == 0.0:
+                    continue  # invalid
+                if job.doc.normalize_across_species:
+                    for taxonid in dtable.TaxonID.unique():
+                        if taxonid == 0.0:
+                            continue  # invalid
+                    dtable.loc[dtable.TaxonID == taxonid, "area"] = normalize(
+                        dtable.loc[dtable.TaxonID == taxonid],
+                        ifot=job.doc.ifot,
+                        ifot_ki=job.doc.ifot_ki,
+                        ifot_tf=job.doc.ifot_tf,
+                        median=job.doc.median,
+                        genefile_norm=job.doc.genefile_norm,
+                        taxon=taxonid,
+                    )
+                else:
+                    dtable['area'] = normalize(
+                    dtable,
+                    ifot=job.doc.ifot,
+                    ifot_ki=job.doc.ifot_ki,
+                    ifot_tf=job.doc.ifot_tf,
+                    median=job.doc.median,
+                    genefile_norm=job.doc.genefile_norm,
+                    taxon=taxonid,
+                )
+        else:
+            dtable['area'] = dtable.iBAQ_dstrAdj
+
+
+        # TODO filter by taxonid
+        # additional fitlers
+        dummy_filter = lambda x, *args, **kwargs: x
+        taxon_filter = TAXON_MAPPER.get(job.doc.taxon)
+        if taxon_filter is None:
+            filter_func = dummy_filter
+        else:
+            def filter_func(x): return x[x["TaxonID"] == taxon_filter]
+
+        dtable = genefilter(
+            dtable,
+            funcats=job.doc.funcats,
+            funcats_inverse=job.doc.funcats_inverse,
+            geneid_subset=job.doc.geneids,
+            ignored_geneid_subset=job.doc.ignore_geneids,
+        ).pipe(filter_func)
+
+        # unique peptide filter
+        dtable = dtable[dtable.PeptideCount_u2g >= job.doc.unique_pepts]
+
+        # TODO change expid to the human readable name of the experiment
+        all_data[exp_name] = dtable.set_index(list(METACOLS))['area']
+         #dtable[[*METACOLS, 'area']]
+    
+    # TODO add filter
+
+    df = pd.DataFrame.from_dict(all_data)
+
+    df = filter_observations(df, 
+            nonzero_value=job.doc.non_zeros,
+            subgroup=job.doc.nonzero_subgroup,
+            metadata=experiment_metadata
+    )
+    #TODO add filter_sra
+
+
+    job.data['mask'] = df.applymap(np.isnan)
+    job.data['zeros'] = df == 0
+
+
+    gids = set(df.index.get_level_values(0))
+    if job.doc.funcats:
+        gids &= set(
+            df.pipe(
+                filter_funcats, self.funcats
+            ).index.get_level_values(0)
+        )
+
+    # if job.doc.geneid_subset:
+    #     raise NotImplementedError
+    #     gids &= set(self.geneid_subset)
+    # gids = tuple(gids)
+
+
+    # ======================================================== #
+    ## batch normalization
+    if job.doc.normalize_by_ir:
+
+        plex_name_meta = job.doc.plex_annotation
+        ir_name = job.doc.internal_ref_name
+        ir_name_meta = job.doc.internal_ref_metadata
+
+        ctrl_exps = list()
+        for ix, g in experiment_metadata.groupby(plex_name_meta):
+            ctrl_exp = g[g[ir_name_meta] == ir_name].index[0]
+            ctrl_exps.append(ctrl_exp)
+            # to_normalize = list(set(g.index) - set([ctrl_exp]))
+            to_normalize = g.index
+            df.loc[:, to_normalize] = df[to_normalize].sub(
+                    df[ctrl_exp].fillna(0) + 1e-10, axis="index"
+            )
+        #what does this do? I think remove when all refmix are not quantified for a sample
+        df = df.drop(ctrl_exps, axis=1).where(lambda x: x !=0 ).dropna(how='all')
+        finite_bool = df.pipe(np.is_finite)
+        maxval = df[finite_bool].stack().dropna().max()
+        df = df.replace(np.inf, maxval_log*1.5)
+
+        # update the mask
+        job.data['mask'] = df.applymap(np.isnan)
+        job.data['zeros'] = data == 0
+
+        # remove IR from metadata
+        sample_cols = experiment_metadata
+        sample_ixs = [
+            x for x in experimental_metadata.index if x not in ctrl_exps]
+
+        experiment_metadata = experiment_metadata.loc[sample_ixs, sample_cols]
+
+        #experiment_metadata = project.doc['experiment_metadata']
+
+        
+    # ===========================
+    job.data['experiment_metadata'] = experiment_metadata
+    minval = df.stack().replace(0, np.NAN).dropna().min()
+
+
+
+    df = np.log10(
+        df.replace(0, np.NAN)
+        .fillna(minval)
+        .divide(minval)
+    )
+    minval = df.min().min()
+    shift_val = np.ceil(np.abs(minval))
+    df += shift_val
+
+
+    if not job.doc.normalize_individual:
+        import ipdb; ipdb.set_trace()
+        if job.doc.median:
+            df = df - df.median()
+
+
+    job.data['edata'] = df
+    1+1
 
 
 def normalize(

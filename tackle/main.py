@@ -1,6 +1,7 @@
 """
 
 """
+from pathlib import Path
 import sys
 import os
 #  import re
@@ -17,6 +18,7 @@ from warnings import warn
 import numpy as np
 import pandas as pd
 #  from scipy import stats
+import signac
 
 import matplotlib
 
@@ -576,6 +578,19 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", 
 @click.option(
     "--normalize-across-species", is_flag=True, default=False, show_default=True
 )
+@click.option("--normalize-individual/--normalize-all", default=True,
+is_flag=True)
+@click.option('--normalize-by-ir', is_flag=True, default=False,
+show_default=True, help="")
+@click.option("--plex-annotation", default='plex', show_default=True,
+        help="metadata category name for isobaric plex, if needed"
+)
+@click.option("--internal-ref-name", default='RefMix', show_default=True,
+        help="metadata entry for isobaric plex, if needed"
+)
+@click.option("--internal-ref-metadata", default='group', show_default=True,
+        help="metadata entry to identify which sample is the internal reference"
+)
 @click.option(
     "-n",
     "--name",
@@ -649,8 +664,13 @@ def main(
     ifot_tf,
     genefile_norm,
     median,
+    normalize_by_ir,
+    plex_annotation,
+    internal_ref_name,
+    internal_ref_metadata,
     name,
     normalize_across_species,
+    normalize_individual,
     result_dir,
     taxon,
     non_zeros,
@@ -673,18 +693,7 @@ def main(
         ctx.invoke(make_config, **the_kws)
         ctx.exit(0)
 
-    if not limma:
-        raise click.BadOptionUsage(
-            "limma", "At the moment, only use of `limma` is supported"
-        )
-
-    sumed_norm_flags = ifot + ifot_ki + ifot_tf + median
-    if (sumed_norm_flags > 1) or (sumed_norm_flags > 0 and genefile_norm):
-        raise click.BadParameter(
-            "Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`, `genefile_norm`"
-        )
-
-    # validate_subgroup(nonzero_subgroup, experiment_file)
+    ###############
     validate_configfile(
         experiment_file,
         nonzero_subgroup=nonzero_subgroup,
@@ -693,77 +702,138 @@ def main(
         covariate=covariate,
         pairs=pairs,
     )
+    ###############
 
-    metrics, metrics_after_filter, metrics_unnormed_area = False, False, True
-    if (
-        "metrics" in sys.argv
-    ):  # know this ahead of time, accumulate metrics during data load
-        metrics = True
-        if "--after-filter" in sys.argv:
-            metrics_after_filter = True  #
-        if "--after-norm" in sys.argv:
-            metrics_unnormed_area = False
 
-    # for keeping track of what to stack from data
-    cluster_annotate_cols = None
+    sumed_norm_flags = ifot + ifot_ki + ifot_tf + median
+    if (sumed_norm_flags > 1) or (sumed_norm_flags > 0 and genefile_norm):
+        raise click.BadParameter(
+            "Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`, `genefile_norm`"
+        )
+
+    ###############
+    experiment_file = Path(experiment_file)
+    experiment_metadata = read_config(experiment_file)
+    experiment_metadata = pd.DataFrame(experiment_metadata).T
+    # sample_data_dict = read_config(experiment_file)
+    # sample_data = pd.DataFrame.from_dict(sample_data_dict)
+
+    project = signac.init_project(experiment_file.stem)
+    project.data['experiment_metadata'] = experiment_metadata
+
+
+    #col_metadata = parse_metadata(self.config)
+
+    for exp, expvalues in experiment_metadata.items():
+        # else load
+        exp_id = expvalues['experiment_id']
+        if exp in project.doc:
+            pass
+        else:
+           project.doc[exp] = exp_id  
+        STORE_LOC = f"e2g/{exp_id}"
+        if STORE_LOC in project.data:
+            continue
+        exp = ispec.E2G(*exp_id.split('e2g/')[-1].split('_'))
+        #exp_id = f"e2g/{expvalues['experiment_id']}"
+        #exp.df['GeneID'] = exp.df.GeneID.astype(int)
+        project.data[STORE_LOC] = exp.df
+
+        #project.data[exp]
+        print(exp)
+
+    params = ctx.params
+    # we do not need these as part of the job id
+    file_format = params.pop('file_format')
+    result_dir = params.pop('result_dir')
+    only_load_local = params.pop('only_load_local')
+    data_dir = params.pop('data_dir')
+
+    job = project.open_job(params)
+    job.init()
+    for k,v in params.items():
+        job.doc[k] = v
+
+    out = load_data(project, job)
+
+    if not limma:
+        raise click.BadOptionUsage(
+            "limma", "At the moment, only use of `limma` is supported"
+        )
+
+
+
+    # we will not need this anymore
+    # metrics, metrics_after_filter, metrics_unnormed_area = False, False, True
+    # if (
+    #     "metrics" in sys.argv
+    # ):  # know this ahead of time, accumulate metrics during data load
+    #     metrics = True
+    #     if "--after-filter" in sys.argv:
+    #         metrics_after_filter = True  #
+    #     if "--after-norm" in sys.argv:
+    #         metrics_unnormed_area = False
+
+    # # for keeping track of what to stack from data
+    # cluster_annotate_cols = None
 
     # extract cluster annotation column for cluster if present
     # and not if --annotate is specified for pca
     # this is needed now so we keep the proper column when loading data
     # the logic should work!
 
-    if "--annotate" in sys.argv and any(
-        x in sys.argv for x in ("cluster", "cluster2", "gsea")
-    ):
-        cluster_annotate_cols = list()
-        # _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
-        _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
-        for i in _annot_args:
-            try:
-                _q = sys.argv[i + 1]
-            except IndexError:
-                continue
-            if _q in [
-                "PSMs",
-                "PSMs_u2g",
-                "PeptideCount",
-                "PeptideCount_S",
-                "PeptideCount_S_u2g",
-                "PeptideCount_u2g",
-                "SRA",
-            ]:
-                cluster_annotate_cols.append(_q)
-    if "--level" in sys.argv:  # for data export
-        if cluster_annotate_cols is None:
-            cluster_annotate_cols = list()
-        _level_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--level"]
-        for i in _level_args:
-            try:
-                _q = sys.argv[i + 1]
-            except IndexError:
-                continue
-            if _q in [
-                "PSMs",
-                "PSMs_u2g",
-                "PeptideCount",
-                "PeptideCount_S",
-                "PeptideCount_S_u2g",
-                "PeptideCount_u2g",
-                "SRA",
-            ]:
-                cluster_annotate_cols.append(_q)
-    if cluster_annotate_cols is not None:
-        cluster_annotate_cols = list(set(cluster_annotate_cols))
+    # if "--annotate" in sys.argv and any(
+    #     x in sys.argv for x in ("cluster", "cluster2", "gsea")
+    # ):
+    #     cluster_annotate_cols = list()
+    #     # _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
+    #     _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
+    #     for i in _annot_args:
+    #         try:
+    #             _q = sys.argv[i + 1]
+    #         except IndexError:
+    #             continue
+    #         if _q in [
+    #             "PSMs",
+    #             "PSMs_u2g",
+    #             "PeptideCount",
+    #             "PeptideCount_S",
+    #             "PeptideCount_S_u2g",
+    #             "PeptideCount_u2g",
+    #             "SRA",
+    #         ]:
+    #             cluster_annotate_cols.append(_q)
+    # if "--level" in sys.argv:  # for data export
+    #     if cluster_annotate_cols is None:
+    #         cluster_annotate_cols = list()
+    #     _level_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--level"]
+    #     for i in _level_args:
+    #         try:
+    #             _q = sys.argv[i + 1]
+    #         except IndexError:
+    #             continue
+    #         if _q in [
+    #             "PSMs",
+    #             "PSMs_u2g",
+    #             "PeptideCount",
+    #             "PeptideCount_S",
+    #             "PeptideCount_S_u2g",
+    #             "PeptideCount_u2g",
+    #             "SRA",
+    #         ]:
+    #             cluster_annotate_cols.append(_q)
+    # if cluster_annotate_cols is not None:
+    #     cluster_annotate_cols = list(set(cluster_annotate_cols))
 
-    if annotations is not None and '_all' in annotations :
-        annotations = [x for x in ANNOTATION_CHOICES if x not in ('_all')]
+    # if annotations is not None and '_all' in annotations :
+    #     annotations = [x for x in ANNOTATION_CHOICES if x not in ('_all')]
 
-    export_all = False
-    if all(x in sys.argv for x in ("export", "--level")) and any(
-        x in sys.argv for x in ("all", "align", "MSPC")
-    ):
-        # know this ahead of time, calculate more things during data load
-        export_all = True
+    # export_all = False
+    # if all(x in sys.argv for x in ("export", "--level")) and any(
+    #     x in sys.argv for x in ("all", "align", "MSPC")
+    # ):
+    #     # know this ahead of time, calculate more things during data load
+    #     export_all = True
 
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
@@ -775,121 +845,125 @@ def main(
         ctx.obj = dict()
 
     ctx.obj["file_fmts"] = file_format
+    ctx.obj['project'] = project
+    ctx.obj['job'] = job
 
-    analysis_name = get_file_name(experiment_file)
-    if analysis_name is None:
-        print("Error parsing configfile name.")
-        analysis_name = "Unnamed"
+    # analysis_name = get_file_name(experiment_file)
+    # if analysis_name is None:
+    #     print("Error parsing configfile name.")
+    #     analysis_name = "Unnamed"
 
-    now = datetime.now()
-    # context = click.get_current_context() # same thing as ctx
-    params = ctx.params
+    # now = datetime.now()
+    # # context = click.get_current_context() # same thing as ctx
+    # params = ctx.params
 
-    data_obj = Data(
-        additional_info=additional_info,
-        annotations=annotations,
-        batch=batch,
-        batch_nonparametric=batch_nonparametric,
-        batch_noimputation=batch_noimputation,
-        covariate=covariate,
-        cmap_file=cmap_file,
-        data_dir=data_dir,
-        base_dir=result_dir,
-        funcats=funcats,
-        funcats_inverse=funcats_inverse,
-        geneids=geneids,
-        group=group,
-        pairs=pairs,
-        ifot=ifot,
-        ifot_ki=ifot_ki,
-        ifot_tf=ifot_tf,
-        median=median,
-        genefile_norm=genefile_norm,
-        name=name,
-        non_zeros=non_zeros,
-        nonzero_subgroup=nonzero_subgroup,
-        unique_pepts=unique_pepts,
-        taxon=taxon,
-        normalize_across_species=normalize_across_species,
-        experiment_file=experiment_file,
-        metrics=metrics,
-        limma=limma,
-        block=block,
-        SRA=sra,
-        number_sra=number_sra,
-        metrics_after_filter=metrics_after_filter,
-        metrics_unnormed_area=metrics_unnormed_area,
-        ignore_geneids=ignore_geneids,
-        export_all=export_all,
-        cluster_annotate_cols=cluster_annotate_cols,
-        only_local=only_load_local,
-    )
+    # data_obj = Data(
+    #     additional_info=additional_info,
+    #     annotations=annotations,
+    #     batch=batch,
+    #     batch_nonparametric=batch_nonparametric,
+    #     batch_noimputation=batch_noimputation,
+    #     covariate=covariate,
+    #     cmap_file=cmap_file,
+    #     data_dir=data_dir,
+    #     base_dir=result_dir,
+    #     funcats=funcats,
+    #     funcats_inverse=funcats_inverse,
+    #     geneids=geneids,
+    #     group=group,
+    #     pairs=pairs,
+    #     ifot=ifot,
+    #     ifot_ki=ifot_ki,
+    #     ifot_tf=ifot_tf,
+    #     median=median,
+    #     genefile_norm=genefile_norm,
+    #     name=name,
+    #     non_zeros=non_zeros,
+    #     nonzero_subgroup=nonzero_subgroup,
+    #     unique_pepts=unique_pepts,
+    #     taxon=taxon,
+    #     normalize_across_species=normalize_across_species,
+    #     experiment_file=experiment_file,
+    #     metrics=metrics,
+    #     limma=limma,
+    #     block=block,
+    #     SRA=sra,
+    #     number_sra=number_sra,
+    #     metrics_after_filter=metrics_after_filter,
+    #     metrics_unnormed_area=metrics_unnormed_area,
+    #     ignore_geneids=ignore_geneids,
+    #     export_all=export_all,
+    #     cluster_annotate_cols=cluster_annotate_cols,
+    #     only_local=only_load_local,
+    # )
 
-    outname = (
-        get_outname(
-            "metadata",
-            name=data_obj.outpath_name,
-            taxon=data_obj.taxon,
-            non_zeros=data_obj.non_zeros,
-            colors_only=data_obj.colors_only,
-            batch=data_obj.batch_applied,
-            batch_method="parametric"
-            if not data_obj.batch_nonparametric
-            else "nonparametric",
-            outpath=data_obj.outpath,
-        )
-        + ".tab"
-    )
-    data_obj.col_metadata.to_csv(outname, sep="\t")
+    # outname = (
+    #     get_outname(
+    #         "metadata",
+    #         name=data_obj.outpath_name,
+    #         taxon=data_obj.taxon,
+    #         non_zeros=data_obj.non_zeros,
+    #         colors_only=data_obj.colors_only,
+    #         batch=data_obj.batch_applied,
+    #         batch_method="parametric"
+    #         if not data_obj.batch_nonparametric
+    #         else "nonparametric",
+    #         outpath=data_obj.outpath,
+    #     )
+    #     + ".tab"
+    # )
+    # data_obj.col_metadata.to_csv(outname, sep="\t")
 
-    taxon_ratios = data_obj.taxon_ratios
-    if (
-        not taxon_ratios["9606"].nunique()
-        == taxon_ratios["10090"].nunique()
-        == taxon_ratios["9031"].nunique()
-    ):
-        outname = (
-            get_outname(
-                "taxon_ratios",
-                name=data_obj.outpath_name,
-                taxon=data_obj.taxon,
-                non_zeros=data_obj.non_zeros,
-                colors_only=data_obj.colors_only,
-                batch=data_obj.batch_applied,
-                batch_method="parametric"
-                if not data_obj.batch_nonparametric
-                else "nonparametric",
-                outpath=data_obj.outpath,
-            )
-            + ".tab"
-        )
-        taxon_ratios.to_csv(outname, sep="\t")
+    # taxon_ratios = data_obj.taxon_ratios
+    # if (
+    #     not taxon_ratios["9606"].nunique()
+    #     == taxon_ratios["10090"].nunique()
+    #     == taxon_ratios["9031"].nunique()
+    # ):
+    #     outname = (
+    #         get_outname(
+    #             "taxon_ratios",
+    #             name=data_obj.outpath_name,
+    #             taxon=data_obj.taxon,
+    #             non_zeros=data_obj.non_zeros,
+    #             colors_only=data_obj.colors_only,
+    #             batch=data_obj.batch_applied,
+    #             batch_method="parametric"
+    #             if not data_obj.batch_nonparametric
+    #             else "nonparametric",
+    #             outpath=data_obj.outpath,
+    #         )
+    #         + ".tab"
+    #     )
+    #     taxon_ratios.to_csv(outname, sep="\t")
 
     # cf = 'correlatioplot_args_{}.json'.format(now.strftime('%Y_%m_%d_%H_%M_%S'))
     # with open(os.path.join(data_obj.outpath, cf), 'w') as f:
     #     json.dump(params, f)
-    outname = (
-        get_outname(
-            "context",
-            name=data_obj.outpath_name,
-            taxon=data_obj.taxon,
-            non_zeros=data_obj.non_zeros,
-            colors_only=data_obj.colors_only,
-            batch=data_obj.batch_applied,
-            batch_method="parametric"
-            if not data_obj.batch_nonparametric
-            else "nonparametric",
-            outpath=data_obj.outpath,
-        )
-        + ".tab"
-    )
-    params = dict(ctx.params)
-    params["file_format"] = " | ".join(params["file_format"])
-    params["annotations"] = " | ".join(params["annotations"])
-    param_df = pd.DataFrame(params, index=[analysis_name]).T
-    param_df.to_csv(outname, sep="\t")
 
-    ctx.obj["data_obj"] = data_obj
+    # outname = (
+    #     get_outname(
+    #         "context",
+    #         name=data_obj.outpath_name,
+    #         taxon=data_obj.taxon,
+    #         non_zeros=data_obj.non_zeros,
+    #         colors_only=data_obj.colors_only,
+    #         batch=data_obj.batch_applied,
+    #         batch_method="parametric"
+    #         if not data_obj.batch_nonparametric
+    #         else "nonparametric",
+    #         outpath=data_obj.outpath,
+    #     )
+    #     + ".tab"
+    # )
+
+    # params = dict(ctx.params)
+    # params["file_format"] = " | ".join(params["file_format"])
+    # params["annotations"] = " | ".join(params["annotations"])
+    # param_df = pd.DataFrame(params, index=[analysis_name]).T
+    # param_df.to_csv(outname, sep="\t")
+
+    # ctx.obj["data_obj"] = data_obj
 
 
 @main.command("make_config")
@@ -2010,7 +2084,6 @@ def cluster2(
 
     # =================================================================
 
-    data_obj = ctx.obj["data_obj"]
 
     if order_by_abundance and row_cluster:
         raise NotImplementedError("Not Implemented !")
@@ -2018,8 +2091,14 @@ def cluster2(
     if not figsize:  # returns empty tuple if not specified
         figsize = None
 
-    X = data_obj.areas_log_shifted
-    X.index = X.index.astype(str)
+    # data_obj = ctx.obj["data_obj"]
+    # X = data_obj.areas_log_shifted
+    # X.index = X.index.astype(str)
+    job = ctx.obj['job']
+    project = ctx.obj['project']
+    X = job.data['edata']
+    # hack
+    X = X.reset_index(level=1, drop=True).reset_index(level=1, drop=True).reset_index(level=1, drop=True)
 
     genes = None
     if genefile:
@@ -2094,13 +2173,15 @@ def cluster2(
         elif standard_scale == 0 or standard_scale == '0':
             X = (X / X.max(1)).fillna(0)
 
-    symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
+    #symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
 
     genemapper = GeneMapper()
-    symbols = [
-        data_obj.gid_symbol.get(x, genemapper.symbol.get(str(x), str(x)))
-        for x in X.index
+    symbols = [genemapper.symbol.get(str(x), str(x))
+     for x in X.index
+        # data_obj.gid_symbol.get(x, genemapper.symbol.get(str(x), str(x)))
+        # for x in X.index
     ]
+    #X = X.reset_index().assign(GeneSymbol=symbols)
     X = X.reset_index().assign(GeneSymbol=symbols)
 
     # X = data_obj.areas_log_shifted.copy()
@@ -2144,9 +2225,12 @@ def cluster2(
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
-    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
+    #col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
+    col_meta = job.data['experiment_metadata'].T
+    #col_meta = col_meta.set_index('name')
     if add_human_ratios:
-        col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
+        raise NotImplementedError
+        #col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
     # _expids = ('recno', 'runno', 'searchno', 'label')
     _expids = [
         "recno",
@@ -2192,6 +2276,7 @@ def cluster2(
 
         # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
         _cols = [x for x in data_obj.data.columns if x not in ("Metric")]
+        raise NotImplementedError
         annot_mat = (
             data_obj.data.loc[
                 (data_obj.data.GeneID.isin(X.GeneID.tolist()))
@@ -2211,19 +2296,19 @@ def cluster2(
     if linear:
         outname_kws["linear"] = "linear"
     #
-    outname_func = partial(
-        get_outname,
-        name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
-        non_zeros=data_obj.non_zeros,
-        batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        linkage=linkage,
-        outpath=data_obj.outpath,
-        missing_values=missing_values,
-    )
+    #outname_func = partial(
+    #    get_outname,
+    #    name=data_obj.outpath_name,
+    #    taxon=data_obj.taxon,
+    #    non_zeros=data_obj.non_zeros,
+    #    batch=data_obj.batch_applied,
+    #    batch_method="parametric"
+    #    if not data_obj.batch_nonparametric
+    #    else "nonparametric",
+    #    linkage=linkage,
+    #    outpath=data_obj.outpath,
+    #    missing_values=missing_values,
+    #)
     # =================================================================
 
     min_figwidth = 5
@@ -2267,9 +2352,11 @@ def cluster2(
         metacats = set(metacats) | set(row_annot_df.columns)
     metadata_color_list = list()
     for metacat in metacats:
-        if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
+        #if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
+        if 'metadata_colors' in job.doc:
             # metadata_colorsR = robjects.ListVector([])
             # for key, x in data_obj.metadata_colors.items():
+            raise NotImplementedError
             mapping = data_obj.metadata_colors[metacat]
             entry = robjects.vectors.ListVector(
                 {metacat: robjects.vectors.ListVector(mapping)}
@@ -2343,7 +2430,7 @@ def cluster2(
 
 
         call_kws = dict(
-            data=X,
+            data=X, 
             cut_by=cut_by or robjects.NULL,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
@@ -2356,7 +2443,7 @@ def cluster2(
             force_plot_genes=force_plot_genes,
             # genes=genes or robjects.NULL, # this has been filtered above
             show_gene_symbols=gene_symbols,
-            standard_scale=data_obj.standard_scale or robjects.NULL,
+            standard_scale=standard_scale or robjects.NULL,
             row_cluster=row_cluster,
             col_cluster=col_cluster,
             # metadata=data_obj.config if show_metadata else None,
@@ -2367,7 +2454,7 @@ def cluster2(
             main_title=main_title,
             # mask=data_obj.mask,
             # figsize=figsize,
-            normed=data_obj.normed,
+            #normed=data_obj.normed,
             linkage=linkage,
             gene_symbol_fontsize=gene_symbol_fontsize,
             # legend_include=legend_include,
@@ -2405,7 +2492,9 @@ def cluster2(
     outname_kws = dict()
     if cluster_func is not None:
         outname_kws[cluster_func] = nclusters
-    outname = outname_func("clustermap", **outname_kws)
+    # outname = outname_func("clustermap", **outname_kws)
+    # outname = job.fn('clustermap/clustermap.png')
+    outname = job.fn('clustertest')
 
     for file_fmt in ctx.obj["file_fmts"]:
         grdevice = gr_devices[file_fmt]
@@ -2431,10 +2520,12 @@ def cluster2(
         ##                     plot any annotations                     ##
         ##################################################################
 
-        if data_obj.annotations is None:
+        #if data_obj.annotations is None:
+        if job.doc.annotations is None or len(job.doc.annotations) == 1:
             continue
 
-        for annotation in data_obj.annotations:
+        #for annotation in data_obj.annotations:
+        for annotation in job.doc.annotations:
             annotator = get_annotation_mapper()
             annot_df = annotator.get_annot(annotation)
 
