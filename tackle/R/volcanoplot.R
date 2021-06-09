@@ -80,7 +80,8 @@ volcanoplot <- function(X, max_labels = 35,
   ## X[ X$highlight == TRUE, 'usd' ] = "#67ff3d"
   ## X[ X$highlight == TRUE, 'usd' ] = "purple"
   ## X[ X$highlight == TRUE, 'usd' ] = "#00ab25"
-  X[ X$highlight == TRUE, 'usd' ] = 'red'
+  X[ (X$highlight == TRUE & X$log2_FC>0), 'usd' ] = 'red'
+  X[ (X$highlight == TRUE & X$log2_FC<0), 'usd' ] = 'blue'
   X[, 'usd'] <- as.factor(X[, 'usd'])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
@@ -186,7 +187,8 @@ volcanoplot <- function(X, max_labels = 35,
                     aes(label = GeneSymbol),  min.segment.length = .15,
                     point.padding = 1e-3,
                     box.padding = .1, cex = label_cex,
-                    segment.size = .35, segment.alpha = .4
+                    segment.size = .35, segment.alpha = .4,
+                    max.overlaps = Inf
                     ) +
     #annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
     annotate("text",  c(-xmax, xmax), c(0,0), label = c(group0, group1),
