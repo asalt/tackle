@@ -78,7 +78,6 @@ def volcanoplot(
     # import ipdb; ipdb.set_trace()
 
     def fix_group_name(group, entries):
-        import ipdb; ipdb.set_trace()
         # for entry in meta.index:
         # print(group, entries)
         group = group.split("_")
