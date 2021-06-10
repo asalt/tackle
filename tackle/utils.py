@@ -29,6 +29,68 @@ from bcmproteomics_ext import ispec
 # sb.set_context('notebook', font_scale=1.8)
 
 METACOLS = ("GeneID", "TaxonID", "GeneSymbol", "FunCats")
+METACOLS = ("GeneID", "TaxonID")
+
+LABEL_MAPPER = {
+    "none": [0, '0', 'none'],  # hard coded number IDs for labels
+    "126":  [1260,'TMT_126', 'TMT126', '126'],
+    "126C": [1260,'TMT_126', 'TMT126', '126'],
+    "127C": [1270,'TMT_127C','TMT_127_C', "127C"],
+    "127N": [1271,'TMT_127N','TMT_127_N', "127N"],
+    "128C": [1280,'TMT_128C','TMT_128_C', "128C"],
+    "128N": [1281,'TMT_128N','TMT_128_N', "128N"],
+    "129C": [1290,'TMT_129C','TMT_129_C', "129C"],
+    "129N": [1291,'TMT_129N','TMT_129_N', "129N"],
+    "130C": [1300,'TMT_130C','TMT_130_C', "130C"],
+    "130N": [1301,'TMT_130N','TMT_130_N', "130N"],
+    "131N": [1310,'TMT_131N','TMT_131_N', "131N"],
+    "131C": [1311,'TMT_131C','TMT_131_C', "131C"],
+    "132N": [1321,'TMT_132N','TMT_132_N', "132N"],
+    "132C": [1320,'TMT_132C','TMT_132_C', "132C"],
+    "133N": [1331,'TMT_133N','TMT_133_N', "133N"],
+    "133C": [1330,'TMT_133C','TMT_133_C', "133C"],
+    "134":  [1340,'TMT_134', 'TMT134', 'TMT_134', '134'],
+    "1260": [1260,'TMT_126', 'TMT126'],
+    "1270": [1270,'TMT_126', 'TMT126'],
+    "1271": [1271,'TMT_126', 'TMT126'],
+    "1280": [1280,'TMT_126', 'TMT126'],
+    "1281": [1281,'TMT_126', 'TMT126'],
+    "1290": [1290,'TMT_126', 'TMT126'],
+    "1291": [1291,'TMT_126', 'TMT126'],
+    "1300": [1300,'TMT_126', 'TMT126'],
+    "1301": [1301,'TMT_126', 'TMT126'],
+    "1310": [1310,'TMT_126', 'TMT126'],
+    "1311": [1311,'TMT_126', 'TMT126'],
+    "1320": [1320,'TMT_126', 'TMT126'],
+    "1321": [1321,'TMT_126', 'TMT126'],
+    "1330": [1330,'TMT_126', 'TMT126'],
+    "1331": [1331,'TMT_126', 'TMT126'],
+    "131":  [1310,'TMT_126', 'TMT126'],
+    1260: "TMT_126",
+    1270: "TMT_127_C",
+    1271: "TMT_127_N",
+    1280: "TMT_128_C",
+    1281: "TMT_128_N",
+    1290: "TMT_129_C",
+    1291: "TMT_129_N",
+    1300: "TMT_130_C",
+    1301: "TMT_130_N",
+    1310: "TMT_131_C",
+    1311: "TMT_131_N",
+    1321: "TMT_132_C",
+    1320: "TMT_132_N",
+    1331: "TMT_133_C",
+    1330: "TMT_133_N",
+    1340: "TMT_134",
+    "113": 113,
+    "114": 114,
+    "115": 115,
+    "116": 116,
+    "117": 117,
+    "118": 118,
+    "119": 119,
+    "121": 121,
+}
 
 
 TAXON_MAPPER = {
@@ -562,7 +624,7 @@ def read_config(configfile, enforce=True):
         runno = section.get("runno")
         searchno = section.get("searchno")
         label = section.get("label", "none")
-        data[section_key]['experiment_id'] = f"{recno}_{runno}_{searchno}_{label}"
+        data[section_key]['experiment_id'] = f"{recno}_{runno}_{searchno}"
 
     ordered_data = OrderedDict()
     for key in sections:
@@ -857,10 +919,25 @@ def load_data(project, job):
 
 
     all_data = dict()
-    for expid, dtable in project.data.e2g.items():
-        exp_name = project.doc[expid]
+    #for expid, dtable in project.data.e2g.items():
+    for exp_name, row in experiment_metadata.iterrows():
+    #for expid in experiment_metadata.experiment_id:
+        #exp_name = project.doc[expid]
+        expid = row['experiment_id']
+        dtable = project.data.e2g[expid]
         if not isinstance(dtable, pd.DataFrame):
             continue
+
+        # ======================
+        if "EXPLabelFLAG" not in dtable and "LabelFLAG" in dtable:
+            dtable.rename(
+                columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
+        #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
+        # ======================
+        label = row['label']
+        labelquery = LABEL_MAPPER.get(label, label)
+        dtable = dtable[dtable.EXPLabelFLAG.isin(labelquery)].copy()
+        #dtable[dtable.]
         if job.doc.normalize_individual:
 
             for taxonid in dtable.TaxonID.unique():
@@ -913,13 +990,17 @@ def load_data(project, job):
         # unique peptide filter
         dtable = dtable[dtable.PeptideCount_u2g >= job.doc.unique_pepts]
 
-        # TODO change expid to the human readable name of the experiment
+        if 'area' not in dtable:
+            import ipdb; ipdb.set_trace()
         all_data[exp_name] = dtable.set_index(list(METACOLS))['area']
+    import ipdb; ipdb.set_trace()
          #dtable[[*METACOLS, 'area']]
     
     # TODO add filter
 
-    df = pd.DataFrame.from_dict(all_data)
+    #df = pd.DataFrame.from_dict(all_data)
+    #df = pd.concat(all_data)
+    df = pd.concat([x for x in all_data.values()], 1, keys=all_data.keys())
 
     df = filter_observations(df, 
             nonzero_value=job.doc.non_zeros,

@@ -16,6 +16,7 @@ import subprocess
 from warnings import warn
 
 import numpy as np
+from numpy.core.numeric import ones_like
 import pandas as pd
 #  from scipy import stats
 import signac
@@ -724,8 +725,9 @@ def main(
 
     #col_metadata = parse_metadata(self.config)
 
-    for exp, expvalues in experiment_metadata.items():
+    for exp, expvalues in experiment_metadata.iterrows():
         # else load
+        #import ipdb; ipdb.set_trace()
         exp_id = expvalues['experiment_id']
         if exp in project.doc:
             pass
@@ -734,10 +736,11 @@ def main(
         STORE_LOC = f"e2g/{exp_id}"
         if STORE_LOC in project.data:
             continue
-        exp = ispec.E2G(*exp_id.split('e2g/')[-1].split('_'))
+        e2g = ispec.E2G(*exp_id.split('e2g/')[-1].split('_'), data_dir=data_dir,
+        only_local=only_load_local)
         #exp_id = f"e2g/{expvalues['experiment_id']}"
         #exp.df['GeneID'] = exp.df.GeneID.astype(int)
-        project.data[STORE_LOC] = exp.df
+        project.data[STORE_LOC] = e2g.df
 
         #project.data[exp]
         print(exp)
@@ -2098,7 +2101,9 @@ def cluster2(
     project = ctx.obj['project']
     X = job.data['edata']
     # hack
-    X = X.reset_index(level=1, drop=True).reset_index(level=1, drop=True).reset_index(level=1, drop=True)
+    #X = X.reset_index(level=1, drop=True).reset_index(level=1, drop=True).reset_index(level=1, drop=True)
+    X = X.reset_index(level=1, drop=True)
+    import ipdb; ipdb.set_trace()
 
     genes = None
     if genefile:
