@@ -85,6 +85,7 @@ TAXON_MAPPER = {
 LABEL_MAPPER = {
     "none": [0, '0', 'none'],  # hard coded number IDs for labels
     "126":  [1260,'TMT_126', 'TMT126', '126'],
+    126:  [1260,'TMT_126', 'TMT126', '126'],
     "126C": [1260,'TMT_126', 'TMT126', '126'],
     "127C": [1270,'TMT_127C','TMT_127_C', "127C"],
     "127N": [1271,'TMT_127N','TMT_127_N', "127N"],
@@ -95,6 +96,8 @@ LABEL_MAPPER = {
     "130C": [1300,'TMT_130C','TMT_130_C', "130C"],
     "130N": [1301,'TMT_130N','TMT_130_N', "130N"],
     "131N": [1310,'TMT_131N','TMT_131_N', "131N"],
+    "131": [1310,'TMT_131N','TMT_131_N', "131N"],
+    131: [1310,'TMT_131N','TMT_131_N', "131N"],
     "131C": [1311,'TMT_131C','TMT_131_C', "131C"],
     "132N": [1321,'TMT_132N','TMT_132_N', "132N"],
     "132C": [1320,'TMT_132C','TMT_132_C', "132C"],
@@ -116,7 +119,6 @@ LABEL_MAPPER = {
     "1321": [1321,'TMT_126', 'TMT126'],
     "1330": [1330,'TMT_126', 'TMT126'],
     "1331": [1331,'TMT_126', 'TMT126'],
-    "131":  [1310,'TMT_126', 'TMT126'],
     1260: "TMT_126",
     1270: "TMT_127_C",
     1271: "TMT_127_N",
@@ -769,7 +771,10 @@ class Data:
                     columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
+            df = df[ ~df.GeneID.str.startswith('sp')]
+            df = df[ ~df.GeneID.str.startswith('rev')]
             if df.empty:
+                import ipdb; ipdb.set_trace()
                 warn(
                     "\n"
                     + "#" * 80
@@ -1204,6 +1209,11 @@ class Data:
             self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
             self._mask = self.mask[sample_ixs]
             self.normed = True
+
+        #if not self.norm_individual:
+        #if True:
+        #    import ipdb; ipdb.set_trace()
+        #    self._areas = self._areas -  self._areas.median()
 
         if self.export_all and not self.normed:
             new_cols = list()
