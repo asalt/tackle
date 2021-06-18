@@ -5,7 +5,7 @@
 if (!require("pacman")) install.packages("pacman")
 
 library(pacman)
-pacman::p_load("devtools", "dplyr", "ggplot2", "ggrepel", "ggthemes", "statmod", "verification")
+pacman::p_load("devtools", "tidyverse", "ggplot2", "ggrepel", "ggthemes", "statmod", "verification", "ggridges")
 
 
 # ggplot2
@@ -19,7 +19,9 @@ pacman::p_load("devtools", "dplyr", "ggplot2", "ggrepel", "ggthemes", "statmod",
 
 if (!requireNamespace("BiocManager", quietly = TRUE))
 install.packages("BiocManager")
-BiocManager::install(c("sva", "limma", "rhdf5", "prada")
+BiocManager::install(c("sva", "limma"))
 
-library(devtools)
-devtools::install_github("cmap/cmapR")
+# believe these are requirements for ssGSEA
+## "rhdf5", "prada")
+## library(devtools)
+## devtools::install_github("cmap/cmapR")

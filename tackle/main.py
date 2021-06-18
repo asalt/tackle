@@ -724,8 +724,9 @@ def main(
 
     #col_metadata = parse_metadata(self.config)
 
-    for exp, expvalues in experiment_metadata.items():
+    for exp, expvalues in experiment_metadata.iterrows():
         # else load
+        #import ipdb; ipdb.set_trace()
         exp_id = expvalues['experiment_id']
         if exp in project.doc:
             pass
