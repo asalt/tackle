@@ -2198,11 +2198,14 @@ def cluster2(
                 & (data_obj.data.Metric == annotate)
             ][_cols]
             # .reset_index(level=1, drop=True)
-            # .set_index('GeneID')
+            .set_index('GeneID')
             .fillna(0).astype(int)
         )
         annot_mat.columns.name = annotate
         outname_kws['annotate'] = annotate
+
+        annot_mat['GeneID'] = annot_mat.index
+        annot_mat = annot_mat[['GeneID']+[x for x in annot_mat if x != 'GeneID']]
 
     if z_score_by is not None:
         outname_kws['z_score_by']= z_score_by
@@ -2342,6 +2345,7 @@ def cluster2(
             main_title = robjects.NULL
 
 
+        # import ipdb; ipdb.set_trace()
         call_kws = dict(
             data=X,
             cut_by=cut_by or robjects.NULL,

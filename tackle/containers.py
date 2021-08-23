@@ -783,7 +783,7 @@ class Data:
                 continue
 
             # TODO fix this in bcmproteomics
-            df.index = df.index.astype("int").astype("str")
+            # df.index = df.index.astype("int").astype("str")
 
             if (
                 "SRA" not in df or df.SRA.isna().any()
@@ -833,11 +833,11 @@ class Data:
                     loc = df[df.TaxonID.isna()].index
                     # TODO read taxon in as a "string" to avoid upcast to float with missing values...
                     df.loc[loc, "TaxonID"] = [
-                        _genemapper.taxon.get(str(int(x))) for x in loc
+                        _genemapper.taxon.get(x) for x in loc
                     ]
                 else:
                     df.loc[:, "TaxonID"] = [
-                        _genemapper.taxon.get(str(int(x))) for x in df.index
+                        _genemapper.taxon.get(x) for x in df.index
                     ]
 
             if labeltype == "TMT" or labeltype == "iTRAQ":  # depreciated
