@@ -15,8 +15,6 @@ from .utils import get_outname, parse_gid_file, fix_name
 from .containers import GeneMapper
 
 
-
-
 def volcanoplot(
     ctx,
     foldchange,
@@ -40,7 +38,6 @@ def volcanoplot(
 
     data_obj = ctx.obj["data_obj"]
     gm = GeneMapper()
-
 
     if yaxis not in ("pValue", "pAdj"):
         raise ValueError("Must choose between `pValue` and `pAdj`")
@@ -115,13 +112,14 @@ def volcanoplot(
 
     for comparison, df in results.items():
         # group0, group1 establish
-        groups = comparison.split("-")
+        groups = comparison.split(" - ")
         if len(groups) == 2:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
-            group1, group0 = [x.strip() for x in comparison.split("-")]
+            group1, group0 = [x.strip() for x in comparison.split(" - ")]
             # print(group0, group1)
-            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
-                group1, meta.columns
+            group0_fix, group1_fix = (
+                fix_group_name(group0, meta.columns),
+                fix_group_name(group1, meta.columns),
             )
             # print(group0, group1)
         else:
@@ -129,9 +127,10 @@ def volcanoplot(
             # TODO handle this, maybe with user-config?
             # pass
             # import ipdb; ipdb.set_trace()
-            group1, group0 = [x.strip() for x in comparison.split("-")]
-            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
-                group1, meta.columns
+            group1, group0 = [x.strip() for x in comparison.split(" - ")]
+            group0_fix, group1_fix = (
+                fix_group_name(group0, meta.columns),
+                fix_group_name(group1, meta.columns),
             )
             group0_fix, group1_fix = "Down", "Up"
 
