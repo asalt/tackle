@@ -69,6 +69,11 @@ def make_metrics(
     )
 
     sra = pd.DataFrame(data=[data[n]["SRA"] for n in data.keys()], index=data.keys())
+    # check if all SRA in sra
+    for _k in "S", "R", "A":
+        if _k not in sra:
+            sra[_k] = 0
+
     gpg = pd.DataFrame(
         data=[data[n]["GPGroups"] for n in data.keys()], index=data.keys()
     )

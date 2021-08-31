@@ -838,7 +838,7 @@ class Data:
                     ]
                 else:
                     df.loc[:, "TaxonID"] = [
-                        _genemapper.taxon.get(str(int(x))) for x in df.index
+                        _genemapper.taxon.get(x) for x in df.index
                     ]
 
             if labeltype == "TMT" or labeltype == "iTRAQ":  # depreciated
