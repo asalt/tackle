@@ -417,6 +417,7 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", 
                        "RTK", "MATRISOME", "SurfaceLabel", "CellMembrane", "Secreted",
                        "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", '_all' )
 
+ANNOTATION_CHOICES = get_annotation_mapper().categories
 
 # @gui_option
 @click.group(chain=True)

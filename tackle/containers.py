@@ -209,12 +209,15 @@ class GeneMapper:
 
 class Annotations:
     def __init__(self):
-        self.file = os.path.join(PWD, "data", "combined_annotations.tsv")
+        self.file = os.path.join(PWD, "data", "combined_annotations_new.xlsx")
         if not os.path.exists(self.file):
             logger.error(f"Could not find {self.file}")
             return
         logger.info(f"Loading annotations file {self.file}")
-        self.df = pd.read_table(self.file, dtype=str)
+        if self.file.endswith('tsv'):
+            self.df = pd.read_table(self.file, dtype=str)
+        elif self.file.endswith('xlsx'):
+            self.df = pd.read_excel(self.file, dtype=str)
         self.df["NUCLEUS"] = self.df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
         self.df["NUCLEUS"] = self.df["NUCLEUS"].replace(False, "")
 
