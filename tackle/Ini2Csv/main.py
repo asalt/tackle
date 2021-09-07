@@ -86,7 +86,7 @@ class Csv2Conf(object):
         self._rows = self._rows[1:]
 
     def _transform(self):
-        if len(row[0] for row in self._rows) != len(set(row[0] for row in self._rows) ):
+        if len(list(row[0] for row in self._rows)) != len(list(set(row[0] for row in self._rows))):
             raise ValueError('first column must be unique')
         for row in self._rows:
             obj = {}
