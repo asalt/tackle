@@ -65,7 +65,7 @@ metrics <- function(df, savename=NULL, exts=NULL, ...){
     theme_classic() +
     theme(text = element_text(size=12),
           axis.text.x=element_blank(),
-          )
+          ) +
     xlab(NULL)
 
 

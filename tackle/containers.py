@@ -83,40 +83,40 @@ TAXON_MAPPER = {
 
 
 LABEL_MAPPER = {
-    "none": [0, '0', 'none'],  # hard coded number IDs for labels
-    "126":  [1260,'TMT_126', 'TMT126', '126'],
-    "126C": [1260,'TMT_126', 'TMT126', '126'],
-    "127C": [1270,'TMT_127C','TMT_127_C', "127C"],
-    "127N": [1271,'TMT_127N','TMT_127_N', "127N"],
-    "128C": [1280,'TMT_128C','TMT_128_C', "128C"],
-    "128N": [1281,'TMT_128N','TMT_128_N', "128N"],
-    "129C": [1290,'TMT_129C','TMT_129_C', "129C"],
-    "129N": [1291,'TMT_129N','TMT_129_N', "129N"],
-    "130C": [1300,'TMT_130C','TMT_130_C', "130C"],
-    "130N": [1301,'TMT_130N','TMT_130_N', "130N"],
-    "131N": [1310,'TMT_131N','TMT_131_N', "131N"],
-    "131C": [1311,'TMT_131C','TMT_131_C', "131C"],
-    "132N": [1321,'TMT_132N','TMT_132_N', "132N"],
-    "132C": [1320,'TMT_132C','TMT_132_C', "132C"],
-    "133N": [1331,'TMT_133N','TMT_133_N', "133N"],
-    "133C": [1330,'TMT_133C','TMT_133_C', "133C"],
-    "134":  [1340,'TMT_134', 'TMT134', 'TMT_134', '134'],
-    "1260": [1260,'TMT_126', 'TMT126'],
-    "1270": [1270,'TMT_126', 'TMT126'],
-    "1271": [1271,'TMT_126', 'TMT126'],
-    "1280": [1280,'TMT_126', 'TMT126'],
-    "1281": [1281,'TMT_126', 'TMT126'],
-    "1290": [1290,'TMT_126', 'TMT126'],
-    "1291": [1291,'TMT_126', 'TMT126'],
-    "1300": [1300,'TMT_126', 'TMT126'],
-    "1301": [1301,'TMT_126', 'TMT126'],
-    "1310": [1310,'TMT_126', 'TMT126'],
-    "1311": [1311,'TMT_126', 'TMT126'],
-    "1320": [1320,'TMT_126', 'TMT126'],
-    "1321": [1321,'TMT_126', 'TMT126'],
-    "1330": [1330,'TMT_126', 'TMT126'],
-    "1331": [1331,'TMT_126', 'TMT126'],
-    "131":  [1310,'TMT_126', 'TMT126'],
+    "none": [0, "0", "none"],  # hard coded number IDs for labels
+    "126": [1260, "TMT_126", "TMT126", "126"],
+    "126C": [1260, "TMT_126", "TMT126", "126"],
+    "127C": [1270, "TMT_127C", "TMT_127_C", "127C"],
+    "127N": [1271, "TMT_127N", "TMT_127_N", "127N"],
+    "128C": [1280, "TMT_128C", "TMT_128_C", "128C"],
+    "128N": [1281, "TMT_128N", "TMT_128_N", "128N"],
+    "129C": [1290, "TMT_129C", "TMT_129_C", "129C"],
+    "129N": [1291, "TMT_129N", "TMT_129_N", "129N"],
+    "130C": [1300, "TMT_130C", "TMT_130_C", "130C"],
+    "130N": [1301, "TMT_130N", "TMT_130_N", "130N"],
+    "131N": [1310, "TMT_131N", "TMT_131_N", "131N"],
+    "131C": [1311, "TMT_131C", "TMT_131_C", "131C"],
+    "132N": [1321, "TMT_132N", "TMT_132_N", "132N"],
+    "132C": [1320, "TMT_132C", "TMT_132_C", "132C"],
+    "133N": [1331, "TMT_133N", "TMT_133_N", "133N"],
+    "133C": [1330, "TMT_133C", "TMT_133_C", "133C"],
+    "134": [1340, "TMT_134", "TMT134", "TMT_134", "134"],
+    "1260": [1260, "TMT_126", "TMT126"],
+    "1270": [1270, "TMT_126", "TMT126"],
+    "1271": [1271, "TMT_126", "TMT126"],
+    "1280": [1280, "TMT_126", "TMT126"],
+    "1281": [1281, "TMT_126", "TMT126"],
+    "1290": [1290, "TMT_126", "TMT126"],
+    "1291": [1291, "TMT_126", "TMT126"],
+    "1300": [1300, "TMT_126", "TMT126"],
+    "1301": [1301, "TMT_126", "TMT126"],
+    "1310": [1310, "TMT_126", "TMT126"],
+    "1311": [1311, "TMT_126", "TMT126"],
+    "1320": [1320, "TMT_126", "TMT126"],
+    "1321": [1321, "TMT_126", "TMT126"],
+    "1330": [1330, "TMT_126", "TMT126"],
+    "1331": [1331, "TMT_126", "TMT126"],
+    "131": [1310, "TMT_126", "TMT126"],
     1260: "TMT_126",
     1270: "TMT_127_C",
     1271: "TMT_127_N",
@@ -209,19 +209,16 @@ class GeneMapper:
 
 class Annotations:
     def __init__(self):
-        self.file = os.path.join(
-            PWD, "data", "combined_annotations.tsv"
-        )
+        self.file = os.path.join(PWD, "data", "combined_annotations.tsv")
         if not os.path.exists(self.file):
             logger.error(f"Could not find {self.file}")
             return
         logger.info(f"Loading annotations file {self.file}")
         self.df = pd.read_table(self.file, dtype=str)
-        self.df['NUCLEUS'] = self.df['CYTO_NUC'].isin(['NUCLEUS', 'BOTH'])
-        self.df['NUCLEUS'] = self.df['NUCLEUS'].replace(False, '')
+        self.df["NUCLEUS"] = self.df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
+        self.df["NUCLEUS"] = self.df["NUCLEUS"].replace(False, "")
 
-        self._categories = [
-            x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
 
     @property
     def categories(self):
@@ -231,8 +228,8 @@ class Annotations:
 
         df = self.df
 
-        #if cat == 'NUC':
-            #return df[(~df['CYTO_NUC'].isna()) & (df['CYTO_NUC'] != 'CYTOPLASM') ]
+        # if cat == 'NUC':
+        # return df[(~df['CYTO_NUC'].isna()) & (df['CYTO_NUC'] != 'CYTOPLASM') ]
         if cat not in df:
             raise ValueError("{cat} must be one of {self.categories}")
         return df[~df[cat].isna()]
@@ -242,11 +239,7 @@ class HGeneMapper:
     def __init__(self):
 
         homologene_f = sorted(
-            glob.glob(
-                os.path.join(
-                    PWD, "data", "homologene*data"
-                )
-            ),
+            glob.glob(os.path.join(PWD, "data", "homologene*data")),
             reverse=True,
         )[0]
         self.file = homologene_f
@@ -294,9 +287,11 @@ def get_gene_mapper(cls=GeneMapper):
         _genemapper = GeneMapper()
     return _genemapper
 
+
 _genemapper = get_gene_mapper()
 
 _annotmapper = None
+
 
 def get_annotation_mapper(cls=Annotations):
     global _annotmapper
@@ -331,12 +326,10 @@ def assign_sra(df):
     df.loc[(df["IDSet"] == 2) & (df["IDGroup"] <= 3), "SRA"] = "S"
 
     df.loc[
-        (df["IDSet"] == 1) & (df["SRA"] != "S") & (
-            df["IDGroup_u2g"] <= 5), "SRA"
+        (df["IDSet"] == 1) & (df["SRA"] != "S") & (df["IDGroup_u2g"] <= 5), "SRA"
     ] = "R"
 
-    df.loc[(df["IDSet"] == 2) & (df["SRA"] != "S")
-           & (df["IDGroup"] <= 5), "SRA"] = "R"
+    df.loc[(df["IDSet"] == 2) & (df["SRA"] != "S") & (df["IDGroup"] <= 5), "SRA"] = "R"
 
     return df
 
@@ -345,7 +338,7 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     annotator = get_annotation_mapper()
     overlap = set(annotator.df.GeneID) & set(df.GeneID)
     if overlap == len(df):  # human data
-        dfout = df.merge(annotator.df[[annotations]], on='GeneID')
+        dfout = df.merge(annotator.df[[annotations]], on="GeneID")
         return dfout
 
     logger.info(f"Trying to map genes to hs through homologene")
@@ -353,15 +346,21 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     hg_gene_dict = hgene_mapper.map_to_human(df.GeneID)
 
     hg_gene_df = pd.DataFrame.from_dict(
-        hg_gene_dict, orient='index', columns=['GeneID_hs'])
-    dfout = (df.merge(hg_gene_df, left_on='GeneID', right_index=True, how='left').
-             merge(
-        annotator.df[['GeneID', *annotations]].rename(columns=dict(GeneID='GeneID_hs')), on='GeneID_hs',
-        how='left'
+        hg_gene_dict, orient="index", columns=["GeneID_hs"]
     )
+    dfout = df.merge(hg_gene_df, left_on="GeneID", right_index=True, how="left").merge(
+        annotator.df[["GeneID", *annotations]].rename(columns=dict(GeneID="GeneID_hs")),
+        on="GeneID_hs",
+        how="left",
     )
-    front = ['GeneID', 'TaxonID', 'GeneSymbol', 'GeneDescription', 'FunCats', #'GeneCapacity',
-             *annotations]
+    front = [
+        "GeneID",
+        "TaxonID",
+        "GeneSymbol",
+        "GeneDescription",
+        "FunCats",  #'GeneCapacity',
+        *annotations,
+    ]
     col_order = [*front, *[x for x in dfout if x not in front]]
     return dfout[col_order]
 
@@ -369,7 +368,7 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
 class Data:
     def __init__(
         self,
-            annotations=None,
+        annotations=None,
         additional_info=None,
         batch=None,
         batch_nonparametric=False,
@@ -644,8 +643,7 @@ class Data:
         for key, value in self.config[name].items():
             if key.isdigit():
                 df = (
-                    exp.df[exp.df.EXPLabelFLAG == int(
-                        key)].set_index(["GeneID"])
+                    exp.df[exp.df.EXPLabelFLAG == int(key)].set_index(["GeneID"])
                     # .pipe(filter_and_assign, value, funcats, geneid_subset)
                     .pipe(assign_cols, value)
                 )
@@ -758,15 +756,13 @@ class Data:
 
             labelquery = LABEL_MAPPER.get(label, label)
 
-            print("Getting", recno, runno, searchno,
-                  label, "to/from", self.data_dir)
+            print("Getting", recno, runno, searchno, label, "to/from", self.data_dir)
             exp = self.get_e2g(
                 recno, runno, searchno, data_dir=self.data_dir, only_local=only_local
             )
 
             if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
-                exp.df.rename(
-                    columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
+                exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
             if df.empty:
@@ -783,7 +779,10 @@ class Data:
                 continue
 
             # TODO fix this in bcmproteomics
-            # df.index = df.index.astype("int").astype("str")
+            try:
+                df.index = df.index.astype("int").astype("str")
+            except TypeError:
+                pass
 
             if (
                 "SRA" not in df or df.SRA.isna().any()
@@ -821,8 +820,7 @@ class Data:
             df["GeneID"] = df["GeneID"].apply(maybe_int)
 
             funcats_dict = (
-                df.drop_duplicates("GeneID").set_index(
-                    "GeneID")["FunCats"].to_dict()
+                df.drop_duplicates("GeneID").set_index("GeneID")["FunCats"].to_dict()
             )
             gid_funcat_mapping.update(funcats_dict)
 
@@ -830,10 +828,13 @@ class Data:
                 df["FunCats"] = df.GeneID.map(_genemapper.funcat).fillna("")
             if "TaxonID" not in df or df.TaxonID.isna().any():
                 if "TaxonID" in df:
+                    # import ipdb; ipdb.set_trace()
                     loc = df[df.TaxonID.isna()].index
                     # TODO read taxon in as a "string" to avoid upcast to float with missing values...
                     df.loc[loc, "TaxonID"] = [
-                        _genemapper.taxon.get(x) for x in loc
+                        # _genemapper.taxon.get(str(int(x))) for x in loc
+                        _genemapper.taxon.get(str(x))
+                        for x in loc
                     ]
                 else:
                     df.loc[:, "TaxonID"] = [
@@ -900,7 +901,10 @@ class Data:
             if taxon_filter is None:
                 filter_func = dummy_filter
             else:
-                def filter_func(x): return x[x["TaxonID"] == taxon_filter]
+
+                def filter_func(x):
+                    return x[x["TaxonID"] == taxon_filter]
+
             if (
                 self.metrics
                 and not self.metrics_after_filter
@@ -1010,8 +1014,7 @@ class Data:
                     self.data.Metric == "GeneSymbol", self.data.columns[0:3]
                 ]
                 # sel.index = sel.index.droplevel(1)
-                self._gid_symbol = sel.set_index(
-                    "GeneID")[sel.columns[-1]].to_dict()
+                self._gid_symbol = sel.set_index("GeneID")[sel.columns[-1]].to_dict()
             except KeyError:
                 return dict()
             # self._gid_symbol = self.data.loc[ idx[:, 'GeneSymbol'], self.data.columns[0] ]
@@ -1138,9 +1141,7 @@ class Data:
             #     .divide(self.minval / 2)
             # )
             self._areas_log = np.log10(
-                self._areas.replace(0, np.NAN)
-                .fillna(self.minval)
-                .divide(self.minval)
+                self._areas.replace(0, np.NAN).fillna(self.minval).divide(self.minval)
             )
 
         self._areas_log.index.name = "GeneID"
@@ -1183,11 +1184,9 @@ class Data:
                     self._areas_log_shifted[ctrl_exp].fillna(0) + 1e-20, axis="index"
                 )
             self._areas = (
-                areas.drop(ctrl_exps, axis=1).where(
-                    lambda x: x != 0).dropna(how="all")
+                areas.drop(ctrl_exps, axis=1).where(lambda x: x != 0).dropna(how="all")
             )
-            self.minval_log = self._areas.replace(
-                0, np.NAN).stack().dropna().min()
+            self.minval_log = self._areas.replace(0, np.NAN).stack().dropna().min()
             finite = self._areas.pipe(np.isfinite)
 
             # have to take care of number/0 case
@@ -1198,8 +1197,7 @@ class Data:
             # not sure if this is right, can check:
             # sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
             sample_cols = self.col_metadata.columns
-            sample_ixs = [
-                x for x in self.col_metadata.index if x not in ctrl_exps]
+            sample_ixs = [x for x in self.col_metadata.index if x not in ctrl_exps]
 
             self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
             self._mask = self.mask[sample_ixs]
@@ -1213,10 +1211,8 @@ class Data:
                     frame_log = self.impute_missing(frame).reset_index()
                 else:
                     minval = frame.replace(0, np.NAN).stack().dropna().min()
-                    frame_log = np.log10(frame.replace(
-                        0, np.NAN).fillna(minval / 2))
-                    minval_log = frame_log.replace(
-                        0, np.NAN).stack().dropna().min()
+                    frame_log = np.log10(frame.replace(0, np.NAN).fillna(minval / 2))
+                    minval_log = frame_log.replace(0, np.NAN).stack().dropna().min()
                     shift_val = np.ceil(np.abs(minval_log))
                     frame_log = (
                         frame_log.fillna(minval_log / 2) + shift_val
@@ -1230,8 +1226,7 @@ class Data:
             self.df_filtered = pd.concat([self.df_filtered, *new_cols])
 
         if self.batch is not None:
-            self._areas_log_shifted = self.batch_normalize(
-                self.areas_log_shifted)
+            self._areas_log_shifted = self.batch_normalize(self.areas_log_shifted)
             # try batch normalization via ComBat
             if (
                 self.export_all and not self.normed
@@ -1244,10 +1239,8 @@ class Data:
                     )
                     # get rid of "Metric" index level, batch_normalize not expecting it
                     res = self.batch_normalize(frame, prior_plot=False)
-                    self.df_filtered.loc[idx[:, col +
-                                             "_log10"], :] = res.values
-                    self.df_filtered.loc[idx[:, col],
-                                         :] = np.power(res, 10).values
+                    self.df_filtered.loc[idx[:, col + "_log10"], :] = res.values
+                    self.df_filtered.loc[idx[:, col], :] = np.power(res, 10).values
             elif self.export_all and self.normed:
                 warn(
                     """No support for full export with norm channel. Please ignore
@@ -1326,7 +1319,7 @@ class Data:
         batch = pheno[self.batch]
         # res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
         #                  mod=mod, par_prior=True, mean_only=False)
-        #prior_plot, plot_prior = False, False
+        # prior_plot, plot_prior = False, False
         if not self.batch_nonparametric and prior_plot:
             plot_prior = True
             outname = get_outname(
@@ -1341,8 +1334,7 @@ class Data:
                 else "nonparametric",
                 outpath=self.outpath,
             )
-            grdevices.png(file=outname + ".png", width=5,
-                          height=5, units="in", res=300)
+            grdevices.png(file=outname + ".png", width=5, height=5, units="in", res=300)
         else:
             plot_prior = False
         res = sva.ComBat(
@@ -1366,8 +1358,7 @@ class Data:
             )
         except ValueError:  # rpy2.9.5 support
             df = pd.DataFrame(
-                index=data.index, columns=data.columns, data=pandas2ri.ri2py(
-                    res)
+                index=data.index, columns=data.columns, data=pandas2ri.ri2py(res)
             )
 
         # df = pandas2ri.ri2py(res)
@@ -1521,15 +1512,12 @@ class Data:
                 r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
                 r("cor <- corfit$consensus")
 
-            fit = r(
-                """fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
+            fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             # need to make valid R colnames
             variables = robjects.r("colnames(mod)")
+            # fix each individual column of `mod`
             fixed_vars = [
-                x.replace(
-                    ":",
-                    "_",
-                )
+                x.replace(":", "_")
                 .replace(" ", "_")
                 .replace("-", "_")
                 .replace("+", "_")
@@ -1582,12 +1570,9 @@ class Data:
                         "P.Value": "pValue",
                     }
                 )
-                result["log2_FC"] = result["log2_FC"].apply(
-                    lambda x: x / np.log10(2))
-                result["CI.L"] = result["CI.L"].apply(
-                    lambda x: x / np.log10(2))
-                result["CI.R"] = result["CI.R"].apply(
-                    lambda x: x / np.log10(2))
+                result["log2_FC"] = result["log2_FC"].apply(lambda x: x / np.log10(2))
+                result["CI.L"] = result["CI.L"].apply(lambda x: x / np.log10(2))
+                result["CI.R"] = result["CI.R"].apply(lambda x: x / np.log10(2))
 
                 # DON'T NEED TO DO THIS ANYMORE
                 # we ensure the order of result is equal to order of areas_log_shifted
@@ -1772,36 +1757,41 @@ class Data:
 
             # keep track of all observed records to determine whether or not to report QUAl columns
             records = set()
-            ndistinct_records = self.col_metadata.drop_duplicates(['recno', 'runno', 'searchno']).pipe(len)
+            ndistinct_records = self.col_metadata.drop_duplicates(
+                ["recno", "runno", "searchno"]
+            ).pipe(len)
             for col in export.columns:
 
                 identifier = self.col_metadata.loc[col][
                     ["recno", "runno", "searchno", "label"]
                 ].to_dict()
 
-                _rec, _run, _search, _label = identifier['recno'], identifier['runno'], identifier['searchno'], identifier['label']
-                _id= f"{_rec}_{_run}_{_search}"
+                _rec, _run, _search, _label = (
+                    identifier["recno"],
+                    identifier["runno"],
+                    identifier["searchno"],
+                    identifier["label"],
+                )
+                _id = f"{_rec}_{_run}_{_search}"
                 # if _id in records: # do not re-write QUAL data
                 #     if col in ['SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs']:
                 #         continue
 
                 renamer = {
-                    x: f"{x}_{_rec}_{_run}_{_search}_{_label}_{col}"
-                    for x in cols
+                    x: f"{x}_{_rec}_{_run}_{_search}_{_label}_{col}" for x in cols
                 }
 
                 if ndistinct_records < self.col_metadata.pipe(len):
                     # simply annotate QUAL columns with rec_run_search identifier
 
-                    renamer.update({
-                        x: f"{x}_{_rec}_{_run}_{_search}"
-                        for x in ['SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs']
-                    })
+                    renamer.update(
+                        {
+                            x: f"{x}_{_rec}_{_run}_{_search}"
+                            for x in ["SRA", "PeptideCount", "PeptideCount_u2g", "PSMs"]
+                        }
+                    )
 
-
-
-
-                #renamer = {x: "{}_{}".format(x, col) for x in cols}
+                # renamer = {x: "{}_{}".format(x, col) for x in cols}
 
                 subdf = (
                     export.loc[idx[:, :], col]
@@ -1818,8 +1808,12 @@ class Data:
                 _cols = [x for x in cols if x in subdf]
                 # check if we have already exported QUAL data for a given rec_run_search
                 if _id in records:
-                    logger.debug(f'QUAL data for {_id} already exported, not repeating')
-                    _cols = [x for x in _cols if x not in ('SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs')]
+                    logger.debug(f"QUAL data for {_id} already exported, not repeating")
+                    _cols = [
+                        x
+                        for x in _cols
+                        if x not in ("SRA", "PeptideCount", "PeptideCount_u2g", "PSMs")
+                    ]
                 records |= {_id}
 
                 subdf = subdf.set_index([x for x in gene_metadata_cols if x in subdf])[
@@ -1850,7 +1844,7 @@ class Data:
                 "GeneSymbol",
                 "GeneDescription",
                 "FunCats",
-                #"GeneCapacity",
+                # "GeneCapacity",
             ]
             for c in gene_metadata_cols:
                 try:
@@ -2002,10 +1996,10 @@ class Data:
 
         # elif level == 'SRA':
         #     export = self.data.loc[ self.data.Metric=='SRA' ]
-        elif level == 'zscore':  # export zscore of the data
+        elif level == "zscore":  # export zscore of the data
             # do sturf
             export = (
-                self.df_filtered.loc[idx[:, 'area'], :]
+                self.df_filtered.loc[idx[:, "area"], :]
                 .apply(my_zscore, axis=1)
                 .reset_index()
             )
@@ -2219,7 +2213,7 @@ def scattermap(
     yticklabels="auto",
     mask=None,
     ax=None,
-    **kwargs
+    **kwargs,
 ):
 
     plotter = _ScatterMapper(
@@ -2281,8 +2275,7 @@ class MyClusterGrid(ClusterGrid):
         self.circle_col_markers = circle_col_markers
         self.circle_col_marker_size = circle_col_marker_size
 
-        self.data2d = self.format_data(
-            self.data, pivot_kws, z_score, standard_scale)
+        self.data2d = self.format_data(self.data, pivot_kws, z_score, standard_scale)
 
         self.mask = _matrix_mask(self.data2d, mask)
 
@@ -2303,10 +2296,8 @@ class MyClusterGrid(ClusterGrid):
             data, col_colors, axis=1
         )
 
-        width_ratios = self.dim_ratios(
-            self.row_colors, figsize=figsize, axis=0)
-        height_ratios = self.dim_ratios(
-            self.col_colors, figsize=figsize, axis=1)
+        width_ratios = self.dim_ratios(self.row_colors, figsize=figsize, axis=0)
+        height_ratios = self.dim_ratios(self.col_colors, figsize=figsize, axis=1)
         nrows = 3 if self.col_colors is None else 4
         ncols = 3 if self.row_colors is None else 4
         self.gs = gridspec.GridSpec(
@@ -2327,11 +2318,9 @@ class MyClusterGrid(ClusterGrid):
         self.ax_col_colors = None
 
         if self.row_colors is not None:
-            self.ax_row_colors = self.fig.add_subplot(
-                self.gs[nrows - 1, ncols - 2])
+            self.ax_row_colors = self.fig.add_subplot(self.gs[nrows - 1, ncols - 2])
         if self.col_colors is not None:
-            self.ax_col_colors = self.fig.add_subplot(
-                self.gs[nrows - 2, ncols - 1])
+            self.ax_col_colors = self.fig.add_subplot(self.gs[nrows - 2, ncols - 1])
 
         self.ax_heatmap = self.fig.add_subplot(self.gs[nrows - 1, ncols - 1])
 
@@ -2406,7 +2395,7 @@ class MyClusterGrid(ClusterGrid):
         col_color_kws=None,
         annot_kws=None,
         tree_kws=None,
-        **kws
+        **kws,
     ):
         colorbar_kws = {} if colorbar_kws is None else colorbar_kws
         row_color_kws = {} if row_color_kws is None else row_color_kws
@@ -2476,7 +2465,7 @@ class MyClusterGrid(ClusterGrid):
             fmt="",
             xticklabels=xtl,
             yticklabels=ytl,
-            **kws
+            **kws,
         )
 
         # need to remove..
@@ -2592,7 +2581,7 @@ class MyClusterGrid(ClusterGrid):
                 ax=self.ax_row_colors,
                 xticklabels=row_color_labels,
                 yticklabels=False,
-                **full_kws
+                **full_kws,
             )
 
             # Adjust rotation of labels
@@ -2644,7 +2633,7 @@ class MyClusterGrid(ClusterGrid):
                     xticklabels=False,
                     yticklabels=col_color_labels,
                     **col_color_kws,
-                    **kws
+                    **kws,
                 )
             else:
                 heatmap(
@@ -2655,7 +2644,7 @@ class MyClusterGrid(ClusterGrid):
                     xticklabels=False,
                     yticklabels=col_color_labels,
                     **col_color_kws,
-                    **kws
+                    **kws,
                 )
 
             # scattermap(matrix, cmap=cmap, cbar=False, ax=self.ax_col_colors, marker_size=100,
