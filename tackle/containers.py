@@ -1991,7 +1991,8 @@ class Data:
                     lambda x: self.gid_symbol.get(
                         x,
                         # _genemapper.symbol.get(x, '?')
-                        _genemapper.symbol.get(str(int(x)), x),
+                        # _genemapper.symbol.get(str(int(x)), x),
+                        _genemapper.symbol.get(x, x),
                     )
                 )
                 # index column is GeneID, add GeneSymbol

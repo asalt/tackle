@@ -559,10 +559,10 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
 
     if gids.endswith('.csv'):
         _df = pd.read_csv(gids, dtype='str')
-    elif gids.endswith('.tsv'):
+    elif gids.endswith('.tsv') | gids.endswith('.txt'):
         _df = pd.read_table(gids, dtype='str')
         if 'GeneID' in _df:
-            return _df.GeneID
+            return _df.GeneID.tolist()
     # elif gids.endswith('.txt'):  # try to parse plain text file
 
 
