@@ -173,8 +173,11 @@ volcanoplot <- function(X, max_labels = 35,
 
   annot_size <- 4
   max_nchar <- max(nchar(group0), nchar(group1))
-  group0 <- str_replace(group0, "\\+", " \\+\n") %>% str_replace(":", "\n") %>% str_replace("-", "-\n")
-  group1 <- str_replace(group1, "\\+", " \\+\n") %>%str_replace(":", "\n")%>% str_replace("-", "-\n")
+  add_newlines <- function(group){
+    str_replace(group, "\\+", " \\+\n") %>% str_replace(":", "\n") %>% str_replace("\\-", " \\-\n")
+  }
+  group0 <- add_newlines(group0)
+  group1 <- add_newlines(group1)
   if ((max_nchar) > 15) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
   if ((max_nchar) > 35) annot_size <- annot_size - .5

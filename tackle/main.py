@@ -417,6 +417,7 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", 
                        "RTK", "MATRISOME", "SurfaceLabel", "CellMembrane", "Secreted",
                        "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", '_all' )
 
+ANNOTATION_CHOICES = get_annotation_mapper().categories
 
 # @gui_option
 @click.group(chain=True)
@@ -1841,6 +1842,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 )
 @click.option("--volcano-sortby", default='log2_FC', type=click.Choice(['log2_FC', 'pValue', 'pAdj']),
               show_default=True)
+@click.option("--volcano-direction", type=click.Choice(["up", "down", "both"]), default='both', show_default=True)
 @click.option('--cluster-file', type=(click.Path(exists=True, dir_okay=False), int),
               default=(None, 0),
               show_default=True,
@@ -1864,6 +1866,16 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     multiple=True,
     help="""Specific entries in the config file to ignore for the legend.
               (Default all are included)""",
+)
+@click.option(
+    "--sample-reference", type=str,
+    help="metadata key to choose what samples to keep as specified by `--sample-include`"
+)
+@click.option(
+    "--sample-include",
+    type=str,
+    multiple=True,
+    help="samples to include b ased on metadata entry `--sample-reference`"
 )
 @click.option(
     "--linkage",
@@ -1905,6 +1917,16 @@ when `auto` is set for `--nclusters`""",
     is_flag=True,
     show_default=True,
     help="Cluster rows via hierarchical clustering",
+)
+@click.option("--row-dend-side",
+              default="left",
+              type=click.Choice(["left", "right"]),
+              show_default=True
+)
+@click.option("--row-names-side",
+              default="right",
+              type=click.Choice(["left", "right"]),
+              show_default=True
 )
 @click.option("--order-by-abundance", default=False, is_flag=True, show_default=True)
 @click.option(
@@ -1958,6 +1980,8 @@ def cluster2(
     linear,
     legend_include,
     legend_exclude,
+        sample_reference,
+        sample_include,
     linkage,
     max_autoclusters,
     nclusters,
@@ -1967,9 +1991,12 @@ def cluster2(
     volcano_file,
     volcano_filter_params,
     volcano_topn,
+        volcano_direction,
         volcano_sortby,
         cluster_file,
     row_cluster,
+        row_dend_side,
+        row_names_side,
     seed,
     show_metadata,
     standard_scale,
@@ -2012,6 +2039,7 @@ def cluster2(
     # =================================================================
 
     data_obj = ctx.obj["data_obj"]
+    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
 
     if order_by_abundance and row_cluster:
         raise NotImplementedError("Not Implemented !")
@@ -2021,6 +2049,12 @@ def cluster2(
 
     X = data_obj.areas_log_shifted
     X.index = X.index.astype(str)
+    # filter if sample include is mentioned
+    if sample_reference is not None:
+        # we take a subset of the data
+        col_meta = col_meta.loc[ col_meta[sample_reference].isin(sample_include)  ]
+        X = X[col_meta.index]
+
 
     genes = None
     if genefile:
@@ -2036,17 +2070,28 @@ def cluster2(
     for f in volcano_file:
         _df = pd.read_table(f)
         if np.isfinite(volcano_topn):
-            _df = pd.concat(
-                [
-                    _df.sort_values(by=volcano_sortby, ascending=False).head(
-                        int(volcano_topn / 2)
-                    ),
-                    _df.sort_values(by=volcano_sortby, ascending=False).tail(
-                        int(volcano_topn / 2)
-                    ),
-                ]
-            )
-        _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
+            if volcano_direction == 'both':
+                _df = pd.concat(
+                    [
+                        _df.sort_values(by=volcano_sortby, ascending=False).head(
+                            int(volcano_topn / 2)
+                        ),
+                        _df.sort_values(by=volcano_sortby, ascending=False).tail(
+                            int(volcano_topn / 2)
+                        ),
+                    ]
+                )
+            elif volcano_direction == 'up':
+                _df = _df.sort_values(by=volcano_sortby, ascending=False).head(
+                    int(volcano_topn)
+                )
+            elif volcano_direction == 'down':
+                _df = _df.sort_values(by=volcano_sortby, ascending=False).tail(
+                    int(volcano_topn)
+                )
+
+        else:
+            _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
         _tmp.append(_df)
     if _tmp:
         _dfs = pd.concat(_tmp)
@@ -2145,7 +2190,6 @@ def cluster2(
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
-    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
     if add_human_ratios:
         col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
     # _expids = ('recno', 'runno', 'searchno', 'label')
@@ -2377,6 +2421,8 @@ def cluster2(
             gene_symbol_fontsize=gene_symbol_fontsize,
             # legend_include=legend_include,
             # legend_exclude=legend_exclude,
+            row_dend_side=row_dend_side,
+            row_names_side=row_names_side,
             cluster_row_slices=cluster_row_slices,
             cluster_col_slices=cluster_col_slices,
             order_by_abundance=order_by_abundance,
