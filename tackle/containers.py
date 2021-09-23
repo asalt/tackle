@@ -36,6 +36,8 @@ except AttributeError:
 z_score = ClusterGrid.z_score
 # python implementation of my R implementation
 
+rprint = lambda x: robjects.r("print")(x)
+
 
 def my_zscore(x, minval=None, remask=True):
     mask = x.isna()
@@ -215,9 +217,9 @@ class Annotations:
             logger.error(f"Could not find {self.file}")
             return
         logger.info(f"Loading annotations file {self.file}")
-        if self.file.endswith('tsv'):
+        if self.file.endswith("tsv"):
             self.df = pd.read_table(self.file, dtype=str)
-        elif self.file.endswith('xlsx'):
+        elif self.file.endswith("xlsx"):
             self.df = pd.read_excel(self.file, dtype=str)
         self.df["NUCLEUS"] = self.df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
         self.df["NUCLEUS"] = self.df["NUCLEUS"].replace(False, "")
@@ -769,6 +771,10 @@ class Data:
                 exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
+            # QUICK FIX
+            # removes "Crapome" hits that for some reason get a GeneID (the wrong one)
+            df = df[~df.TaxonID.isna()]
+
             if df.empty:
                 warn(
                     "\n"
@@ -835,14 +841,17 @@ class Data:
                     # import ipdb; ipdb.set_trace()
                     loc = df[df.TaxonID.isna()].index
                     # TODO read taxon in as a "string" to avoid upcast to float with missing values...
-                    df.loc[loc, "TaxonID"] = [
-                        # _genemapper.taxon.get(str(int(x))) for x in loc
-                        _genemapper.taxon.get(str(x))
-                        for x in loc
-                    ]
+
+                    # this does not work anymore
+                    # df.loc[loc, "TaxonID"] = [
+                    #     # _genemapper.taxon.get(str(int(x))) for x in loc
+                    #     _genemapper.taxon.get(str(x), "")
+                    #     for x in loc
+                    # ]
+                    df.loc[loc, "TaxonID"] = ""
                 else:
                     df.loc[:, "TaxonID"] = [
-                        _genemapper.taxon.get(x) for x in df.index
+                        _genemapper.taxon.get(x, "") for x in df.index
                     ]
 
             if labeltype == "TMT" or labeltype == "iTRAQ":  # depreciated
@@ -976,6 +985,7 @@ class Data:
         else:
             stacked_data = [df.stack() for df in exps.values()]
         print("stacking...", flush=True, end="")
+
         self.data = pd.concat(stacked_data, axis=1, keys=exps.keys())
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
@@ -1515,6 +1525,7 @@ class Data:
                 r('block <- as.factor(pheno[["{}"]])'.format(self.block))
                 r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
                 r("cor <- corfit$consensus")
+
 
             fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             # need to make valid R colnames
