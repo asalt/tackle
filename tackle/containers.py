@@ -216,7 +216,7 @@ class Annotations:
         if not os.path.exists(self.file):
             logger.error(f"Could not find {self.file}")
             return
-        logger.info(f"Loading annotations file {self.file}")
+        # logger.info(f"Loading annotations file {self.file}")
         if self.file.endswith("tsv"):
             self.df = pd.read_table(self.file, dtype=str)
         elif self.file.endswith("xlsx"):
@@ -426,6 +426,7 @@ class Data:
         cluster_annotate_cols=None,
         impute_missing_values=False,
         only_local=False,
+        norm_info=None,
     ):
         "docstring"
 
@@ -478,6 +479,7 @@ class Data:
         self.SRA = SRA
         self.number_sra = number_sra
         self.cluster_annotate_cols = cluster_annotate_cols
+        self.norm_info = norm_info
 
         self.outpath = None
         self.analysis_name = None
@@ -1178,11 +1180,17 @@ class Data:
         #     self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
 
         # if specified, normalize by a specified control group
-        norm_info = self.config.get("__norm__")
-        if norm_info is not None:
+        if self.config.get("__norm__"):
+            warn("depreciated, use flags")
+        if self.norm_info is not None or self.config.get("__norm__") is not None:
+            if self.norm_info is not None:
+                norm_info = self.norm_info
+            elif self.config.get("__norm__") is not None:
+                norm_info = self.config.get("__norm__")
             control = norm_info["control"]
             group = norm_info["group"]
             label = norm_info["label"]
+
             # metadata = self.col_metadata.T  # rows are experiments, cols are metadat
             metadata = self.col_metadata  # rows are experiments, cols are metadata
             areas = self._areas_log_shifted.copy()
@@ -1525,7 +1533,6 @@ class Data:
                 r('block <- as.factor(pheno[["{}"]])'.format(self.block))
                 r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
                 r("cor <- corfit$consensus")
-
 
             fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             # need to make valid R colnames

@@ -196,9 +196,6 @@ class Path_or_Subcommand(click.Path):
         if value in self.EXCEPTIONS:
             return value
 
-        import ipdb
-
-        ipdb.set_trace()
         if value in commands:
             help_txt = globals()[value].get_help(ctx)
             click.echo(help_txt)
