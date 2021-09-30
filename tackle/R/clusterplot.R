@@ -349,14 +349,16 @@ cluster2 <- function(data, annot_mat=NULL, cmap_name=NULL,
   #test:
   ## cut_by <- 'response'
   if (!is.null(cut_by)){
-    column_split <-  col_data[[cut_by]]
+    col_data[[cut_by]] <- col_data[[cut_by]] %>% factor(ordered=TRUE)
+    column_split <-  col_data[[cut_by]] %>% factor(ordered=TRUE, levels=unique(col_data[[cut_by]]))
+    #column_split <- col_data[, c(cut_by, 'name')]
+
   }
 
 
   ## print(head(toplot[col_data$name]))
-  ## browser()
-  print('##################################3')
-  print(cluster_col_slices)
+  print('##################################')
+  #print(cluster_col_slices)
 
   ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
   ht <- Heatmap(toplot[col_data$name],

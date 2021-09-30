@@ -10,13 +10,11 @@ try:
 except AttributeError:
     pd.NA = "NA"
 
-from .utils import get_outname, parse_gid_file
+from .utils import get_outname, parse_gid_file, fix_name
 
 from .containers import GeneMapper
 
 
-def fix_name(x):
-    return x.replace(":", "_").replace(" ", "_").replace("/", "dv").replace("+", "")
 
 
 def volcanoplot(
@@ -43,9 +41,6 @@ def volcanoplot(
     data_obj = ctx.obj["data_obj"]
     gm = GeneMapper()
 
-    gids_to_highlight = None
-    if highlight_geneids is not None:
-        gids_to_highlight = parse_gid_file(highlight_geneids)
 
     if yaxis not in ("pValue", "pAdj"):
         raise ValueError("Must choose between `pValue` and `pAdj`")
@@ -80,6 +75,7 @@ def volcanoplot(
     )
 
     meta = data_obj.col_metadata
+    # import ipdb; ipdb.set_trace()
 
     def fix_group_name(group, entries):
         # for entry in meta.index:
@@ -115,20 +111,29 @@ def volcanoplot(
         # group = ''.join(group_lst[:start] + group_lst[end:])
         # return group
 
+    max_fc = max(x.log2_FC.abs().max() for x in results.values())
+
     for comparison, df in results.items():
+        # group0, group1 establish
         groups = comparison.split("-")
         if len(groups) == 2:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
             group1, group0 = [x.strip() for x in comparison.split("-")]
             # print(group0, group1)
-            group0, group1 = fix_group_name(group0, meta.columns), fix_group_name(
+            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
                 group1, meta.columns
             )
             # print(group0, group1)
         else:
             # more complex formula
             # TODO handle this, maybe with user-config?
-            group0, group1 = "Down", "Up"
+            # pass
+            # import ipdb; ipdb.set_trace()
+            group1, group0 = [x.strip() for x in comparison.split("-")]
+            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
+                group1, meta.columns
+            )
+            group0_fix, group1_fix = "Down", "Up"
 
         # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
         df["GeneSymbol"] = df.index.map(
@@ -138,8 +143,8 @@ def volcanoplot(
         df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
         df.index.name = "GeneID"
         df["highlight"] = False
-        if gids_to_highlight is not None:
-            df.loc[set(gids_to_highlight) & set(df.index), "highlight"] = True
+        if highlight_geneids is not None:
+            df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
 
         if genes is not None:  # only plot these select genes
             _genes = set(genes) & set(df.index)
@@ -156,7 +161,7 @@ def volcanoplot(
             if not data_obj.batch_nonparametric
             else "nonparametric",
             outpath=data_obj.outpath,
-            group="{}_vs_{}".format(fix_name(group0), fix_name(group1)),
+            group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
         )
 
         out = outname + ".tsv"
@@ -178,7 +183,6 @@ def volcanoplot(
                 print(
                     "Error trying to subselect data for export. Try specifying group if you have not."
                 )
-                print(e)
                 export_data = export_data.join(data_obj.areas_log_shifted)
         export_cols = [x for x in export_data.columns if x not in ("highlight",)]
         export_data[export_cols].to_csv(out, sep="\t")
@@ -251,6 +255,7 @@ def volcanoplot(
                 sig_metric=sig_metric,
                 yaxis=yaxis,
                 label_cex=scale,
+                max_fc=max_fc,
                 group0=group0,
                 group1=group1,
             )

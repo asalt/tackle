@@ -1002,6 +1002,9 @@ def get_outname(
     ret = os.path.join(outpath, fname)
     if os.name == "nt" and len(ret) > 260:
         ret = ret[:260]
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+
     return ret
 
 
