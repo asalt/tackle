@@ -126,9 +126,7 @@ def volcanoplot(
             # more complex formula
             # TODO handle this, maybe with user-config?
             # pass
-            group1, group0 = [x.strip() for x in comparison.split("-")]
-            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
-                group1, meta.columns)
+            # group1, group0 = [x.strip() for x in comparison.split("-")]
             # import ipdb; ipdb.set_trace()
             group1, group0 = [x.strip() for x in comparison.split(" - ")]
             group0_fix, group1_fix = (
@@ -145,10 +143,9 @@ def volcanoplot(
         df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
         df.index.name = "GeneID"
         df["highlight"] = False
-        df['signedlogP'] = df.apply(
-                lambda x: -np.log10(x['pValue']) *  (1 if x['log2_FC'] > 0 else -1),
-                axis=1
-                )
+        df["signedlogP"] = df.apply(
+            lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
+        )
         if highlight_geneids is not None:
             df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
 

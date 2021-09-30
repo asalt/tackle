@@ -36,6 +36,8 @@ except AttributeError:
 z_score = ClusterGrid.z_score
 # python implementation of my R implementation
 
+rprint = lambda x: robjects.r("print")(x)
+
 
 def my_zscore(x, minval=None, remask=True):
     mask = x.isna()
@@ -95,28 +97,29 @@ LABEL_MAPPER = {
     "130C": [1300, "TMT_130C", "TMT_130_C", "130C"],
     "130N": [1301, "TMT_130N", "TMT_130_N", "130N"],
     "131N": [1310, "TMT_131N", "TMT_131_N", "131N"],
+    "131": [1310, "TMT_131N", "TMT_131_N", "131N"],
     "131C": [1311, "TMT_131C", "TMT_131_C", "131C"],
     "132N": [1321, "TMT_132N", "TMT_132_N", "132N"],
     "132C": [1320, "TMT_132C", "TMT_132_C", "132C"],
     "133N": [1331, "TMT_133N", "TMT_133_N", "133N"],
     "133C": [1330, "TMT_133C", "TMT_133_C", "133C"],
     "134": [1340, "TMT_134", "TMT134", "TMT_134", "134"],
-    "1260": [1260, "TMT_126", "TMT126"],
-    "1270": [1270, "TMT_126", "TMT126"],
-    "1271": [1271, "TMT_126", "TMT126"],
-    "1280": [1280, "TMT_126", "TMT126"],
-    "1281": [1281, "TMT_126", "TMT126"],
-    "1290": [1290, "TMT_126", "TMT126"],
-    "1291": [1291, "TMT_126", "TMT126"],
-    "1300": [1300, "TMT_126", "TMT126"],
-    "1301": [1301, "TMT_126", "TMT126"],
-    "1310": [1310, "TMT_126", "TMT126"],
-    "1311": [1311, "TMT_126", "TMT126"],
-    "1320": [1320, "TMT_126", "TMT126"],
-    "1321": [1321, "TMT_126", "TMT126"],
-    "1330": [1330, "TMT_126", "TMT126"],
-    "1331": [1331, "TMT_126", "TMT126"],
-    "131": [1310, "TMT_126", "TMT126"],
+    # "1260": [1260, "TMT_126", "TMT126"],
+    # "1270": [1270, "TMT_126", "TMT126"],
+    # "1271": [1271, "TMT_126", "TMT126"],
+    # "1280": [1280, "TMT_126", "TMT126"],
+    # "1281": [1281, "TMT_126", "TMT126"],
+    # "1290": [1290, "TMT_126", "TMT126"],
+    # "1291": [1291, "TMT_126", "TMT126"],
+    # "1300": [1300, "TMT_126", "TMT126"],
+    # "1301": [1301, "TMT_126", "TMT126"],
+    # "1310": [1310, "TMT_130", "TMT130"],
+    # "1311": [1311, "TMT_131", "TMT131"],
+    # "1320": [1320, "TMT_126", "TMT126"],
+    # "1321": [1321, "TMT_126", "TMT126"],
+    # "1330": [1330, "TMT_126", "TMT126"],
+    # "1331": [1331, "TMT_136", "TMT126"],
+    # "131": [1310, "TMT_131", "TMT131"],
     1260: "TMT_126",
     1270: "TMT_127_C",
     1271: "TMT_127_N",
@@ -218,17 +221,17 @@ class Annotations:
             if not os.path.exists(self.file):
                 logger.error(f"Could not find {self.file}")
                 return
-            logger.info(f"Loading annotations file {self.file}")
+            # logger.info(f"Loading annotations file {self.file}")
             if self.file.endswith('tsv'):
                 df = pd.read_table(self.file, dtype=str)
             elif self.file.endswith('xlsx'):
                 df = pd.read_excel(self.file, dtype=str)
-            df["NUCLEUS"] = self.df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
-            df["NUCLEUS"] = self.df["NUCLEUS"].replace(False, "")
+            if "NUCLEUS" in df:
+                df["NUCLEUS"] = df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
+                df["NUCLEUS"] = df["NUCLEUS"].replace(False, "")
             self._df = df
             self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
         return self._df
-
 
     @property
     def categories(self):
@@ -430,6 +433,7 @@ class Data:
         cluster_annotate_cols=None,
         impute_missing_values=False,
         only_local=False,
+        norm_info=None,
     ):
         "docstring"
 
@@ -482,6 +486,7 @@ class Data:
         self.SRA = SRA
         self.number_sra = number_sra
         self.cluster_annotate_cols = cluster_annotate_cols
+        self.norm_info = norm_info
 
         self.outpath = None
         self.analysis_name = None
@@ -775,6 +780,17 @@ class Data:
                 exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
+            len_na_taxon = df[df.TaxonID.isna()].pipe(len)
+            if len_na_taxon > 0:
+                warn(f"{len_na_taxon} records have no taxon info, dropping")
+            df = df[~df.TaxonID.isna()]
+
+            if df.GeneID.value_counts().max() > 1:
+                warn('droping duplicate geneids, figure out why there are dups')
+                df = df.drop_duplicates('GeneID')
+            # QUICK FIX
+            # removes "Crapome" hits that for some reason get a GeneID (the wrong one)
+
             if df.empty:
                 warn(
                     "\n"
@@ -836,19 +852,24 @@ class Data:
 
             if (df.FunCats == "").all():
                 df["FunCats"] = df.GeneID.map(_genemapper.funcat).fillna("")
+            if df.TaxonID.isna().any():
+                df['TaxonID'] = df['TaxonID'].fillna(-1)
             if "TaxonID" not in df or df.TaxonID.isna().any():
                 if "TaxonID" in df:
                     # import ipdb; ipdb.set_trace()
                     loc = df[df.TaxonID.isna()].index
                     # TODO read taxon in as a "string" to avoid upcast to float with missing values...
-                    df.loc[loc, "TaxonID"] = [
-                        # _genemapper.taxon.get(str(int(x))) for x in loc
-                        _genemapper.taxon.get(str(x))
-                        for x in loc
-                    ]
+
+                    # this does not work anymore
+                    # df.loc[loc, "TaxonID"] = [
+                    #     # _genemapper.taxon.get(str(int(x))) for x in loc
+                    #     _genemapper.taxon.get(str(x), "")
+                    #     for x in loc
+                    # ]
+                    df.loc[loc, "TaxonID"] = ""
                 else:
                     df.loc[:, "TaxonID"] = [
-                        _genemapper.taxon.get(x) for x in df.index
+                        _genemapper.taxon.get(x, "") for x in df.index
                     ]
 
             if labeltype == "TMT" or labeltype == "iTRAQ":  # depreciated
@@ -982,6 +1003,7 @@ class Data:
         else:
             stacked_data = [df.stack() for df in exps.values()]
         print("stacking...", flush=True, end="")
+
         self.data = pd.concat(stacked_data, axis=1, keys=exps.keys())
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
@@ -1208,11 +1230,17 @@ class Data:
         #     self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
 
         # if specified, normalize by a specified control group
-        norm_info = self.config.get("__norm__")
-        if norm_info is not None:
+        if self.config.get("__norm__"):
+            warn("depreciated, use flags")
+        if self.norm_info is not None or self.config.get("__norm__") is not None:
+            if self.norm_info is not None:
+                norm_info = self.norm_info
+            elif self.config.get("__norm__") is not None:
+                norm_info = self.config.get("__norm__")
             control = norm_info["control"]
             group = norm_info["group"]
             label = norm_info["label"]
+
             # metadata = self.col_metadata.T  # rows are experiments, cols are metadat
             metadata = self.col_metadata  # rows are experiments, cols are metadata
             areas = self._areas_log_shifted.copy()
@@ -1305,6 +1333,7 @@ class Data:
             ):
                 frame = (
                     self.df_filtered.loc[idx[:, col], :]
+                    .astype(float)
                     .apply(z_score, axis=1)
                     .reset_index()
                 )
@@ -1837,6 +1866,7 @@ class Data:
 
                 # renamer = {x: "{}_{}".format(x, col) for x in cols}
 
+                # import ipdb; ipdb.set_trace()
                 subdf = (
                     export.loc[idx[:, :], col]
                     .reset_index()
