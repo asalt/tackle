@@ -164,16 +164,22 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
   ratio_sig <- paste0( dim( X[X$Sig == sig_filter_str,] )[1], '/', dim(X)[1] )
-  footnote <- paste( ratio_sig, 'sig. at', sig_filter_str, 'and',  linear_fc_cutoff, 'F.C.' )
+  footnote <- paste( ratio_sig, 'sig. at', sig_filter_str )
+  if (fc_cutoff != 0){
+    footnote <- paste(footnote, 'and',  linear_fc_cutoff, 'F.C.' )
+  }
+
   ## footnote <- ''
   ylabel_full <- eval(expression(substitute(paste('-log'[10],' ', ploty), list(ploty=ploty))))
 
   annot_size <- 4.0
   max_nchar <- max(nchar(group0), nchar(group1))
-    group0 <- str_replace(group0, "\\+", " \\+\n")
-    group1 <- str_replace(group1, "\\+", " \\+\n")
-  #print(max_nchar)
-  if ((max_nchar) > 12) annot_size <- annot_size - .5
+  add_newlines <- function(group){
+    str_replace(group, "\\+", " \\+\n") %>% str_replace(":", "\n") %>% str_replace("\\-", " \\-\n")
+  }
+  group0 <- add_newlines(group0)
+  group1 <- add_newlines(group1)
+  if ((max_nchar) > 15) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
   if ((max_nchar) > 35) annot_size <- annot_size - .5
   #print(annot_size)
@@ -192,7 +198,12 @@ volcanoplot <- function(X, max_labels = 35,
                     segment.size = .35, segment.alpha = .4,
                     max.overlaps = Inf
                     ) +
+<<<<<<< HEAD
     annotate("text",  c(-xmax, xmax), c(0, 0), label = c(group0, group1),
+=======
+    #annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
+    annotate("text",  c(-xmax-.2, xmax+.2), c(0,0), label = c(group0, group1),
+>>>>>>> be5fc9de57a3d5dca820b1f56195788cb8b32be5
              size=annot_size,
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),

@@ -3,10 +3,12 @@
 """
 import sys
 import os
+
 #  import re
 #  import json
 import glob
 from datetime import datetime
+
 #  import operator as op
 #  from collections import OrderedDict
 from functools import partial
@@ -16,6 +18,7 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+
 #  from scipy import stats
 
 import matplotlib
@@ -25,6 +28,7 @@ matplotlib.use("Agg")
 #  import matplotlib.pyplot as plt
 #  from matplotlib.offsetbox import AnchoredText
 import seaborn as sb
+
 #  from seaborn.distributions import _freedman_diaconis_bins
 #  import click
 
@@ -33,10 +37,9 @@ import seaborn as sb
 # except ModuleNotFoundError:
 #     pass
 
-rc = {'font.family': 'serif',
-      'font.serif': ['Times', 'Palatino', 'serif']}
-sb.set_context('paper')
-sb.set_style('white', rc)
+rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
+sb.set_context("paper")
+sb.set_style("white", rc)
 
 rc = {
     "font.family": "sans-serif",
@@ -58,7 +61,13 @@ from .metrics import make_metrics
 from .pcaplot import pcaplot
 from .utils import fix_name
 from .utils import *
-from .containers import Data, GeneMapper, get_annotation_mapper, get_gene_mapper, get_hgene_mapper
+from .containers import (
+    Data,
+    GeneMapper,
+    get_annotation_mapper,
+    get_gene_mapper,
+    get_hgene_mapper,
+)
 from .barplot import barplot
 
 # from cluster_to_plotly import cluster_to_plotly
@@ -70,6 +79,7 @@ TAXON_MAPPER = {"human": 9606, "mouse": 10090, "celegans": 6239}
 
 ## what is the smarter way to do this?
 import logging
+
 
 def _get_logger():
     logger = logging.getLogger(__name__)
@@ -90,6 +100,8 @@ def _get_logger():
     logger.addHandler(fh)
     logger.addHandler(ch)
     return logger
+
+
 logger = _get_logger()
 
 
@@ -212,8 +224,8 @@ class int_or_ratio(click.ParamType):
                 )
             return val
 
-class Path_or_Glob(click.Path):
 
+class Path_or_Glob(click.Path):
     def __init__(self, *args, **kwargs):
         super(Path_or_Glob, self).__init__(*args, **kwargs)
 
@@ -226,7 +238,6 @@ class Path_or_Glob(click.Path):
             if not globres:
                 e.show()
                 sys.exit(1)
-
 
 
 def validate_cluster_number(ctx, param, value):
@@ -413,10 +424,27 @@ def validate_configfile(experiment_file, **kwargs):
     return  # all passed
 
 
-ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", "NUCLEUS",
-                       "RTK", "MATRISOME", "SurfaceLabel", "CellMembrane", "Secreted",
-                       "glycomineN", "glycomineO", "glycomineN/O", "Membrane_Secreted", '_all' )
+ANNOTATION_CHOICES = (
+    "IDG",
+    "IO",
+    "CYTO_NUC",
+    "ER_GOLGI",
+    "SECRETED",
+    "DBTF",
+    "NUCLEUS",
+    "RTK",
+    "MATRISOME",
+    "SurfaceLabel",
+    "CellMembrane",
+    "Secreted",
+    "glycomineN",
+    "glycomineO",
+    "glycomineN/O",
+    "Membrane_Secreted",
+    "_all",
+)
 
+ANNOTATION_CHOICES = get_annotation_mapper().categories
 
 # @gui_option
 @click.group(chain=True)
@@ -426,10 +454,13 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", 
     default=None,
     help=".ini file with metadata for isobaric data used for scatter and PCA plots",
 )
-@click.option('-a', '--annotations',
-              type=click.Choice(ANNOTATION_CHOICES),
-              multiple=True, default=None,
-              help="analyses to be performed on subsets of genes"
+@click.option(
+    "-a",
+    "--annotations",
+    type=click.Choice(ANNOTATION_CHOICES),
+    multiple=True,
+    default=None,
+    help="analyses to be performed on subsets of genes",
 )
 @click.option(
     "--batch",
@@ -620,6 +651,8 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", 
     type=int,
     help="number of unique peptides required per gene. Also must satisfy the nonzero argument.",
 )
+@click.option("--ref-group-name", default=None)
+@click.option("--ref-control-channel", default=None)
 @click.option("--nonzero-subgroup", type=str, default=None, help="")
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument("experiment_file", type=Path_or_Subcommand(exists=True, dir_okay=False))
@@ -627,7 +660,7 @@ ANNOTATION_CHOICES = ( "IDG", "IO", "CYTO_NUC", "ER_GOLGI", "SECRETED", "DBTF", 
 def main(
     ctx,
     additional_info,
-        annotations,
+    annotations,
     batch,
     batch_nonparametric,
     batch_noimputation,
@@ -659,9 +692,16 @@ def main(
     sra,
     number_sra,
     experiment_file,
+    ref_group_name,
+    ref_control_channel,
 ):
     """"""
     # name, taxon, non_zeros, experiment_file):
+    norm_info = None
+    if ref_control_channel and ref_group_name:
+        norm_info = dict(
+            control=ref_control_channel, group=ref_group_name, label="label"
+        )
 
     if experiment_file in Path_or_Subcommand.EXCEPTIONS:
         # then is it actually a subcommand (only make_config right now)
@@ -733,6 +773,7 @@ def main(
                 "SRA",
             ]:
                 cluster_annotate_cols.append(_q)
+    # import ipdb; ipdb.set_trace()
     if "--level" in sys.argv:  # for data export
         if cluster_annotate_cols is None:
             cluster_annotate_cols = list()
@@ -755,8 +796,8 @@ def main(
     if cluster_annotate_cols is not None:
         cluster_annotate_cols = list(set(cluster_annotate_cols))
 
-    if annotations is not None and '_all' in annotations :
-        annotations = [x for x in ANNOTATION_CHOICES if x not in ('_all')]
+    if annotations is not None and "_all" in annotations:
+        annotations = [x for x in ANNOTATION_CHOICES if x not in ("_all")]
 
     export_all = False
     if all(x in sys.argv for x in ("export", "--level")) and any(
@@ -823,6 +864,7 @@ def main(
         export_all=export_all,
         cluster_annotate_cols=cluster_annotate_cols,
         only_local=only_load_local,
+        norm_info=norm_info,
     )
 
     outname = (
@@ -1045,7 +1087,16 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 @click.option(
     "--level",
     type=click.Choice(
-        ["all", "align", "area", "MSPC", "SRA", "PeptideCount", "PeptideCount_u2g", 'zscore']
+        [
+            "all",
+            "align",
+            "area",
+            "MSPC",
+            "SRA",
+            "PeptideCount",
+            "PeptideCount_u2g",
+            "zscore",
+        ]
     ),
     default=("area",),
     multiple=True,
@@ -1796,8 +1847,8 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     help="Show Gene Symbols on clustermap",
 )
 @click.option(
-    "--genesymbols", default=False, is_flag=True,
-    help='Alias for --gene-symbols')
+    "--genesymbols", default=False, is_flag=True, help="Alias for --gene-symbols"
+)
 @click.option(
     "--gene-symbol-fontsize",
     default=8,
@@ -1838,14 +1889,25 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 @click.option(
     "--volcano-topn", default=99, show_default=True, help="Top n to plot total"
 )
-@click.option("--volcano-sortby", default='log2_FC', type=click.Choice(['log2_FC', 'pValue', 'pAdj']),
-              show_default=True)
-@click.option('--cluster-file', type=(click.Path(exists=True, dir_okay=False), int),
-              default=(None, 0),
-              show_default=True,
-              multiple = False,
-    help="""make clusterplot for a specific subcluster"""
-
+@click.option(
+    "--volcano-sortby",
+    default="log2_FC",
+    type=click.Choice(["log2_FC", "pValue", "pAdj"]),
+    show_default=True,
+)
+@click.option(
+    "--volcano-direction",
+    type=click.Choice(["up", "down", "both"]),
+    default="both",
+    show_default=True,
+)
+@click.option(
+    "--cluster-file",
+    type=(click.Path(exists=True, dir_okay=False), int),
+    default=(None, 0),
+    show_default=True,
+    multiple=False,
+    help="""make clusterplot for a specific subcluster""",
 )
 @click.option(
     "--linear", default=False, is_flag=True, help="Plot linear values (default log10)"
@@ -1863,6 +1925,17 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     multiple=True,
     help="""Specific entries in the config file to ignore for the legend.
               (Default all are included)""",
+)
+@click.option(
+    "--sample-reference",
+    type=str,
+    help="metadata key to choose what samples to keep as specified by `--sample-include`",
+)
+@click.option(
+    "--sample-include",
+    type=str,
+    multiple=True,
+    help="samples to include b ased on metadata entry `--sample-reference`",
 )
 @click.option(
     "--linkage",
@@ -1905,6 +1978,18 @@ when `auto` is set for `--nclusters`""",
     show_default=True,
     help="Cluster rows via hierarchical clustering",
 )
+@click.option(
+    "--row-dend-side",
+    default="left",
+    type=click.Choice(["left", "right"]),
+    show_default=True,
+)
+@click.option(
+    "--row-names-side",
+    default="right",
+    type=click.Choice(["left", "right"]),
+    show_default=True,
+)
 @click.option("--order-by-abundance", default=False, is_flag=True, show_default=True)
 @click.option(
     "--seed",
@@ -1944,8 +2029,8 @@ def cluster2(
     cmap,
     cut_by,
     col_cluster,
-        cluster_row_slices,
-        cluster_col_slices,
+    cluster_row_slices,
+    cluster_col_slices,
     figsize,
     force_plot_genes,
     genefile,
@@ -1957,6 +2042,8 @@ def cluster2(
     linear,
     legend_include,
     legend_exclude,
+    sample_reference,
+    sample_include,
     linkage,
     max_autoclusters,
     nclusters,
@@ -1966,9 +2053,12 @@ def cluster2(
     volcano_file,
     volcano_filter_params,
     volcano_topn,
-        volcano_sortby,
-        cluster_file,
+    volcano_direction,
+    volcano_sortby,
+    cluster_file,
     row_cluster,
+    row_dend_side,
+    row_names_side,
     seed,
     show_metadata,
     standard_scale,
@@ -1977,7 +2067,6 @@ def cluster2(
     z_score_by,
     add_human_ratios,
 ):
-
 
     outname_kws = dict()
 
@@ -2011,6 +2100,7 @@ def cluster2(
     # =================================================================
 
     data_obj = ctx.obj["data_obj"]
+    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
 
     if order_by_abundance and row_cluster:
         raise NotImplementedError("Not Implemented !")
@@ -2020,6 +2110,11 @@ def cluster2(
 
     X = data_obj.areas_log_shifted
     X.index = X.index.astype(str)
+    # filter if sample include is mentioned
+    if sample_reference is not None:
+        # we take a subset of the data
+        col_meta = col_meta.loc[col_meta[sample_reference].isin(sample_include)]
+        X = X[col_meta.index]
 
     genes = None
     if genefile:
@@ -2035,17 +2130,28 @@ def cluster2(
     for f in volcano_file:
         _df = pd.read_table(f)
         if np.isfinite(volcano_topn):
-            _df = pd.concat(
-                [
-                    _df.sort_values(by=volcano_sortby, ascending=False).head(
-                        int(volcano_topn / 2)
-                    ),
-                    _df.sort_values(by=volcano_sortby, ascending=False).tail(
-                        int(volcano_topn / 2)
-                    ),
-                ]
-            )
-        _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
+            if volcano_direction == "both":
+                _df = pd.concat(
+                    [
+                        _df.sort_values(by=volcano_sortby, ascending=False).head(
+                            int(volcano_topn / 2)
+                        ),
+                        _df.sort_values(by=volcano_sortby, ascending=False).tail(
+                            int(volcano_topn / 2)
+                        ),
+                    ]
+                )
+            elif volcano_direction == "up":
+                _df = _df.sort_values(by=volcano_sortby, ascending=False).head(
+                    int(volcano_topn)
+                )
+            elif volcano_direction == "down":
+                _df = _df.sort_values(by=volcano_sortby, ascending=False).tail(
+                    int(volcano_topn)
+                )
+
+        else:
+            _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
         _tmp.append(_df)
     if _tmp:
         _dfs = pd.concat(_tmp)
@@ -2055,31 +2161,32 @@ def cluster2(
         X = X.loc[_tokeep]
 
     if cluster_file[0] is not None:
-        if cluster_file[0].endswith('xlsx'):
+        if cluster_file[0].endswith("xlsx"):
             _df = pd.read_excel(cluster_file[0])
         else:
             _df = pd.read_table(cluster_file[0])
 
-        _df = _df.rename(columns={
-            'Cluster': 'cluster',
-            'Kmeans_Cluster': 'cluster',
-            'kmeans_cluster': 'cluster',
-            'kmeans_Cluster': 'cluster',
-            'Kmeans_cluster': 'cluster',
-            'PAM_cluster': 'cluster',
-        })
+        _df = _df.rename(
+            columns={
+                "Cluster": "cluster",
+                "Kmeans_Cluster": "cluster",
+                "kmeans_cluster": "cluster",
+                "kmeans_Cluster": "cluster",
+                "Kmeans_cluster": "cluster",
+                "PAM_cluster": "cluster",
+            }
+        )
 
         _thecluster = cluster_file[1]
-        if 'cluster' not in _df:
-            raise ValueError('improper cluster file, does not have column `cluster`')
-        if _thecluster not in _df['cluster']:
+        if "cluster" not in _df:
+            raise ValueError("improper cluster file, does not have column `cluster`")
+        if _thecluster not in _df["cluster"]:
             raise ValueError(f"cluster {_thecluster} not in {cluster_file[0]}")
-        _genes = _df[ _df['cluster'] == _thecluster ]['GeneID'].astype(str)
+        _genes = _df[_df["cluster"] == _thecluster]["GeneID"].astype(str)
         _tokeep = [x for x in _genes if x in X.index]
         X = X.loc[_tokeep]
-        outname_kws['subcluster'] = _thecluster
+        outname_kws["subcluster"] = _thecluster
         main_title += f"\nCluster {_thecluster}"
-
 
     gids_to_annotate = None
     if gene_annot:
@@ -2089,9 +2196,9 @@ def cluster2(
         X = 10 ** X
 
     if standard_scale is not None:
-        if standard_scale == 1 or standard_scale == '1':
+        if standard_scale == 1 or standard_scale == "1":
             X = ((X.T / X.max(1)).T).fillna(0)
-        elif standard_scale == 0 or standard_scale == '0':
+        elif standard_scale == 0 or standard_scale == "0":
             X = (X / X.max(1)).fillna(0)
 
     symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
@@ -2144,7 +2251,6 @@ def cluster2(
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
-    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
     if add_human_ratios:
         col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
     # _expids = ('recno', 'runno', 'searchno', 'label')
@@ -2198,14 +2304,18 @@ def cluster2(
                 & (data_obj.data.Metric == annotate)
             ][_cols]
             # .reset_index(level=1, drop=True)
-            # .set_index('GeneID')
-            .fillna(0).astype(int)
+            .set_index("GeneID")
+            .fillna(0)
+            .astype(int)
         )
         annot_mat.columns.name = annotate
-        outname_kws['annotate'] = annotate
+        outname_kws["annotate"] = annotate
+
+        annot_mat["GeneID"] = annot_mat.index
+        annot_mat = annot_mat[["GeneID"] + [x for x in annot_mat if x != "GeneID"]]
 
     if z_score_by is not None:
-        outname_kws['z_score_by']= z_score_by
+        outname_kws["z_score_by"] = z_score_by
 
     missing_values = "masked" if show_missing_values else "unmasked"
     if linear:
@@ -2324,13 +2434,13 @@ def cluster2(
         # cannot convert Categorical column of Integers to Category in py2r
         col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
 
-
     # rpy2 does not map None to robjects.NULL
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
-    def plot_and_save(X, out, grdevice, gr_kws=None, annot_mat=None, main_title=None,
-                      **kws):
+    def plot_and_save(
+        X, out, grdevice, gr_kws=None, annot_mat=None, main_title=None, **kws
+    ):
         if gr_kws is None:
             gr_kws = dict()
         grdevice(file=out, **gr_kw)
@@ -2341,7 +2451,7 @@ def cluster2(
         if main_title is None:
             main_title = robjects.NULL
 
-
+        # import ipdb; ipdb.set_trace()
         call_kws = dict(
             data=X,
             cut_by=cut_by or robjects.NULL,
@@ -2372,26 +2482,27 @@ def cluster2(
             gene_symbol_fontsize=gene_symbol_fontsize,
             # legend_include=legend_include,
             # legend_exclude=legend_exclude,
+            row_dend_side=row_dend_side,
+            row_names_side=row_names_side,
             cluster_row_slices=cluster_row_slices,
             cluster_col_slices=cluster_col_slices,
             order_by_abundance=order_by_abundance,
             seed=seed or robjects.NULL,
             metadata_colors=metadata_colorsR or robjects.NULL,
-            )
+        )
         call_kws.update(kws)
 
-
-        ret = cluster2(
-            **call_kws
-        )
+        ret = cluster2(**call_kws)
 
         grdevices.dev_off()
         print("done.", flush=True)
 
-        if isinstance(ret[1], pd.DataFrame): ## save clustering results
+        if isinstance(ret[1], pd.DataFrame):  ## save clustering results
 
             row_orders = ret[2]
-            the_orders = [row_orders.rx2(str(n))-1 for n in row_orders.names] # subtract 1  for zero indexing
+            the_orders = [
+                row_orders.rx2(str(n)) - 1 for n in row_orders.names
+            ]  # subtract 1  for zero indexing
             the_orders = [x for y in the_orders for x in y]
 
             cluster_metrics = ret[1].iloc[the_orders]
@@ -2415,17 +2526,16 @@ def cluster2(
         if len(X) > 300 and annotate:
             annot_mat_to_pass = None
             logger.info(f"number of genes is {len(X)} >> 300, skipping annotation")
-            if 'annotate' in outname_kws:
-                outname_kws.pop('annotate')
+            if "annotate" in outname_kws:
+                outname_kws.pop("annotate")
 
         #################################################################
         ##                          make plot                          ##
         #################################################################
 
-
-        plot_and_save(X, out, grdevice, gr_kws, annot_mat=annot_mat_to_pass,
-                      main_title=main_title)
-
+        plot_and_save(
+            X, out, grdevice, gr_kws, annot_mat=annot_mat_to_pass, main_title=main_title
+        )
 
         ##################################################################
         ##                     plot any annotations                     ##
@@ -2438,47 +2548,59 @@ def cluster2(
             annotator = get_annotation_mapper()
             annot_df = annotator.get_annot(annotation)
 
-            subX = X[ X.GeneID.isin(annot_df.GeneID) ]
-            if subX.empty: # try mapping to homologene
+            subX = X[X.GeneID.isin(annot_df.GeneID)]
+            if subX.empty:  # try mapping to homologene
                 logger.info(f"Trying to map genes to hs through homologene")
                 hgene_mapper = get_hgene_mapper()
                 hg_gene_dict = hgene_mapper.map_to_human(X.GeneID)
                 hs_genes = set(hg_gene_dict.values())
                 _annot_genes = set(annot_df.GeneID) & set(hg_gene_dict.values())
-                _tokeep = [k for k,v in hg_gene_dict.items() if v in _annot_genes]
+                _tokeep = [k for k, v in hg_gene_dict.items() if v in _annot_genes]
                 _tokeep = set(_tokeep)
-                logger.info(f"Successfully remapped {len(_tokeep)} genes to {len(hs_genes)} hs genes")
-                subX = X[ X.GeneID.isin(_tokeep)]
+                logger.info(
+                    f"Successfully remapped {len(_tokeep)} genes to {len(hs_genes)} hs genes"
+                )
+                subX = X[X.GeneID.isin(_tokeep)]
 
             sub_annot_mat = None
             if annotate and annot_mat is not None:
-                sub_annot_mat = annot_mat[ annot_mat.GeneID.isin(subX.GeneID) ]
+                sub_annot_mat = annot_mat[annot_mat.GeneID.isin(subX.GeneID)]
             _show_gene_symbols = False
             if len(subX) < 141:
                 _show_gene_symbols = True
-                logger.info(f"number of genes is {len(subX)} << 101, adding symbols. Use <future feature> to override>.")
+                logger.info(
+                    f"number of genes is {len(subX)} << 101, adding symbols. Use <future feature> to override>."
+                )
 
-            out = outname_func("clustermap", geneset = fix_name(annotation), **outname_kws ) + file_fmt
-            plot_and_save(subX, out, grdevice, gr_kws, main_title = annotation, annot_mat = sub_annot_mat,
-                          show_gene_symbols=_show_gene_symbols)
-
+            out = (
+                outname_func("clustermap", geneset=fix_name(annotation), **outname_kws)
+                + file_fmt
+            )
+            plot_and_save(
+                subX,
+                out,
+                grdevice,
+                gr_kws,
+                main_title=annotation,
+                annot_mat=sub_annot_mat,
+                show_gene_symbols=_show_gene_symbols,
+            )
 
         # heatmap = ret.rx('heatmap')
         # print(heatmap)
 
     # ==============================================================================================
 
-
     # ==============================================================================================
-        # this doesn't work yet, fix it later
-        # discrete_clusters = ret.rx2('discrete_clusters')
+    # this doesn't work yet, fix it later
+    # discrete_clusters = ret.rx2('discrete_clusters')
 
-        # if discrete_clusters is not robjects.NULL:
-        #     the_clusters = discrete_clusters[0]
-        #     X['Cluster'] = the_clusters
+    # if discrete_clusters is not robjects.NULL:
+    #     the_clusters = discrete_clusters[0]
+    #     X['Cluster'] = the_clusters
 
-        # name = outname_func('{}_{}'.format(cluster_func, nclusters)) + '.tsv'
-        # X[['GeneID', 'GeneSymbol', 'Cluster']].sort_values(by='Cluster').to_csv(name, sep='\t', index=False)
+    # name = outname_func('{}_{}'.format(cluster_func, nclusters)) + '.tsv'
+    # X[['GeneID', 'GeneSymbol', 'Cluster']].sort_values(by='Cluster').to_csv(name, sep='\t', index=False)
 
 
 @main.command("metrics")
@@ -2968,7 +3090,7 @@ def gsea(
     # if only_human:
 
     pheno = data_obj.col_metadata.copy()
-    pheno[group] = pheno[group].str.replace('-', '_')
+    pheno[group] = pheno[group].str.replace("-", "_")
 
     nsamples = len(pheno.index)
 
@@ -2988,8 +3110,8 @@ def gsea(
     # ngroups = pheno.groupby(group).ngroups
 
     # java GSEA cannot navigate paths with hyphens
-    expression.columns = expression.columns.str.replace('-', '_')
-    pheno.index = pheno.index.str.replace('-', '_')
+    expression.columns = expression.columns.str.replace("-", "_")
+    pheno.index = pheno.index.str.replace("-", "_")
 
     cls_comparison = ""
     if ngroups == 2:  # reverse it
@@ -3015,7 +3137,7 @@ def gsea(
         # group1 = '_'.join(groups[1])
         # cls_comparison = '#{1}_versus_{0}'.format(group0, group1)
 
-        #hack for abbvie
+        # hack for abbvie
         # if groups[0][0:3] != groups[1][0:3]: continue
 
         cls_comparison = "#{1}_versus_{0}".format(*groups)
@@ -3091,7 +3213,7 @@ def gsea(
         expression = data_obj.areas_log_shifted.copy()
         expression.index = expression.index.astype(str)
         # java GSEA cannot navigate paths with hyphens
-        expression.columns = expression.columns.str.replace('-', '_')
+        expression.columns = expression.columns.str.replace("-", "_")
         if not no_homologene_remap:
             expression = hgene_map(expression)
         expression = expression[pheno[pheno[group].isin(groups)].index]
@@ -3438,7 +3560,7 @@ def gsea(
                     iter_ = gsea_sig.iterrows()
 
                 # for ix, row in gsea_sig.iterrows():
-                #_expression = data_obj.areas_log_shifted
+                # _expression = data_obj.areas_log_shifted
                 for ix, row in iter_:
 
                     force_plot_genes = False
@@ -3456,7 +3578,7 @@ def gsea(
                     col_cluster = False
                     nclusters = None
 
-                    #col_meta = data_obj.col_metadata.copy()
+                    # col_meta = data_obj.col_metadata.copy()
                     col_meta = pheno
                     # cols in correct order
                     _cols = (
@@ -3468,11 +3590,11 @@ def gsea(
                         _cols
                     ]  # drop if all zero
                     _mask = data_obj.mask.copy()
-                    _mask.columns = _mask.columns.str.replace('-', '_')
+                    _mask.columns = _mask.columns.str.replace("-", "_")
                     if not no_homologene_remap:
-                        mask = _mask[expression.columns].pipe(
-                            hgene_map, boolean=True
-                        )[_cols]
+                        mask = _mask[expression.columns].pipe(hgene_map, boolean=True)[
+                            _cols
+                        ]
                     else:
                         mask = _mask[expression.columns][_cols]
 
@@ -3537,7 +3659,7 @@ def gsea(
                                 # .set_index('GeneID')
                                 .fillna(0).astype(int)
                             )
-                            annot_mat.columns = annot_mat.columns.str.replace('-', '_')
+                            annot_mat.columns = annot_mat.columns.str.replace("-", "_")
                             # remove columns that aren't in the comparison
                             _toremove = set(annot_mat.columns) - set(X.columns)
                             _keep = [x for x in annot_mat.columns if x not in _toremove]
@@ -4292,7 +4414,10 @@ to arrange data. For use in conjunction with `--group`
 Any valid, qualitative, colormap? """,
 )
 @click.option(
-    "--linear/--log", default=True, is_flag=True, help="Plot linear values (default log10)"
+    "--linear/--log",
+    default=True,
+    is_flag=True,
+    help="Plot linear values (default log10)",
 )
 @click.option(
     "--z-score",
@@ -4462,7 +4587,6 @@ def bar(
             if group_order is None:
                 group_order = np.nan
 
-
             df["index"] = pd.Categorical(
                 df["index"], df["index"].drop_duplicates(), ordered=True
             )
@@ -4476,7 +4600,8 @@ def bar(
 
 @main.command("genecorr")
 @click.option(
-    '-g', "--gene",
+    "-g",
+    "--gene",
     default=None,
     show_default=True,
     multiple=True,
@@ -4492,26 +4617,31 @@ def bar(
     help="""File of geneids to plot.
               Should have 1 geneid per line. """,
 )
-@click.option('-m', "--method",
-              type=click.Choice(['pearson', 'spearman']),
-              default = 'spearman',
-              show_default=True,
-              help="correlation algorithm to use"
+@click.option(
+    "-m",
+    "--method",
+    type=click.Choice(["pearson", "spearman"]),
+    default="spearman",
+    show_default=True,
+    help="correlation algorithm to use",
 )
-@click.option("--fillna/--no-fillna",
-              is_flag=True,
-              default = True, show_default=True,
-              help="""whether or not to replace missing observations with zero
+@click.option(
+    "--fillna/--no-fillna",
+    is_flag=True,
+    default=True,
+    show_default=True,
+    help="""whether or not to replace missing observations with zero
               Recommended to keep on with Spearman correlation metric,
               and off when using Pearson correlation metric.
-              """
+              """,
 )
 @click.pass_context
 def genecorr(
     ctx,
-        gene, genefile,
-        method,
-        fillna,
+    gene,
+    genefile,
+    method,
+    fillna,
 ):
     """
     calculate gene-gene expression correlations
@@ -4553,16 +4683,17 @@ def genecorr(
             warn("GeneID {} not in dataset, skipping..".format(g))
             continue
 
-
         query = data.loc[g]
         corr_title = f"{method}"
         if fillna:
             data = data.fillna(0)
             corr_title = f"{method}_0fill"
 
-        corr = data.T.corrwith(query, method=method).sort_values(ascending=False).to_frame(corr_title)
-
-
+        corr = (
+            data.T.corrwith(query, method=method)
+            .sort_values(ascending=False)
+            .to_frame(corr_title)
+        )
 
         symbol = data_obj.gid_symbol.get(
             g,
@@ -4570,14 +4701,14 @@ def genecorr(
         if symbol is None:
             symbol = gm.symbol.get(g, "")
 
-        outname = outfunc("corr_{}_{}_{}{}".format(g, symbol, method, "_0fill" if fillna else ''))
+        outname = outfunc(
+            "corr_{}_{}_{}{}".format(g, symbol, method, "_0fill" if fillna else "")
+        )
 
-        corr.to_csv(outname+'.tsv', sep='\t', index=True)
+        corr.to_csv(outname + ".tsv", sep="\t", index=True)
         print(f"Wrote {outname}.tsv")
 
-
         # df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
-
 
         # for file_fmt in ctx.obj["file_fmts"]:
         #     grdevice = gr_devices[file_fmt]
@@ -4596,7 +4727,6 @@ def genecorr(
         #     if group_order is None:
         #         group_order = np.nan
 
-
         #     df["index"] = pd.Categorical(
         #         df["index"], df["index"].drop_duplicates(), ordered=True
         #     )
@@ -4606,7 +4736,6 @@ def genecorr(
 
         #     grdevices.dev_off()
         #     print("done.", flush=True)
-
 
 
 # @main.command('bar')

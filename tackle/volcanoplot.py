@@ -15,8 +15,6 @@ from .utils import get_outname, parse_gid_file, fix_name
 from .containers import GeneMapper
 
 
-
-
 def volcanoplot(
     ctx,
     foldchange,
@@ -40,7 +38,6 @@ def volcanoplot(
 
     data_obj = ctx.obj["data_obj"]
     gm = GeneMapper()
-
 
     if yaxis not in ("pValue", "pAdj"):
         raise ValueError("Must choose between `pValue` and `pAdj`")
@@ -115,23 +112,28 @@ def volcanoplot(
 
     for comparison, df in results.items():
         # group0, group1 establish
-        groups = comparison.split("-")
+        groups = comparison.split(" - ")
         if len(groups) == 2:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
-            group1, group0 = [x.strip() for x in comparison.split("-")]
+            group1, group0 = [x.strip() for x in comparison.split(" - ")]
             # print(group0, group1)
-            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
-                group1, meta.columns
+            group0_fix, group1_fix = (
+                fix_group_name(group0, meta.columns),
+                fix_group_name(group1, meta.columns),
             )
             # print(group0, group1)
         else:
             # more complex formula
             # TODO handle this, maybe with user-config?
             # pass
-            # import ipdb; ipdb.set_trace()
             group1, group0 = [x.strip() for x in comparison.split("-")]
-            group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
-                group1, meta.columns
+            # group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
+            #     group1, meta.columns
+            # import ipdb; ipdb.set_trace()
+            group1, group0 = [x.strip() for x in comparison.split(" - ")]
+            group0_fix, group1_fix = (
+                fix_group_name(group0, meta.columns),
+                fix_group_name(group1, meta.columns),
             )
             group0_fix, group1_fix = "Down", "Up"
 
@@ -143,6 +145,9 @@ def volcanoplot(
         df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
         df.index.name = "GeneID"
         df["highlight"] = False
+        df["signedlogP"] = df.apply(
+            lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
+        )
         if highlight_geneids is not None:
             df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
 
@@ -164,7 +169,10 @@ def volcanoplot(
             group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
         )
 
+        if len(outname) > 255:
+            outname = outname[:255]
         out = outname + ".tsv"
+
         print("Saving", out, "...", end="", flush=True)
         export_data = df
         if only_sig:
