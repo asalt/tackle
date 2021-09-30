@@ -1782,6 +1782,12 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     help="""File of geneids to plot.
               Should have 1 geneid per line. """,
 )
+@click.option("--genefile-sheet",
+    type=int,
+    default=0,
+    show_default=True, 
+    help="Use specified sheet number for genefile with multiple excel sheets"
+)
 @click.option(
     "--force-plot-genes",
     is_flag=True,
@@ -1972,6 +1978,7 @@ def cluster2(
     figsize,
     force_plot_genes,
     genefile,
+    genefile_sheet,
     gene_symbols,
     genesymbols,
     gene_symbol_fontsize,
@@ -2058,7 +2065,7 @@ def cluster2(
 
     genes = None
     if genefile:
-        genes = parse_gid_file(genefile)
+        genes = parse_gid_file(genefile, sheet=genefile_sheet) # default 0
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]

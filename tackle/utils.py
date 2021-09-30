@@ -561,18 +561,24 @@ def read_config(configfile, enforce=True):
     return ordered_data
 
 
-def parse_gid_file(gids, symbol_gid_mapping=None):
+def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
     """
     :gids: collection of files to read and extract geneids
-    :symbol_gid_mapping: optional dictionary that maps symbols to geneid"""
+    :symbol_gid_mapping: optional dictionary that maps symbols to geneid
+    :sheet: excel sheet to use (when input is excel doc)
+    """
 
+    _df = None
+    _dtype = {'GeneID': str, 'junk':int}
     if gids.endswith('.csv'):
-        _df = pd.read_csv(gids, dtype='str')
+        _df = pd.read_csv(gids, dtype=_dtype)
     elif gids.endswith('.tsv') | gids.endswith('.txt'):
-        _df = pd.read_table(gids, dtype='str')
-        if 'GeneID' in _df:
-            return _df.GeneID.tolist()
-    # elif gids.endswith('.txt'):  # try to parse plain text file
+        _df = pd.read_table(gids, dtype=_dtype)
+    elif gids.endswith('.xlsx'):  # try to parse plain text file
+        _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet)
+    if _df is not None and 'GeneID' in _df:
+        return _df.GeneID.tolist()
+    # import ipdb; ipdb.set_trace()
 
     from .containers import GeneMapper
 
@@ -612,7 +618,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
         # iterator = .split(SPLITCHAR)
         # iterator = f
         if gids.endswith("xlsx") or gids.endswith("xls"):
-            _df = pd.read_excel(gids)
+            _df = pd.read_excel(gids, sheet_name=sheet)
             _valid_cols = [
                 x
                 for x in [re.search(".*geneid.*", x, flags=re.I) for x in _df.columns]
