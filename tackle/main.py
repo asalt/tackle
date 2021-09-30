@@ -3097,24 +3097,28 @@ def gsea(
     # if only_human:
 
     pheno = data_obj.col_metadata.copy()
-    pheno[group] = pheno[group].str.replace("-", "_")
+
+    # we can groupby one or more groups separated with :
+    all_groups = group.split(":")
+    gsea_groups = pheno.groupby(all_groups).groups
+    for grp, ids in gsea_groups.items():
+        pheno.loc[ids, "GSEA_GROUP"] = str.join('', grp)
+    # no filenames with dashes allowed for java GSEA
+    pheno["GSEA_GROUP"] = pheno["GSEA_GROUP"].str.replace("-", "_")
+    _orig_group_value = group
+    group = "GSEA_GROUP"
 
     nsamples = len(pheno.index)
 
-    ngroups = pheno[group].nunique()
-    groups = pheno[group].unique()
-    # classes = [grp.replace(' ', '_') for grp in pheno[group]]
+    ngroups = pheno["GSEA_GROUP"].nunique()
+    groups = pheno["GSEA_GROUP"].unique()
 
-    # classes = pheno.groupby(group).groups
 
     # # later
     # pheno_indicator = dict()
     # for ix, grp in enumerate(groups):
     #     pheno_indicator[grp] = ix
     # classes  = list(map(str, [pheno_indicator[grp] for grp in pheno.loc[group]]))
-
-    # groupl = [x.strip() for x  in group.split('+')]
-    # ngroups = pheno.groupby(group).ngroups
 
     # java GSEA cannot navigate paths with hyphens
     expression.columns = expression.columns.str.replace("-", "_")
