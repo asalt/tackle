@@ -198,12 +198,8 @@ volcanoplot <- function(X, max_labels = 35,
                     segment.size = .35, segment.alpha = .4,
                     max.overlaps = Inf
                     ) +
-<<<<<<< HEAD
-    annotate("text",  c(-xmax, xmax), c(0, 0), label = c(group0, group1),
-=======
     #annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
     annotate("text",  c(-xmax-.2, xmax+.2), c(0,0), label = c(group0, group1),
->>>>>>> be5fc9de57a3d5dca820b1f56195788cb8b32be5
              size=annot_size,
              hjust = c(0, 1), vjust = c(0,0), color = c('blue', 'red')) +
     labs(x = expression(paste('log'[2], ' Fold Change')),

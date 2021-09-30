@@ -216,6 +216,7 @@ class Annotations:
         self._categories = None
         self._df = None
 
+    @property
     def df(self):
         if self._df is None:
             if not os.path.exists(self.file):
@@ -235,6 +236,7 @@ class Annotations:
 
     @property
     def categories(self):
+        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
     def get_annot(self, cat):
@@ -780,9 +782,13 @@ class Data:
                 exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
-            len_na_taxon = df[df.TaxonID.isna()].pipe(len)
-            if len_na_taxon > 0:
-                warn(f"{len_na_taxon} records have no taxon info, dropping")
+            _na_taxon = df[df.TaxonID.isna()]
+            if _na_taxon.pipe(len) > 0:
+                _na_taxon_spfilter = _na_taxon.loc[[x for x in _na_taxon.index.astype(str) if x.startswith('sp')]]
+                _tokeep = [x for x in df.index if x not in  _na_taxon_spfilter]
+                _not_starting_with_sp = _na_taxon_spfilter.pipe(len) - _na_taxon.pipe(len)
+                if _not_starting_with_sp != 0:
+                    warn(f"{_not_starting_with_sp} records have no taxon info, dropping")
             df = df[~df.TaxonID.isna()]
 
             if df.GeneID.value_counts().max() > 1:

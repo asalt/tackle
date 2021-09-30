@@ -444,7 +444,7 @@ ANNOTATION_CHOICES = (
     "_all",
 )
 
-ANNOTATION_CHOICES = get_annotation_mapper().categories
+ANNOTATION_CHOICES = get_annotation_mapper().categories or tuple()
 
 # @gui_option
 @click.group(chain=True)
