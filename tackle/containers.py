@@ -7,7 +7,7 @@ from seaborn import despine
 from seaborn import heatmap
 import seaborn as sb
 from six import string_types
-import sys
+# import sys
 import os
 import re
 import json
@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from functools import lru_cache
 from datetime import datetime
 import operator as op
-from collections import OrderedDict, Counter
+# from collections import OrderedDict, Counter
 import itertools
 from functools import partial
 from warnings import warn
@@ -210,18 +210,25 @@ class GeneMapper:
 class Annotations:
     def __init__(self):
         self.file = os.path.join(PWD, "data", "combined_annotations_new.xlsx")
-        if not os.path.exists(self.file):
-            logger.error(f"Could not find {self.file}")
-            return
-        logger.info(f"Loading annotations file {self.file}")
-        if self.file.endswith('tsv'):
-            self.df = pd.read_table(self.file, dtype=str)
-        elif self.file.endswith('xlsx'):
-            self.df = pd.read_excel(self.file, dtype=str)
-        self.df["NUCLEUS"] = self.df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
-        self.df["NUCLEUS"] = self.df["NUCLEUS"].replace(False, "")
+        self._categories = None
+        self._df = None
 
-        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+    def df(self):
+        if self._df is None:
+            if not os.path.exists(self.file):
+                logger.error(f"Could not find {self.file}")
+                return
+            logger.info(f"Loading annotations file {self.file}")
+            if self.file.endswith('tsv'):
+                df = pd.read_table(self.file, dtype=str)
+            elif self.file.endswith('xlsx'):
+                df = pd.read_excel(self.file, dtype=str)
+            df["NUCLEUS"] = self.df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
+            df["NUCLEUS"] = self.df["NUCLEUS"].replace(False, "")
+            self._df = df
+            self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+        return self._df
+
 
     @property
     def categories(self):
@@ -979,6 +986,40 @@ class Data:
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
         print("done", flush=True)
+
+        ##
+        # now we can collapse histones
+        
+        # TODO put in a function
+        # hist1
+        # hist2
+        # hist3
+        # hist4
+        # _histones = ['hist1', 'hist2', 'hist3', 'hist4']
+        # for histone_entry in _histones:
+        #     _gids = (_genemapper.df.where( lambda x: x['GeneSymbol'].str.contains(f"^{histone_entry}", case=False)).dropna()).index
+        #     _query = self.data[ self.data.GeneID.isin(_gids)]
+        #     # everything with the same area we condense
+        #     #_query.query("Metric=='area'").pivot(index=['GeneID', 'Metric'])
+
+        #     _groups = (_query.query("Metric=='area'")
+        #                     .set_index(['GeneID', 'Metric'])
+        #                     .stack() 
+        #                     .to_frame('area')
+        #                     .reset_index()
+        #     )
+        #     _potential_histone_grps = [x for x in _groups.groups.values()]
+
+        #     [x[1] for x in _groups.groups.values()]
+
+
+        #     #_first.groupby('Gene')
+        #     _first.groupby('level_2')
+        #     _second = _first.pivot()
+        #_data = self.data[ self.data.GeneID.isin(_histones.index) ]
+
+        ##
+
         # self.panel = pd.Panel(exps)
         for ax in (
             "GeneCapacity",
