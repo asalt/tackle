@@ -128,7 +128,7 @@ def volcanoplot(
             # pass
             group1, group0 = [x.strip() for x in comparison.split("-")]
             group0_fix, group1_fix = fix_group_name(group0, meta.columns), fix_group_name(
-                group1, meta.columns
+                group1, meta.columns)
             # import ipdb; ipdb.set_trace()
             group1, group0 = [x.strip() for x in comparison.split(" - ")]
             group0_fix, group1_fix = (
