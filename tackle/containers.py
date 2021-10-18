@@ -7,6 +7,7 @@ from seaborn import despine
 from seaborn import heatmap
 import seaborn as sb
 from six import string_types
+
 # import sys
 import os
 import re
@@ -15,6 +16,7 @@ from collections.abc import Iterable
 from functools import lru_cache
 from datetime import datetime
 import operator as op
+
 # from collections import OrderedDict, Counter
 import itertools
 from functools import partial
@@ -55,20 +57,24 @@ def _get_logger():
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
 
-    fh = logging.FileHandler("tackle.log")
-    # fh.setLevel(logging.DEBUG)
-    # create console handler with a higher log level
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     # create formatter and add it to the handlers
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    fh.setFormatter(formatter)
     ch.setFormatter(formatter)
     # add the handlers to the logger
-    logger.addHandler(fh)
     logger.addHandler(ch)
+    try:
+        fh = logging.FileHandler("tackle.log")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+    except PermissionError:
+        pass
+
+    # fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
     return logger
 
 
@@ -223,9 +229,9 @@ class Annotations:
                 logger.error(f"Could not find {self.file}")
                 return
             # logger.info(f"Loading annotations file {self.file}")
-            if self.file.endswith('tsv'):
+            if self.file.endswith("tsv"):
                 df = pd.read_table(self.file, dtype=str)
-            elif self.file.endswith('xlsx'):
+            elif self.file.endswith("xlsx"):
                 df = pd.read_excel(self.file, dtype=str)
             if "NUCLEUS" in df:
                 df["NUCLEUS"] = df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
@@ -784,16 +790,22 @@ class Data:
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
             _na_taxon = df[df.TaxonID.isna()]
             if _na_taxon.pipe(len) > 0:
-                _na_taxon_spfilter = _na_taxon.loc[[x for x in _na_taxon.index.astype(str) if x.startswith('sp')]]
-                _tokeep = [x for x in df.index if x not in  _na_taxon_spfilter]
-                _not_starting_with_sp = _na_taxon_spfilter.pipe(len) - _na_taxon.pipe(len)
+                _na_taxon_spfilter = _na_taxon.loc[
+                    [x for x in _na_taxon.index.astype(str) if x.startswith("sp")]
+                ]
+                _tokeep = [x for x in df.index if x not in _na_taxon_spfilter]
+                _not_starting_with_sp = _na_taxon_spfilter.pipe(len) - _na_taxon.pipe(
+                    len
+                )
                 if _not_starting_with_sp != 0:
-                    warn(f"{_not_starting_with_sp} records have no taxon info, dropping")
+                    warn(
+                        f"{_not_starting_with_sp} records have no taxon info, dropping"
+                    )
             df = df[~df.TaxonID.isna()]
 
             if df.GeneID.value_counts().max() > 1:
-                warn('droping duplicate geneids, figure out why there are dups')
-                df = df.drop_duplicates('GeneID')
+                warn("droping duplicate geneids, figure out why there are dups")
+                df = df.drop_duplicates("GeneID")
             # QUICK FIX
             # removes "Crapome" hits that for some reason get a GeneID (the wrong one)
 
@@ -859,7 +871,7 @@ class Data:
             if (df.FunCats == "").all():
                 df["FunCats"] = df.GeneID.map(_genemapper.funcat).fillna("")
             if df.TaxonID.isna().any():
-                df['TaxonID'] = df['TaxonID'].fillna(-1)
+                df["TaxonID"] = df["TaxonID"].fillna(-1)
             if "TaxonID" not in df or df.TaxonID.isna().any():
                 if "TaxonID" in df:
                     # import ipdb; ipdb.set_trace()
@@ -1017,7 +1029,7 @@ class Data:
 
         ##
         # now we can collapse histones
-        
+
         # TODO put in a function
         # hist1
         # hist2
@@ -1032,7 +1044,7 @@ class Data:
 
         #     _groups = (_query.query("Metric=='area'")
         #                     .set_index(['GeneID', 'Metric'])
-        #                     .stack() 
+        #                     .stack()
         #                     .to_frame('area')
         #                     .reset_index()
         #     )
@@ -1040,11 +1052,10 @@ class Data:
 
         #     [x[1] for x in _groups.groups.values()]
 
-
         #     #_first.groupby('Gene')
         #     _first.groupby('level_2')
         #     _second = _first.pivot()
-        #_data = self.data[ self.data.GeneID.isin(_histones.index) ]
+        # _data = self.data[ self.data.GeneID.isin(_histones.index) ]
 
         ##
 
