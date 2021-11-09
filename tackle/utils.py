@@ -1151,4 +1151,4 @@ def named_temp(*args, **kwargs):
             pass
 
 
-from .containers import GeneMapper
+#from .containers import GeneMapper

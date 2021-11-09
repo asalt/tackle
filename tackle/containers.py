@@ -1017,7 +1017,7 @@ class Data:
 
         ##
         # now we can collapse histones
-        
+
         # TODO put in a function
         # hist1
         # hist2
@@ -1032,7 +1032,7 @@ class Data:
 
         #     _groups = (_query.query("Metric=='area'")
         #                     .set_index(['GeneID', 'Metric'])
-        #                     .stack() 
+        #                     .stack()
         #                     .to_frame('area')
         #                     .reset_index()
         #     )
