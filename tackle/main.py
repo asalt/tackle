@@ -85,20 +85,24 @@ def _get_logger():
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
 
-    fh = logging.FileHandler("tackle.log")
-    # fh.setLevel(logging.DEBUG)
-    # create console handler with a higher log level
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     # create formatter and add it to the handlers
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    fh.setFormatter(formatter)
     ch.setFormatter(formatter)
     # add the handlers to the logger
-    logger.addHandler(fh)
     logger.addHandler(ch)
+    try:
+        fh = logging.FileHandler("tackle.log")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+    except PermissionError:
+        pass
+
+    # fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
     return logger
 
 
@@ -1831,11 +1835,12 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     help="""File of geneids to plot.
               Should have 1 geneid per line. """,
 )
-@click.option("--genefile-sheet",
+@click.option(
+    "--genefile-sheet",
     type=int,
     default=0,
-    show_default=True, 
-    help="Use specified sheet number for genefile with multiple excel sheets"
+    show_default=True,
+    help="Use specified sheet number for genefile with multiple excel sheets",
 )
 @click.option(
     "--force-plot-genes",
@@ -2125,7 +2130,7 @@ def cluster2(
 
     genes = None
     if genefile:
-        genes = parse_gid_file(genefile, sheet=genefile_sheet) # default 0
+        genes = parse_gid_file(genefile, sheet=genefile_sheet)  # default 0
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
@@ -3102,7 +3107,7 @@ def gsea(
     all_groups = group.split(":")
     gsea_groups = pheno.groupby(all_groups).groups
     for grp, ids in gsea_groups.items():
-        pheno.loc[ids, "GSEA_GROUP"] = str.join('', grp)
+        pheno.loc[ids, "GSEA_GROUP"] = str.join("", grp)
     # no filenames with dashes allowed for java GSEA
     pheno["GSEA_GROUP"] = pheno["GSEA_GROUP"].str.replace("-", "_")
     _orig_group_value = group
@@ -3112,7 +3117,6 @@ def gsea(
 
     ngroups = pheno["GSEA_GROUP"].nunique()
     groups = pheno["GSEA_GROUP"].unique()
-
 
     # # later
     # pheno_indicator = dict()
