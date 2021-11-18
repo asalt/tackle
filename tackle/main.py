@@ -1640,6 +1640,8 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 @click.pass_context
 def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 
+    outname_kws = dict()
+
     try:
         import rpy2.robjects as robjects
         from rpy2.robjects import pandas2ri
@@ -1650,13 +1652,17 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 
     data_obj = ctx.obj["data_obj"]
 
-    genes = None
-    if genefile:
-        genes = parse_gid_file(genefile)
-
     X = data_obj.areas_log_shifted
     X.index = X.index.astype(str)
     col_meta = data_obj.col_metadata.copy()
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
+        _tokeep = [x for x in genes if x in X.index]  # preserve order
+        X = X.loc[_tokeep]
+        outname_kws['genefile'] = fix_name(os.path.splitext(genefile)[0])
+
 
     # ======================================
     outname_func = partial(
@@ -1669,14 +1675,9 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         if not data_obj.batch_nonparametric
         else "nonparametric",
         outpath=data_obj.outpath,
+        **outname_kws,
     )
     # ======================================
-
-    genes = None
-    if genefile:
-        genes = parse_gid_file(genefile)
-        _tokeep = [x for x in genes if x in X.index]  # preserve order
-        X = X.loc[_tokeep]
 
     # now convert to correct orientation
     # variable <color> <shape> gene1 gene2 gene3 ...
@@ -1721,6 +1722,8 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     # columns to assign colors:
     metadata_color_list = list()
     # for metacat in (color, marker):
+    if not color:
+        raise ValueError('must specify color')
     if color:
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
             mapping = data_obj.metadata_colors[color]
@@ -1761,6 +1764,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         max_pc=max_pc,
         color_list=color_list,
         marker_list=robjects.NULL,
+        title = outname_kws.get('genefile') or robjects.NULL,
     )
 
 
@@ -2081,6 +2085,7 @@ def cluster2(
 ):
 
     outname_kws = dict()
+    # outname_kws = dict()
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
@@ -2134,6 +2139,7 @@ def cluster2(
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
+        outname_kws['genefile'] = fix_name(os.path.splitext(genefile)[0])
     # print(len(X))
 
     ## filter by volcano output
@@ -2525,7 +2531,6 @@ def cluster2(
 
     # ==============================================================================================
 
-    outname_kws = dict()
     if cluster_func is not None:
         outname_kws[cluster_func] = nclusters
     outname = outname_func("clustermap", **outname_kws)
