@@ -1,6 +1,6 @@
 import logging
-from .utils import *
-from . import utils
+#from .utils import *
+# from . import utils
 from scipy.cluster import hierarchy
 from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
 from seaborn import despine
@@ -215,6 +215,8 @@ class GeneMapper:
             self._taxon = self.df["TaxonID"].to_dict()
         return self._taxon
 
+from .utils import *
+from . import utils
 
 class Annotations:
     def __init__(self):
