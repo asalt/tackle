@@ -428,27 +428,29 @@ def validate_configfile(experiment_file, **kwargs):
     return  # all passed
 
 
-ANNOTATION_CHOICES = (
-    "IDG",
-    "IO",
-    "CYTO_NUC",
-    "ER_GOLGI",
-    "SECRETED",
-    "DBTF",
-    "NUCLEUS",
-    "RTK",
-    "MATRISOME",
-    "SurfaceLabel",
-    "CellMembrane",
-    "Secreted",
-    "glycomineN",
-    "glycomineO",
-    "glycomineN/O",
-    "Membrane_Secreted",
-    "_all",
-)
+# ANNOTATION_CHOICES = (
+#     "IDG",
+#     "IO",
+#     "CYTO_NUC",
+#     "ER_GOLGI",
+#     "SECRETED",
+#     "DBTF",
+#     "NUCLEUS",
+#     "RTK",
+#     "MATRISOME",
+#     "SurfaceLabel",
+#     "CellMembrane",
+#     "Secreted",
+#     "glycomineN",
+#     "glycomineO",
+#     "glycomineN/O",
+#     "Membrane_Secreted",
+#     "_all",
+# )
 
 ANNOTATION_CHOICES = get_annotation_mapper().categories or tuple()
+ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
+
 
 # @gui_option
 @click.group(chain=True)
@@ -1661,8 +1663,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         genes = parse_gid_file(genefile)
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         X = X.loc[_tokeep]
-        outname_kws['genefile'] = fix_name(os.path.splitext(genefile)[0])
-
+        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
 
     # ======================================
     outname_func = partial(
@@ -1723,7 +1724,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     metadata_color_list = list()
     # for metacat in (color, marker):
     if not color:
-        raise ValueError('must specify color')
+        raise ValueError("must specify color")
     if color:
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
             mapping = data_obj.metadata_colors[color]
@@ -1764,7 +1765,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         max_pc=max_pc,
         color_list=color_list,
         marker_list=robjects.NULL,
-        title = outname_kws.get('genefile') or robjects.NULL,
+        title=outname_kws.get("genefile") or robjects.NULL,
     )
 
 
@@ -2139,7 +2140,7 @@ def cluster2(
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
-        outname_kws['genefile'] = fix_name(os.path.splitext(genefile)[0])
+        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
     # print(len(X))
 
     ## filter by volcano output
@@ -2302,13 +2303,22 @@ def cluster2(
         col_meta = col_meta.reset_index()
 
     ## ============================================================
+    # experimental, best to be put in a separate function
     if cut_by is not None:
         _to_none = True
-        if col_meta is not None and cut_by in col_meta.columns:
-            _to_none = False
-        if _to_none:
-            print("{} not in column metadata".format(cut_by))
-            cut_by = None
+        if "+" in cut_by:
+            cut_by = cut_by.split("+")
+        else:
+            cut_by = [cut_by]
+        cut_by = np.array(cut_by)
+        for c in cut_by:
+            if col_meta is not None and c in col_meta.columns:
+                _to_none = False
+            if _to_none:
+                print("{} not in column metadata".format(cut_by))
+                cut_by = robjects.NULL
+    if cut_by is None:
+        cut_by = robjects.NULL
 
     ## ============================================================
     annot_mat = None
@@ -2469,10 +2479,9 @@ def cluster2(
         if main_title is None:
             main_title = robjects.NULL
 
-        # import ipdb; ipdb.set_trace()
         call_kws = dict(
             data=X,
-            cut_by=cut_by or robjects.NULL,
+            cut_by=cut_by,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
             z_score=z_score or robjects.NULL,
