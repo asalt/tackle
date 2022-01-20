@@ -1,5 +1,6 @@
 import logging
-#from .utils import *
+
+# from .utils import *
 # from . import utils
 from scipy.cluster import hierarchy
 from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
@@ -7,6 +8,7 @@ from seaborn import despine
 from seaborn import heatmap
 import seaborn as sb
 from six import string_types
+from typing import Dict
 
 # import sys
 import os
@@ -215,8 +217,10 @@ class GeneMapper:
             self._taxon = self.df["TaxonID"].to_dict()
         return self._taxon
 
+
 from .utils import *
 from . import utils
+
 
 class Annotations:
     def __init__(self):
@@ -1500,7 +1504,9 @@ class Data:
         return df
 
     # def calc_padj(self):
-    def stat_model(self, formula=None, contrasts_str=None, impute_missing_values=False):
+    def stat_model(
+        self, formula=None, contrasts_str=None, impute_missing_values=False
+    ) -> "Dict[pd.DataFrame]":  # put type annotation in quotes as a bug workaround (probably fixed in later version of python)
         """
         Still work in progress.
 
@@ -1666,6 +1672,8 @@ class Data:
                 result["CI.L"] = result["CI.L"].apply(lambda x: x / np.log10(2))
                 result["CI.R"] = result["CI.R"].apply(lambda x: x / np.log10(2))
 
+                result = result.join(mat, how="left")
+
                 # DON'T NEED TO DO THIS ANYMORE
                 # we ensure the order of result is equal to order of areas_log_shifted
                 # to preserve GeneID order
@@ -1791,6 +1799,7 @@ class Data:
             + ".tsv"
         )
 
+        logger.info(f"Writing {outname}")
         if level == "all":
             self.df_filtered.sort_index(level=[0, 1]).to_csv(outname, sep="\t")
 
@@ -1922,7 +1931,6 @@ class Data:
             if self.annotations:
                 for_export = add_annotations(for_export, self.annotations)
 
-            logger.info(f"Writing {outname}")
             for_export.to_csv(outname, sep="\t", index=False)
 
         elif level == "align":
@@ -2062,6 +2070,7 @@ class Data:
                 )
                 + ".tsv"
             )
+            logger.info(f"Writing {outname}")
             meta_df.to_csv(outname, sep="\t")
 
         elif level == "area":
