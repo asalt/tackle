@@ -569,14 +569,14 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
     """
 
     _df = None
-    _dtype = {'GeneID': str, 'junk':int}
-    if gids.endswith('.csv'):
+    _dtype = {"GeneID": str, "junk": int}
+    if gids.endswith(".csv"):
         _df = pd.read_csv(gids, dtype=_dtype)
-    elif gids.endswith('.tsv') | gids.endswith('.txt'):
+    elif gids.endswith(".tsv") | gids.endswith(".txt"):
         _df = pd.read_table(gids, dtype=_dtype)
-    elif gids.endswith('.xlsx'):  # try to parse plain text file
+    elif gids.endswith(".xlsx"):  # try to parse plain text file
         _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet)
-    if _df is not None and 'GeneID' in _df:
+    if _df is not None and "GeneID" in _df:
         return _df.GeneID.tolist()
     # import ipdb; ipdb.set_trace()
 
@@ -1000,7 +1000,8 @@ def get_outname(
 
     kwarg_values = list()
     for key, value in kwargs.items():
-        s = "{}_{}".format(key, value)
+        _value = value.replace(" ", "_").replace("-", "_")
+        s = "{}_{}".format(key, _value)
         kwarg_values.append(s)
     kwarg_string = "_".join(kwarg_values) if kwarg_values else ""
 

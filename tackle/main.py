@@ -3029,6 +3029,12 @@ def volcano(
     default=False,
     help="If not a human species, do not map to human through homologene. Requires pairing with appropriate gene set file",
 )
+@click.option(
+    "--stat-metric",
+    type=click.Choice(["FWER p-val", "FDR q-val"]),
+    default="FWER p-val",
+    show_default=True,
+)
 @click.pass_context
 def gsea(
     ctx,
@@ -3057,6 +3063,7 @@ def gsea(
     annotate,
     no_homologene_remap,
     use_cluster2,
+    stat_metric,
 ):
     """
     Run GSEA on specified groups
@@ -3065,6 +3072,7 @@ def gsea(
 
     rnd_seed = seed or rnd_seed
     # ===============================================================================================
+    stat_metric_cutoff = 0.25 if stat_metric == "FWER p-val" else 0.05
     if use_cluster2:
         try:
             from rpy2.robjects import r
@@ -3181,6 +3189,7 @@ def gsea(
             if not data_obj.batch_nonparametric
             else "nonparametric",
             outpath=data_obj.outpath,
+            stat_metric=stat_metric,
             cls=cls_comparison.strip("#"),
         )
 
@@ -3413,8 +3422,8 @@ def gsea(
                     break
                 gsea_sig = pd.concat(
                     [
-                        group0_df[group0_df["FWER p-val"] < cutoff],
-                        group1_df[group1_df["FWER p-val"] < cutoff],
+                        group0_df[group0_df[stat_metric] < cutoff],
+                        group1_df[group1_df[stat_metric] < cutoff],
                     ]
                 )
                 cutoff += 0.1
@@ -3440,14 +3449,15 @@ def gsea(
             gsea_sig = gsea_sig.loc[idx]
             # gesa_sig = gsea_sig.sort_values(by='NES', ascending=False)
 
-            gsea_sig["color"] = gsea_sig["FWER p-val"].apply(
+            # gsea_sig["color"] = gsea_sig["FWER p-val"].apply(
+            gsea_sig["color"] = gsea_sig[stat_metric].apply(
                 lambda x: mpl.colors.to_hex(cmap(cnorm(powernorm(x))))
             )
             import textwrap
 
             gsea_sig.index = [x.replace("HALLMARK_", "") for x in gsea_sig.index]
             gsea_sig.index = gsea_sig.index + [
-                "*" if x < 0.25 else "" for x in gsea_sig["FWER p-val"]
+                "*" if x < stat_metric_cutoff else "" for x in gsea_sig[stat_metric]
             ]
             gsea_sig.index = gsea_sig.index.map(
                 lambda x: textwrap.fill(x.replace("_", " "), 24, break_long_words=False)
@@ -3508,7 +3518,8 @@ def gsea(
                 ["{:.2f}".format(x) for x in np.linspace(0, 1, 11)],
                 fontdict=dict(size=10),
             )
-            cax.set_xlabel("FWER p-val")
+            # cax.set_xlabel("FWER p-val")
+            cax.set_xlabel(stat_metric)
             ax0.grid(axis="x")
 
             ax0.set_ylabel("")
@@ -3531,6 +3542,13 @@ def gsea(
             groups[0], groups[1]
             ax0.text(0, 1.04, groups[0], transform=ax0.transAxes)
             ax0.text(1, 1.04, groups[1], transform=ax0.transAxes, ha="right")
+            ax0.text(
+                -0.04,
+                -0.12,
+                f"* {stat_metric} < {stat_metric_cutoff}",
+                fontsize=12,
+                transform=ax0.transAxes,
+            )
             gs.tight_layout(fig, rect=(0, 0, 1, 0.96))
             # fig.subplots_adjust(left=.4)
             # fig.tight_layout()
@@ -3584,7 +3602,7 @@ def gsea(
                 )
 
                 if plot_genes_sig:
-                    iter_ = gsea_sig[gsea_sig["FWER p-val"] < 0.25].iterrows()
+                    iter_ = gsea_sig[gsea_sig[stat_metric] < 0.25].iterrows()
                 else:
                     iter_ = gsea_sig.iterrows()
 
