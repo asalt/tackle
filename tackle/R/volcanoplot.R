@@ -32,15 +32,21 @@ number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue")
 
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
-                        pch = 16, cex = 0.35,
+                        pch = 21, cex = 0.35,
                         fc_cutoff = 4, sig = 0.05, label_cex = 1,
                         show_all = FALSE, yaxis = yaxis.choices,
                         group0 = "", group1 = "",
                         sig_metric = "pAdj",
                         number_by = "abs_log2_FC",
                         max_fc = NULL,
+                        #bg_marker_color = "#22222288",
+                        bg_marker_color = "#222222",
+                        force_highlight_geneids=FALSE,
+                        annot_cex = 1.,
+                        marker_cex=1.4,
                         ...) {
-  POINT_SIZE <- 1.4
+  POINT_SIZE <- marker_cex
+  pch <- 21 # keep it as fillable shape
 
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
@@ -73,17 +79,31 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## X[ , 'usd' ] = '#222222bb'
   ## X[ , 'usd' ] = '#22222222'
-  X[, "usd"] <- "#22222288"
+  #X[, "usd"] <- "#22222288"
+  X[, "usd"] <- bg_marker_color
   ## X[ , 'usd' ] = '#88888888'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
   X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
+  X[, "alpha"] <- .10 # new column
   ## X[ X$highlight == TRUE, 'usd' ] = "#67ff3d"
   ## X[ X$highlight == TRUE, 'usd' ] = "purple"
   ## X[ X$highlight == TRUE, 'usd' ] = "#00ab25"
-  X[(X$highlight == TRUE & X$log2_FC > 0), "usd"] <- "red"
-  X[(X$highlight == TRUE & X$log2_FC < 0), "usd"] <- "blue"
+  .sig <- ifelse(force_highlight_geneids==TRUE, 1.1, sig)
+  #if (force_highlight_geneids == TRUE) .sig <- 1.1
+  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < .sig), "usd"] <- "red"
+  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < .sig), "usd"] <- "blue"
+  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < .sig), "alpha"] <- 1.
+  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < .sig), "alpha"] <- 1.
+
+  X$outline_width <- 0
+  X$outline <- 'black'
+  X[, "label"] <- FALSE # new column
+  X[(X$highlight == TRUE & X[, sig_metric] < .sig), "label"] <- TRUE
+  #X[(X$highlight == TRUE & X[, sig_metric] < .sig), "outline"] <- "000000"
+  X[(X$highlight == TRUE & X[, sig_metric] < .sig), "outline_width"] <- .2
+
   X[, "usd"] <- as.factor(X[, "usd"])
 
   ## X <- mutate(X, label = ifelse(X$qValue < 0.05, "FDR<0.05", "N.S."))
@@ -162,13 +182,13 @@ volcanoplot <- function(X, max_labels = 35,
 
 
 
-  X[, "label"] <- FALSE # new column
   X[to_label, "label"] <- TRUE # label these
   if (show_all == FALSE) {
     X[X[, "Sig"] == "N.S.", "label"] <- FALSE
   }
-  # except these?
-  X[X$highlight == TRUE, "label"] <- TRUE
+  # except these? # done abocve
+  # X[X$highlight == TRUE, "label"] <- TRUE
+
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
   ymax <- max(-log10(X[, ploty])) * 1.08
@@ -176,9 +196,9 @@ volcanoplot <- function(X, max_labels = 35,
     abs() %>%
     max()
 
-  if (!is.null(max_fc)) {
-    xmax <- max_fc + .2
-  }
+  # if (!is.null(max_fc)) {
+  #   xmax <- max_fc + .2
+  # }
 
   ## ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
   ratio_sig <- paste0(dim(X[X$Sig == sig_filter_str, ])[1], "/", dim(X)[1])
@@ -202,25 +222,33 @@ volcanoplot <- function(X, max_labels = 35,
   if ((max_nchar) > 15) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
   if ((max_nchar) > 35) annot_size <- annot_size - .5
+  annot_size <- annot_size * annot_cex
+  .annot_space <- 0
+  if (annot_cex >= .8) .annot_space <- .2
   # print(annot_size)
 
-  p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), col = usd)) +
-    theme_base() +
-    geom_point(size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch) +
-    geom_point(data = X[X$highlight == TRUE, ], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch) +
-    scale_colour_identity() +
+  p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), alpha=alpha,)) +
+    geom_point(mapping=aes(color=usd), size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = 16) +
+    geom_point(data = X[X$highlight == TRUE, ],
+      mapping=aes(color=outline, stroke=outline_width, fill=usd), pch=21, size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch) +
+    #geom_point(data = X[X$highlight == TRUE, ], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch, alpha=1.) +
+    scale_alpha_identity() +
+    scale_fill_identity() +
+    scale_color_identity() +
     ylim(0, ymax) +
-    xlim(-xmax - .2, xmax + .2) +
+    xlim(-xmax, xmax) +
     geom_text_repel(
       data = X[X$label == TRUE, ],
-      aes(label = GeneSymbol), min.segment.length = .15,
+      aes(label = GeneSymbol, alpha=alpha, color=usd), min.segment.length = .15,
       point.padding = 1e-3,
       box.padding = .1, cex = label_cex,
       segment.size = .35, segment.alpha = .4,
-      max.overlaps = Inf
+      max.overlaps = Inf,
+      seed=1234,
+      show_legend=FALSE,
     ) +
     # annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
-    annotate("text", c(-xmax - .2, xmax + .2), c(0, 0),
+    annotate("text", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
       label = c(group0, group1),
       size = annot_size,
       hjust = c(0, 1), vjust = c(0, 0), color = c("blue", "red")
@@ -233,6 +261,7 @@ volcanoplot <- function(X, max_labels = 35,
     theme_classic() +
     theme(plot.caption = element_text(color = grey(.5), size = 10))
 
+                                        #theme_base() +
 
 
   print(p)

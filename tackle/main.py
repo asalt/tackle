@@ -2719,6 +2719,10 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 
 
 @main.command("volcano")
+@click.option("--bg-marker-color",
+              default = "#22222288",
+              help = '"rgba" for background marker color',
+)
 @click.option(
     "-f",
     "--foldchange",
@@ -2735,6 +2739,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     show_default=True,
     help="Include expression data for each sample in tabular output.",
 )
+@click.option("--annot-scale", default=1.)
 @click.option(
     "-n",
     "--number",
@@ -2761,11 +2766,20 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 )
 @click.option(
     "-s",
-    "--scale",
+    "--label-scale",
     type=float,
     default=1.5,
     show_default=True,
     help="To what extent to scale the labels",
+)
+@click.option("--scale",
+              type=float,
+              help="alias for --label-scale",
+              default=-1,
+)
+@click.option("--marker-scale",
+              default=1.4,
+              show_default=True,
 )
 @click.option(
     "--sig",
@@ -2795,6 +2809,12 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     show_default=True,
     multiple=False,
     help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """,
+)
+@click.option('--force-highlight-geneids',
+              is_flag=True,
+              default=False,
+              show_default=True,
+              help="plot all genes specified in `--highlight-geneids` regardless of significance value"
 )
 @click.option(
     "--formula",
@@ -2830,6 +2850,9 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.pass_context
 def volcano(
     ctx,
+        annot_scale,
+        bg_marker_color,
+        # point_size,
     foldchange,
     expression_data,
     number,
@@ -2837,10 +2860,13 @@ def volcano(
     only_sig,
     sig,
     sig_metric,
+        label_scale,
+        marker_scale,
     scale,
     impute_missing_values,
     p_value,
     highlight_geneids,
+    force_highlight_geneids,
     formula,
     contrasts,
     genefile,
@@ -2849,6 +2875,10 @@ def volcano(
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
+
+    if scale != -1: #check if scale was changed, then use depreciated option
+        warn('--scale is depreciated, please use --marker-scale in the future')
+        marker_scale = scale
     from .volcanoplot import volcanoplot
 
     # yaxis = 'pAdj' if p_adj else 'pValue'
@@ -2874,7 +2904,8 @@ def volcano(
         sig=sig,
         sig_metric=sig_metric,
         yaxis=yaxis,
-        scale=scale,
+        label_scale=label_scale,
+        marker_scale=marker_scale,
         formula=formula,
         contrasts=contrasts,
         genes=genes,
@@ -2882,6 +2913,8 @@ def volcano(
         height=height,
         highlight_geneids=gids_to_highlight,
         impute_missing_values=impute_missing_values,
+        bg_marker_color=bg_marker_color,
+        annot_scale=annot_scale,
     )
 
 

@@ -26,13 +26,17 @@ def volcanoplot(
     sig_metric="pAdj",
     number_by="log2_FC",
     yaxis="pAdj",
-    scale=1.2,
+        label_scale = 1.4,
+        marker_scale = 1.2,
     highlight_geneids=None,
+        force_highlight_geneids=False,
     formula=None,
     contrasts=None,
     impute_missing_values=False,
     width=5,
     height=5,
+        annot_scale=1.,
+        bg_marker_color="#22222288",
 ):
     print(sig_metric)
 
@@ -65,6 +69,7 @@ def volcanoplot(
             )
             groups[grp] = samples
 
+    # this is where the missing value imputation results will come from
     results = data_obj.stat_model(
         formula=formula,
         contrasts_str=contrasts,
@@ -72,7 +77,6 @@ def volcanoplot(
     )
 
     meta = data_obj.col_metadata
-    # import ipdb; ipdb.set_trace()
 
     def fix_group_name(group, entries):
         # for entry in meta.index:
@@ -257,13 +261,19 @@ def volcanoplot(
                 max_labels=number,
                 fc_cutoff=foldchange,
                 number_by=number_by,
+                force_highlight_geneids=force_highlight_geneids,
+                bg_marker_color=bg_marker_color,
                 sig=sig,
                 sig_metric=sig_metric,
                 yaxis=yaxis,
-                label_cex=scale,
+                label_cex=label_scale,
+                annot_cex=annot_scale,
+                marker_cex=marker_scale,
                 max_fc=max_fc,
+                #point_size=1.4,
                 group0=group0,
                 group1=group1,
+                #**kws,
             )
 
             grdevices.dev_off()
