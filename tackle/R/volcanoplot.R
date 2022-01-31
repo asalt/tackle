@@ -46,7 +46,8 @@ volcanoplot <- function(X, max_labels = 35,
                         marker_cex=1.4,
                         ...) {
   POINT_SIZE <- marker_cex
-  pch <- 21 # keep it as fillable shape
+  pch <- 21 # if we want a fillable shape
+  pch <- 16 # keep it as fillable shape
 
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
@@ -86,7 +87,7 @@ volcanoplot <- function(X, max_labels = 35,
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
   X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
-  X[, "alpha"] <- .10 # new column
+  X[, "alpha"] <- .20 # new column
   ## X[ X$highlight == TRUE, 'usd' ] = "#67ff3d"
   ## X[ X$highlight == TRUE, 'usd' ] = "purple"
   ## X[ X$highlight == TRUE, 'usd' ] = "#00ab25"
@@ -227,17 +228,16 @@ volcanoplot <- function(X, max_labels = 35,
   if (annot_cex >= .8) .annot_space <- .2
   # print(annot_size)
 
-  p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), alpha=alpha,)) +
+  p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), alpha=alpha, color=usd)) +
     geom_point(mapping=aes(color=usd), size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = 16) +
-    geom_point(data = X[X$highlight == TRUE, ],
-      mapping=aes(color=outline, stroke=outline_width, fill=usd), pch=21, size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch) +
-    #geom_point(data = X[X$highlight == TRUE, ], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch, alpha=1.) +
+    ## g eom_point(data = X[X$highlight == TRUE, ], mapping=aes(color=outline, stroke=outline_width, fill=usd), pch=21, size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch) +
+    geom_point(data = X[X$highlight == TRUE, ], size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch, alpha=1.) +
     scale_alpha_identity() +
     scale_fill_identity() +
     scale_color_identity() +
     ylim(0, ymax) +
     xlim(-xmax, xmax) +
-    geom_text_repel(
+    geom_label_repel(
       data = X[X$label == TRUE, ],
       aes(label = GeneSymbol, alpha=alpha, color=usd), min.segment.length = .15,
       point.padding = 1e-3,

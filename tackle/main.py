@@ -2720,8 +2720,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 
 @main.command("volcano")
 @click.option("--bg-marker-color",
-              default = "#22222288",
-              help = '"rgba" for background marker color',
+              default = "#888888",
+              help = '"rgb(a)" for background marker color',
 )
 @click.option(
     "-f",
