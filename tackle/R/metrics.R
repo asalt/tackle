@@ -5,6 +5,7 @@ suppressPackageStartupMessages(library(ggpubr))
 suppressPackageStartupMessages(library(tidyr))
 
 
+
 metrics <- function(df, savename = NULL, exts = NULL, ...) {
   options(bitmapType = "cairo")
   df$Sample <- factor(rownames(df))
@@ -63,13 +64,14 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     theme(
       text = element_text(size = 14),
       legend.position = "top",
-      axis.text.x = element_blank(),
+      # axis.text.x = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
       legend.title = element_text(size = 8),
       legend.text = element_text(size = 8),
     ) +
     labs(fill = "SRA\nMetric", y = "Gene Products") +
-    xlab(NULL)
-  # coord_flip()
+    xlab(NULL) 
+   # coord_flip()
 
 
   p1 <- ggplot(data = df, aes(x = factor(Sample, levels = df$Sample), y = GPGroups)) +
@@ -81,7 +83,8 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     theme_classic() +
     theme(
       text = element_text(size = 12),
-      axis.text.x = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
+      #axis.text.x = element_blank(),
     ) +
     xlab(NULL)
   # coord_flip()
@@ -95,7 +98,7 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
       legend.position = "top",
       legend.title = element_text(size = 8),
       legend.text = element_text(size = 8),
-      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width)
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
     ) +
     guides(fill = guide_legend(nrow = 1, byrow = TRUE)) +
     labs(fill = "PSM\nMetric") +
