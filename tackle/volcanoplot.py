@@ -37,7 +37,8 @@ def volcanoplot(
     height=5,
         annot_scale=1.,
         bg_marker_color="#22222288",
-        pch=16
+        pch=16,
+        alpha=1.,
 ):
 
     data_obj = ctx.obj["data_obj"]
@@ -273,6 +274,8 @@ def volcanoplot(
                 #point_size=1.4,
                 group0=group0,
                 group1=group1,
+                alpha=alpha,
+                pch=pch,
                 #**kws,
             )
 

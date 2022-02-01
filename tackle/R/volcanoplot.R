@@ -33,6 +33,7 @@ number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue")
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
                         pch = 21, cex = 0.35,
+                        alpha=1.,
                         fc_cutoff = 4, sig = 0.05, label_cex = 1,
                         show_all = FALSE, yaxis = yaxis.choices,
                         group0 = "", group1 = "",
@@ -95,8 +96,12 @@ volcanoplot <- function(X, max_labels = 35,
   X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < .sig), "usd"] <- "red"
   X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < .sig), "usd"] <- "blue"
   X[, "usd"] <- as.factor(X[, "usd"])
-  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < .sig), "alpha"] <- 1.
-  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < .sig), "alpha"] <- 1.
+
+  print(X[X$GeneID=="659985970",])
+  # wait we don't need this here?
+  # do we?
+  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < .sig), "alpha"] <- alpha
+  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < .sig), "alpha"] <- alpha
 
   X$outline_width <- 0
   X$outline <- "black"
@@ -163,17 +168,17 @@ volcanoplot <- function(X, max_labels = 35,
   ## ======================================================================
 
 
-
+  X[ X$highlight == TRUE, "label"] <- TRUE
   X[to_label, "label"] <- TRUE # label these
-  X[to_label, "alpha"] <- 1. # label these
+  X[to_label, "alpha"] <- alpha # label these
   # if we want to force highlight and circle these
   #X[to_label, "highlight"] <- 1. # label these
   if (show_all == FALSE) {
-    X[X[, "Sig"] == "N.S.", "label"] <- FALSE
+    # X[X[, "Sig"] == "N.S.", "label"] <- FALSE
+    X[(X[, "Sig"] == "N.S.") & (X[, "highlight"] == FALSE), "label"] <- FALSE
   }
   # except these? # done abocve
   # X[X$highlight == TRUE, "label"] <- TRUE
-
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
   ymax <- max(-log10(X[, ploty])) * 1.08

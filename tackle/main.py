@@ -2850,7 +2850,12 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option("--pch",
               default=16,
               show_default=True,
-              help="use 21 for circles with borders"
+              help="<experimental> use 21 for circles with borders"
+)
+@click.option("--alpha",
+              default=1.,
+              show_default=True,
+              help="<experimental> alpha for top genes that are not highlight_selected_genes"
 )
 @click.pass_context
 def volcano(
@@ -2877,6 +2882,7 @@ def volcano(
     genefile,
     figsize,
         pch,
+        alpha,
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -2922,6 +2928,8 @@ def volcano(
         bg_marker_color=bg_marker_color,
         annot_scale=annot_scale,
         pch=pch,
+        alpha=alpha,
+        force_highlight_geneids=force_highlight_geneids,
     )
 
 
