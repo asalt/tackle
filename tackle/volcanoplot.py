@@ -37,8 +37,8 @@ def volcanoplot(
     height=5,
         annot_scale=1.,
         bg_marker_color="#22222288",
+        pch=16
 ):
-    print(sig_metric)
 
     data_obj = ctx.obj["data_obj"]
     gm = GeneMapper()

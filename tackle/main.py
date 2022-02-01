@@ -2847,6 +2847,11 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     help="""Optionally specify the figuresize (width, height) in inches
               """,
 )
+@click.option("--pch",
+              default=16,
+              show_default=True,
+              help="use 21 for circles with borders"
+)
 @click.pass_context
 def volcano(
     ctx,
@@ -2871,6 +2876,7 @@ def volcano(
     contrasts,
     genefile,
     figsize,
+        pch,
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -2915,6 +2921,7 @@ def volcano(
         impute_missing_values=impute_missing_values,
         bg_marker_color=bg_marker_color,
         annot_scale=annot_scale,
+        pch=pch,
     )
 
 
