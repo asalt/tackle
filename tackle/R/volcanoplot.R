@@ -104,7 +104,7 @@ volcanoplot <- function(X, max_labels = 35,
   X[(X$highlight == TRUE & X[, sig_metric] < .sig), "label"] <- TRUE
   # X[(X$highlight == TRUE & X[, sig_metric] < .sig), "outline"] <- "000000"
   X[(X$highlight == TRUE & X[, sig_metric] < .sig), "outline_width"] <- .7
-  X[(X$highlight == TRUE & X[, sig_metric] < .sig), ] %>% print()
+  # X[(X$highlight == TRUE & X[, sig_metric] < .sig), ] %>% print()
 
 
 
@@ -165,6 +165,9 @@ volcanoplot <- function(X, max_labels = 35,
 
 
   X[to_label, "label"] <- TRUE # label these
+  X[to_label, "alpha"] <- 1. # label these
+  # if we want to force highlight and circle these
+  #X[to_label, "highlight"] <- 1. # label these
   if (show_all == FALSE) {
     X[X[, "Sig"] == "N.S.", "label"] <- FALSE
   }
@@ -223,6 +226,7 @@ volcanoplot <- function(X, max_labels = 35,
       pch = 16, size = POINT_SIZE, cex = cex, show.legend = FALSE
     )
   }
+  print(pch)
 
   if (pch == 21) .geom_point_highlight_TRUE <- .add_border
   if (pch == 16) .geom_point_highlight_TRUE <- .add_borderless
