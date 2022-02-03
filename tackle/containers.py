@@ -1799,7 +1799,6 @@ class Data:
             + ".tsv"
         )
 
-        logger.info(f"Writing {outname}")
         if level == "all":
             self.df_filtered.sort_index(level=[0, 1]).to_csv(outname, sep="\t")
 
@@ -2055,7 +2054,7 @@ class Data:
             for_export["TaxonID"] = for_export["TaxonID"].apply(maybe_int)
             for_export.to_csv(outname, sep="\t", index=False)
             meta_df = pd.DataFrame(column_number_mapping).T
-            outname = (
+            _outname = (
                 get_outname(
                     "metadata_{}".format(level),
                     name=self.outpath_name,
@@ -2070,8 +2069,8 @@ class Data:
                 )
                 + ".tsv"
             )
-            logger.info(f"Writing {outname}")
-            meta_df.to_csv(outname, sep="\t")
+            logger.info(f"Writing {_outname}")
+            meta_df.to_csv(_outname, sep="\t")
 
         elif level == "area":
             export = self.areas_log_shifted.copy()
@@ -2125,8 +2124,9 @@ class Data:
             order += [x for x in export.columns if x not in order and x != "Metric"]
             export[order].to_csv(outname, sep="\t", index=False)
 
-            print("Exported", outname)
+            #print("Exported", outname)
 
+        logger.info(f"Wrote {outname}")
 
 # ========================================================================================================= #
 
