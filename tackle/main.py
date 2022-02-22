@@ -1,6 +1,7 @@
 """
 
 """
+from dis import show_code
 import sys
 import os
 
@@ -1354,7 +1355,7 @@ def cluster(
 
     X = data_obj.areas_log_shifted
     if linear:
-        X = 10 ** X
+        X = 10**X
 
     # X = data_obj.areas_log_shifted.copy()
     # X[data_obj.areas == 0] = 0 # fill the zeros back
@@ -2212,7 +2213,7 @@ def cluster2(
         gids_to_annotate = parse_gid_file(gene_annot)
 
     if linear:
-        X = 10 ** X
+        X = 10**X
 
     if standard_scale is not None:
         if standard_scale == 1 or standard_scale == "1":
@@ -2719,9 +2720,10 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 
 
 @main.command("volcano")
-@click.option("--bg-marker-color",
-              default = "#888888",
-              help = '"rgb(a)" for background marker color',
+@click.option(
+    "--bg-marker-color",
+    default="#888888",
+    help='"rgb(a)" for background marker color',
 )
 @click.option(
     "-f",
@@ -2739,7 +2741,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     show_default=True,
     help="Include expression data for each sample in tabular output.",
 )
-@click.option("--annot-scale", default=1.)
+@click.option("--annot-scale", default=1.0, show_default=True)
 @click.option(
     "-n",
     "--number",
@@ -2772,14 +2774,16 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     show_default=True,
     help="To what extent to scale the labels",
 )
-@click.option("--scale",
-              type=float,
-              help="alias for --label-scale",
-              default=-1,
+@click.option(
+    "--scale",
+    type=float,
+    help="alias for --label-scale",
+    default=-1,
 )
-@click.option("--marker-scale",
-              default=1.4,
-              show_default=True,
+@click.option(
+    "--marker-scale",
+    default=1.4,
+    show_default=True,
 )
 @click.option(
     "--sig",
@@ -2810,11 +2814,12 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     multiple=False,
     help="""Optional list of geneids to also highlight. Should have 1 geneid per line. """,
 )
-@click.option('--force-highlight-geneids',
-              is_flag=True,
-              default=False,
-              show_default=True,
-              help="plot all genes specified in `--highlight-geneids` regardless of significance value"
+@click.option(
+    "--force-highlight-geneids",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="plot all genes specified in `--highlight-geneids` regardless of significance value",
 )
 @click.option(
     "--formula",
@@ -2847,22 +2852,24 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     help="""Optionally specify the figuresize (width, height) in inches
               """,
 )
-@click.option("--pch",
-              default=16,
-              show_default=True,
-              help="<experimental> use 21 for circles with borders"
+@click.option(
+    "--pch",
+    default=16,
+    show_default=True,
+    help="<experimental> use 21 for circles with borders",
 )
-@click.option("--alpha",
-              default=1.,
-              show_default=True,
-              help="<experimental> alpha for top genes that are not highlight_selected_genes"
+@click.option(
+    "--alpha",
+    default=1.0,
+    show_default=True,
+    help="<experimental> alpha for top genes that are not highlight_selected_genes",
 )
 @click.pass_context
 def volcano(
     ctx,
-        annot_scale,
-        bg_marker_color,
-        # point_size,
+    annot_scale,
+    bg_marker_color,
+    # point_size,
     foldchange,
     expression_data,
     number,
@@ -2870,8 +2877,8 @@ def volcano(
     only_sig,
     sig,
     sig_metric,
-        label_scale,
-        marker_scale,
+    label_scale,
+    marker_scale,
     scale,
     impute_missing_values,
     p_value,
@@ -2881,15 +2888,15 @@ def volcano(
     contrasts,
     genefile,
     figsize,
-        pch,
-        alpha,
+    pch,
+    alpha,
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
     """
 
-    if scale != -1: #check if scale was changed, then use depreciated option
-        warn('--scale is depreciated, please use --marker-scale in the future')
+    if scale != -1:  # check if scale was changed, then use depreciated option
+        warn("--scale is depreciated, please use --marker-scale in the future")
         marker_scale = scale
     from .volcanoplot import volcanoplot
 
