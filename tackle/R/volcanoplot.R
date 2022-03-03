@@ -214,7 +214,7 @@ volcanoplot <- function(X, max_labels = 35,
   if ((max_nchar) > 35) annot_size <- annot_size - .5
   annot_size <- annot_size * annot_cex
   .annot_space <- 0
-  if (annot_cex >= .8) .annot_space <- .2
+  if (annot_cex >= 1.8) .annot_space <- .2 # why this?
   # print(annot_size)
 
   .add_border <- function() {
