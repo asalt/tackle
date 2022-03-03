@@ -26,19 +26,19 @@ def volcanoplot(
     sig_metric="pAdj",
     number_by="log2_FC",
     yaxis="pAdj",
-        label_scale = 1.4,
-        marker_scale = 1.2,
+    label_scale=1.4,
+    marker_scale=1.2,
     highlight_geneids=None,
-        force_highlight_geneids=False,
+    force_highlight_geneids=False,
     formula=None,
     contrasts=None,
     impute_missing_values=False,
     width=5,
     height=5,
-        annot_scale=1.,
-        bg_marker_color="#22222288",
-        pch=16,
-        alpha=1.,
+    annot_scale=1.0,
+    bg_marker_color="#22222288",
+    pch=16,
+    alpha=1.0,
 ):
 
     data_obj = ctx.obj["data_obj"]
@@ -115,12 +115,15 @@ def volcanoplot(
 
     max_fc = max(x.log2_FC.abs().max() for x in results.values())
 
+    def _clean(x):
+        return x.strip("\(").strip("\)").strip()
+
     for comparison, df in results.items():
         # group0, group1 establish
         groups = comparison.split(" - ")
         if len(groups) == 2:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
-            group1, group0 = [x.strip() for x in comparison.split(" - ")]
+            group1, group0 = [_clean(x) for x in comparison.split(" - ")]
             # print(group0, group1)
             group0_fix, group1_fix = (
                 fix_group_name(group0, meta.columns),
@@ -168,7 +171,7 @@ def volcanoplot(
             batch_method="parametric"
             if not data_obj.batch_nonparametric
             else "nonparametric",
-            outpath=data_obj.outpath,
+            outpath=os.path.join(data_obj.outpath, "volcano"),
             group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
         )
 
@@ -271,12 +274,12 @@ def volcanoplot(
                 annot_cex=annot_scale,
                 marker_cex=marker_scale,
                 max_fc=max_fc,
-                #point_size=1.4,
+                # point_size=1.4,
                 group0=group0,
                 group1=group1,
                 alpha=alpha,
                 pch=pch,
-                #**kws,
+                # **kws,
             )
 
             grdevices.dev_off()

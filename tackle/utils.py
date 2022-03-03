@@ -999,7 +999,7 @@ def get_outname(
         kwargs.pop("missing_values")
 
     kwarg_values = list()
-    for key, value in kwargs.items():
+    for key, value in filter(str, kwargs.items()):
         _value = value.replace(" ", "_").replace("-", "_")
         s = "{}_{}".format(key, _value)
         kwarg_values.append(s)
