@@ -315,7 +315,8 @@ def get_gene_mapper(cls=GeneMapper):
     return _genemapper
 
 
-_genemapper = get_gene_mapper()
+genemapper = get_gene_mapper()
+_genemapper = genemapper # it's ok
 
 _annotmapper = None
 
@@ -336,6 +337,7 @@ def get_hgene_mapper(cls=HGeneMapper):
         _hgenemapper = HGeneMapper()
     return _hgenemapper
 
+hgenemapper = get_hgene_mapper()
 
 def assign_sra(df):
 
@@ -558,6 +560,7 @@ class Data:
             self.metadata_colors = jdata
         else:
             self.metadata_colors = None
+
 
     @property
     def areas(self):
@@ -875,7 +878,13 @@ class Data:
             gid_funcat_mapping.update(funcats_dict)
 
             if (df.FunCats == "").all():
-                df["FunCats"] = df.GeneID.map(_genemapper.funcat).fillna("")
+                df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
+            if (df.FunCats == "").all(): #again
+                _gid_mapping = hgenemapper.map_to_human(df.GeneID)
+                df['_GeneID_hs'] = df.GeneID.map(_gid_mapping)
+                df["FunCats"] = df._GeneID_hs.map(genemapper.funcat).fillna("")
+
+                #df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
             if df.TaxonID.isna().any():
                 df["TaxonID"] = df["TaxonID"].fillna(-1)
             if "TaxonID" not in df or df.TaxonID.isna().any():
@@ -974,6 +983,8 @@ class Data:
                 geneid_subset=self.geneid_subset,
                 ignored_geneid_subset=self.ignore_geneid_subset,
             ).pipe(filter_func)
+            if len(df) < 1:
+                logger.warn(f"..no data after funcat filter")
 
             # unique peptide filter
             df = df[df.PeptideCount_u2g >= self.unique_pepts]
