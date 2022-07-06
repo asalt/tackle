@@ -1,3 +1,7 @@
+# clusterplot.R
+# vim: ts=2 expandtab
+#
+#
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
@@ -300,7 +304,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## print(maxval)
   ## print(col)
 
-  cell_fun <- NA
+  cell_fun <- NULL
   if (!is.null(annot_mat)) {
     annot_mat <- annot_mat %>%
       mutate(GeneID = factor(GeneID, levels = toplot$GeneID, ordered = TRUE)) %>%
