@@ -335,7 +335,7 @@ def get_gene_mapper(cls=GeneMapper):
 
 
 genemapper = get_gene_mapper()
-_genemapper = genemapper # it's ok
+_genemapper = genemapper  # it's ok
 
 _annotmapper = None
 
@@ -356,7 +356,9 @@ def get_hgene_mapper(cls=HGeneMapper):
         _hgenemapper = HGeneMapper()
     return _hgenemapper
 
+
 hgenemapper = get_hgene_mapper()
+
 
 def assign_sra(df):
 
@@ -579,7 +581,6 @@ class Data:
             self.metadata_colors = jdata
         else:
             self.metadata_colors = None
-
 
     @property
     def areas(self):
@@ -898,12 +899,12 @@ class Data:
 
             if (df.FunCats == "").all():
                 df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
-            if (df.FunCats == "").all(): #again
+            if (df.FunCats == "").all():  # again
                 _gid_mapping = hgenemapper.map_to_human(df.GeneID)
-                df['_GeneID_hs'] = df.GeneID.map(_gid_mapping)
+                df["_GeneID_hs"] = df.GeneID.map(_gid_mapping)
                 df["FunCats"] = df._GeneID_hs.map(genemapper.funcat).fillna("")
 
-                #df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
+                # df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
             if df.TaxonID.isna().any():
                 df["TaxonID"] = df["TaxonID"].fillna(-1)
             if "TaxonID" not in df or df.TaxonID.isna().any():
@@ -1353,6 +1354,7 @@ class Data:
         if self.batch is not None:
             self._areas_log_shifted = self.batch_normalize(self.areas_log_shifted)
             # try batch normalization via ComBat
+            print(f"export_all is set to {self.export_all}")
             if (
                 self.export_all and not self.normed
             ):  # batch normalize the other requested area columns
@@ -1807,6 +1809,18 @@ class Data:
 
         # outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
+
+        if self.median is True:
+            _norm_type = "MED"
+        elif self.ifot is True:
+            _norm_type = "FOT"
+        elif self.ifot_ki is True:
+            _norm_type = "FOT_KI"
+        elif self.ifot_tf is True:
+            _norm_type = "FOT_TF"
+        else:
+            _norm_type = "none"
+
         self.areas_log_shifted  # make sure it's created
 
         level_formatter = level
@@ -1816,6 +1830,7 @@ class Data:
         outname = (
             get_outname(
                 "data_{}".format(level_formatter),
+                normtype=_norm_type,
                 name=self.outpath_name,
                 taxon=self.taxon,
                 non_zeros=self.non_zeros,
@@ -1824,7 +1839,8 @@ class Data:
                 batch_method="parametric"
                 if not self.batch_nonparametric
                 else "nonparametric",
-                outpath=self.outpath,
+                # outpath=self.outpath,
+                outpath=os.path.join(self.outpath, "export"),
             )
             + ".tsv"
         )
@@ -1872,17 +1888,30 @@ class Data:
                 # "GeneCapacity",
             ]
 
+            if self.median is True:
+                _area_col = "iBAQ_dstrAdj_MED"
+            elif self.ifot is True:
+                _area_col = "iBAQ_dstrAdj_FOT"
+            elif self.ifot_ki is True:
+                _area_col = "FOT_KI"
+            elif self.ifot_tf is True:
+                _area_col = "FOT_TF"
+            else:
+                _area_col = "iBAQ_dstrAdj"
+
             cols = [
                 "SRA",
                 "PeptideCount",
                 "PeptideCount_u2g",
                 "PSMs",
-                "AreaSum_dstrAdj",
-                "iBAQ_dstrAdj",
-                "iBAQ_dstrAdj_log10",
-                "iBAQ_dstrAdj_MED",
-                "iBAQ_dstrAdj_MED_log10",
-                "iBAQ_dstrAdj_MED_log10_zscore",
+                _area_col,
+                # "AreaSum_dstrAdj",
+                # "iBAQ_dstrAdj",
+                # # "iBAQ_dstrAdj_log10",
+                # "iBAQ_dstrAdj_MED",
+                # # "iBAQ_dstrAdj_MED_log10",
+                # # "iBAQ_dstrAdj_MED_log10_zscore",
+                # "iBAQ_dstrAdj_FOT",
             ]
 
             # keep track of all observed records to determine whether or not to report QUAl columns
@@ -2103,9 +2132,12 @@ class Data:
             meta_df.to_csv(_outname, sep="\t")
 
         elif level == "area":
-            export = self.areas_log_shifted.copy()
-            if linear:
-                export = export.apply(lambda x: 10 ** x)
+            if not linear:
+                export = self.areas_log_shifted.copy()
+            elif linear:
+                export = self.areas.copy()
+            # if linear:
+            #     export = export.apply(lambda x: 10**x)
             if not self.impute_missing_values:
                 export[self.areas == 0] = 0  # fill the zeros back
                 export[self.mask] = np.NaN
@@ -2154,9 +2186,10 @@ class Data:
             order += [x for x in export.columns if x not in order and x != "Metric"]
             export[order].to_csv(outname, sep="\t", index=False)
 
-            #print("Exported", outname)
+            # print("Exported", outname)
 
         logger.info(f"Wrote {outname}")
+
 
 # ========================================================================================================= #
 
