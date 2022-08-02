@@ -787,7 +787,6 @@ def main(
                 "SRA",
             ]:
                 cluster_annotate_cols.append(_q)
-    # import ipdb; ipdb.set_trace()
     if "--level" in sys.argv:  # for data export
         if cluster_annotate_cols is None:
             cluster_annotate_cols = list()
@@ -2429,10 +2428,6 @@ def cluster2(
         metacats = set(metacats) | set(row_annot_df.columns)
 
     def get_default_color_mapping(s: pd.Series) -> dict:
-        # if s.name == "metDose":
-        #     import ipdb
-
-        #     ipdb.set_trace()
         if s.dtype == "float":
             return
         palette = None
@@ -2473,7 +2468,7 @@ def cluster2(
             themapping = get_default_color_mapping(
                 col_meta[metacat]
             )  # set everything but float
-            if themappig is not None:
+            if themapping is not None:
                 entry = robjects.vectors.ListVector(
                     {metacat: robjects.vectors.ListVector(themapping)}
                 )
