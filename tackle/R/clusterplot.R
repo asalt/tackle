@@ -12,10 +12,11 @@ myzscore <- function(value, minval = NA, remask = TRUE) {
   if (is.na(minval)) minval <- min(value, na.rm = TRUE)
 
   if (minval == Inf) {
-    minval < 0
+    minval <- 0
   }
 
   value[is.na(value)] <- minval
+  # todo make smaller than min val
   out <- scale(value)
 
   # if all NA:
@@ -95,7 +96,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## print(data %>% pivot_longer(c(-GeneSymbol, -GeneID)))
   ## print(col_data)
 
-  exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID))
+  # in case a row is duplicated
+  exprs_long <- data %>%
+    distinct(GeneID, .keep_all = TRUE) %>%
+    pivot_longer(c(-GeneSymbol, -GeneID))
 
   if (!is.null(col_data)) {
     exprs_long <- exprs_long %>%
@@ -106,15 +110,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   if (is.null(z_score)) {
     # do nothing
-  }
-  else if (is.null(z_score_by) & z_score == "0") {
+  } else if (is.null(z_score_by) & z_score == "0") {
     exprs_long <- exprs_long %>%
       mutate(value = na_if(value, 0)) %>%
       group_by(GeneID) %>%
       mutate(zscore = myzscore(value), zscore_impute = myzscore(value, remask = FALSE)) %>%
       ungroup()
-  }
-  else if (!is.null(z_score_by) & z_score == "0") {
+  } else if (!is.null(z_score_by) & z_score == "0") {
     exprs_long <- exprs_long %>%
       mutate(value = na_if(value, 0)) %>%
       group_by(GeneID, !!as.name(z_score_by)) %>%
@@ -131,14 +133,19 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       id_cols = c(GeneID, GeneSymbol),
       values_from = value, names_from = name
     )
-  }
-  else if (!is.null(z_score)) {
+  } else if (!is.null(z_score)) {
     toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = zscore, names_from = name)
     tocluster <- exprs_long %>% pivot_wider(
       id_cols = c(GeneID, GeneSymbol),
       values_from = zscore_impute, names_from = name
     )
   }
+
+
+  ##   exprs_long %>%
+  ## dplyr::group_by(GeneID, GeneSymbol, name) %>%
+  ## dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+  ## dplyr::filter(n > 1L)
 
 
   ## if ('HS_ratio' %in% colnames(col_data)){
@@ -171,11 +178,12 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       arrange(GeneID)
 
     row_data_args <- as.list(select(row_annot_df, -GeneID))
-    row_data_args[["na_col"]] <- "white"
+    # row_data_args[["na_col"]] <- "white"
     row_data_args[["border"]] <- FALSE
     row_data_args[["which"]] <- "row"
     row_data_args[["annotation_legend_param"]] <- list()
     ## rotate all legends to horizontal (place on bottom via draw, below)
+
     for (thename in names(select(row_annot_df, -GeneID))) {
       ## row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", nrow = 2)
       row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
@@ -187,6 +195,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   }
   ## ===============  COLUMN ANNOTATION ============================================
 
+  # browser()
   col_data_args <- NULL # will get defined if not is.na col_data
   if (!is.null(col_data)) {
     col_order <- toplot %>%
@@ -198,30 +207,25 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       arrange(name)
 
 
+    # col_data_args[["na_col"]] <- "white"
+
+
+    # col_annot_df <- NULL
+    # col_data_args[["annotation_legend_param"]][["at"]][["chr"]] <- as.matrix(colnames(col_data))
+    # if (!is.null(col_data) && !is.null(metadata_colors)) {
+    #   browser()
+
+    #   # col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
+    #   col_annot <- columnAnnotation(
+    #     df = as.data.frame(col_data),
+    #     col = metadata_colors
+    #     #annotation_legend_param = col_data_args$annotation_legend_param
+    #   )
+    # }
+
     ## Add more args here
     col_data_args <- as.list(col_data %>% select(-name))
-    ## col_data_args <- as.list(col_data%>%select(response))
-    col_data_args[["na_col"]] <- "white"
-
-    for (thename in names(select(col_data, -name))) {
-      col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
-    }
-
-    ## col_data_args[['col']] = list(
-    ##   HS_ratio=colorRamp2(c(0:1), c('white', 'grey30')),
-    ##   PAM50.Mar2020 = PAM50_colors ,
-    ##   PAM50 = PAM50_colors ,
-    ##   response = response_colors,
-    ##   TNBCtype = Lehmann_TNBC_colors,
-    ##   cohort = c(
-    ##     HER2='purple',
-    ##     Luminal='blue',
-    ##     TNBC='red'
-    ##   )
-    ## )
-
-    ## print(metadata_colors)
-
+    # $metadata_colors <- NULL
     ## Custom colers
     if (!is.null(metadata_colors)) {
       col_data_args[["col"]] <- list()
@@ -237,6 +241,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
           row_data_args[["col"]][[entry_name]] <- list()
           for (key in entry_values) {
             final_val <- metadata_colors[[i]][[entry_name]][[key]]
+            # if (final_val %in% c("NA", "<NA>", "NaN", "nan"))
             ## print(paste(entry_name, key, final_val))
             ## print('****************')
             if (entry_name %in% names(col_data_args)) {
@@ -260,19 +265,65 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     }
   } # if (!is.null(col_data))
 
-  ## print(col_data_args)
-  ## print(row_data_args)
+  # now handle continuous
+  ##
+  col_data_simple_annot_names <- intersect(col_data_args %>% names(), col_data %>% names())
+
+  # col_data_args %>% sapply(is.atomic)
+
+  col_data_color_names <- col_data_args$col %>% names()
+  # for (thename in col_data_color_names) {
+  #   col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
+  # }
+  .missing_color_definition <- setdiff(col_data_simple_annot_names, col_data_color_names)
+  # browser()
+  for (.entry in .missing_color_definition) {
+    .values <- col_data_args[[.entry]]
+    if (typeof(.values) == "character") {
+      # browser()
+      next
+    }
+    .minval <- min(.values, na.rm = T) * .85
+    .maxval <- min(.values, na.rm = T) * 1.25
+    col_data_args[["col"]][[.entry]] <- circlize::colorRamp2(
+      breaks = c(.minval, .maxval),
+      colors = c("#e5e5e5", "#3b3b3b")
+    )
+  }
+  # missing_in_col_
+  # browser()
+
+  # l_simple_anno <- sapply(col_data_args, is.atomic)
+
+  # names(col_data_args)
+  # col_data_args$annotation_legend_param
+
+  print(col_data_args)
+  print(row_data_args)
 
   ## ========================================================================
   ## Now make the annotations, with all arguments populated
   row_annot <- NULL
   if (!is.null(row_annot_df)) { # only if we have row data to plot
     row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
+    # TODO continuous variables
   }
 
-  col_annot_df <- NULL
+
+  # col_data_args[["annotation_legend_param"]][["at"]][["chr"]] <- as.matrix(colnames(col_data))
   if (!is.null(col_data)) {
     col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
+    # col_annot <- columnAnnotation(
+    #   df = as.data.frame(col_data),
+    #   col = list(category = color_mapping_function)
+    # annotation_legend_param = col_data_args$annotation_legend_param
+    # )
+    # all column annotations
+    # .thenames <- names(col_annot@annot_list)
+    # for (.name in .thenames){
+    #   .theannot <- col_annot@anno_list[.name]
+    #   if .theannot$
+    # }
   }
   ## ========================================================================
 
@@ -287,8 +338,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## maxval <- quantiles[["97.5%"]]
     maxval <- quantiles[["95%"]]
     col <- colorRamp2(c(minval, 0, maxval), c("#FFFFCC", "orange", "red"))
-  }
-  else {
+  } else {
     quantiles <- exprs_long %>%
       select(zscore) %>%
       quantile(na.rm = TRUE, probs = seq(0, 1, .025))
@@ -374,6 +424,19 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   print("##################################")
   # print(cluster_col_slices)
 
+  mat <- toplot[col_data$name]
+  # library(seriation)
+  # library(cluster)
+  # o1 <- agnes(dist_no_na(mat), method = "ward")
+  # o2 <- agnes(dist_no_na(t(mat)), method = "ward")
+  # # o1 <- seriate(dist_no_na(mat), method = "GW_ward")
+  # # o2 <- seriate(dist_no_na(t(mat)), method = "GW_ward")
+  # browser()
+  # o1 <- seriate(o1$diss, method = "GW_ward")
+  # o2 <- seriate(o2$diss, method = "GW_ward")
+  # row_cluster <- as.dendrogram(o1[[1]])
+  # col_cluster <- as.dendrogram(o2[[1]])
+
   ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
   ht <- Heatmap(toplot[col_data$name],
     name = "mat",
@@ -399,6 +462,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     clustering_method_columns = linkage,
     clustering_distance_rows = dist_no_na,
     clustering_distance_columns = dist_no_na,
+    column_dend_reorder = TRUE,
     row_labels = toplot$GeneSymbol,
     row_names_gp = gpar(fontsize = gene_symbol_fontsize),
     column_names_gp = gpar(fontsize = 9),
