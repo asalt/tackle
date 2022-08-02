@@ -4,6 +4,7 @@
 from dis import show_code
 import sys
 import os
+from pathlib import Path
 
 #  import re
 #  import json
@@ -61,6 +62,7 @@ from .clusterplot import clusterplot
 from .metrics import make_metrics
 from .pcaplot import pcaplot
 from .utils import fix_name
+from . import utils
 from .utils import *
 from .containers import (
     Data,
@@ -189,7 +191,7 @@ def run(data_obj):
 #     pass
 class Path_or_Subcommand(click.Path):
 
-    EXCEPTIONS = ("make_config",)  # this one we just run
+    EXCEPTIONS = ("make_config", "replot_gsea")  # this one we just run
 
     def __init__(self, *args, **kwargs):
         super(Path_or_Subcommand, self).__init__(*args, **kwargs)
@@ -715,9 +717,14 @@ def main(
         # we wish to run on its own, without loading data
 
         # hacky
-        parser = make_config.make_parser(ctx)
+        if experiment_file == "make_config":
+            parser = make_config.make_parser(ctx)
+            _cmd = make_config
+        elif experiment_file == "replot_gsea":
+            parser = replot_gsea.make_parser(ctx)
+            _cmd = replot_gsea
         the_kws = parser.parse_args(sys.argv[2:])[0]
-        ctx.invoke(make_config, **the_kws)
+        ctx.invoke(_cmd, **the_kws)
         ctx.exit(0)
 
     if not limma:
@@ -979,12 +986,24 @@ def main(
     help="Name and location to save output. Default is same location as input with same basename.",
 )
 @click.argument("inputfile", type=click.Path(exists=True, dir_okay=False))
+@click.pass_context
 def make_config(
-    delimiter, excel, excel_sheetnumber, infer_inputfile, output, inputfile
+    ctx,
+    delimiter,
+    excel,
+    excel_sheetnumber,
+    infer_inputfile,
+    output,
+    inputfile,
+    help=False,
 ):
     """
     Convert a delimited (tab, csv, excel, etc) file into a config file.
     """
+    if help is True or (help is False and inputfile is None):
+        help_txt = globals()["make_config"].get_help(ctx)
+        print(help_txt)
+        sys.exit(0)
 
     from .Ini2Csv.main import Csv2Conf
 
@@ -2120,6 +2139,7 @@ def cluster2(
 
     data_obj = ctx.obj["data_obj"]
     col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
+    col_meta = data_obj.col_metadata
 
     if order_by_abundance and row_cluster:
         raise NotImplementedError("Not Implemented !")
@@ -2302,6 +2322,7 @@ def cluster2(
     else:
         col_meta.index.name = "name"
         col_meta = col_meta.reset_index()
+        col_meta = utils.set_pandas_datatypes(col_meta)
 
     ## ============================================================
     # experimental, best to be put in a separate function
@@ -2360,8 +2381,8 @@ def cluster2(
         if not data_obj.batch_nonparametric
         else "nonparametric",
         linkage=linkage,
-        outpath=data_obj.outpath,
         missing_values=missing_values,
+        outpath=os.path.join(data_obj.outpath, "cluster2"),
     )
     # =================================================================
 
@@ -2397,18 +2418,41 @@ def cluster2(
     metadata_color_lists = None
 
     # columns to assign colors:
-    metacats = col_meta.dtypes[col_meta.dtypes.isin(["string", "object"])].index
-    metacats = col_meta.dtypes[
-        (col_meta.dtypes == "string") | (col_meta.dtypes == "object")
-    ].index
-    gene_metacats = None
+    # TODO prevent crash if col_meta is empty
+    # metacats = col_meta.dtypes[col_meta.dtypes.isin(["string", "object"])].index
+    # metacats = col_meta.dtypes[
+    #     (col_meta.dtypes == "string") | (col_meta.dtypes == "object")
+    # ].index
+    # gene_metacats = None
+    metacats = col_meta.columns
     if row_annot_df is not None:
         metacats = set(metacats) | set(row_annot_df.columns)
+
+    def get_default_color_mapping(s: pd.Series) -> dict:
+        # if s.name == "metDose":
+        #     import ipdb
+
+        #     ipdb.set_trace()
+        if s.dtype == "float":
+            return
+        palette = None
+        s_as_numeric = pd.to_numeric(s, errors="coerce")
+        if s_as_numeric.sum() > 0 & s_as_numeric.nunique() < 11:  # integer
+            s = s_as_numeric
+            palette = "light:#4133"
+
+        ncolors = s.nunique()
+        cmap = sb.color_palette(palette=palette, n_colors=ncolors)
+        color_iter = map(mpl.colors.rgb2hex, cmap)
+        themapping = {x: c for x, c in zip(s.unique(), color_iter)}
+        # print(s.name, themapping)
+        return themapping
+
     metadata_color_list = list()
     for metacat in metacats:
         if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
             # metadata_colorsR = robjects.ListVector([])
-            # for key, x in data_obj.metadata_colors.items():
+            # TODO handle when there is not a color for a category
             mapping = data_obj.metadata_colors[metacat]
             entry = robjects.vectors.ListVector(
                 {metacat: robjects.vectors.ListVector(mapping)}
@@ -2426,17 +2470,14 @@ def cluster2(
         else:
             if metacat not in col_meta:
                 continue
-            ncolors = col_meta[metacat].nunique()
-            cmap = sb.color_palette(n_colors=ncolors)
-            color_iter = map(mpl.colors.rgb2hex, cmap)
-            themapping = {x: c for x, c in zip(col_meta[metacat].unique(), color_iter)}
-            try:
+            themapping = get_default_color_mapping(
+                col_meta[metacat]
+            )  # set everything but float
+            if themappig is not None:
                 entry = robjects.vectors.ListVector(
                     {metacat: robjects.vectors.ListVector(themapping)}
                 )
-            except Exception as e:  ## ???
-                pass
-            metadata_color_list.append(entry)
+                metadata_color_list.append(entry)
 
     if metadata_color_list:
         metadata_colorsR = metadata_color_list
@@ -2462,6 +2503,7 @@ def cluster2(
     if show_metadata and not col_meta is None:
         # cannot convert Categorical column of Integers to Category in py2r
         col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
+    # col_data = utils.set_pandas_datatypes(col_data)
 
     # rpy2 does not map None to robjects.NULL
     if row_annot_df is None:
@@ -2472,7 +2514,7 @@ def cluster2(
     ):
         if gr_kws is None:
             gr_kws = dict()
-        grdevice(file=out, **gr_kw)
+        grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
         print("Saving", out, "...", end="", flush=True)
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
         if annot_mat is None:
@@ -2588,6 +2630,8 @@ def cluster2(
                     f"Successfully remapped {len(_tokeep)} genes to {len(hs_genes)} hs genes"
                 )
                 subX = X[X.GeneID.isin(_tokeep)]
+            if subX.empty:  # if still empty, continue
+                continue
 
             sub_annot_mat = None
             if annotate and annot_mat is not None:
@@ -3217,6 +3261,14 @@ def gsea(
     import itertools
 
     for groups in itertools.combinations(pheno[group].unique(), 2):
+        # project 731
+        if not (groups[0].startswith("50") or groups[0].startswith("250")):
+            continue
+        if not (groups[1].startswith("50") or groups[1].startswith("250")):
+            continue
+        if not groups[0][-3:] == groups[1][-3:]:  # skip different time
+            continue
+        print(groups)
         # for groups in itertools.combinations(classes, 2):
 
         # samples0 = classes[groups[0]]
@@ -3243,7 +3295,7 @@ def gsea(
             batch_method="parametric"
             if not data_obj.batch_nonparametric
             else "nonparametric",
-            outpath=data_obj.outpath,
+            outpath=os.path.join(data_obj.outpath, "gsea"),
             stat_metric=stat_metric,
             cls=cls_comparison.strip("#"),
         )
@@ -3533,7 +3585,7 @@ def gsea(
             if np.isnan(figwidth):
                 figwidth = 4  # ??
 
-            figheight = max(4, min(gsea_sig.pipe(len) // 1.25, 14))
+            figheight = max(4, min(gsea_sig.pipe(len) // 1.25, 24))
             fig = plt.figure(figsize=(figwidth, figheight))
             gs = mpl.gridspec.GridSpec(
                 2,
@@ -3809,7 +3861,7 @@ def gsea(
                             gene_symbols
                         ):  # make sure there is enough room for the symbols
                             figheight = max(
-                                ((gene_symbol_fontsize + 2) / 72) * len(genes),
+                                ((gene_symbol_fontsize + 2.2) / 72) * len(genes),
                                 min_figheight,
                             )
                             # len(genes), not len(X)!
@@ -4159,6 +4211,27 @@ def ssGSEA(
             seed=seed,
         )
 
+    # default=Path("."),
+
+
+# @click.option("-p", "--path", help="root path")
+# @click.argument("path", type=Path_or_Glob(exists=True, dir_okay=True, file_okay=False))
+@main.command("replot_gsea")
+@click.argument("path", type=click.Path(exists=True, dir_okay=True, file_okay=False))
+@click.pass_context
+def replot_gsea(ctx, path, help=False):
+    """ """
+
+    if help is True or (help is False and path is None):
+        help_txt = globals()["replot_gsea"].get_help(ctx)
+        print(help_txt)
+        sys.exit(0)
+
+    from . import plot_gsea_results
+
+    path = Path(path)
+    plot_gsea_results.main(path)
+
 
 @main.command("box")
 @click.option(
@@ -4309,8 +4382,9 @@ def box(
 
     for g in gene:
 
+        symbol = data_obj.gid_symbol.get(g, "")
         if g not in data.index:
-            warn("GeneID {} not in dataset, skipping..".format(g))
+            warn("GeneID {} ({}) not in dataset, skipping..".format(g, symbol))
             continue
         df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
 
@@ -4323,9 +4397,8 @@ def box(
         for col in ("runno", "searchno"):
             df[col] = df[col].astype(str)
 
-        symbol = data_obj.gid_symbol.get(g, "")
         title = "{} {}".format(g, symbol)
-        outname = outfunc("boxplot_{}_{}".format(g, symbol))
+        outname = outfunc("boxplot_{}_{}".format(symbol, g))
 
         for file_fmt in ctx.obj["file_fmts"]:
             grdevice = gr_devices[file_fmt]
@@ -4504,9 +4577,9 @@ to arrange data. For use in conjunction with `--group`
 @click.option(
     "--retain-order",
     is_flag=True,
-    default=False,
+    default=True,
     show_default=True,
-    help="""Retains original config order""",
+    help="""Retains original config order. Depreciated (defaults to true)""",
 )
 @click.option(
     "--cmap",
@@ -4519,7 +4592,7 @@ Any valid, qualitative, colormap? """,
     "--linear/--log",
     default=True,
     is_flag=True,
-    help="Plot linear values (default log10)",
+    help="Toggle between linear and log xform",
 )
 @click.option(
     "--z-score",
@@ -4546,18 +4619,18 @@ def bar(
     average,
     group,
     group_order,
-    retain_order,
     cmap,
     gene,
     genefile,
     linear,
     z_score,
     figsize,
+    retain_order,  # depreciated
     xtickrotation,
     xticksize,
 ):
 
-    if average and group is None:
+    if average == True and group is None:
         raise ValueError("Must specify group with average")
 
     if group_order is not None:
@@ -4594,21 +4667,13 @@ def bar(
     data[data_obj.mask] = np.NaN
     data.index = data.index.astype(str)
 
-    try:
-        from rpy2.robjects import r
-        import rpy2.robjects as robjects
-        from rpy2.robjects import pandas2ri
-        from rpy2.robjects.packages import importr
-    except ModuleNotFoundError:
-        print("rpy2 needs to be installed")
-        return
+    from .rutils import gr_devices, robjects, close_grdevice
 
-    pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "barplot.R")
-
     r_source(r_file)
-    grdevices = importr("grDevices")
+    Rbarplot = robjects.r["barplot"]
+    # grdevices = importr("grDevices")
     Rbarplot = robjects.r["barplot"]
     from tackle.containers import GeneMapper
 
@@ -4627,12 +4692,6 @@ def bar(
             plt_width = min(24, plt_width)
         else:
             plt_width, plt_height = figsize
-
-        gr_devices = {
-            ".png": grdevices.png,
-            ".pdf": grdevices.pdf,
-            ".svg": grdevices.svg,
-        }
         gr_kws = {
             ".png": dict(width=plt_width, height=plt_height, units="in", res=300),
             ".pdf": dict(
@@ -4648,7 +4707,7 @@ def bar(
         ylab = "log10 Expression"
         if linear:
             df["Expression"] = df["Expression"].apply(lambda x: np.power(10, x))
-            ylab = "Expression"
+            ylab = "Expression (linear)"
         elif z_score:
             df["Expression"] = sb.matrix.ClusterGrid.z_score(df["Expression"])
             ylab = "log10 Expression (z-score)"
@@ -4696,7 +4755,8 @@ def bar(
                 df, average, group, group_order=group_order, title=title, ylab=ylab
             )
 
-            grdevices.dev_off()
+            close_grdevice()
+            # grdevices.dev_off()
             print("done.", flush=True)
 
 
