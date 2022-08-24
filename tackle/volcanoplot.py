@@ -116,9 +116,18 @@ def volcanoplot(
     max_fc = max(x.log2_FC.abs().max() for x in results.values())
 
     def _clean(x):
-        return x.strip("\(").strip("\)").strip()
+        return x.strip("\( ").strip(" \)").strip()
 
-    for comparison, df in results.items():
+    # prepare table for volcanoplot and export
+    if genes is not None:  # only plot these select genes
+        _genes = set(genes) & set(df.index)
+        df = df.loc[_genes]
+
+    # now this
+    for comparison, df in results.items():  # results contains dataf
+        # df already contains the expression data by default now, as returned by the data_obj stat running method
+
+        # too nested
         # group0, group1 establish
         groups = comparison.split(" - ")
         if len(groups) == 2:
@@ -143,7 +152,7 @@ def volcanoplot(
             )
             group0_fix, group1_fix = "Down", "Up"
 
-        # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+        # if we do this here, the columns get added before the expression values
         df["GeneSymbol"] = df.index.map(
             lambda x: data_obj.gid_symbol.get(x, gm.symbol.get(str(x), x))
         )
@@ -154,12 +163,20 @@ def volcanoplot(
         df["signedlogP"] = df.apply(
             lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
         )
-        if highlight_geneids is not None:
-            df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
 
-        if genes is not None:  # only plot these select genes
-            _genes = set(genes) & set(df.index)
-            df = df.loc[_genes]
+        # # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
+        # df["GeneSymbol"] = df.index.map(
+        #     lambda x: data_obj.gid_symbol.get(x, gm.symbol.get(str(x), x))
+        # )
+        # df["FunCats"] = df.index.map(lambda x: data_obj.gid_funcat_mapping.get(x, ""))
+        # df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
+        # df.index.name = "GeneID"
+        # df["highlight"] = False
+        # df["signedlogP"] = df.apply(
+        #     lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
+        # )
+        # if highlight_geneids is not None:
+        #     df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
 
         outname = get_outname(
             "volcanoplot",
@@ -171,8 +188,9 @@ def volcanoplot(
             batch_method="parametric"
             if not data_obj.batch_nonparametric
             else "nonparametric",
-            outpath=os.path.join(data_obj.outpath, "volcano"),
+            normtype=data_obj.normtype,
             group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
+            outpath=os.path.join(data_obj.outpath, "volcano"),
         )
 
         if len(outname) > 255:
@@ -198,6 +216,7 @@ def volcanoplot(
                     "Error trying to subselect data for export. Try specifying group if you have not."
                 )
                 export_data = export_data.join(data_obj.areas_log_shifted)
+
         export_cols = [x for x in export_data.columns if x not in ("highlight",)]
         export_data[export_cols].to_csv(out, sep="\t")
         print("done", flush=True)
@@ -284,6 +303,7 @@ def volcanoplot(
 
             grdevices.dev_off()
             print("done.", flush=True)
+        ## end for comparison, df in results.items():
 
     return
 

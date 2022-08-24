@@ -8,7 +8,7 @@ suppressPackageStartupMessages(library(tidyr))
 
 metrics <- function(df, savename = NULL, exts = NULL, ...) {
   options(bitmapType = "cairo")
-  df$Sample <- factor(rownames(df))
+  df[["Sample"]] <- factor(rownames(df))
 
 
   df_sra <- df[, c("Sample", "S", "R", "A")] %>%
@@ -40,7 +40,7 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     max(9) %>%
     min(24)
   annot_scale <- (12 / thewidth)
-  print(thewidth, annot_scale)
+  # print(thewidth, annot_scale)
   overflow_width <- (24 / (dim(df)[1] %/% 2)) %>% min(1)
   # print(dim(df)[1])
   # print(overflow_width)
@@ -70,8 +70,8 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
       legend.text = element_text(size = 8),
     ) +
     labs(fill = "SRA\nMetric", y = "Gene Products") +
-    xlab(NULL) 
-   # coord_flip()
+    xlab(NULL)
+  # coord_flip()
 
 
   p1 <- ggplot(data = df, aes(x = factor(Sample, levels = df$Sample), y = GPGroups)) +
@@ -84,7 +84,7 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     theme(
       text = element_text(size = 12),
       axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
-      #axis.text.x = element_blank(),
+      # axis.text.x = element_blank(),
     ) +
     xlab(NULL)
   # coord_flip()

@@ -1,6 +1,7 @@
 import os
 from collections import OrderedDict
 
+from functools import partial
 import matplotlib
 
 from matplotlib import gridspec
@@ -47,26 +48,34 @@ def make_metrics(
 
     data = data_obj.metric_values
 
+    kws = dict()
     if before_filter:
-        kws = dict(before="filter")
+        kws["filter"] = "before"
         taxon = "all"
     else:
-        kws = dict(after="filter")
+        kws["filter"] = "after"
         taxon = data_obj.taxon
+    #
+    if before_norm:
+        kws["norm"] = "before"
+    else:
+        kws["norm"] = "after"
 
-    outname = get_outname(
-        "metrics",
+    namegen = partial(
+        get_outname,
         name=data_obj.outpath_name,
         taxon=taxon,
         non_zeros=data_obj.non_zeros,
         colors_only=data_obj.colors_only,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        outpath=data_obj.outpath,
-        **kws
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
+        normtype=data_obj.normtype,
+        outpath=os.path.join(data_obj.outpath, "metrics"),
+        # **kws,
     )
+    # outname = namegen("metrics")
 
     sra = pd.DataFrame(data=[data[n]["SRA"] for n in data.keys()], index=data.keys())
     # check if all SRA in sra
@@ -95,14 +104,10 @@ def make_metrics(
     # trypsinP_df.index.name = 'miscuts'
     # trypsinP_df = trypsin_df.reset_index()
 
-    trypsin_dfr = trypsin_df.melt(
-        var_name="name", value_name="Trypsin"
-    )
+    trypsin_dfr = trypsin_df.melt(var_name="name", value_name="Trypsin")
     trypsin_dfr.index.name = "miscuts"
     trypsin_dfr = trypsin_dfr.reset_index()
-    trypsinP_dfr = trypsinP_df.melt(
-        var_name="name", value_name="Trypsin/P"
-    )
+    trypsinP_dfr = trypsinP_df.melt(var_name="name", value_name="Trypsin/P")
     trypsinP_dfr.index.name = "miscuts"
     trypsinP_dfr = trypsinP_dfr.reset_index()
 
@@ -110,18 +115,7 @@ def make_metrics(
         trypsin_dfr, trypsinP_dfr, on=["miscuts", "name"], how="outer"
     ).sort_values(by=["miscuts", "name"])
 
-    export_name = get_outname(
-        "miscut_ratio",
-        name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
-        non_zeros=data_obj.non_zeros,
-        colors_only=data_obj.colors_only,
-        batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        outpath=data_obj.outpath,
-    )
+    export_name = namegen("miscut_ratio")
     miscut_frame.to_csv(export_name + ".tsv", sep="\t", index=False)
 
     # ========================================================================
@@ -148,19 +142,8 @@ def make_metrics(
         .astype(int)
     )
 
-    export_name = get_outname(
-        "metrics",
-        name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
-        non_zeros=data_obj.non_zeros,
-        colors_only=data_obj.colors_only,
-        batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        outpath=data_obj.outpath,
-    )
-    to_export.to_csv(export_name + ".tab", sep="\t", index=True)
+    export_name = namegen("metrics")
+    to_export.to_csv(export_name + ".tsv", sep="\t", index=True)
 
     # ==================================================================
     from rpy2.robjects import r
@@ -173,6 +156,7 @@ def make_metrics(
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "metrics.R")
     r_source(r_file)
     Rmetrics = robjects.r["metrics"]
+
     Rmetrics(to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts])
     # ==================================================================
 
@@ -182,7 +166,7 @@ def make_metrics(
 
     import rpy2.robjects.lib.ggplot2 as gg
 
-    area_df['Name'] = pd.Categorical(area_df['Name'], ordered=True)
+    area_df["Name"] = pd.Categorical(area_df["Name"], ordered=True)
 
     plot = (
         gg.ggplot(area_df)
@@ -192,20 +176,20 @@ def make_metrics(
     )
     plot.plot()
 
-    outname = get_outname(
-        "metrics_dist",
-        name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
-        non_zeros=data_obj.non_zeros,
-        colors_only=data_obj.colors_only,
-        batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        outpath=data_obj.outpath,
-        after="filter"
-        # **kws
-    )
+    # outname = get_outname(
+    #    "metrics_dist",
+    #    name=data_obj.outpath_name,
+    #    taxon=data_obj.taxon,
+    #    non_zeros=data_obj.non_zeros,
+    #    colors_only=data_obj.colors_only,
+    #    batch=data_obj.batch_applied,
+    #    batch_method="parametric"
+    #    if not data_obj.batch_nonparametric
+    #    else "nonparametric",
+    #    outpath=os.path.join(data_obj.outpath, "metrics"),
+    #    **kws,
+    # )
+    outname = namegen("metrics_dist", **kws)
     for ffmt in file_fmts:
         plot.save(outname + ffmt)
 
@@ -429,20 +413,22 @@ def make_metrics(
 
     # Note change this to taxon=taxon when updated
     # also right now always returns after filter
-    outname = get_outname(
-        "metrics_genecounts",
-        name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
-        non_zeros=data_obj.non_zeros,
-        colors_only=data_obj.colors_only,
-        batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        outpath=data_obj.outpath,
-        after="filter"
-        # **kws
-    )
+    # outname = get_outname(
+    #     "metrics_genecounts",
+    #     name=data_obj.outpath_name,
+    #     taxon=data_obj.taxon,
+    #     non_zeros=data_obj.non_zeros,
+    #     colors_only=data_obj.colors_only,
+    #     batch=data_obj.batch_applied,
+    #     batch_method="parametric"
+    #     if not data_obj.batch_nonparametric
+    #     else "nonparametric",
+    #     outpath=data_obj.outpath,
+    #     after="filter",
+    #     **kws,
+    # )
+
+    outname = namegen("metrics_genecounts")
     save_multiple(fig, outname, *file_fmts)
 
     # # ==========================  gene count overlap

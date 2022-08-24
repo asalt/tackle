@@ -7,6 +7,8 @@ suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 library(cluster)
 
+ht_opt$message <- FALSE
+
 myzscore <- function(value, minval = NA, remask = TRUE) {
   mask <- is.na(value)
   if (is.na(minval)) minval <- min(value, na.rm = TRUE)
@@ -78,7 +80,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      cluster_col_slices = TRUE,
                      cut_by = NULL,
                      order_by_abundance = FALSE) {
-
+  ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
   col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE, levels = col_data$name)
 
@@ -225,6 +227,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
     ## Add more args here
     col_data_args <- as.list(col_data %>% select(-name))
+    col_data_args <- col_data_args[order(names(col_data_args))]
     # $metadata_colors <- NULL
     ## Custom colers
     if (!is.null(metadata_colors)) {
@@ -283,11 +286,11 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       # browser()
       next
     }
-    .minval <- min(.values, na.rm = T) * .85
+    .minval <- min(.values, na.rm = T) * .95
     .maxval <- min(.values, na.rm = T) * 1.25
     col_data_args[["col"]][[.entry]] <- circlize::colorRamp2(
       breaks = c(.minval, .maxval),
-      colors = c("#e5e5e5", "#3b3b3b")
+      colors = c("#829ad3", "#42475c")
     )
   }
   # missing_in_col_
@@ -298,8 +301,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # names(col_data_args)
   # col_data_args$annotation_legend_param
 
-  print(col_data_args)
-  print(row_data_args)
+  # print(col_data_args)
+  # print(row_data_args)
 
   ## ========================================================================
   ## Now make the annotations, with all arguments populated

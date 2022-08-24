@@ -29,6 +29,96 @@ from bcmproteomics_ext import ispec
 # sb.set_context('notebook', font_scale=1.8)
 
 
+def clean_categorical(col_data):
+    for col in col_data:
+        if isinstance(col_data[col], pd.CategoricalDtype):
+            # check to make sure categories are strings
+            cats = col_data[col].cat.categories
+            if not (all(isinstance(x, str) for x in cats)):
+                newcats = [str(x) for x in cats]  # do not need?
+                newvalues = [str(x) for x in col_data[col]]
+                col_data[col] = pd.CategoricalDtype(newvalues)
+        return col_data
+
+
+RESERVED_COLORS = {
+    "True": "green",
+    "False": "red",
+    "NA": "grey",
+}
+
+
+def get_default_color_mapping(s: pd.Series) -> dict:
+    if s.dtype == "float":
+        return
+    palette = "bright"
+    s_as_numeric = pd.to_numeric(s, errors="coerce")
+    if s_as_numeric.sum() > 0 & s_as_numeric.nunique() < 11:  # integer
+        s = s_as_numeric
+        palette = "light:#4133"
+
+    ncolors = s.nunique()
+    cmap = sb.color_palette(palette=palette, n_colors=ncolors)
+    color_iter = map(mpl.colors.rgb2hex, cmap)
+    themapping = {
+        str(x): c for x, c in zip(s.unique(), color_iter)
+    }  # have to make str?
+
+    # update for boolean
+    for k in RESERVED_COLORS.keys():
+        if k in themapping:
+            themapping[k] = RESERVED_COLORS[k]
+
+    # print(s.name, themapping)
+    return themapping
+
+
+STR_DTYPE_COERCION = {
+    "TRUE": "True",
+    "True": "True",
+    "true": "True",
+    "FALSE": "False",
+    "False": "False",
+    "false": "False",
+    "NA": "NA",
+    "<NA>": "NA",
+    "na": "NA",
+    "<na>": "NA",
+    "nan": "NA",
+    "<nan>": "NA",
+}
+
+
+def set_pandas_datatypes(df: pd.DataFrame) -> pd.DataFrame:
+    def decide_dtype(s: pd.Series) -> pd.Series:
+        # if s.name == "metDose":
+        #     return int(s)
+        if isinstance(s, pd.CategoricalDtype):
+            cats = s.cat.categories
+            if not (all(isinstance(x, str) for x in cats)):
+                newcats = [str(x) for x in cats]  # do not need?
+                newvalues = [str(x) for x in s]
+                return pd.CategoricalDtype(newvalues)
+        if s.name == "plex":
+            s = s.apply(str)
+        elif pd.to_numeric(s, errors="coerce").sum() == 0:
+            s = s.apply(str)
+            s = s.replace(STR_DTYPE_COERCION)
+        else:
+            s = pd.to_numeric(s, errors="coerce")
+        # if isinstance(s, str):
+        #     s = s.replace(old, new)
+        return s
+
+    # dfnew = df.copy()
+    dfnew = df.apply(decide_dtype)
+    # dfnew["aspirinRx"] = dfnew["aspirinRx"].replace(
+    #     to_replace={"TRUE": True, "FALSE": False, "NA": np.nan}
+    # )
+
+    return dfnew
+
+
 def fix_name(x):
     return (
         x.replace(":", "_")
@@ -576,13 +666,31 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
         _df = pd.read_table(gids, dtype=_dtype)
     elif gids.endswith(".xlsx"):  # try to parse plain text file
         _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet)
-    if _df is not None and "GeneID" in _df:
-        return _df.GeneID.tolist()
-    # import ipdb; ipdb.set_trace()
+    #
 
     from .containers import GeneMapper
 
     genemapper = GeneMapper()
+    #
+    def get_gid_from_symbol(genesymbol):
+        # only works for human
+        gid = genemapper.df.query(
+            'GeneSymbol == "{}" & TaxonID == "9606"'.format(genesymbol)
+        )
+        if gid.empty:
+            warn("Could not find GeneID from genesymbol {}".format(genesymbol))
+            return
+        else:
+            print(genesymbol, gid)
+            return gid.index[0]
+
+    if _df is not None and "GeneID" in _df:
+        return _df.GeneID.tolist()
+    if _df is not None and "GeneSymbol" in _df:
+        return [get_gid_from_symbol(genesymbol) for genesymbol in _df.GeneSymbol]
+
+    # ===================================================================================
+    # import ipdb; ipdb.set_trace()
 
     def regex_symbol_xtract(line):
 
@@ -593,7 +701,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
             return
         # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
         gid = genemapper.df.query(
-            'GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group())
+            'GeneSymbol == "{}" & TaxonID == "9606"'.format(genesymbol.group())
         )
         if gid.empty:
             warn("Could not parse GeneID from line {}".format(line))
@@ -678,7 +786,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
     #         retval.append(gid)
     #         c[gid] += 1
 
-    return retval
+    return set(retval)
 
 
 def get_file_name(full_file):
@@ -756,7 +864,7 @@ def isna_str(entry):
     return pd.isna(entry) | True if entry in DEFAULT_NAS else False
 
 
-def parse_metadata(metadata):
+def parse_metadata(metadata: pd.DataFrame) -> pd.DataFrame:
     # expids = ('recno', 'runno', 'searchno')
     expids = tuple()
     metadata_filtered = OrderedDict(
@@ -768,34 +876,24 @@ def parse_metadata(metadata):
     col_data = col_data.loc[[x for x in col_data.index if x not in expids]].T
 
     for col in col_data.columns:
+        if col in ("recno", "runno", "searchno", "label", "plex"):
+            col_data[col] = col_data[col].astype(str)
+            continue
         # col_data.loc[col_data[col].apply(isna_str), col] = np.NAN
         try:
             col_data[col] = col_data[col].astype(float)
         except ValueError:
             pass
-        try:
-            col_data[col] = col_data[col].convert_dtypes()
-        except AttributeError:
-            pass  # for pandas < 1.0
+        # try:
+        #     col_data[col] = col_data[col].convert_dtypes()
+        # except AttributeError:
+        #     pass  # for pandas < 1.0
 
     # do not think this is needed anymore
     # for col in col_data.columns:
     #     if not col_data[col].dtype == np.float:
     #         col_data[col] = col_data[col].fillna('NA')
     return col_data
-
-
-def clean_categorical(col_data):
-
-    for col in col_data:
-        if isinstance(col_data[col], pd.CategoricalDtype):
-            # check to make sure categories are strings
-            cats = col_data[col].cat.categories
-            if not (all(isinstance(x, str) for x in cats)):
-                newcats = [str(x) for x in cats]  # do not need?
-                newvalues = [str(x) for x in col_data[col]]
-                col_data[col] = pd.CategoricalDtype(newvalues)
-        return col_data
 
 
 class iFOT:
@@ -841,23 +939,39 @@ def normalize(
     ifot_ki=False,
     ifot_tf=False,
     median=False,
+    quantile75=False,
+    quantile90=False,
     genefile_norm=None,
     outcol=None,
     taxon=None,
 ):
 
     if ifot:  # normalize by ifot but without keratins
-        norm_ = df.loc[ifot_normalizer.filter(df.index), "iBAQ_dstrAdj"].sum()
-    elif median:
-        nonzero_ix = df.query("iBAQ_dstrAdj > 0").index
-        norm_ = df.loc[ifot_normalizer.filter(nonzero_ix), "iBAQ_dstrAdj"].median()
-    elif ifot_ki:
+        nonzero_ix = (df[~df.GeneID.isin(ifot_normalizer.to_ignore)]).index
+        norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].sum()
+    elif median or quantile75 or quantile90:
+        if quantile75:
+            q = 0.75
+        if quantile90:
+            q = 0.90
+        if median:
+            q = 0.5
+        # ifot_normalizer.to_ignore
+        nonzero_ix = (
+            df[~df.GeneID.isin(ifot_normalizer.to_ignore)]
+            .query("iBAQ_dstrAdj > 0")
+            .index
+        )
+        norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].quantile(q=q)
+
+        print(q, norm_)
+
         if taxon and taxon in UNANNOTATED_TIDS:
             norm_ = 1
-        else:
-            norm_ = df.loc[
-                df["FunCats"].fillna("").str.contains("KI"), "iBAQ_dstrAdj"
-            ].sum()
+    elif ifot_ki:
+        norm_ = df.loc[
+            df["FunCats"].fillna("").str.contains("KI"), "iBAQ_dstrAdj"
+        ].sum()
     elif ifot_tf:
         if taxon and taxon in UNANNOTATED_TIDS:
             norm_ = 1
@@ -885,8 +999,7 @@ def normalize(
         warn(error)
         # raise click.Abort()
         sum_ = 1
-    if outcol is None:
-        outcol = "area"
+    # print(norm_)
     return df["iBAQ_dstrAdj"] / norm_
     # df[outcol] = df['iBAQ_dstrAdj'] / norm_  # use generic 'area' name for all normalization procedures
     # return df
@@ -1000,7 +1113,7 @@ def get_outname(
 
     kwarg_values = list()
     for key, value in filter(str, kwargs.items()):
-        _value = value.replace(" ", "_").replace("-", "_")
+        _value = str(value).replace(" ", "_").replace("-", "_")
         s = "{}_{}".format(key, _value)
         kwarg_values.append(s)
     kwarg_string = "_".join(kwarg_values) if kwarg_values else ""
@@ -1026,7 +1139,12 @@ class TooManyCategories(Exception):
     pass
 
 
-from collections import OrderedDict, Callable
+from collections import OrderedDict
+
+try:
+    from collections import Callable
+except ImportError:
+    from collections.abc import Callable
 
 
 class DefaultOrderedDict(OrderedDict):

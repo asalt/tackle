@@ -4,9 +4,10 @@ library(forcats)
 library(data.table)
 library(moments)
 library(ggplot2)
+library(ggpubr)
+library(paletteer)
 
-
-barplot <- function(df, average = FALSE, group = NA, group_order = NA, title = "", ylab = "log10 Expression") {
+barplot <- function(df, average = FALSE, group = NULL, group_order = NULL, title = "", ylab = "log10 Expression") {
 
 
   ## dfl <- df %>% filter(GeneSymbol == gene) %>%
@@ -23,8 +24,9 @@ barplot <- function(df, average = FALSE, group = NA, group_order = NA, title = "
 
   ## if (!is.na(group)) df[[group]] <- make.names(df[[group]]) %>% gsub('\\.', '', . )
   ## if (!is.na(group_order)) group_order <- make.names(group_order) %>% gsub("\\.", "", .)
+  # browser()
 
-  if (!is.na(group) & average == TRUE) {
+  if (!is.null(group) & average == TRUE) {
     # the order is important here, sd before mean, because we're renaming Expression
     df <- df %>%
       group_by(get(group)) %>%
@@ -36,18 +38,16 @@ barplot <- function(df, average = FALSE, group = NA, group_order = NA, title = "
 
 
   ## I'm bad at reordering things
-  if (!is.na(group_order) & average == FALSE) {
+  if (!is.null(group_order) & average == FALSE) {
     df[[group]] <- factor(df[[group]], levels = group_order, ordered = TRUE)
     ## df <- df %>% mutate(index=fct_reorder(index, as.numeric(get(group))))
     df <- arrange(df, get(group))
     df$index <- factor(df$index, levels = df$index, ordered = TRUE)
-  } else if (!is.na(group_order) & average == TRUE) {
+  } else if (!is.null(group_order) & average == TRUE) {
     df[[group]] <- factor(df[[group]], levels = group_order, ordered = TRUE)
     df <- arrange(df, as.numeric(df$index))
-  } else if (is.na(group_order) & average == FALSE) {
+  } else if (is.null(group_order) & average == FALSE) {
     # automatic ordering
-
-
     df[[group]] <- factor(df[[group]], ordered = TRUE)
     df <- df %>% arrange(!!!group)
     ## TODO: fix this
@@ -75,9 +75,11 @@ barplot <- function(df, average = FALSE, group = NA, group_order = NA, title = "
     xlab(NULL) +
     ylab(ylab) +
     ggtitle(title) +
-    theme_light() +
     guides(fill = guide_legend(title = "")) +
     labs(title = title, reverse = TRUE) +
+    ylab(ylab) +
+    scale_fill_paletteer_d("ggthemes::calc") +
+    theme_light() +
     theme(
       text = element_text(size = 16),
       legend.position = "bottom",
@@ -91,10 +93,14 @@ barplot <- function(df, average = FALSE, group = NA, group_order = NA, title = "
       panel.grid.major.x = element_blank(),
       panel.border = element_blank()
     )
+  # theme_light() +
+  #+
+  # ggpubr::theme_pubr() +
+  # paletteer_d("ggthemes::Classic_10")
 
 
-  if (!is.na(group_order)) {
-    p <- p + scale_fill_discrete(
+  if (!is.null(group_order)) {
+    p2 <- p + scale_fill_discrete(
       name = "", breaks = group_order,
       labels = group_order
     )

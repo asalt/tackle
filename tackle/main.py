@@ -614,6 +614,20 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
     help="Normalize based on median sample expression value",
 )
 @click.option(
+    "--quantile75",
+    default=False,
+    show_default=True,
+    is_flag=True,
+    help="Normalize based on 75 pct quantile sample expression value",
+)
+@click.option(
+    "--quantile90",
+    default=False,
+    show_default=True,
+    is_flag=True,
+    help="Normalize based on 90 pct quantile sample expression value",
+)
+@click.option(
     "--normalize-across-species", is_flag=True, default=False, show_default=True
 )
 @click.option(
@@ -691,6 +705,8 @@ def main(
     ifot_tf,
     genefile_norm,
     median,
+    quantile75,
+    quantile90,
     name,
     normalize_across_species,
     result_dir,
@@ -732,7 +748,7 @@ def main(
             "limma", "At the moment, only use of `limma` is supported"
         )
 
-    sumed_norm_flags = ifot + ifot_ki + ifot_tf + median
+    sumed_norm_flags = ifot + ifot_ki + ifot_tf + median + quantile75 + quantile90
     if (sumed_norm_flags > 1) or (sumed_norm_flags > 0 and genefile_norm):
         raise click.BadParameter(
             "Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`, `genefile_norm`"
@@ -858,6 +874,8 @@ def main(
         ifot_ki=ifot_ki,
         ifot_tf=ifot_tf,
         median=median,
+        quantile75=quantile75,
+        quantile90=quantile90,
         genefile_norm=genefile_norm,
         name=name,
         non_zeros=non_zeros,
@@ -1463,6 +1481,7 @@ def cluster(
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         outpath=data_obj.outpath,
         missing_values=missing_values,
     )
@@ -1609,6 +1628,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         colors_only=data_obj.colors_only,
         outpath=data_obj.outpath,
     )
@@ -1694,7 +1714,9 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
-        outpath=data_obj.outpath,
+        normtype=data_obj.normtype,
+        # outpath=data_obj.outpath,
+        outpath=os.path.join(data_obj.outpath, "pca"),
         **outname_kws,
     )
     # ======================================
@@ -1751,7 +1773,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
             color_list = robjects.vectors.ListVector(mapping)
         else:
             ncolors = col_meta[color].nunique()
-            cmap = sb.color_palette(n_colors=ncolors)
+            cmap = sb.color_palette(palette="bright", n_colors=ncolors)
             color_iter = map(mpl.colors.rgb2hex, cmap)
             themapping = {x: c for x, c in zip(col_meta[color].unique(), color_iter)}
             # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
@@ -2105,7 +2127,6 @@ def cluster2(
 ):
 
     outname_kws = dict()
-    # outname_kws = dict()
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
@@ -2381,6 +2402,7 @@ def cluster2(
         else "nonparametric",
         linkage=linkage,
         missing_values=missing_values,
+        normtype=data_obj.normtype,
         outpath=os.path.join(data_obj.outpath, "cluster2"),
     )
     # =================================================================
@@ -2395,7 +2417,7 @@ def cluster2(
                 figheight = 218
         figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
     else:
-        figheight, figwidth = figsize
+        figwidth, figheight = figsize
 
     gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
     gr_kws = {
@@ -2426,22 +2448,6 @@ def cluster2(
     metacats = col_meta.columns
     if row_annot_df is not None:
         metacats = set(metacats) | set(row_annot_df.columns)
-
-    def get_default_color_mapping(s: pd.Series) -> dict:
-        if s.dtype == "float":
-            return
-        palette = None
-        s_as_numeric = pd.to_numeric(s, errors="coerce")
-        if s_as_numeric.sum() > 0 & s_as_numeric.nunique() < 11:  # integer
-            s = s_as_numeric
-            palette = "light:#4133"
-
-        ncolors = s.nunique()
-        cmap = sb.color_palette(palette=palette, n_colors=ncolors)
-        color_iter = map(mpl.colors.rgb2hex, cmap)
-        themapping = {x: c for x, c in zip(s.unique(), color_iter)}
-        # print(s.name, themapping)
-        return themapping
 
     metadata_color_list = list()
     for metacat in metacats:
@@ -2496,8 +2502,9 @@ def cluster2(
 
     col_data = robjects.NULL
     if show_metadata and not col_meta is None:
-        # cannot convert Categorical column of Integers to Category in py2r
-        col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
+        col_data = col_meta
+    #     # cannot convert Categorical column of Integers to Category in py2r
+    #     col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
     # col_data = utils.set_pandas_datatypes(col_data)
 
     # rpy2 does not map None to robjects.NULL
@@ -2581,6 +2588,7 @@ def cluster2(
     if cluster_func is not None:
         outname_kws[cluster_func] = nclusters
     outname = outname_func("clustermap", **outname_kws)
+
 
     for file_fmt in ctx.obj["file_fmts"]:
         grdevice = gr_devices[file_fmt]
@@ -3291,6 +3299,7 @@ def gsea(
             if not data_obj.batch_nonparametric
             else "nonparametric",
             outpath=os.path.join(data_obj.outpath, "gsea"),
+            normtype=data_obj.normtype,
             stat_metric=stat_metric,
             cls=cls_comparison.strip("#"),
         )
@@ -3699,6 +3708,7 @@ def gsea(
                     if not data_obj.batch_nonparametric
                     else "nonparametric",
                     outpath=outpath,
+                    normtype=data_obj.normtype,
                     missing_values=missing_values,
                     cls=cls_comparison.strip("#"),
                 )
@@ -4175,6 +4185,7 @@ def ssGSEA(
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         outpath=data_obj.outpath,
     )
 
@@ -4335,6 +4346,7 @@ def box(
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         outpath=outpath,
     )
     # if color is not None and average is not None:
@@ -4464,6 +4476,7 @@ def dendrogram(ctx, color, marker, linkage):
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         outpath=data_obj.outpath,
     )
     # ======================================
@@ -4652,6 +4665,7 @@ def bar(
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         outpath=outpath,
     )
     # if color is not None and average is not None:
@@ -4825,6 +4839,7 @@ def genecorr(
         batch_method="parametric"
         if not data_obj.batch_nonparametric
         else "nonparametric",
+        normtype=data_obj.normtype,
         outpath=outpath,
     )
     # if color is not None and average is not None:

@@ -459,6 +459,8 @@ class Data:
         ifot_ki=False,
         ifot_tf=False,
         median=False,
+        quantile75=False,
+        quantile90=False,
         genefile_norm=None,
         normalize_across_species=False,
         set_outpath=True,
@@ -513,6 +515,8 @@ class Data:
         self.ifot_ki = ifot_ki
         self.ifot_tf = ifot_tf
         self.median = median
+        self.quantile75 = quantile75
+        self.quantile90 = quantile90
         self.genefile_norm = genefile_norm
         self.normalize_across_species = normalize_across_species
         self.base_dir = base_dir
@@ -786,6 +790,29 @@ class Data:
         standardize_meta(e2g.df)
         return e2g
 
+    @property
+    def normtype(self) -> str:
+
+        array = [
+            "ifot",
+            "ifot_ki",
+            "ifot_tf",
+            "median",
+            "quantile75",
+            "quantile90",
+        ]
+
+        boolean_array = [getattr(self, normtype) for normtype in array]
+        if sum(boolean_array) == 0:
+            return "none"
+        assert sum(boolean_array) <= 1  # "Only one normalization type can be used"
+        iat = boolean_array.index(True)
+        return array[iat]
+
+    def get_outname(self, plottype: str, **kwargs):
+        # TODO move utils.get_outname to here?
+        ...
+
     def load_data(self, only_local=False):
 
         exps = OrderedDict()
@@ -930,17 +957,31 @@ class Data:
                     record, exp, exps, name, self.funcats, self.geneid_subset
                 )
 
+            do_normalization = partial(
+                normalize,
+                name=name,
+                ifot=self.ifot,
+                ifot_ki=self.ifot_ki,
+                ifot_tf=self.ifot_tf,
+                median=self.median,
+                quantile75=self.quantile75,
+                quantile90=self.quantile90,
+                genefile_norm=self.genefile_norm,
+            )
             if self.normalize_across_species:
+                df["area"] = df.pipe(do_normalization)
 
-                df["area"] = normalize(
-                    df,
-                    name,
-                    ifot=self.ifot,
-                    ifot_ki=self.ifot_ki,
-                    ifot_tf=self.ifot_tf,
-                    median=self.median,
-                    genefile_norm=self.genefile_norm,
-                )
+                # df["area"] = normalize(
+                #     df,
+                #     name,
+                #     ifot=self.ifot,
+                #     ifot_ki=self.ifot_ki,
+                #     ifot_tf=self.ifot_tf,
+                #     median=self.median,
+                #     quantile75=self.quantile75,
+                #     quantile90=self.quantile90,
+                #     genefile_norm=self.genefile_norm,
+                # )
 
                 if self.export_all:
                     df.loc[:, "iBAQ_dstrAdj_FOT"] = normalize(df, ifot=True)
@@ -952,16 +993,21 @@ class Data:
                 for taxonid in df.TaxonID.unique():
                     if taxonid == 0.0:
                         continue  # invalid
-                    df.loc[df.TaxonID == taxonid, "area"] = normalize(
+                    df.loc[df.TaxonID == taxonid, "area"] = do_normalization(
                         df.loc[df.TaxonID == taxonid],
-                        name,
-                        ifot=self.ifot,
-                        ifot_ki=self.ifot_ki,
-                        ifot_tf=self.ifot_tf,
-                        median=self.median,
-                        genefile_norm=self.genefile_norm,
-                        taxon=taxonid,
                     )
+                    # df.loc[df.TaxonID == taxonid, "area"] = normalize(
+                    #     df.loc[df.TaxonID == taxonid],
+                    #     name,
+                    #     ifot=self.ifot,
+                    #     ifot_ki=self.ifot_ki,
+                    #     ifot_tf=self.ifot_tf,
+                    #     median=self.median,
+                    #     quantile75=self.quantile75,
+                    #     quantile90=self.quantile90,
+                    #     genefile_norm=self.genefile_norm,
+                    #     taxon=taxonid, # do I need to pass this?
+                    # )
                 # df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
                 #                median=self.median)
                 if self.export_all:  # have to calculate more columns
@@ -1460,6 +1506,7 @@ class Data:
                 batch_method="parametric"
                 if not self.batch_nonparametric
                 else "nonparametric",
+                normtype=self.normtype,
                 outpath=self.outpath,
             )
             grdevices.png(file=outname + ".png", width=5, height=5, units="in", res=300)
@@ -1810,16 +1857,16 @@ class Data:
         # outname = os.path.abspath(os.path.join(self.outpath, fname))
         # if self.export_data == 'all':
 
-        if self.median is True:
-            _norm_type = "MED"
-        elif self.ifot is True:
-            _norm_type = "FOT"
-        elif self.ifot_ki is True:
-            _norm_type = "FOT_KI"
-        elif self.ifot_tf is True:
-            _norm_type = "FOT_TF"
-        else:
-            _norm_type = "none"
+        # if self.median is True:
+        #     _norm_type = "MED"
+        # elif self.ifot is True:
+        #     _norm_type = "FOT"
+        # elif self.ifot_ki is True:
+        #     _norm_type = "FOT_KI"
+        # elif self.ifot_tf is True:
+        #     _norm_type = "FOT_TF"
+        # else:
+        #     _norm_type = "none"
 
         self.areas_log_shifted  # make sure it's created
 
@@ -1830,7 +1877,7 @@ class Data:
         outname = (
             get_outname(
                 "data_{}".format(level_formatter),
-                normtype=_norm_type,
+                normtype=self.normtype,
                 name=self.outpath_name,
                 taxon=self.taxon,
                 non_zeros=self.non_zeros,
