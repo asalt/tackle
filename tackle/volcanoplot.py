@@ -159,7 +159,9 @@ def volcanoplot(ctx, foldchange, expression_data, number, only_sig=False, sig=.0
             grdevice(file=out, **gr_kw)
 
             # Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
-            Rvolcanoplot(df.reset_index(), max_labels=number, fc_cutoff=foldchange,
+            _data = df.reset_index()
+            _data['FunCats'] = _data.FunCats.fillna('')
+            Rvolcanoplot(_data, max_labels=number, fc_cutoff=foldchange,
                          number_by=number_by, sig=sig, sig_metric=sig_metric, yaxis=yaxis,
                          label_cex=scale, group0=group0, group1=group1)
 

@@ -425,7 +425,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None):
                     genesymbol = rgx_word.search(line)
                     if genesymbol is None:
                         warn('Could not parse GeneID from line {}'.format(line))
-                        pass
+                        continue
                     # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
                     gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
                     if gid.empty:
