@@ -176,7 +176,7 @@ class Deconvoluter:
         for name, row in df.iterrows():  # plot first and second components
             color  = row['_color']
             marker = row['_marker']
-            ax.scatter( row[x-1], row[y-1], color=color, marker=marker )
+            ax.scatter( row[x-1], row[y-1], color=color, marker=marker, s=100 )
 
             if annotate:
                 texts.append( ax.text(row[x-1], row[y-1], row.name, size=6 ) )

@@ -753,6 +753,19 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
                     gid = rgx_digit.search(linestrip).group(1)
                     gid_out.append(str(int(gid)))  ## can make this better
                 except AttributeError:
+                    # try symbol mapping
+                    # TODO: expand from just human
+                    genesymbol = rgx_word.search(line)
+                    if genesymbol is None:
+                        warn('Could not parse GeneID from line {}'.format(line))
+                        continue
+                    # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
+                    gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
+                    if gid.empty:
+                        warn('Could not parse GeneID from line {}'.format(line))
+                        pass
+                    else:
+                        gid_out.append(gid.index[0])
                     # warn('Could not parse GeneID from line {}'.format(line))
                     # pass
 

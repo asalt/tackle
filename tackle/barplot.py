@@ -130,8 +130,9 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         # the_order = [x for y in legend_colors.values() for x in y]
         # the_colors = [colors[x] for x in the_order]
 
+        the_order = list()
+
         if color_order is not None:
-            the_order = list()
             _color_order = color_order.split('|')
             _missing = set(legend_colors.keys()) - set(_color_order)
             for m in _missing:
@@ -174,7 +175,12 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
         edata = X.loc[gene].to_frame('Expression').join(metadata).reset_index()
         if the_order:
             if not average:
-                new_ix_order = [edata[edata['index'] == x].index[0] for x in the_order]
+                new_ix_order = list()
+                for x in the_order:
+                    query = edata[edata['index'] == x]
+                    if not query.empty:
+                        new_ix_order.append(query.index[0])
+                # new_ix_order = [edata[edata['index'] == x].index[0] for x in the_order]
             elif average: # then need to extract each individual entry
                 new_ix_order = list()
                 for x in the_order:
@@ -244,7 +250,8 @@ def barplot(X, genes, metadata, average=None, color=None, color_order=None, cmap
 
             if average:
 
-                if the_order is not None:
+                # if the_order is not None:
+                if the_order:
                     group_chunk = the_order[ chunk[0]:chunk[-1]+1 ]
                 else:
                     group_chunk = edata[average].unique()[chunk]

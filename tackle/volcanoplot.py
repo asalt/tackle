@@ -279,6 +279,8 @@ def volcanoplot(
             grdevice(file=out, **gr_kw)
 
             # Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
+            # _data = df.reset_index()
+            # _data['FunCats'] = _data.FunCats.fillna('')
             Rvolcanoplot(
                 df.reset_index(),
                 max_labels=number,
