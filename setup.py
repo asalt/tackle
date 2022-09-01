@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 def calculate_version(inputfile):
-    version_list =  [x.split('\'')[1] for x in open(inputfile, 'r')
+    version_list =  [x.split('\"')[1] for x in open(inputfile, 'r')
                      if x.startswith('__version__')]
     if version_list:
         return version_list[0]
@@ -26,7 +26,7 @@ setup(
     # correlationplot=main:main
     """,
 
-    package_data={'': ['R/*.r', 'R/*.R', 'GSEA/*.jar', 'GSEA/*.gmt', 'GSEA/genesets/*gmt', 'data/*.data', 'data/*txt', 'data/*tab']},
+    package_data={'': ['R/*.r', 'R/*.R', 'GSEA/*.jar', 'GSEA/*.gmt', 'GSEA/genesets/*gmt', 'data/*.data', 'data/*txt', 'data/*tab', 'data/*tsv', 'data/*xlsx']},
     include_package_data=True
 
 )

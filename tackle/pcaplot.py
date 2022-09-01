@@ -51,7 +51,7 @@ class Deconvoluter:
             )
 
         if col_data is not None:
-            col_data = col_data
+            col_data = col_data.copy()
             for col in col_data:
                 col_data[col] = pd.Categorical(col_data[col])
         to_drop = [x for x in col_data.columns if x.startswith('_')]
@@ -392,6 +392,21 @@ def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_lab
 
     # pca = ICAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
     # pca = PCAplot2(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
+
+    orig_rc = mpl.rcParams
+
+
+    rc = {'font.family': 'sans-serif',
+          "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans",
+                              "Bitstream Vera Sans", "sans-serif"],
+          'legend.frameon': True,
+    }
+    sb.set_context('talk')
+    sb.set_palette('muted')
+    sb.set_color_codes()
+    sb.set_style('white', rc)
+
+
     pca = PCAplot(X, color_label=color_label, marker_label=marker_label, metadata=metadata,
                   col_data=col_data, annotate=annotate, metadata_colors=metadata_colors)
 
@@ -408,6 +423,9 @@ def pcaplot(X, metadata=None, col_data=None, annotate=False, max_pc=2, color_lab
 
     fig, ax = pca.plot_vars()
     figs['pcaplot_variance'] = fig
+
+
+    mpl.rcParams.update(orig_rc)
 
     return figs
 
