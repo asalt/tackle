@@ -16,12 +16,12 @@ from sklearn.preprocessing import StandardScaler, normalize
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.pipeline import Pipeline, make_pipeline
 
-from adjustText import adjust_text
 
 from .utils import *
 
 
 class Deconvoluter:
+    "<depreciated>"
 
     markers = ('o', 'v', 's', 'd', '*', 'X', 'P', 'h', '<', 'H', 'D', '>', 'p', '^', )
 
@@ -39,6 +39,7 @@ class Deconvoluter:
                     treatment  ctrl  ctrl  treat  treat
                     batch         0     1      0      1
         """
+        from adjustText import adjust_text
         self.X = X
         self.metadata = metadata
         self.annotate = annotate

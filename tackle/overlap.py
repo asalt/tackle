@@ -6,10 +6,10 @@ import pandas as pd
 import seaborn as sb
 import click
 
-from pyupset.visualisation import DataExtractor
+# from pyupset.visualisation import DataExtractor
 
 from .utils import get_outname, save_multiple, genefilter, filter_sra, filter_taxon, filter_observations
-from .upset import make_plot as make_upset
+#from .upset import make_plot as make_upset
 
 idx = pd.IndexSlice
 
