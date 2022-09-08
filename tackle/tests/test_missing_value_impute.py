@@ -5,6 +5,12 @@ from pathlib import Path
 import pandas as pd
 from tackle.utils import impute_missing
 
+# how to make a teardown
+# @pytest.fixture(scope='session')
+# def clear_files_teardown():
+#     yield None
+#     os.system("rm -rf logs json")
+
 @pytest.fixture
 def rectangular_mat():
     nrows = 100
