@@ -877,7 +877,18 @@ def standardize_meta(df):
     df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
-    # return df
+
+   if 'Symbol' in df and 'GeneSymbol' in df:
+       logger.warning(f"both Symbol and GeneSymbol are present")
+       logger.warning(f"Symbol : {df.Symbol.head()}")
+       logger.warning(f"GeneSymbol : {df.Symbol.head()}")
+       logger.warning(f"Setting GeneSymbol to Symbol")
+       df["GeneSymbol"] = df.Symbol
+   # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
+   # df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
+   # df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
+   return df
+
 
 
 DEFAULT_NAS = [
