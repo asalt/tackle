@@ -853,11 +853,16 @@ class Data:
                 _not_starting_with_sp = _na_taxon_spfilter.pipe(len) - _na_taxon.pipe(
                     len
                 )
+                _tokeep = [x for x in df.index if x not in _na_taxon_spfilter.index]
+                _tokeep = [x for x in _tokeep if not x.startswith('sp') ] 
+                _not_starting_with_sp = len(_tokeep)
+
+
                 if _not_starting_with_sp != 0:
                     warn(
                         f"{_not_starting_with_sp} records have no taxon info, dropping"
                     )
-            df = df[~df.TaxonID.isna()]
+                df = df.loc[_tokeep]
 
             if df.GeneID.value_counts().max() > 1:
                 warn("droping duplicate geneids, figure out why there are dups")
