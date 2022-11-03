@@ -280,17 +280,23 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # }
   .missing_color_definition <- setdiff(col_data_simple_annot_names, col_data_color_names)
   # browser()
+
+  # .PROTECTED_ENTRIES <- c("label", "replicate")
+  .PROTECTED_ENTRIES <- c()
   for (.entry in .missing_color_definition) {
+    if (.entry %in% .PROTECTED_ENTRIES) {
+      next
+    }
     .values <- col_data_args[[.entry]]
     if (typeof(.values) == "character") {
       # browser()
       next
     }
-    .minval <- min(.values, na.rm = T) * .95
-    .maxval <- min(.values, na.rm = T) * 1.25
+    .minval <- min(.values, na.rm = T) * 0.975
+    .maxval <- max(.values, na.rm = T) * 1.025
     col_data_args[["col"]][[.entry]] <- circlize::colorRamp2(
       breaks = c(.minval, .maxval),
-      colors = c("#829ad3", "#42475c")
+      colors = c("#829ad3", "#2c303f")
     )
   }
   # missing_in_col_
