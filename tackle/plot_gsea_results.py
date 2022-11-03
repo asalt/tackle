@@ -241,8 +241,10 @@ def plot(
 
 
 def main(p: Path):
-    g = p.glob("*/gsea_report*xls")
+    print(f"looking at directory {p}")
+    g = p.glob("**/*gsea_report*xls")
     from collections import defaultdict
+
 
     d = defaultdict(list)
     for entry in g:

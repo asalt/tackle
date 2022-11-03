@@ -2589,7 +2589,6 @@ def cluster2(
         outname_kws[cluster_func] = nclusters
     outname = outname_func("clustermap", **outname_kws)
 
-
     for file_fmt in ctx.obj["file_fmts"]:
         grdevice = gr_devices[file_fmt]
         gr_kw = gr_kws[file_fmt]
@@ -3196,6 +3195,7 @@ def gsea(
         cluster2 = robjects.r["cluster2"]
     # ===============================================================================================
 
+
     if "--gmt" in sys.argv and "--geneset" not in sys.argv:
         geneset = tuple()
 
@@ -3264,13 +3264,13 @@ def gsea(
     import itertools
 
     for groups in itertools.combinations(pheno[group].unique(), 2):
-        # project 731
-        if not (groups[0].startswith("50") or groups[0].startswith("250")):
-            continue
-        if not (groups[1].startswith("50") or groups[1].startswith("250")):
-            continue
-        if not groups[0][-3:] == groups[1][-3:]:  # skip different time
-            continue
+        # # project 731
+        # if not (groups[0].startswith("50") or groups[0].startswith("250")):
+        #     continue
+        # if not (groups[1].startswith("50") or groups[1].startswith("250")):
+        #     continue
+        # if not groups[0][-3:] == groups[1][-3:]:  # skip different time
+        #     continue
         print(groups)
         # for groups in itertools.combinations(classes, 2):
 
@@ -3716,7 +3716,7 @@ def gsea(
                 if plot_genes_sig:
                     iter_ = gsea_sig[gsea_sig[stat_metric] < 0.25].iterrows()
                 else:
-                    iter_ = gsea_sig.iterrows()
+                    iter_ = gsea_sig.head(10).iterrows()
 
                 # for ix, row in gsea_sig.iterrows():
                 # _expression = data_obj.areas_log_shifted

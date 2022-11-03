@@ -49,11 +49,17 @@ RESERVED_COLORS = {
 
 
 def get_default_color_mapping(s: pd.Series) -> dict:
+    # specials = "label", "plex"
     if s.dtype == "float":
         return
     palette = "bright"
     s_as_numeric = pd.to_numeric(s, errors="coerce")
-    if s_as_numeric.sum() > 0 & s_as_numeric.nunique() < 11:  # integer
+    if (
+        s_as_numeric.sum()
+        > 0 & s_as_numeric.nunique()
+        < 11 & s_as_numeric.isna().sum()
+        == 0
+    ):  # integer
         s = s_as_numeric
         palette = "light:#4133"
 
@@ -90,6 +96,8 @@ STR_DTYPE_COERCION = {
 
 
 def set_pandas_datatypes(df: pd.DataFrame) -> pd.DataFrame:
+    PROTECTED = "plex", "label"
+
     def decide_dtype(s: pd.Series) -> pd.Series:
         # if s.name == "metDose":
         #     return int(s)
@@ -99,7 +107,7 @@ def set_pandas_datatypes(df: pd.DataFrame) -> pd.DataFrame:
                 newcats = [str(x) for x in cats]  # do not need?
                 newvalues = [str(x) for x in s]
                 return pd.CategoricalDtype(newvalues)
-        if s.name == "plex":
+        if s.name in PROTECTED:
             s = s.apply(str)
         elif pd.to_numeric(s, errors="coerce").sum() == 0:
             s = s.apply(str)
@@ -757,12 +765,16 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
                     # TODO: expand from just human
                     genesymbol = rgx_word.search(line)
                     if genesymbol is None:
-                        warn('Could not parse GeneID from line {}'.format(line))
+                        warn("Could not parse GeneID from line {}".format(line))
                         continue
                     # gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(line.strip()))
-                    gid = genemapper.df.query('GeneSymbol == "{}" & TaxonID == 9606'.format(genesymbol.group()))
+                    gid = genemapper.df.query(
+                        'GeneSymbol == "{}" & TaxonID == 9606'.format(
+                            genesymbol.group()
+                        )
+                    )
                     if gid.empty:
-                        warn('Could not parse GeneID from line {}'.format(line))
+                        warn("Could not parse GeneID from line {}".format(line))
                         pass
                     else:
                         gid_out.append(gid.index[0])
