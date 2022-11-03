@@ -192,8 +192,14 @@ def plot_imputed(edata_impute, observed, missing, downshift, scale):
     # plt.close(fig)
 
 
-def impute_missing(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+#def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+    """
+    frame: is a rectangular expression matrix
+    """
     # _norm_notna = frame.replace(0, np.NAN).stack()
+    # import ipdb;
+    # ipdb.set_trace()
 
     observed = frame.replace(0, np.nan).stack().dropna()
     missing = frame.isna()
@@ -226,7 +232,18 @@ def impute_missing(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot
 
     return areas_log
 
+def impute_missing_mice(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+    from rpy2.rinterface import RRuntimeError
 
+    from rpy2 import robjects
+    from rpy2.robjects import r
+    from rpy2.robjects.packages import importr
+    from rpy2.robjects import pandas2ri
+    pandas2ri.activate()
+
+    mice = importr("mice")
+
+impute_missing = impute_missing_old
 # def filter_observations(panel, column, threshold):
 #     """
 #     Filter by less than or equal to threshold of 0 observations
