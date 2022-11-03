@@ -168,7 +168,7 @@ def _get_logger():
     logger.addHandler(ch)
     return logger
 
-logger = get_logger()
+logger = _get_logger()
 
 def maybe_int(x):
     try:
