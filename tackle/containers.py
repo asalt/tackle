@@ -849,10 +849,10 @@ class Data:
                 _na_taxon_spfilter = _na_taxon.loc[
                     [x for x in _na_taxon.index.astype(str) if x.startswith("sp")]
                 ]
-                _tokeep = [x for x in df.index if x not in _na_taxon_spfilter]
-                _not_starting_with_sp = _na_taxon_spfilter.pipe(len) - _na_taxon.pipe(
-                    len
-                )
+                # _tokeep = [x for x in df.index if x not in _na_taxon_spfilter]
+                # _not_starting_with_sp = _na_taxon_spfilter.pipe(len) - _na_taxon.pipe(
+                #     len
+                # )
                 _tokeep = [x for x in df.index if x not in _na_taxon_spfilter.index]
                 _tokeep = [x for x in _tokeep if not x.startswith('sp') ] 
                 _not_starting_with_sp = len(_tokeep)
