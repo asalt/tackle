@@ -3195,7 +3195,6 @@ def gsea(
         cluster2 = robjects.r["cluster2"]
     # ===============================================================================================
 
-
     if "--gmt" in sys.argv and "--geneset" not in sys.argv:
         geneset = tuple()
 
@@ -4637,6 +4636,7 @@ def bar(
     xtickrotation,
     xticksize,
 ):
+    log = not linear
 
     if average == True and group is None:
         raise ValueError("Must specify group with average")
@@ -4689,10 +4689,12 @@ def bar(
     gm = GeneMapper()
 
     for g in gene:
+        logger.info(f"Plotting {g}")
         if g not in data.index:
             warn("GeneID {} not in dataset, skipping..".format(g))
             continue
         df = data.loc[g].fillna(0).to_frame("Expression").join(metadata).reset_index()
+        logger.info(f"{df}")
 
         if not figsize:
             plt_height = 5
@@ -4713,13 +4715,16 @@ def bar(
             ),
         }
 
-        ylab = "log10 Expression"
         if linear:
             df["Expression"] = df["Expression"].apply(lambda x: np.power(10, x))
             ylab = "Expression (linear)"
-        elif z_score:
+        elif log:
+            ylab = "log10 Expression"
+        #
+
+        if z_score:
             df["Expression"] = sb.matrix.ClusterGrid.z_score(df["Expression"])
-            ylab = "log10 Expression (z-score)"
+            ylab = "z-score " + ylab
 
         for col in ("runno", "searchno"):
             df[col] = df[col].astype(str)
@@ -4733,12 +4738,12 @@ def bar(
         data_xform = (
             "log" if not (linear or z_score) else ("linear" if linear else "zscore")
         )
-        if not average:
-            outname = outfunc("barplot_{}_{}_{}".format(data_xform, g, symbol))
-        elif average:
-            outname = outfunc(
-                "barplot_{}_{}_{}_{}".format(data_xform, group, g, symbol)
-            )
+        outname_str = f"barplot_{g}_{symbol}_{data_xform}"
+        if average:
+            outname_str += "_average"
+        if z_score:
+            outname_str += "_zscore"
+        outname = outfunc(outname_str)
 
         for file_fmt in ctx.obj["file_fmts"]:
             grdevice = gr_devices[file_fmt]
@@ -4749,19 +4754,16 @@ def bar(
             grdevice(file=out, **gr_kw)
             print("Saving", out, "...", end="", flush=True)
 
-            # cannot pass None to r func?
-            if average is None:
-                average = np.nan
-            if group is None:
-                group = np.nan
-            if group_order is None:
-                group_order = np.nan
-
             df["index"] = pd.Categorical(
                 df["index"], df["index"].drop_duplicates(), ordered=True
             )
             p = Rbarplot(
-                df, average, group, group_order=group_order, title=title, ylab=ylab
+                df,
+                average or robjects.NULL,
+                group or robjects.NULL,
+                group_order=group_order or robjects.NULL,
+                title=title,
+                ylab=ylab,
             )
 
             close_grdevice()

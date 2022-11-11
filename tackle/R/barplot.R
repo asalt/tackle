@@ -7,7 +7,7 @@ library(ggplot2)
 library(ggpubr)
 library(paletteer)
 
-barplot <- function(df, average = FALSE, group = NULL, group_order = NULL, title = "", ylab = "log10 Expression") {
+barplot <- function(df, average = NULL, group = NULL, group_order = NULL, title = "", ylab = "log10 Expression") {
 
 
   ## dfl <- df %>% filter(GeneSymbol == gene) %>%
@@ -26,7 +26,7 @@ barplot <- function(df, average = FALSE, group = NULL, group_order = NULL, title
   ## if (!is.na(group_order)) group_order <- make.names(group_order) %>% gsub("\\.", "", .)
   # browser()
 
-  if (!is.null(group) & average == TRUE) {
+  if (!is.null(group) && !is.null(average)) {
     # the order is important here, sd before mean, because we're renaming Expression
     df <- df %>%
       group_by(get(group)) %>%
@@ -38,15 +38,15 @@ barplot <- function(df, average = FALSE, group = NULL, group_order = NULL, title
 
 
   ## I'm bad at reordering things
-  if (!is.null(group_order) & average == FALSE) {
+  if (!is.null(group_order) && !is.null(average)) {
     df[[group]] <- factor(df[[group]], levels = group_order, ordered = TRUE)
     ## df <- df %>% mutate(index=fct_reorder(index, as.numeric(get(group))))
     df <- arrange(df, get(group))
     df$index <- factor(df$index, levels = df$index, ordered = TRUE)
-  } else if (!is.null(group_order) & average == TRUE) {
+  } else if (!is.null(group_order) && !is.null(average)) {
     df[[group]] <- factor(df[[group]], levels = group_order, ordered = TRUE)
     df <- arrange(df, as.numeric(df$index))
-  } else if (is.null(group_order) & average == FALSE) {
+  } else if (!is.null(group) && is.null(group_order) && is.null(average)) {
     # automatic ordering
     df[[group]] <- factor(df[[group]], ordered = TRUE)
     df <- df %>% arrange(!!!group)
@@ -106,7 +106,7 @@ barplot <- function(df, average = FALSE, group = NULL, group_order = NULL, title
     )
   }
 
-  if (average == TRUE) {
+  if (!is.null(average)) {
     p <- p + geom_errorbar(aes(ymin = Expression - sd, ymax = Expression + sd),
       width = .2,
       position = position_dodge(.9)
