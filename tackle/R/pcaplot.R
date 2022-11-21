@@ -1,6 +1,9 @@
 library(ggplot2)
+library(rlang)
+library(purrr)
 library(tidyverse)
 library(ggfortify)
+# library(PCAtools)
 
 ## library(cluster)
 
@@ -10,6 +13,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  showframe = TRUE, frame.type = "t",
                  max_pc = 2, color_list = NULL, marker_list = NULL,
                  names_from = "GeneID",
+                 scale = FALSE, center = TRUE,
                  title = NULL,
                  ...) {
 
@@ -17,6 +21,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   ##   left_join(col_data, by='name')
   # TODO: fix bug when `color` or `shape` is set to an r function (e.g. `repeat`)
 
+  # rownames(data) <- data[["GeneID"]]
   forpca <- data %>%
     pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
 
@@ -32,6 +37,12 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
 
   ## pca_res <- prcomp(forpca%>%select(-name, -model, -subtype), scale. = FALSE, center=TRUE)
   pca_res <- prcomp(forpca %>% select(-variable, -!!color, -!!shape), scale. = FALSE, center = TRUE)
+  # PCAtools::pca(pca_res, )
+  # pca(forpca%>%select(-variable, -!!color))
+  # pca_res <- PCAtools::pca(forpca %>% select(-variable, -!!color, -!!shape),
+  #   metadata = forpca,
+  #   scale = scale, center = center,
+  # )
 
 
   pc_combos <- combn(1:max_pc, 2)
@@ -42,10 +53,10 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
 
 
     for (ext in outfiletypes) {
-
-
       # .....
       # TODO redo
+      # .color <- expr(color)
+      # color <- "repeat"
       p <- autoplot(pca_res,
         data = forpca, colour = color, shape = shape,
         label = label, label.repel = label_repel,

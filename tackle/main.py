@@ -6,6 +6,17 @@ import sys
 import os
 from pathlib import Path
 
+try:
+    import rpy2
+    from rpy2.robjects import r
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
+
+    robjects.pandas2ri.activate()
+except ModuleNotFoundError:
+    print("rpy2 needs to be installed")
+
 #  import re
 #  import json
 import glob
@@ -20,8 +31,6 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
-
-#  from scipy import stats
 
 import matplotlib
 
@@ -1657,14 +1666,14 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 )
 @click.option(
     "--color",
-    default="",
+    default=None,
     show_default=True,
     is_flag=False,
     help="What meta entry to color PCA",
 )
 @click.option(
     "--marker",
-    default="",
+    default=None,
     show_default=True,
     is_flag=False,
     help="What meta entry to mark PCA",
@@ -1765,7 +1774,11 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     metadata_color_list = list()
     # for metacat in (color, marker):
     if not color:
-        raise ValueError("must specify color")
+        logger.warning(f"Color not specified. Using recno as color variable.")
+        # raise ValueError("must specify color")
+        # print(data_obj.col_metadata.columns)
+        # color = data_obj.col_metadata.columns[0]
+        color = "recno"
     if color:
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
             mapping = data_obj.metadata_colors[color]
@@ -2023,7 +2036,7 @@ when `auto` is set for `--nclusters`""",
     "--cluster-func",
     default="none",
     show_default=True,
-    type=click.Choice(["none", "Kmeans", "PAM"]),
+    type=click.Choice(["none", "Kmeans", "kmeans", "PAM"]),
     help="""Function used to break data into k distinct clusters,
               k is specified by `n-clusters`
               """,
@@ -2136,14 +2149,6 @@ def cluster2(
         cluster_func = None
 
     # =================================================================
-    try:
-        from rpy2.robjects import r
-        import rpy2.robjects as robjects
-        from rpy2.robjects import pandas2ri
-        from rpy2.robjects.packages import importr
-    except ModuleNotFoundError:
-        print("rpy2 needs to be installed")
-        return
 
     pandas2ri.activate()
     r_source = robjects.r["source"]
@@ -2391,6 +2396,7 @@ def cluster2(
     if linear:
         outname_kws["linear"] = "linear"
     #
+    # data_obj.do_cluster()
     outname_func = partial(
         get_outname,
         name=data_obj.outpath_name,
@@ -2511,12 +2517,14 @@ def cluster2(
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
+    pandas2ri.activate()
+
     def plot_and_save(
         X, out, grdevice, gr_kws=None, annot_mat=None, main_title=None, **kws
     ):
         if gr_kws is None:
             gr_kws = dict()
-        grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
+        # grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
         print("Saving", out, "...", end="", flush=True)
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
         if annot_mat is None:
@@ -2566,10 +2574,19 @@ def cluster2(
 
         ret = cluster2(**call_kws)
 
+        grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
+        print(ret[0])
         grdevices.dev_off()
         print("done.", flush=True)
 
-        if isinstance(ret[1], pd.DataFrame):  ## save clustering results
+        sil_df = None
+        try:
+            sil_df = rpy2.robjects.pandas2ri.rpy2py_dataframe(ret[1])
+
+        except Exception as e:
+            pass
+
+        if sil_df is not None:
 
             row_orders = ret[2]
             the_orders = [
@@ -2577,7 +2594,7 @@ def cluster2(
             ]  # subtract 1  for zero indexing
             the_orders = [x for y in the_orders for x in y]
 
-            cluster_metrics = ret[1].iloc[the_orders]
+            cluster_metrics = sil_df.iloc[the_orders]
 
             out = outname + ".tsv"
             print("saving", out)
