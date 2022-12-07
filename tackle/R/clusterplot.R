@@ -87,7 +87,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   if (!is.null(cluster_func)) {
     if (cluster_func == "PAM") {
       cluster_func <- cluster::pam
-    } else if (cluster_func == "Kmeans") cluster_func <- kmeans
+    } else if (tolower(cluster_func) == "kmeans") cluster_func <- kmeans
     ## ?
   }
 
@@ -407,14 +407,18 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## TODO fix this!
     ## this is fixed??
     ## row_cluster <- FALSE
-
-
     dis <- dist_no_na(X)^2
-    sil <- silhouette(clusters$cluster, dis)
+    # dis <- dist_no_na(X)
+    # browser()
+    sil <- cluster::silhouette(clusters$cluster, dis)
+    dev.new()
+    pdf("silhouette.pdf", width = 10, height = 20)
+    print(plot(sil, col = "grey"))
+    dev.off()
     sil_df <- cbind(toplot$GeneID, toplot$GeneSymbol, sil) %>%
       as.data.frame() %>%
       rename(GeneID = V1, GeneSymbol = V2)
-    ## arrange(c(cluster, sil_width))
+    # arrange(c(cluster, sil_width))
   }
 
 
