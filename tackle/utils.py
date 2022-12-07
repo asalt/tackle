@@ -168,7 +168,9 @@ def _get_logger():
     logger.addHandler(ch)
     return logger
 
+
 logger = _get_logger()
+
 
 def maybe_int(x):
     try:
@@ -193,8 +195,10 @@ def plot_imputed(edata_impute, observed, missing, downshift, scale):
     # plt.close(fig)
 
 
-#def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
-def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+# def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+def impute_missing_old(
+    frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True
+):
     """
     frame: is a rectangular expression matrix
     """
@@ -233,16 +237,21 @@ def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_
 
     return areas_log
 
-def impute_missing_mice(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
+
+def impute_missing_mice(
+    frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True
+):
     from rpy2.rinterface import RRuntimeError
 
     from rpy2 import robjects
     from rpy2.robjects import r
     from rpy2.robjects.packages import importr
     from rpy2.robjects import pandas2ri
+
     pandas2ri.activate()
 
     mice = importr("mice")
+
 
 impute_missing = impute_missing_old
 # def filter_observations(panel, column, threshold):
@@ -500,7 +509,7 @@ def plot_delegator(
     upper_or_lower="upper",
     colors_only=False,
     shade_correlation=True,
-    **kwargs
+    **kwargs,
 ):
     if upper_or_lower == "upper":
         func = annotate_stat
@@ -875,21 +884,23 @@ def fillna_meta(df, index_col):
 def standardize_meta(df):
 
     gm = GeneMapper()
-    df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
+    # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
 
-    if 'Symbol' in df and 'GeneSymbol' in df:
+    if "Symbol" in df and "GeneSymbol" in df:
         logger.warning(f"both Symbol and GeneSymbol are present")
         logger.warning(f"Symbol : {df.Symbol.head()}")
-        logger.warning(f"GeneSymbol : {df.Symbol.head()}")
+        logger.warning(f"GeneSymbol : {df.GeneSymbol.head()}")
         logger.warning(f"Setting GeneSymbol to Symbol")
-        df["GeneSymbol"] = df.Symbol
+        if df.GeneSymbol.isna().sum() > 0 and df.Symbol.isna().sum() == 0:
+            df["GeneSymbol"] = df.Symbol
+        elif df.Symbol.isna().sum() > 0 and df.GeneSymbol.isna().sum() == 0:
+            df["Symbol"] = df.GeneSymbol
     # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     # df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     # df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
     return df
-
 
 
 DEFAULT_NAS = [
@@ -1155,7 +1166,7 @@ def get_outname(
     batch=None,
     batch_method="parametric",
     outpath=".",
-    **kwargs
+    **kwargs,
 ):
     """
     :colors_only: does nothing, depreciated
