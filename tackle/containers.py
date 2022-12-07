@@ -32,6 +32,28 @@ from seaborn.matrix import ClusterGrid
 from seaborn.matrix import _HeatMapper as HeatMapper
 from seaborn.matrix import _matrix_mask
 
+
+try:
+    ModuleNotFoundError
+except:
+    ModuleNotFoundError = type("ModuleNotFoundError", (Exception,), {})
+try:
+    from rpy2.rinterface import RRuntimeError
+except Exception as e:
+    RRuntimeError = type("RRuntimeError", (Exception,), {})
+try:
+    from rpy2 import robjects
+    from rpy2.robjects import r
+    from rpy2.robjects.packages import importr
+    from rpy2.robjects import pandas2ri
+
+    sva = importr("sva")
+except ModuleNotFoundError as e:
+    print("Failure in rpy2 import and load", e, sep="\n")
+except RRuntimeError as e:
+    print("sva is not installed", e, sep="\n")
+
+
 try:
     pd.NA
 except AttributeError:
@@ -854,9 +876,8 @@ class Data:
                 #     len
                 # )
                 _tokeep = [x for x in df.index if x not in _na_taxon_spfilter.index]
-                _tokeep = [x for x in _tokeep if not x.startswith('sp') ] 
+                _tokeep = [x for x in _tokeep if not x.startswith("sp")]
                 _not_starting_with_sp = len(_tokeep)
-
 
                 if _not_starting_with_sp != 0:
                     warn(
@@ -938,7 +959,7 @@ class Data:
 
                 # df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
             if df.TaxonID.isna().any():
-                df["TaxonID"] = df["TaxonID"].fillna(-1)
+                df["TaxonID"] = df["TaxonID"].fillna("")
             if "TaxonID" not in df or df.TaxonID.isna().any():
                 if "TaxonID" in df:
                     # import ipdb; ipdb.set_trace()
@@ -996,7 +1017,7 @@ class Data:
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
                 #                        self.ifot_ki, self.ifot_tf, self.median)
                 for taxonid in df.TaxonID.unique():
-                    if taxonid == 0.0:
+                    if taxonid == 0.0 or taxonid == "":
                         continue  # invalid
                     df.loc[df.TaxonID == taxonid, "area"] = do_normalization(
                         df.loc[df.TaxonID == taxonid],
@@ -1456,22 +1477,9 @@ class Data:
     def batch_normalize(self, data, prior_plot=True):
         """"""
 
-        try:
-            from rpy2.rinterface import RRuntimeError
-        except Exception as e:
-            RRuntimeError = type("RRuntimeError", (Exception,), {})
-        try:
-            from rpy2.robjects import r
-            from rpy2.robjects.packages import importr
+        from rpy2.robjects.packages import importr
 
-            sva = importr("sva")
-        except ModuleNotFoundError as e:
-            print("Failure in rpy2 import and load", e, sep="\n")
-            return
-        except RRuntimeError as e:
-            print("sva is not installed", e, sep="\n")
-            return
-
+        sva = importr("sva")
         from rpy2.robjects import pandas2ri
 
         pandas2ri.activate()
@@ -1597,28 +1605,6 @@ class Data:
         Should return a dictionary of form:
         {comparison: DataFrame of results}
         """
-        try:
-            ModuleNotFoundError
-        except:
-            ModuleNotFoundError = type("ModuleNotFoundError", (Exception,), {})
-        try:
-            from rpy2.rinterface import RRuntimeError
-        except Exception as e:
-            RRuntimeError = type("RRuntimeError", (Exception,), {})
-        try:
-            from rpy2 import robjects
-            from rpy2.robjects import r
-            from rpy2.robjects.packages import importr
-
-            sva = importr("sva")
-        except ModuleNotFoundError as e:
-            print("Failure in rpy2 import and load", e, sep="\n")
-            return
-        except RRuntimeError as e:
-            print("sva is not installed", e, sep="\n")
-            return
-        from rpy2.robjects import pandas2ri
-
         pandas2ri.activate()
         r_source = r["source"]
         r_file = os.path.join(
@@ -1845,6 +1831,15 @@ class Data:
         # qvalues.name = 'q_value'
 
         self._padj = padj
+
+    # def do_cluster(self, **kwargs):
+    #     mclust = importr("mclust")
+    #     tidyclust = importr("tidyclust")
+    #     kmeans_spec = tidyclust.k_means(num_clusters=3)
+    #     import ipdb
+
+    #     ipdb.set_trace()
+    #     return
 
     def make_plot(self, pltname):
         if "all" in self.plots:
