@@ -148,23 +148,26 @@ STEP = 0.2
 import logging
 
 
-def _get_logger():
-    logger = logging.getLogger(__name__)
+def _get_logger(name=__name__):
+    logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
-    fh = logging.FileHandler("tackle.log")
+    try:
+        fh = logging.FileHandler("tackle.log")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+    except PermissionError:
+        pass
     # fh.setLevel(logging.DEBUG)
     # create console handler with a higher log level
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     # create formatter and add it to the handlers
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    fh.setFormatter(formatter)
     ch.setFormatter(formatter)
     # add the handlers to the logger
-    logger.addHandler(fh)
     logger.addHandler(ch)
     return logger
 
@@ -215,8 +218,15 @@ def impute_missing_old(
     _sd = _norm_notna.std()
     _norm = stats.norm(loc=_mean - (_sd * downshift), scale=_sd * scale)
     _number_na = frame.replace(0, np.NAN).isna().sum().sum()
+    
     # print(frame.replace(0, np.NAN).isna().sum())
-    random_values = _norm.rvs(size=_number_na, random_state=random_state)
+    random_value_list = list()
+    for i in range(8):
+        random_values = _norm.rvs(size=_number_na, random_state=random_state+i)
+        random_value_list.append(random_values)
+    import ipdb; ipdb.set_trace()
+    random_values = np.mean(random_value_list, 0)
+    assert random_values.shape == random_value_list[0].shape
 
     # _areas_log = np.log10(frame.replace(0, np.NAN))
     # _areas_log += np.abs(_areas_log.min().min())
@@ -686,43 +696,57 @@ def read_config(configfile, enforce=True):
     return ordered_data
 
 
-def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0):
+
+#genemapper = GeneMapper()
+
+def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     """
     :gids: collection of files to read and extract geneids
     :symbol_gid_mapping: optional dictionary that maps symbols to geneid
     :sheet: excel sheet to use (when input is excel doc)
     """
+    genemapper = get_gene_mapper()
 
     _df = None
-    _dtype = {"GeneID": str, "junk": int}
+    _dtype = {"geneid": str, "GeneID": str, "genesymbol": str, "symbol":str, "GeneSymbol": str, "Symbol": str, "junk": str, "GeneID": str}
     if gids.endswith(".csv"):
         _df = pd.read_csv(gids, dtype=_dtype)
     elif gids.endswith(".tsv") | gids.endswith(".txt"):
         _df = pd.read_table(gids, dtype=_dtype)
     elif gids.endswith(".xlsx"):  # try to parse plain text file
         _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet)
+    else: # maybe no extension, and is text
+        _df = pd.read_table(gids, dtype=_dtype)
+
+    _df.columns = _df.columns.str.lower()
+    
     #
 
-    from .containers import GeneMapper
-
-    genemapper = GeneMapper()
     #
     def get_gid_from_symbol(genesymbol):
         # only works for human
+
         gid = genemapper.df.query(
             'GeneSymbol == "{}" & TaxonID == "9606"'.format(genesymbol)
         )
         if gid.empty:
-            warn("Could not find GeneID from genesymbol {}".format(genesymbol))
-            return
+            gid = genemapper.df.query(
+                'GeneSymbol == "{}" & TaxonID == "10090"'.format(genesymbol)
+            )
+            if gid.empty:
+                warn("Could not find GeneID from genesymbol {}".format(genesymbol))
+                return
         else:
             print(genesymbol, gid)
-            return gid.index[0]
-
-    if _df is not None and "GeneID" in _df:
-        return _df.GeneID.tolist()
-    if _df is not None and "GeneSymbol" in _df:
-        return [get_gid_from_symbol(genesymbol) for genesymbol in _df.GeneSymbol]
+        return gid.index[0]
+    #
+    #
+    # import ipdb; ipdb.set_trace()
+    if _df is not None and "geneid" in _df:
+        return _df.geneid.tolist()
+    if _df is not None and "genesymbol" in _df.columns:
+        _res = [get_gid_from_symbol(genesymbol) for genesymbol in _df.genesymbol]
+        return _res
 
     # ===================================================================================
     # import ipdb; ipdb.set_trace()
@@ -883,7 +907,8 @@ def fillna_meta(df, index_col):
 
 def standardize_meta(df):
 
-    gm = GeneMapper()
+    #gm = GeneMapper()
+    gm = get_gene_mapper()
     # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
@@ -897,7 +922,9 @@ def standardize_meta(df):
             df["GeneSymbol"] = df.Symbol
         elif df.Symbol.isna().sum() > 0 and df.GeneSymbol.isna().sum() == 0:
             df["Symbol"] = df.GeneSymbol
-    # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
+    # now replace if that failed
+        if df.GeneSymbol.isna().sum() > 0 or df.Symbol.isna().sum() < 0:
+            df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     # df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     # df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
     return df
@@ -1337,4 +1364,5 @@ def named_temp(*args, **kwargs):
             pass
 
 
-from .containers import GeneMapper
+from .containers import get_gene_mapper
+#from .containers import GeneMapper
