@@ -1,6 +1,7 @@
 library(ggplot2)
 library(rlang)
 library(purrr)
+library(magrittr)
 library(tidyverse)
 library(ggfortify)
 # library(PCAtools)
@@ -13,18 +14,62 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  showframe = TRUE, frame.type = "t",
                  max_pc = 2, color_list = NULL, marker_list = NULL,
                  names_from = "GeneID",
-                 scale = FALSE, center = TRUE,
+                 scale = FALSE,
+                 center = TRUE,
+                 normalize_by = NULL,
                  title = NULL,
+                 annot_str = NULL,
                  ...) {
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
   ##   left_join(col_data, by='name')
   # TODO: fix bug when `color` or `shape` is set to an r function (e.g. `repeat`)
 
-  # rownames(data) <- data[["GeneID"]]
-  forpca <- data %>%
-    pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
 
+  # rownames(data) <- data[["GeneID"]]
+  # .scalefunc = FALSE
+  # if (scale == TRUE){
+  #  .scalefunc <- ~ apply(., 2, sd, na.rm = TRUE)
+  # }
+  # browser()
+
+  # forpca <- data %>%
+  #   pivot_wider(id_cols = c(variable, !!normalize_by, !!color, !!shape), names_from = !!names_from, values_from = value)
+
+
+  if (is.null(normalize_by)) {
+    forpca <- data %>%
+      group_by(GeneID) %>%
+      mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
+      ungroup()
+
+
+    # pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
+    # select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
+
+    # .forpca <- forpca %>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
+    # .forpca <- forpca %>% pivot_wider(id_cols=variable, names_from = !!names_from, values_from = value) %>% select(-variable)
+    # .forpca <- forpca %>% select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
+  } else {
+    forpca <- data %>%
+      group_by(GeneID, !!normalize_by) %>%
+      mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
+      ungroup()
+    # .forpca <- forpca %>% pivot_wider(names_from = !!names_from, values_from = value) %>% select(-variable)
+    # .forpca <- forpca %>% select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
+    # forpca <- forpca %>% group_by(normalize_by) %>% select(-variable, -!!color, -!!shape) %>% scale( scale = .scalefunc, center = !!center)
+    # .forpca <-
+  }
+  forpca %<>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
+  # browser()
+  .forpca <- forpca %>% select(-variable, -!!color, -!!shape)
+  pca_res <- prcomp(.forpca, scale. = F, center = F)
+
+  #   .x <- forpca %>%
+  # 	  group_by(!!normalize_by) %>%
+  # 	  select(-variable, -!!color, -!!shape)
+
+  # .x %>% scale(center = !!center, scale=.scalefunc)
 
   ## mutate(!!color = as.character(color), !!shape = as.character(!!shape))
   label_column <- NULL
@@ -33,10 +78,17 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     label_column <- "variable"
     label_repel <- TRUE
   }
+  #   if (!is.null(normalize_by))
+  # 	  {
+  #        	forpca %<>% scale(x, center = !!center, scale = apply(x, 2, sd, na.rm = TRUE))
+  # 		#forpca %<>% group_by(!!normalize_by) %>% rowwise(scale( center = !!center, scale = !!scale) )
+  # 	  }
 
 
   ## pca_res <- prcomp(forpca%>%select(-name, -model, -subtype), scale. = FALSE, center=TRUE)
-  pca_res <- prcomp(forpca %>% select(-variable, -!!color, -!!shape), scale. = FALSE, center = TRUE)
+  # pca_res <- prcomp(forpca %>% select(-variable, -!!color, -!!shape), scale. = !!scale, center = !!center)
+
+
   # PCAtools::pca(pca_res, )
   # pca(forpca%>%select(-variable, -!!color))
   # pca_res <- PCAtools::pca(forpca %>% select(-variable, -!!color, -!!shape),
@@ -58,7 +110,8 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       # .color <- expr(color)
       # color <- "repeat"
       p <- autoplot(pca_res,
-        data = forpca, colour = color, shape = shape,
+        data = forpca,
+        colour = color, shape = shape,
         label = label, label.repel = label_repel,
         label.label = label_column,
         frame = showframe,
@@ -87,13 +140,20 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
         scale_y_continuous(sec.axis = sec_axis(~.)) +
         geom_hline(yintercept = 0, color = "grey50", show.legend = NA) +
         geom_vline(xintercept = 0, color = "grey50")
+      if (!is.null(annot_str)) p <- p + annotate("text", x = -Inf, y = -Inf, hjust = 0, vjust = 0, label = annot_str)
 
-      print(p)
+
+
+      # print(p)
 
 
       out <- paste0(outname, paste0("pc", x1), "_vs_", paste0("pc", x2), ext)
       print(paste("Saving", out))
-      ggplot2::ggsave(out, p, width = 9, height = 8)
+      device <- NULL
+      if (ext == ".pdf" || ext == "pdf") {
+        device <- grDevices::cairo_pdf
+      }
+      ggplot2::ggsave(out, p, device = device, width = 9, height = 8)
     }
   }
 }

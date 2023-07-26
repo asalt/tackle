@@ -26,6 +26,8 @@ barplot <- function(df, average = NULL, group = NULL, group_order = NULL, title 
   ## if (!is.na(group_order)) group_order <- make.names(group_order) %>% gsub("\\.", "", .)
   # browser()
 
+  ## TODO fix when group is null
+  ## I'm bad at reordering things
   if (!is.null(group) && !is.null(average)) {
     # the order is important here, sd before mean, because we're renaming Expression
     df <- df %>%
@@ -34,16 +36,13 @@ barplot <- function(df, average = NULL, group = NULL, group_order = NULL, title 
     colnames(df)[1] <- "index"
     group <- "index" # we rename it here since that's now our averaged column
   }
-  ## TODO fix when group is null
-
-
-  ## I'm bad at reordering things
-  if (!is.null(group_order) && !is.null(average)) {
+  else if (!is.null(group) && !is.null(group_order) && is.null(average)) {
     df[[group]] <- factor(df[[group]], levels = group_order, ordered = TRUE)
     ## df <- df %>% mutate(index=fct_reorder(index, as.numeric(get(group))))
     df <- arrange(df, get(group))
     df$index <- factor(df$index, levels = df$index, ordered = TRUE)
-  } else if (!is.null(group_order) && !is.null(average)) {
+  }
+   else if (!is.null(group_order) && !is.null(average)) {
     df[[group]] <- factor(df[[group]], levels = group_order, ordered = TRUE)
     df <- arrange(df, as.numeric(df$index))
   } else if (!is.null(group) && is.null(group_order) && is.null(average)) {

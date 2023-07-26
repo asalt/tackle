@@ -23,10 +23,11 @@
 __author__ = "Steven MARTINS"
 
 
-
 from .loader import Conf
 
-import csv, os
+import csv, os, copy
+
+from functools import partial
 
 
 class Conf2Csv(object):
@@ -42,10 +43,11 @@ class Conf2Csv(object):
         self._cols.append("triche")
         self._prepare_columns()
 
-
     def _write(self, file_name, rows, directory="."):
-        with open(os.path.join(directory, file_name), 'w') as f:
-            writer = csv.writer(f, delimiter=',', quoting=csv.QUOTE_NONE, lineterminator='\n')
+        with open(os.path.join(directory, file_name), "w") as f:
+            writer = csv.writer(
+                f, delimiter=",", quoting=csv.QUOTE_NONE, lineterminator="\n"
+            )
             writer.writerows(rows)
 
     def _prepare_columns(self):
@@ -66,7 +68,11 @@ class Conf2Csv(object):
             row = []
             row.append(k)
             for key in self._cols:
-                row.append((", ".join(v[key]) if isinstance(v[key], list) else v[key] ) if key in v else "")
+                row.append(
+                    (", ".join(v[key]) if isinstance(v[key], list) else v[key])
+                    if key in v
+                    else ""
+                )
             self._rows.append(row)
 
     def export(self, csv_name):
@@ -76,7 +82,7 @@ class Conf2Csv(object):
 
 
 class Csv2Conf(object):
-    def __init__(self, csv_name, sep=',', excel_sheetnumber=0):
+    def __init__(self, csv_name, sep=",", excel_sheetnumber=0):
         self.sep = sep
         self.excel_sheetnumber = excel_sheetnumber
         self._dict = {}
@@ -86,12 +92,17 @@ class Csv2Conf(object):
         self._rows = self._rows[1:]
 
     def _transform(self):
-        if len([row[0] for row in self._rows]) != len(set(row[0] for row in self._rows) ):
-            raise ValueError('first column must be unique')
+
+        if len([row[0] for row in self._rows]) != len(
+            set(row[0] for row in self._rows)
+        ):
+            raise ValueError("first column must be unique")
         for row in self._rows:
             obj = {}
             i = 1
-            for k in self._cols[1:]:
+            for k in self._cols[
+                1:
+            ]:  # everything inside each row will be a string if specified below
                 if len(row[i]) > 0:
                     obj[k] = row[i]
                 i += 1
@@ -106,25 +117,57 @@ class Csv2Conf(object):
         conf.save()
 
     def _reader(self, filename, directory="."):
+        # yes we just use pandas now
+        import pandas as pd
 
         rows = []
 
-        if self.sep == 'excel':
-            import pandas as pd
-            df = pd.read_excel(filename, sheet_name=self.excel_sheetnumber, dtype=str).fillna('')
-            rows.append(df.columns.tolist())
-            for _, row in df.iterrows():
-                rows.append(row.tolist())
+        # name must be unique
+        if self.sep == "excel":
+            reader = partial(
+                pd.read_excel, sheet_name=self.excel_sheetnumber, dtype=str
+            )
+        else:
+            reader = partial(
+                pd.read_table, sep=self.sep, quoting=csv.QUOTE_NONE, dtype=str
+            )
 
-            return rows
+        df = reader(filename).fillna("")
 
-        with open(os.path.join(directory, filename), 'r') as f:
-                #next(f)
-                reader = csv.reader(f, delimiter=self.sep, quoting=csv.QUOTE_NONE)
-                for row in reader:
-                    if row[0].startswith('#'): continue
-                    rows.append(row)
+        # try to make the first column is unique
+        namecounts = df["name"].value_counts()
+        too_many_names = namecounts[namecounts > 1].index.tolist()
+        for name in too_many_names:
+            sel = df.loc[df["name"] == name, "name"]
+            df.loc[df["name"] == name, "name"] = name + "_" + sel.index.astype(str)
+
+        rows.append(df.columns.tolist())
+        for _, row in df.iterrows():
+            rows.append(row.tolist())
+
         return rows
+
+        # if self.sep == "excel":
+        #     import pandas as pd
+
+        #     df = pd.read_excel(
+        #         filename, sheet_name=self.excel_sheetnumber, dtype=str
+        #     ).fillna("")
+        #     rows.append(df.columns.tolist())
+        #     for _, row in df.iterrows():
+        #         rows.append(row.tolist())
+
+        #     return rows
+
+        # with open(os.path.join(directory, filename), "r") as f:
+        #     # next(f)
+        #     reader = csv.reader(f, delimiter=self.sep, quoting=csv.QUOTE_NONE)
+        #     for row in reader:
+        #         if row[0].startswith("#"):
+        #             continue
+        #         rows.append(row)
+        # return rows
+
 
 if __name__ == "__main__":
     c = Conf2Csv("./slugs.conf")

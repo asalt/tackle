@@ -12,7 +12,8 @@ except AttributeError:
 
 from .utils import get_outname, parse_gid_file, fix_name
 
-from .containers import GeneMapper
+#from .containers import GeneMapper
+
 
 
 def volcanoplot(
@@ -39,10 +40,14 @@ def volcanoplot(
     bg_marker_color="#22222288",
     pch=16,
     alpha=1.0,
+    fill_na_zero=False,
+    extra_outname_info=None,
 ):
 
     data_obj = ctx.obj["data_obj"]
-    gm = GeneMapper()
+
+    #gm = GeneMapper()
+    gm = get_gene_mapper()
 
     if yaxis not in ("pValue", "pAdj"):
         raise ValueError("Must choose between `pValue` and `pAdj`")
@@ -75,6 +80,7 @@ def volcanoplot(
         formula=formula,
         contrasts_str=contrasts,
         impute_missing_values=impute_missing_values,
+        fill_na_zero=fill_na_zero,
     )
 
     meta = data_obj.col_metadata
@@ -160,6 +166,11 @@ def volcanoplot(
         df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
         df.index.name = "GeneID"
         df["highlight"] = False
+        if highlight_geneids is not None:
+            df.loc[df.index.intersection(highlight_geneids), "highlight"] = True
+        #     df.
+        #if highlight_geneids
+
         df["signedlogP"] = df.apply(
             lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
         )
@@ -177,28 +188,45 @@ def volcanoplot(
         # )
         # if highlight_geneids is not None:
         #     df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
+        _xtra = {}
+        if extra_outname_info is not None:
+            _xtra['n'] = extra_outname_info
+
+        _b = None
+        if not data_obj.batch_nonparametric and data_obj.batch_applied==True:
+            _b = "parametric"
+        elif data_obj.batch_applied == True:
+            _b = "nonparam",
 
         outname = get_outname(
             "volcanoplot",
             name=data_obj.outpath_name,
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
+            #batch_me=_b,
             colors_only=data_obj.colors_only,
             batch=data_obj.batch_applied,
-            batch_method="parametric"
-            if not data_obj.batch_nonparametric
-            else "nonparametric",
             normtype=data_obj.normtype,
             group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
             outpath=os.path.join(data_obj.outpath, "volcano"),
+            **_xtra,
         )
 
+        slicepoint = 170
+        space = min(10, 170+len(outname))
         if len(outname) > 255:
-            outname = outname[:255]
-        out = outname + ".tsv"
+            outname = outname.replace('timepoint', 'T')
+            outname = outname.replace('time', 'T')
+            #outname = outname.replace('time', 'T')
+        while len(outname) > 255:
+            outname = outname[:slicepoint] + ".." + outname[slicepoint+space:]
+            slicepoint += 20
+            if slicepoint > 255:
+                break # file name too long
 
+        out = outname + ".tsv"
         print("Saving", out, "...", end="", flush=True)
-        export_data = df
+        export_data = df # this is a "results" dataframe from the stat running method
         if only_sig:
             _log2_cutoff = np.sqrt(foldchange)
             export_data = df.query("pAdj < @sig & abs(log2_FC) > @_log2_cutoff")
@@ -263,11 +291,12 @@ def volcanoplot(
         }
 
         df["FunCats"] = df.FunCats.fillna("").astype(str)
-        df["GeneSymbol"] = df.GeneSymbol.fillna("").astype(str)
+        df["GeneSymbol"] = df['GeneSymbol'].fillna("").astype(str)
         df.index = df.index.astype(
             "str"
         )  # make uniform dtype so rpy2 does not crash in conversion
         df = df.reset_index()
+        df = df[~df['t'].isna()]
 
         for file_fmt in file_fmts:
 
@@ -282,7 +311,7 @@ def volcanoplot(
             # _data = df.reset_index()
             # _data['FunCats'] = _data.FunCats.fillna('')
             Rvolcanoplot(
-                df.reset_index(),
+                df,
                 max_labels=number,
                 fc_cutoff=foldchange,
                 number_by=number_by,
@@ -308,6 +337,8 @@ def volcanoplot(
         ## end for comparison, df in results.items():
 
     return
+
+from .containers import get_gene_mapper
 
     # =============================================================================================
     # end

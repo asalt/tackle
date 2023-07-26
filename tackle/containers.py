@@ -152,7 +152,25 @@ LABEL_MAPPER = {
     "133_N": [1331, "TMT_133N", "TMT_133_N", "133N"],
     "133C": [1330, "TMT_133C", "TMT_133_C", "133C"],
     "133_C": [1330, "TMT_133C", "TMT_133_C", "133C"],
-    "134": [1340, "TMT_134", "TMT134", "TMT_134", "134"],
+    "134": [1340, "TMT_134", "TMT134", "TMT_134", "134", 134, "TMT_134_N"],
+    "134N": [1340, "TMT_134", "TMT134", "TMT_134", "134", "TMT_134_N", 134],
+    "134_N": [1340, "TMT_134", "TMT134", "TMT_134", "134", "TMT_134_N", 134],
+    "134C": [
+        1341,
+        "TMT_134_C",
+        "TMT134C",
+        "TMT_134C",
+    ],
+    "135": [
+        1350,
+        "TMT_135",
+        "TMT_135_N",
+    ],
+    "135N": [
+        1350,
+        "TMT_135",
+        "TMT_135_N",
+    ],
     # "1260": [1260, "TMT_126", "TMT126"],
     # "1270": [1270, "TMT_126", "TMT126"],
     # "1271": [1271, "TMT_126", "TMT126"],
@@ -215,10 +233,11 @@ class GeneMapper:
     def __init__(self):
         self.file = os.path.join(
             PWD,
+            "data",
             # 'data', 'genetable_hsmmgg.tab'
             # 'data', 'genetable20200501.tsv'
-            "data",
-            "genetable20201208.tsv",
+            # "genetable20201208.tsv",
+            "genetable20201208_median_isoform_mass.tsv",
         )
         self._df = None
         self._symbol = None
@@ -229,6 +248,7 @@ class GeneMapper:
     @property
     def df(self):
         if self._df is None:
+            logger.info(f"Reading gene table from {self.file}")
             self._df = pd.read_table(self.file, index_col="GeneID", dtype=str)
             self._df.index = self._df.index.astype(str)
             self._df["FunCats"] = self._df["FunCats"].fillna("")
@@ -270,26 +290,50 @@ class Annotations:
         self._df = None
 
     @property
-    def df(self):
+    def colnames(self):
         if self._df is None:
-            if not os.path.exists(self.file):
-                logger.error(f"Could not find {self.file}")
-                return
-            # logger.info(f"Loading annotations file {self.file}")
-            if self.file.endswith("tsv"):
-                df = pd.read_table(self.file, dtype=str)
-            elif self.file.endswith("xlsx"):
-                df = pd.read_excel(self.file, dtype=str)
-            if "NUCLEUS" in df:
-                df["NUCLEUS"] = df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
-                df["NUCLEUS"] = df["NUCLEUS"].replace(False, "")
-            self._df = df
-            self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+            df = self.read(file=self.file, nrows=1)
+        self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
+
+    def read(self, file=None, nrows=None):
+        if not os.path.exists(self.file):
+            logger.error(f"Could not find {self.file}")
+            return
+            # file = self.file
+        if file.endswith("tsv"):
+            reader = partial(pd.read_table, nrows=nrows, dtype=str)
+        elif file.endswith("xlsx"):
+            reader = partial(pd.read_excel, nrows=nrows, dtype=str)
+        df = reader(file)
+        self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
+        return df
+
+    @property
+    def df(self):
+
+        if self._df is not None:
+            return self._df
+
+        # logger.info(f"Loading annotations file {self.file}")
+        # logger.info(f"Reading annotations from {self.file}")
+        logger.info(f"Loading annotations file {self.file}")
+        if self.file.endswith("tsv"):
+            df = pd.read_table(self.file, dtype=str)
+        elif self.file.endswith("xlsx"):
+            df = pd.read_excel(self.file, dtype=str)
+        if "NUCLEUS" in df:
+            df["NUCLEUS"] = df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
+            df["NUCLEUS"] = df["NUCLEUS"].replace(False, "")
+        self._df = df
+        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
         return self._df
 
     @property
     def categories(self):
-        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+        df = None
+        if self._df is None:
+            df = self.read(file=self.file, nrows=1)
+        self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
     def get_annot(self, cat):
@@ -311,10 +355,16 @@ class HGeneMapper:
             reverse=True,
         )[0]
         self.file = homologene_f
-        logger.info(f"Loading annotations file {self.file}")
+        self._df = None
+
+    @property
+    def df(self):
+        if self._df is not None:
+            return self._df
+        logger.info(f"Loading homologene file {self.file}")
 
         homologene = pd.read_table(
-            homologene_f,
+            self.file,
             header=None,
             dtype=str,
             names=(
@@ -326,9 +376,10 @@ class HGeneMapper:
                 "ProteinAccession",
             ),
         )
-        self.df = homologene
+        self._df = homologene
 
     def map_to_human(self, gids):
+        self.df
         homologene = self.df
         hgene_query = homologene[homologene.GeneID.isin(gids)]
         gid_hgene = (
@@ -356,8 +407,8 @@ def get_gene_mapper(cls=GeneMapper):
     return _genemapper
 
 
-genemapper = get_gene_mapper()
-_genemapper = genemapper  # it's ok
+_genemapper = get_gene_mapper()
+genemapper = _genemapper
 
 _annotmapper = None
 
@@ -369,6 +420,8 @@ def get_annotation_mapper(cls=Annotations):
     return _annotmapper
 
 
+from .utils import parse_metadata
+
 _hgenemapper = None
 
 
@@ -379,7 +432,8 @@ def get_hgene_mapper(cls=HGeneMapper):
     return _hgenemapper
 
 
-hgenemapper = get_hgene_mapper()
+_hgenemapper = get_hgene_mapper()
+hgenemapper = _hgenemapper
 
 
 def assign_sra(df):
@@ -452,6 +506,7 @@ class Data:
         data_dir="./data",
         base_dir="./results",
         experiment_file=None,
+        fill_na_zero=True,
         funcats=None,
         funcats_inverse=None,
         gene_symbols=False,
@@ -511,6 +566,7 @@ class Data:
         self.colors_only = colors_only
         self.data_dir = data_dir
         self.experiment_file = experiment_file
+        self.fill_na_zero = fill_na_zero
         self.funcats = funcats
         self.funcats_inverse = funcats_inverse
         self.gene_symbols = gene_symbols
@@ -595,7 +651,7 @@ class Data:
         self.filter_data()
 
         # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
-        self._areas, self._areas_log, self._areas_log_shifted = (None,) * 3
+        self._areas, self._areas_log, self._areas_log = (None,) * 3
 
         self._padj = None
         # self.perform_data_export()
@@ -622,9 +678,8 @@ class Data:
 
     @property
     def areas_log_shifted(self):
-        if self._areas_log_shifted is None:
-            self.set_area_dfs()
-        return self._areas_log_shifted
+        # depreciated
+        return self.areas_log
 
     @property
     def mask(self):
@@ -865,6 +920,7 @@ class Data:
             if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
                 exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
+            # import ipdb; ipdb.set_trace()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
             _na_taxon = df[df.TaxonID.isna()]
             if _na_taxon.pipe(len) > 0:
@@ -876,13 +932,12 @@ class Data:
                 #     len
                 # )
                 _tokeep = [x for x in df.index if x not in _na_taxon_spfilter.index]
-                _tokeep = [x for x in _tokeep if not x.startswith("sp")]
+                # _tokeep = [x for x in _tokeep if not x.startswith("sp")]
                 _not_starting_with_sp = len(_tokeep)
+                _no_taxon_info = len(df) - _not_starting_with_sp
 
-                if _not_starting_with_sp != 0:
-                    warn(
-                        f"{_not_starting_with_sp} records have no taxon info, dropping"
-                    )
+                if _no_taxon_info != 0:
+                    warn(f"{_no_taxon_info} records have no taxon info, dropping")
                 df = df.loc[_tokeep]
 
             if df.GeneID.value_counts().max() > 1:
@@ -962,7 +1017,6 @@ class Data:
                 df["TaxonID"] = df["TaxonID"].fillna("")
             if "TaxonID" not in df or df.TaxonID.isna().any():
                 if "TaxonID" in df:
-                    # import ipdb; ipdb.set_trace()
                     loc = df[df.TaxonID.isna()].index
                     # TODO read taxon in as a "string" to avoid upcast to float with missing values...
 
@@ -1116,6 +1170,7 @@ class Data:
                 "TaxonID",
                 "IDSet",
                 "GeneSymbol",
+                "AreaSum_dstrAdj",
                 "iBAQ_dstrAdj",
                 "FunCats",
                 "SRA",
@@ -1256,6 +1311,7 @@ class Data:
 
     def set_area_dfs(self):
         # self.areas = self.panel_filtered.minor_xs('iBAQ_dstrAdj').astype(float)
+
         self._areas = self.df_filtered.loc[idx[:, "area"], :]
         self._areas.index = self._areas.index.droplevel(
             1
@@ -1263,6 +1319,7 @@ class Data:
 
         batch_info = self.config.get("__batch__")  # depreciated
         if batch_info:
+            raise DeprecationWarning("Specifying batch in the config is depreciated")
             batch = batch_info.get("batch")
             # metadata = self.col_metadata.T  # rows are experiments, cols are metadata
             metadata = self.col_metadata  # rows are experiments, cols are metadata
@@ -1292,8 +1349,12 @@ class Data:
 
         gids = tuple(gids)
         self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
+        logger.info(f"total values {self._areas.count().sum()}")
+        logger.info(f"total zeros {self._zeros.sum().sum()}")
+        logger.info(f"min nonzero val: {self.minval:.4g}")
 
         # if self.impute_missing_values or 1:
+        logger.info(f"Impute missing values : {self.impute_missing_values}")
         if self.impute_missing_values:
             # downshift=2.
             # scale = .5
@@ -1313,10 +1374,7 @@ class Data:
             )
 
             to_impute = (
-                self._areas.replace(0, np.NAN)
-                .divide(self.minval)
-                .add(1)
-                .applymap(np.log10)
+                self._areas.replace(0, np.NAN).divide(self.minval).applymap(np.log10)
             )
             imputed = utils.impute_missing(
                 to_impute, downshift=downshift, scale=scale, make_plot=True
@@ -1327,14 +1385,16 @@ class Data:
 
         # self._areas_log = np.log10(self._areas.fillna(0)+1e-10)
         else:
-            # self._areas_log = np.log10(
-            #     self._areas.replace(0, np.NAN)
-            #     .fillna(self.minval / 2)
-            #     .divide(self.minval / 2)
-            # )
-            self._areas_log = np.log10(
-                self._areas.replace(0, np.NAN).fillna(self.minval).divide(self.minval)
-            )
+            if self.fill_na_zero:
+                self._areas_log = np.log10(
+                    self._areas.replace(0, np.NAN)
+                    .fillna(self.minval)
+                    .divide(self.minval)
+                )
+            elif not self.fill_na_zero:
+                self._areas_log = (
+                    self._areas.astype(float).divide(self.minval).pipe(np.log10)
+                )
 
         self._areas_log.index.name = "GeneID"
         # fillna with the mean value. This prevents skewing of normalization such as
@@ -1342,65 +1402,21 @@ class Data:
         # self._areas_log = np.log10(self._areas.T.fillna(self._areas.mean(axis=1)).T + 1e-8)
 
         # if norm_info is not None:  # do not shift the values
-        #     self._areas_log_shifted = self._areas_log
+        #     self._areas_log = self._areas_log
         #     return
 
         # don't need this section anymore since now minval is 0
-        minval = self._areas_log.min().min()
-        shift_val = np.ceil(np.abs(minval))
-        self.minval_log = minval
-
-        self._areas_log_shifted = self._areas_log + shift_val
-        self._areas_log_shifted.index.name = "GeneID"
-        # if self.geneid_subset: # don't do this here, already done
-        #     self._areas_log_shifted = self._areas_log_shifted.loc[self.geneid_subset]
+        # minval = self._areas_log.replace(0, np.NAN).min().min()
+        # shift_val = np.ceil(np.abs(minval))
+        # self.minval_log = minval
 
         # if specified, normalize by a specified control group
-        if self.config.get("__norm__"):
-            warn("depreciated, use flags")
         if self.norm_info is not None or self.config.get("__norm__") is not None:
-            if self.norm_info is not None:
-                norm_info = self.norm_info
-            elif self.config.get("__norm__") is not None:
-                norm_info = self.config.get("__norm__")
-            control = norm_info["control"]
-            group = norm_info["group"]
-            label = norm_info["label"]
+            _normed = self.refnormalize()
+            self._areas_log = _normed
+            # note the column metadata also drops the refmix column for each plex
 
-            # metadata = self.col_metadata.T  # rows are experiments, cols are metadat
-            metadata = self.col_metadata  # rows are experiments, cols are metadata
-            areas = self._areas_log_shifted.copy()
-            ctrl_exps = list()
-
-            for ix, g in metadata.groupby(group):
-                # should only be one
-                ctrl_exp = g[g[label] == control].index[0]
-                ctrl_exps.append(ctrl_exp)
-                # to_normalize = list(set(g.index) - set([ctrl_exp]))
-                to_normalize = g.index
-                areas.loc[:, to_normalize] = self._areas_log_shifted[to_normalize].sub(
-                    self._areas_log_shifted[ctrl_exp].fillna(0) + 1e-20, axis="index"
-                )
-            self._areas = (
-                areas.drop(ctrl_exps, axis=1).where(lambda x: x != 0).dropna(how="all")
-            )
-            self.minval_log = self._areas.replace(0, np.NAN).stack().dropna().min()
-            finite = self._areas.pipe(np.isfinite)
-
-            # have to take care of number/0 case
-            maxval_log = self._areas[finite].stack().dropna().max()
-            self._areas_log_shifted = self._areas.fillna(self.minval_log / 2).replace(
-                np.inf, maxval_log * 1.5
-            )
-            # not sure if this is right, can check:
-            # sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
-            sample_cols = self.col_metadata.columns
-            sample_ixs = [x for x in self.col_metadata.index if x not in ctrl_exps]
-
-            self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
-            self._mask = self.mask[sample_ixs]
-            self.normed = True
-
+        print(f"export_all is set to {self.export_all}")
         if self.export_all and not self.normed:
             new_cols = list()
             for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED":
@@ -1422,11 +1438,12 @@ class Data:
                 # self.data.loc[ idx[:, col+'_log'], :] = frame_log.values
                 # self.data.loc[ idx[frame_log.index.levels[0].values, col+'_log'], :] = frame_log.values
             self.df_filtered = pd.concat([self.df_filtered, *new_cols])
+        elif self.export_all and self.normed:
+            raise NotImplementedError("export_all with normed not implemented yet")
 
         if self.batch is not None:
-            self._areas_log_shifted = self.batch_normalize(self.areas_log_shifted)
+            self._areas_log = self.batch_normalize(self._areas_log)
             # try batch normalization via ComBat
-            print(f"export_all is set to {self.export_all}")
             if (
                 self.export_all and not self.normed
             ):  # batch normalize the other requested area columns
@@ -1474,6 +1491,55 @@ class Data:
         # if self.group is not None:
         #     self.calc_qvals()
 
+    def refnormalize(self, norm_info=None):
+        if self.norm_info is not None or self.config.get("__norm__") is not None:
+            if self.norm_info is not None:
+                norm_info = self.norm_info
+            elif self.config.get("__norm__") is not None:
+                norm_info = self.config.get("__norm__")
+            control = norm_info["control"]
+            group = norm_info["group"]
+            label = norm_info["label"]
+
+        logger.info("normalizing by reference group")
+        logger.info(f"group: {group}")
+        logger.info(f"label: {label}")
+
+        # metadata = self.col_metadata.T  # rows are experiments, cols are metadat
+        metadata = self.col_metadata  # rows are experiments, cols are metadata
+        areas = self._areas_log.copy()
+        ctrl_exps = list()
+
+        for ix, g in metadata.groupby(group):
+            # should only be one
+            ctrl_exp = g[g[label] == control].index[0]
+            ctrl_exps.append(ctrl_exp)
+            # to_normalize = list(set(g.index) - set([ctrl_exp]))
+            to_normalize = g.index
+            areas.loc[:, to_normalize] = self._areas_log[to_normalize].sub(
+                self._areas_log[ctrl_exp].fillna(0) + 1e-20, axis="index"
+            )
+        areas = areas.drop(ctrl_exps, axis=1).where(lambda x: x != 0).dropna(how="all")
+        finite = areas.astype(float).pipe(np.isfinite)
+
+        # have to take care of number/0 case
+
+        minval_log = areas[finite].stack().dropna().min()
+        maxval_log = areas[finite].stack().dropna().max()
+        # self._areas_log = self._areas.fillna(self.minval_log / 2).replace(
+        #     np.inf, maxval_log * 1.5
+        # )
+        # not sure if this is right, can check:
+        # sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
+        sample_cols = self.col_metadata.columns
+        sample_ixs = [x for x in self.col_metadata.index if x not in ctrl_exps]
+
+        self.col_metadata = self.col_metadata.loc[sample_ixs, sample_cols]
+        self._mask = self.mask[sample_ixs]
+        self.normed = True
+        # self._areas_logged = areas
+        return areas
+
     def batch_normalize(self, data, prior_plot=True):
         """"""
 
@@ -1504,7 +1570,7 @@ class Data:
             self.batch_applied = self.batch + "_noCov"
         # r.assign('batch', 'pheno${}'.format(self.batch))
         batch = pheno[self.batch]
-        # res = sva.ComBat(dat=self._areas_log_shifted.fillna(0), batch=batch,
+        # res = sva.ComBat(dat=self._areas_log.fillna(0), batch=batch,
         #                  mod=mod, par_prior=True, mean_only=False)
         # prior_plot, plot_prior = False, False
         if not self.batch_nonparametric and prior_plot:
@@ -1562,42 +1628,52 @@ class Data:
         df.index = data.index
         # df.index = [maybe_int(x) for x in df.index]
         df.columns = data.columns
+        _minval = df[~self._mask].min().min()
+        logger.info(f"minval after refnorm: {_minval}")
+        if self.fill_na_zero:
+            # this works as is (df is a copy of original data)
+            # df.loc[mask] does not work
+            df[self._mask] = _minval + (_minval * 0.1)
 
         # ===============================================================================
-        # TODO:why do this?
         # reassign mask - ComBat can impute some NA values
         # : resolve this for normed data
+        # DONE
         # if not self.normed: # ??
 
         # if not self.batch_noimputation:  # else leave old mask
         #     thresh = (
-        #         self.areas_log_shifted[(~self.mask) & (self._areas_log_shifted > 0)]
+        #         self.areas_log_shifted[(~self.mask) & (self._areas_log > 0)]
         #         .min()
         #         .min()
         #     )
         #     new_mask = df[self.mask] <= thresh
-        #     new_mask.columns = self._areas_log_shifted.columns
+        #     new_mask.columns = self._areas_log.columns
         #     self._mask = new_mask
 
         # fill in combat funny values back to zero
         # df[self.mask] = 0
 
-        # self._areas_log_shifted = df.dropna(how='any')
+        # self._areas_log = df.dropna(how='any')
 
         df = df.dropna(how="any")
-        # self._areas_log_shifted.columns = self._areas_log.columns  # r changes certain characters in column names
-        # self._areas_log_shifted.columns = self._areas.columns  # r changes certain characters in column names
+        # self._areas_log.columns = self._areas_log.columns  # r changes certain characters in column names
+        # self._areas_log.columns = self._areas.columns  # r changes certain characters in column names
+        assert len(df.columns) == len(data.columns)
         df.columns = data.columns  # r changes certain characters in column names
-        # self._areas_log_shifted.index = self._areas_log_shifted.index.astype(int)  #r converts rownames to str
-
+        # self._areas_log.index = self._areas_log.index.astype(int)  #r converts rownames to str
         df.index = [maybe_int(x) for x in df.index]
-
         df.index.name = "GeneID"
+
         return df
 
     # def calc_padj(self):
     def stat_model(
-        self, formula=None, contrasts_str=None, impute_missing_values=False
+        self,
+        formula=None,
+        contrasts_str=None,
+        impute_missing_values=False,
+        fill_na_zero=False,
     ) -> "Dict[pd.DataFrame]":  # put type annotation in quotes as a bug workaround (probably fixed in later version of python)
         """
         Still work in progress.
@@ -1612,7 +1688,10 @@ class Data:
         )
         r_source(r_file)
 
-        mat = self.areas_log_shifted
+        mat = self.areas_log
+        if not fill_na_zero:
+            mat[self.mask] = np.nan
+
         if impute_missing_values:
 
             downshift, scale = 1.8, 0.8
@@ -1689,12 +1768,13 @@ class Data:
                 .replace(" ", "_")
                 .replace("-", "_")
                 .replace("+", "_")
+                .replace("?", "qmk")
                 for x in variables
             ]
             robjects.r.assign("fixed_vars", fixed_vars)
             robjects.r("colnames(mod) <- fixed_vars")
 
-            if contrasts_str is None:
+            if bool(contrasts_str) is False:
                 contrasts_array = list()
                 for group in itertools.combinations(
                     (x for x in fixed_vars if "Intercept" not in x), 2
@@ -1706,11 +1786,17 @@ class Data:
                 contrasts_array = [
                     x.strip() for x in contrasts_str.split(",") if x.strip()
                 ]
+                contrasts_array = [x for x in contrasts_array if not x.startswith("#")]
 
+            logger.info("limma model matrix: {}".format(robjects.r["mod"]))
+            logger.info("Contrasts: {}".format(contrasts_array))
             robjects.r("print(mod)")
             # robjects.r('print(fit)')
 
             robjects.r.assign("contrasts_array", contrasts_array)
+            import ipdb
+
+            ipdb.set_trace()
 
             robjects.r(
                 """contrasts_matrix <- makeContrasts(contrasts = contrasts_array,
@@ -1718,6 +1804,7 @@ class Data:
             )"""
             )
 
+            robjects.r("""print(contrasts_matrix)""")
             contrast_fit = robjects.r(
                 """
             fit2 <- contrasts.fit(fit, contrasts_matrix) %>% eBayes(robust=TRUE, trend=TRUE)
@@ -1753,16 +1840,16 @@ class Data:
 
             return results
 
-            results = r(
-                """lmFit(as.matrix(edata), mod, block = block, cor = cor) %>%
-                       eBayes(robust=TRUE, trend=TRUE) %>%
-                       topTable(n=Inf, sort.by='none')
-            """.format(
-                    self.group
-                )
-            )
-            pvalues = results["P.Value"]
-            padj = results["adj.P.Val"]
+            # results = r(
+            #     """lmFit(as.matrix(edata), mod, block = block, cor = cor) %>%
+            #            eBayes(robust=TRUE, trend=TRUE) %>%
+            #            topTable(n=Inf, sort.by='none')
+            # """.format(
+            #         self.group
+            #     )
+            # )
+            # pvalues = results["P.Value"]
+            # padj = results["adj.P.Val"]
         elif self.pairs and self.limma:
             importr("limma")
             r("library(dplyr)")
@@ -1868,11 +1955,26 @@ class Data:
         # else:
         #     _norm_type = "none"
 
-        self.areas_log_shifted  # make sure it's created
+        self.areas_log  # make sure it's created
 
         level_formatter = level
-        if level == "area" and linear:
+        if level in ("area", "gct") and linear:
             level_formatter = level + "_linear"
+        # not the best having this redundant code
+        if level == "MSPC":  # just export 1 column and name it
+            if self.median is True:
+                _area_col = "iBAQ_dstrAdj_MED"
+            elif self.ifot is True:
+                _area_col = "iBAQ_dstrAdj_FOT"
+            elif self.ifot_ki is True:
+                _area_col = "FOT_KI"
+            elif self.ifot_tf is True:
+                _area_col = "FOT_TF"
+            else:
+                _area_col = "AreaSum_dstrAdj"
+                _area_col = "iBAQ_dstrAdj"
+                _area_col = "AreaSum_u2g_max"
+            level_formatter = level + "_" + _area_col
 
         outname = (
             get_outname(
@@ -1906,6 +2008,7 @@ class Data:
                 "GeneSymbol",
                 "GeneDescription",
                 "FunCats",
+                # "median_isoform_mass",
                 # "GeneCapacity",
             ]
             # TODO fix this
@@ -1945,6 +2048,8 @@ class Data:
                 _area_col = "FOT_TF"
             else:
                 _area_col = "iBAQ_dstrAdj"
+                _area_col = "AreaSum_dstrAdj"
+                _area_col = "AreaSum_u2g_max"
 
             cols = [
                 "SRA",
@@ -1999,7 +2104,6 @@ class Data:
 
                 # renamer = {x: "{}_{}".format(x, col) for x in cols}
 
-                # import ipdb; ipdb.set_trace()
                 subdf = (
                     export.loc[idx[:, :], col]
                     .reset_index()
@@ -2036,6 +2140,15 @@ class Data:
             if self.annotations:
                 for_export = add_annotations(for_export, self.annotations)
 
+            gm = get_gene_mapper()
+            for_export = pd.merge(
+                for_export,
+                gm.df[["median_isoform_mass"]],
+                left_on="GeneID",
+                right_index=True,
+                how="left",
+            )
+            # "median_isoform_mass",
             for_export.to_csv(outname, sep="\t", index=False)
 
         elif level == "align":
@@ -2178,14 +2291,14 @@ class Data:
             logger.info(f"Writing {_outname}")
             meta_df.to_csv(_outname, sep="\t")
 
-        elif level == "area":
+        elif level == "area" or level == "gct":
             if not linear:
-                export = self.areas_log_shifted.copy()
+                export = self.areas_log.copy()
             elif linear:
                 export = self.areas.copy()
             # if linear:
             #     export = export.apply(lambda x: 10**x)
-            if not self.impute_missing_values:
+            if not self.impute_missing_values:  # not necessary here
                 export[self.areas == 0] = 0  # fill the zeros back
                 export[self.mask] = np.NaN
             order = export.columns
@@ -2202,7 +2315,35 @@ class Data:
                 # index column is GeneID, add GeneSymbol
                 order = ["GeneSymbol"]
                 order += [x for x in export.columns if x not in order]
-            export[order].to_csv(outname, sep="\t")
+            if level == "area":
+                export[order].to_csv(outname, sep="\t")
+
+            if level == "gct":
+                outname = outname.strip(".tsv")  # gct will be added automatically
+                cmapR = importr("cmapR")
+                # data_obj = ctx.obj["data_obj"]
+
+                _m = export[self.col_metadata.index]
+                _m = _m.astype(float)
+                r.assign("m", _m)
+                r.assign("rid", export.index)
+                r.assign(
+                    "rdesc",
+                    export.GeneSymbol
+                    if "GeneSymbol" in export.columns
+                    else export.index,
+                )
+                r.assign("cdesc", self.col_metadata)
+                r.assign("cid", self.col_metadata.index)
+                r.assign("outname", outname)
+                # my_new_ds <- new("GCT", mat=m)
+                r(
+                    'my_ds <- new("GCT", mat=as.matrix(m), rid=rid, cid=cid, cdesc=cdesc, rdesc=as.data.frame(rdesc))'
+                )
+                r(
+                    'write_gct(my_ds, file.path(".", outname), precision=8)'
+                )  # r doesn't keep the path relative for some reason
+                # r('print(paste("Wrote", outname))')
 
         # elif level == 'SRA':
         #     export = self.data.loc[ self.data.Metric=='SRA' ]
@@ -2226,7 +2367,8 @@ class Data:
                 lambda x: self.gid_symbol.get(
                     x,
                     # _genemapper.symbol.get(x, '?')
-                    _genemapper.symbol.get(str(int(x)), x),
+                    # _genemapper.symbol.get(str(int(x)), x),
+                    _genemapper.symbol.get(x, x),
                 )
             )
             order = ["GeneID", "GeneSymbol"]  # add GeneSymbol

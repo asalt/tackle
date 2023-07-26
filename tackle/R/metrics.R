@@ -39,9 +39,11 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
   thewidth <- dim(df)[1] %/% 2 %>%
     max(9) %>%
     min(24)
-  annot_scale <- (12 / thewidth)
+  annot_scale <- (15 / thewidth)
   # print(thewidth, annot_scale)
   overflow_width <- (24 / (dim(df)[1] %/% 2)) %>% min(1)
+  legend_text_size <- 10
+  axis_text_size <- 18
   # print(dim(df)[1])
   # print(overflow_width)
 
@@ -57,17 +59,18 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     guides(fill = guide_legend(reverse = TRUE)) +
     geom_text(aes(y = cumsum, label = SRA, color = SRA_metric),
       size = 1.44 * annot_scale,
-      vjust = 1.6, show.legend = FALSE
+      vjust = 1.3, show.legend = FALSE
     ) +
     scale_colour_manual(values = c("white", "black", "white")) +
     theme_classic() +
     theme(
-      text = element_text(size = 14),
+      text = element_text(size = axis_text_size + 2),
       legend.position = "top",
       # axis.text.x = element_blank(),
-      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
-      legend.title = element_text(size = 8),
-      legend.text = element_text(size = 8),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = axis_text_size * overflow_width),
+      axis.text.y = element_text(size = axis_text_size),
+      legend.title = element_text(size = legend_text_size),
+      legend.text = element_text(size = legend_text_size),
     ) +
     labs(fill = "SRA\nMetric", y = "Gene Products") +
     xlab(NULL)
@@ -77,13 +80,14 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
   p1 <- ggplot(data = df, aes(x = factor(Sample, levels = df$Sample), y = GPGroups)) +
     geom_bar(stat = "identity") +
     geom_text(aes(label = GPGroups),
-      vjust = 1.6, color = "white", size = 1.24 * annot_scale,
+      vjust = 1.4, color = "white", size = 1.44 * annot_scale,
       show.legend = FALSE
     ) +
     theme_classic() +
     theme(
-      text = element_text(size = 12),
-      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
+      text = element_text(size = axis_text_size + 2),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = axis_text_size * overflow_width),
+      axis.text.y = element_text(size = axis_text_size),
       # axis.text.x = element_blank(),
     ) +
     xlab(NULL)
@@ -94,11 +98,12 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     geom_bar(stat = "identity", position = position_dodge()) +
     theme_classic() +
     theme(
-      text = element_text(size = 14),
+      text = element_text(size = axis_text_size + 2),
       legend.position = "top",
-      legend.title = element_text(size = 8),
-      legend.text = element_text(size = 8),
-      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width),
+      legend.title = element_text(size = legend_text_size + 2),
+      legend.text = element_text(size = legend_text_size),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = axis_text_size * overflow_width),
+      axis.text.y = element_text(size = axis_text_size),
     ) +
     guides(fill = guide_legend(nrow = 1, byrow = TRUE)) +
     labs(fill = "PSM\nMetric") +
@@ -110,11 +115,11 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
     geom_bar(stat = "identity", position = position_dodge()) +
     theme_classic() +
     theme(
-      text = element_text(size = 14),
+      text = element_text(size = axis_text_size + 2),
       legend.position = "top",
-      legend.title = element_text(size = 8),
-      legend.text = element_text(size = 8),
-      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = 12 * overflow_width)
+      legend.title = element_text(size = legend_text_size),
+      legend.text = element_text(size = legend_text_size),
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = .4, size = axis_text_size * overflow_width)
     ) +
     guides(fill = guide_legend(nrow = 1, byrow = TRUE)) +
     labs(fill = "Peptide\nMetric") +
@@ -137,7 +142,6 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
         paste(ext, sep = ".")
     }
 
-    thweidth <- thewidth / 2
     for (ext in exts) {
       ggsave(make_outname("SRA", ext),
         plot = print(p0), height = 9, width = thewidth, units = "in", limitsize = FALSE, dpi = 300

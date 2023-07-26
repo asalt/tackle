@@ -150,7 +150,7 @@ import logging
 
 def _get_logger(name=__name__):
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
@@ -218,13 +218,15 @@ def impute_missing_old(
     _sd = _norm_notna.std()
     _norm = stats.norm(loc=_mean - (_sd * downshift), scale=_sd * scale)
     _number_na = frame.replace(0, np.NAN).isna().sum().sum()
-    
+
     # print(frame.replace(0, np.NAN).isna().sum())
     random_value_list = list()
     for i in range(8):
-        random_values = _norm.rvs(size=_number_na, random_state=random_state+i)
+        random_values = _norm.rvs(size=_number_na, random_state=random_state + i)
         random_value_list.append(random_values)
-    import ipdb; ipdb.set_trace()
+    import ipdb
+
+    ipdb.set_trace()
     random_values = np.mean(random_value_list, 0)
     assert random_values.shape == random_value_list[0].shape
 
@@ -696,8 +698,8 @@ def read_config(configfile, enforce=True):
     return ordered_data
 
 
+# genemapper = GeneMapper()
 
-#genemapper = GeneMapper()
 
 def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     """
@@ -708,18 +710,27 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     genemapper = get_gene_mapper()
 
     _df = None
-    _dtype = {"geneid": str, "GeneID": str, "genesymbol": str, "symbol":str, "GeneSymbol": str, "Symbol": str, "junk": str, "GeneID": str}
+    _dtype = {
+        "geneid": str,
+        "GeneID": str,
+        "genesymbol": str,
+        "symbol": str,
+        "GeneSymbol": str,
+        "Symbol": str,
+        "junk": str,
+        "GeneID": str,
+    }
     if gids.endswith(".csv"):
         _df = pd.read_csv(gids, dtype=_dtype)
     elif gids.endswith(".tsv") | gids.endswith(".txt"):
         _df = pd.read_table(gids, dtype=_dtype)
     elif gids.endswith(".xlsx"):  # try to parse plain text file
         _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet)
-    else: # maybe no extension, and is text
+    else:  # maybe no extension, and is text
         _df = pd.read_table(gids, dtype=_dtype)
 
     _df.columns = _df.columns.str.lower()
-    
+
     #
 
     #
@@ -739,6 +750,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
         else:
             print(genesymbol, gid)
         return gid.index[0]
+
     #
     #
     # import ipdb; ipdb.set_trace()
@@ -907,7 +919,7 @@ def fillna_meta(df, index_col):
 
 def standardize_meta(df):
 
-    #gm = GeneMapper()
+    # gm = GeneMapper()
     gm = get_gene_mapper()
     # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
@@ -922,7 +934,7 @@ def standardize_meta(df):
             df["GeneSymbol"] = df.Symbol
         elif df.Symbol.isna().sum() > 0 and df.GeneSymbol.isna().sum() == 0:
             df["Symbol"] = df.GeneSymbol
-    # now replace if that failed
+        # now replace if that failed
         if df.GeneSymbol.isna().sum() > 0 or df.Symbol.isna().sum() < 0:
             df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     # df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
@@ -1365,4 +1377,5 @@ def named_temp(*args, **kwargs):
 
 
 from .containers import get_gene_mapper
-#from .containers import GeneMapper
+
+# from .containers import GeneMapper

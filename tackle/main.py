@@ -5,6 +5,8 @@ from dis import show_code
 import sys
 import os
 from pathlib import Path
+import itertools
+import gseapy as gp
 
 try:
     import rpy2
@@ -62,6 +64,29 @@ sb.set_color_codes()
 
 __version__ = "0.5.01"
 
+
+GENESET_MAPPING = {
+    "hallmark": "h.all.v7.0.entrez.gmt",
+    "go_biological": "c5.bp.v7.0.entrez.gmt",
+    "curated.all": "c2.all.v7.0.entrez.gmt",
+    "curated.CGP": "c2.cgp.v7.0.entrez.gmt",
+    "curated.CP.all": "c2.cp.v7.0.entrez.gmt",
+    "curated.CP.BioCarta": "c2.cp.biocarta.v7.0.entrez.gmt",
+    "curated.CP.KEGG": "c2.cp.kegg.v7.0.entrez.gmt",
+    "curated.CP.Reactome": "c2.cp.reactome.v7.0.entrez.gmt",
+    "curated.CP.PID": "c2.cp.pid.v7.0.entrez.gmt",
+    "oncogenic.C6": "c6.all.v7.0.entrez.gmt",
+    "go.All": "c5.all.v7.0.entrez.gmt",
+    "go.Bio": "c5.bp.v7.0.entrez.gmt",
+    "go.Cell": "c5.cc.v7.0.entrez.gmt",
+    "go.Molecular": "c5.mf.v7.0.entrez.gmt",
+    "motif.gene.sets": "c3.all.v7.0.entrez.gmt",
+    "hallmark.Mm": "mh.all.v2022.1.Mm.entrez.gmt",
+    "go.Bio.Mm": "m5.go.bp.v2022.1.Mm.entrez.gmt",
+    "go.Cell.Mm": "m5.go.cc.v2022.1.Mm.entrez.gmt",
+    "go.Molecular.Mm": "m5.go.mf.v2022.1.Mm.entrez.gmt",
+}
+
 from bcmproteomics_ext import ispec
 
 sb.set_context("notebook", font_scale=1.4)
@@ -70,7 +95,7 @@ from .scatterplot import scatterplot
 from .clusterplot import clusterplot
 from .metrics import make_metrics
 from .pcaplot import pcaplot
-from .utils import fix_name
+from .utils import fix_name, _get_logger
 from . import utils
 from .utils import *
 from .containers import (
@@ -93,32 +118,32 @@ TAXON_MAPPER = {"human": 9606, "mouse": 10090, "celegans": 6239}
 import logging
 
 
-def _get_logger():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+# def _get_logger():
+#     logger = logging.getLogger(__name__)
+#     logger.setLevel(logging.DEBUG)
+#
+#     ch = logging.StreamHandler()
+#     ch.setLevel(logging.INFO)
+#     # create formatter and add it to the handlers
+#     formatter = logging.Formatter(
+#         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+#     )
+#     ch.setFormatter(formatter)
+#     # add the handlers to the logger
+#     logger.addHandler(ch)
+#     try:
+#         fh = logging.FileHandler("tackle.log")
+#         fh.setFormatter(formatter)
+#         logger.addHandler(fh)
+#     except PermissionError:
+#         pass
+#
+#     # fh.setLevel(logging.DEBUG)
+#     # create console handler with a higher log level
+#     return logger
 
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger.addHandler(ch)
-    try:
-        fh = logging.FileHandler("tackle.log")
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-    except PermissionError:
-        pass
 
-    # fh.setLevel(logging.DEBUG)
-    # create console handler with a higher log level
-    return logger
-
-
-logger = _get_logger()
+logger = _get_logger(__name__)
 
 
 def run(data_obj):
@@ -198,6 +223,58 @@ def run(data_obj):
 
 # def file_or_subcommand(ctx, param, value):
 #     pass
+class Path_or_Geneset(click.Path):
+    "a real file path or the name of a valid gene set"
+
+    def __init__(self, *args, **kwargs):
+        super(Path_or_Geneset, self).__init__(*args, **kwargs)
+
+    @classmethod
+    def look_for_genes(self, value: str, geneset_str: str):
+        f = GENESET_MAPPING.get(geneset_str)
+        geneset_file = os.path.join(
+            os.path.split(os.path.abspath(__file__))[0], "GSEA", "genesets", f
+        )
+        gs = gp.parser.read_gmt(geneset_file)
+        matches = [x for x in gs.keys() if value in x or value in x.lower()]
+        if len(matches) == 0:
+            print("No matches found")
+            return
+        if len(matches) > 1:
+            print("more than 1 match, just returning one at a time")
+            return
+            # todo more than one at the same time
+        # return {m, gs['m'] for m in matches}
+        ##
+        return {matches[0]: gs[matches[0]]}
+
+    def convert(self, value, param, ctx):
+
+        try:
+            res = click.Path.convert(self, value, param, ctx)
+            return res
+        except:
+
+            # f = GENESET_MAPPING.get("hallmark")
+            choices = (
+                "hallmark",
+                "go.Bio",
+                "go.Cell",
+                "go.Molecular",
+                "go.All",
+                "go.Cell.Mm",
+                "go.Bio.Mm",
+                "go.Molecular.Mm",
+            )
+
+            for choice in choices:
+                out = self.look_for_genes(value, choice)
+                if out is not None:
+                    break
+            return out
+            # try hallmark first
+
+
 class Path_or_Subcommand(click.Path):
 
     EXCEPTIONS = ("make_config", "replot_gsea")  # this one we just run
@@ -462,6 +539,7 @@ def validate_configfile(experiment_file, **kwargs):
 
 ANNOTATION_CHOICES = get_annotation_mapper().categories or tuple()
 ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
+# ANNOTATION_CHOICES = ["_all"]
 
 
 # @gui_option
@@ -517,6 +595,14 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
     default="./data/",
     show_default=True,
     help="location to store and read e2g files",
+)
+@click.option(
+    "--fill-na-zero / --no-fill-na-zero",
+    show_default=True,
+    default=True,
+    is_flag=True,
+    help="""
+""",
 )
 @click.option(
     "--only-load-local",
@@ -640,6 +726,12 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
     "--normalize-across-species", is_flag=True, default=False, show_default=True
 )
 @click.option(
+    "--impute-missing-values / --no-impute-missing-values",
+    default=False,
+    show_default=True,
+    is_flag=True,
+)
+@click.option(
     "-n",
     "--name",
     type=str,
@@ -701,10 +793,12 @@ def main(
     data_dir,
     only_load_local,
     file_format,
+    fill_na_zero,
     funcats,
     funcats_inverse,
     geneids,
     group,
+    impute_missing_values,
     limma,
     block,
     pairs,
@@ -839,7 +933,9 @@ def main(
 
     export_all = False
     if all(x in sys.argv for x in ("export", "--level")) and any(
-        x in sys.argv for x in ("all", "align", "MSPC")
+        x in sys.argv
+        for x in ("all", "align", "MSPC")
+        # x in sys.argv for x in ("all", "align")
     ):
         # know this ahead of time, calculate more things during data load
         export_all = True
@@ -874,6 +970,7 @@ def main(
         cmap_file=cmap_file,
         data_dir=data_dir,
         base_dir=result_dir,
+        fill_na_zero=fill_na_zero,
         funcats=funcats,
         funcats_inverse=funcats_inverse,
         geneids=geneids,
@@ -891,6 +988,7 @@ def main(
         nonzero_subgroup=nonzero_subgroup,
         unique_pepts=unique_pepts,
         taxon=taxon,
+        impute_missing_values=impute_missing_values,
         normalize_across_species=normalize_across_species,
         experiment_file=experiment_file,
         metrics=metrics,
@@ -972,6 +1070,11 @@ def main(
     param_df.to_csv(outname, sep="\t")
 
     ctx.obj["data_obj"] = data_obj
+
+
+# @main.command("make-jk")
+# @click.pass_context
+# def convert(context,):
 
 
 @main.command("make_config")
@@ -1117,7 +1220,11 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 
     X = data_obj.areas_log_shifted.copy()
     # to_mask = (data_obj.mask | (data_obj.areas_log==-10))
-    to_mask = (data_obj.mask | (data_obj.areas_log == data_obj.minval_log)).dropna(1)
+    # ??
+    # to_mask = (data_obj.mask | (data_obj.areas_log == data_obj.minval_log)).dropna(1)
+    to_mask = (data_obj.mask | (data_obj.areas_log == data_obj.areas_log.min())).dropna(
+        1
+    )
     X[to_mask] = np.NaN
     # g = scatterplot(X.replace(0, np.NaN), stat=stat,
     g = scatterplot(
@@ -1147,7 +1254,11 @@ def scatter(ctx, colors_only, shade_correlation, stat):
             "SRA",
             "PeptideCount",
             "PeptideCount_u2g",
+            "AreaSum_dstrAdj",
+            "AreaSum_u2g_0",
+            "AreaSum_u2g_max",
             "zscore",
+            "gct",
         ]
     ),
     default=("area",),
@@ -1175,6 +1286,10 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 @click.option("--gene-symbols", default=False, is_flag=True, show_default=True)
 @click.pass_context
 def export(ctx, level, genesymbols, gene_symbols, linear):
+
+    # =====
+
+    # =====
 
     data_obj = ctx.obj["data_obj"]
     for l in level:
@@ -1256,7 +1371,8 @@ def export(ctx, level, genesymbols, gene_symbols, linear):
 )
 @click.option(
     "--highlight-geneids",
-    type=click.Path(exists=True, dir_okay=False),
+    # type=click.Path(exists=True, dir_okay=False),
+    type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=True,
@@ -1657,6 +1773,14 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     help="Annotate points on PC plot",
 )
 @click.option("--frame", is_flag=True, default=False, show_default=True)
+@click.option(
+    "--normalize-by",
+    default=None,
+    show_default=True,
+    help="Metadata group to normalize by",
+)
+@click.option("--center / --no-center", is_flag=True, default=True, show_default=True)
+@click.option("--scale / --no-scale", is_flag=True, default=False, show_default=True)
 # @click.option('--annotate', type=click.Choice(['t', 'norm', 'k'])
 @click.option(
     "--max-pc",
@@ -1680,7 +1804,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 )
 @click.option(
     "--genefile",
-    type=click.Path(exists=True, dir_okay=False),
+    type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=False,
@@ -1688,17 +1812,19 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
               Should have 1 geneid per line. """,
 )
 @click.pass_context
-def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
+def pca2(
+    ctx, annotate, frame, normalize_by, center, scale, max_pc, color, marker, genefile
+):
 
     outname_kws = dict()
 
-    try:
-        import rpy2.robjects as robjects
-        from rpy2.robjects import pandas2ri
-        from rpy2.robjects.packages import importr
-    except ModuleNotFoundError:
-        print("rpy2 needs to be installed")
-        return
+    # try:
+    #     import rpy2.robjects as robjects
+    #     from rpy2.robjects import pandas2ri
+    #     from rpy2.robjects.packages import importr
+    # except ModuleNotFoundError:
+    #     print("rpy2 needs to be installed")
+    #     return
 
     data_obj = ctx.obj["data_obj"]
 
@@ -1724,6 +1850,9 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         if not data_obj.batch_nonparametric
         else "nonparametric",
         normtype=data_obj.normtype,
+        center=center,
+        scale=scale,
+        norm_by=normalize_by,
         # outpath=data_obj.outpath,
         outpath=os.path.join(data_obj.outpath, "pca"),
         **outname_kws,
@@ -1814,12 +1943,16 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
         shape=marker or robjects.NULL,
         outfiletypes=np.array(file_fmts),
         outname=outname_func("pca2"),
+        center=center,
+        scale=scale,
+        normalize_by=normalize_by or robjects.NULL,
         label=annotate,
         showframe=frame,
         max_pc=max_pc,
         color_list=color_list,
         marker_list=robjects.NULL,
         title=outname_kws.get("genefile") or robjects.NULL,
+        annot_str=outname_kws.get("genefile") or robjects.NULL,
     )
 
 
@@ -1887,7 +2020,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 @click.option(
     "--genefile",
     # type=click.Path(exists=True, dir_okay=False),
-    type=Path_or_Glob(exists=True, dir_okay=False),
+    type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=False,
@@ -1929,6 +2062,7 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
 @click.option(
     "--gene-annot", type=click.Path(exists=True, dir_okay=False), help="annotate"
 )
+# @click.option("--colorbar-direction", click.Choice(["horizontal", "vertical"]))
 @click.option(
     "--highlight-geneids",
     type=click.Path(exists=True, dir_okay=False),
@@ -1945,8 +2079,8 @@ def pca2(ctx, annotate, frame, max_pc, color, marker, genefile):
     type=Path_or_Glob(exists=True, dir_okay=False),
     default=None,
     show_default=True,
-    multiple=True,
-    help="""tackle volcanoplot output tsv file (or files, specifying multiple times)
+    multiple=False,
+    help="""tackle volcanoplot output tsv file (...)
               to subselect genes meeting certain thresholds
               """,
 )
@@ -2042,6 +2176,12 @@ when `auto` is set for `--nclusters`""",
               """,
 )
 @click.option(
+    "--row-annot-side",
+    default="left",
+    type=click.Choice(["left", "right"]),
+    show_default=True,
+)
+@click.option(
     "--row-cluster/--no-row-cluster",
     default=True,
     is_flag=True,
@@ -2099,6 +2239,7 @@ def cluster2(
     cmap,
     cut_by,
     col_cluster,
+    row_cluster,
     cluster_row_slices,
     cluster_col_slices,
     figsize,
@@ -2127,7 +2268,7 @@ def cluster2(
     volcano_direction,
     volcano_sortby,
     cluster_file,
-    row_cluster,
+    row_annot_side,
     row_dend_side,
     row_names_side,
     seed,
@@ -2140,6 +2281,10 @@ def cluster2(
 ):
 
     outname_kws = dict()
+
+    outname_kws["rds"] = "l" if row_dend_side == "left" else "r"
+    outname_kws["cc"] = "T" if col_cluster else "F"
+    outname_kws["rc"] = "T" if row_cluster else "F"
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
@@ -2172,8 +2317,13 @@ def cluster2(
     if not figsize:  # returns empty tuple if not specified
         figsize = None
 
-    X = data_obj.areas_log_shifted
+    missing_values = "masked" if show_missing_values else "unmasked"
+
+    X = data_obj.areas_log
     X.index = X.index.astype(str)
+    if show_missing_values:
+        _mask = data_obj.mask
+        X[_mask] = np.nan
     # filter if sample include is mentioned
     if sample_reference is not None:
         # we take a subset of the data
@@ -2181,19 +2331,34 @@ def cluster2(
         X = X[col_meta.index]
 
     genes = None
-    if genefile:
+    if genefile and not isinstance(genefile, dict):
         genes = parse_gid_file(genefile, sheet=genefile_sheet)  # default 0
-        _tokeep = [x for x in genes if x in X.index]  # preserve order
+        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
+    elif genefile and isinstance(genefile, dict):
+        _key = list(genefile.keys())[0]
+        genes = genefile[_key]
+        outname_kws["genefile"] = _key
+    if genefile:
+        _tokeep = [x for x in genes if x in X.index]  # preserves order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
-        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
     # print(len(X))
 
     ## filter by volcano output
     _tmp = list()
     _fc, _pval, _ptype = volcano_filter_params
-    for f in volcano_file:
-        _df = pd.read_table(f)
+    # for f in volcano_file:
+    if volcano_file is not None:
+        logger.info(f"Loading volcano file: {volcano_file}")
+        volcanofile_basename = os.path.split(volcano_file)[-1]
+        name_group = re.search("(?<=group)[_]?(.*)(?=\.tsv)", volcanofile_basename)
+        if name_group is None:
+            name_group = volcanofile_basename
+        else:
+            name_group = name_group.group(1)
+        logger.info(f"volcanofile name group is {name_group}")
+        outname_kws["volcano_file"] = name_group
+        _df = pd.read_table(volcano_file)
         if np.isfinite(volcano_topn):
             if volcano_direction == "both":
                 _df = pd.concat(
@@ -2353,8 +2518,8 @@ def cluster2(
     # experimental, best to be put in a separate function
     if cut_by is not None:
         _to_none = True
-        if "+" in cut_by:
-            cut_by = cut_by.split("+")
+        if ":" in cut_by:
+            cut_by = cut_by.split(":")
         else:
             cut_by = [cut_by]
         cut_by = np.array(cut_by)
@@ -2389,12 +2554,18 @@ def cluster2(
         annot_mat["GeneID"] = annot_mat.index
         annot_mat = annot_mat[["GeneID"] + [x for x in annot_mat if x != "GeneID"]]
 
+    # ============================================================
     if z_score_by is not None:
-        outname_kws["z_score_by"] = z_score_by
+        outname_kws["zscore_by"] = z_score_by
 
-    missing_values = "masked" if show_missing_values else "unmasked"
     if linear:
         outname_kws["linear"] = "linear"
+    if standard_scale is not None:
+        if standard_scale == 1 or standard_scale == "1":
+            outname_kws["scale"] = "row"
+        if standard_scale == 0 or standard_scale == "0":
+            outname_kws["scale"] = "col"
+
     #
     # data_obj.do_cluster()
     outname_func = partial(
@@ -2403,10 +2574,8 @@ def cluster2(
         taxon=data_obj.taxon,
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
-        linkage=linkage,
+        batch_method="param" if not data_obj.batch_nonparametric else "nonparam",
+        link=linkage,
         missing_values=missing_values,
         normtype=data_obj.normtype,
         outpath=os.path.join(data_obj.outpath, "cluster2"),
@@ -2416,16 +2585,22 @@ def cluster2(
     min_figwidth = 5
     if figsize is None:  # either None or length 2 tuple
         figheight = 12
-        if gene_symbols:  # make sure there is enough room for the symbols
-            figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
-            if figheight > 218:  # maximum figheight in inches
-                FONTSIZE = max(218 / figheight, 6)
-                figheight = 218
         figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
     else:
         figwidth, figheight = figsize
+    if gene_symbols:  # make sure there is enough room for the symbols
+        figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
+        if figheight > 218:  # maximum figheight in inches
+            FONTSIZE = max(218 / figheight, 6)
+            figheight = 218
+    logger.info(f"figsize: {figwidth} x {figheight}")
 
-    gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
+    # gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
+    gr_devices = {
+        ".png": grdevices.png,
+        ".pdf": grdevices.cairo_pdf,
+        ".svg": grdevices.svg,
+    }
     gr_kws = {
         ".png": dict(width=figwidth, height=figheight, units="in", res=300),
         ".pdf": dict(
@@ -2520,8 +2695,20 @@ def cluster2(
     pandas2ri.activate()
 
     def plot_and_save(
-        X, out, grdevice, gr_kws=None, annot_mat=None, main_title=None, **kws
+        X,
+        out,
+        grdevice,
+        gr_kws=None,
+        annot_mat=None,
+        main_title=None,
+        file_fmt=".pdf",
+        **kws,
     ):
+        """
+        # gr_kws is redefined here (update fighiehgt /width), no need to take it as input
+        """
+        if gr_kws is not None:
+            logger.info(f"gr_kws: {gr_kws}")
         if gr_kws is None:
             gr_kws = dict()
         # grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
@@ -2532,12 +2719,43 @@ def cluster2(
         if main_title is None:
             main_title = robjects.NULL
 
+        figheight = 12
+        if gene_symbols:
+            figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
+            # figheight = max(
+            #     ((gene_symbol_fontsize + 2) / 72) * (0.7 * (len(X) + 4)), 12
+            # )
+            if figheight > 218:  # maximum figheight in inches
+                figheight = 218
+        min_figwidth = 3
+        if figsize is None:  # either None or length 2 tuple
+            figheight = 12
+            figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+        else:
+            figwidth, figheight = figsize
+
+        logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
+        gr_kws = {
+            ".png": dict(width=figwidth, height=figheight, units="in", res=300),
+            ".pdf": dict(
+                width=figwidth,
+                height=figheight,
+            ),
+            ".svg": dict(
+                width=figwidth,
+                height=figheight,
+            ),
+        }
+        gr_kw = gr_kws[file_fmt]
+
         call_kws = dict(
             data=X,
             cut_by=cut_by,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
-            z_score=z_score or robjects.NULL,
+            z_score=z_score
+            if z_score != "None" and z_score is not None
+            else robjects.NULL,
             z_score_by=z_score_by or robjects.NULL,
             row_annot_df=row_annot_df,
             col_data=col_data,
@@ -2546,7 +2764,7 @@ def cluster2(
             force_plot_genes=force_plot_genes,
             # genes=genes or robjects.NULL, # this has been filtered above
             show_gene_symbols=gene_symbols,
-            standard_scale=data_obj.standard_scale or robjects.NULL,
+            standard_scale=True if standard_scale == True else robjects.NULL,
             row_cluster=row_cluster,
             col_cluster=col_cluster,
             # metadata=data_obj.config if show_metadata else None,
@@ -2557,6 +2775,7 @@ def cluster2(
             main_title=main_title,
             # mask=data_obj.mask,
             # figsize=figsize,
+            linear=linear,  # linear transformation not done in R yet
             normed=data_obj.normed,
             linkage=linkage,
             gene_symbol_fontsize=gene_symbol_fontsize,
@@ -2569,25 +2788,26 @@ def cluster2(
             order_by_abundance=order_by_abundance,
             seed=seed or robjects.NULL,
             metadata_colors=metadata_colorsR or robjects.NULL,
+            savedir=os.path.abspath(
+                os.path.join(data_obj.outpath, "cluster2")
+            ),  # this is for saving things within the r function
         )
         call_kws.update(kws)
-
-        ret = cluster2(**call_kws)
+        logger.info(f"call_kws: {call_kws}")
 
         grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
-        print(ret[0])
+        ret = cluster2(**call_kws)
+        # print(ret[0])
         grdevices.dev_off()
         print("done.", flush=True)
 
         sil_df = None
         try:
             sil_df = rpy2.robjects.pandas2ri.rpy2py_dataframe(ret[1])
-
         except Exception as e:
             pass
 
         if sil_df is not None:
-
             row_orders = ret[2]
             the_orders = [
                 row_orders.rx2(str(n)) - 1 for n in row_orders.names
@@ -2596,7 +2816,7 @@ def cluster2(
 
             cluster_metrics = sil_df.iloc[the_orders]
 
-            out = outname + ".tsv"
+            out = outname_func("clustermap_clusters", **outname_kws)
             print("saving", out)
             cluster_metrics.to_csv(out, index=False, sep="\t")
 
@@ -2622,7 +2842,12 @@ def cluster2(
         #################################################################
 
         plot_and_save(
-            X, out, grdevice, gr_kws, annot_mat=annot_mat_to_pass, main_title=main_title
+            X,
+            out,
+            grdevice,
+            annot_mat=annot_mat_to_pass,
+            main_title=main_title,
+            file_fmt=file_fmt,
         )
 
         ##################################################################
@@ -2646,7 +2871,7 @@ def cluster2(
                 _tokeep = [k for k, v in hg_gene_dict.items() if v in _annot_genes]
                 _tokeep = set(_tokeep)
                 logger.info(
-                    f"Successfully remapped {len(_tokeep)} genes to {len(hs_genes)} hs genes"
+                    f"{annotation}: Successfully remapped {len(_tokeep)} genes to hs genes"
                 )
                 subX = X[X.GeneID.isin(_tokeep)]
             if subX.empty:  # if still empty, continue
@@ -2656,11 +2881,13 @@ def cluster2(
             if annotate and annot_mat is not None:
                 sub_annot_mat = annot_mat[annot_mat.GeneID.isin(subX.GeneID)]
             _show_gene_symbols = False
-            if len(subX) < 141:
+            if len(subX) < 141 and bool(gene_symbols) == False:
                 _show_gene_symbols = True
                 logger.info(
-                    f"number of genes is {len(subX)} << 101, adding symbols. Use <future feature> to override>."
+                    f"number of genes is {len(subX)} << 101, adding symbols. Specify --gene-symbols to override>."
                 )
+            if gene_symbols is True:  # force override
+                _show_gene_symbols = True
 
             out = (
                 outname_func("clustermap", geneset=fix_name(annotation), **outname_kws)
@@ -2670,10 +2897,10 @@ def cluster2(
                 subX,
                 out,
                 grdevice,
-                gr_kws,
                 main_title=annotation,
                 annot_mat=sub_annot_mat,
                 show_gene_symbols=_show_gene_symbols,
+                file_fmt=file_fmt,
             )
 
         # heatmap = ret.rx('heatmap')
@@ -2871,7 +3098,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 )
 @click.option(
     "--highlight-geneids",
-    type=click.Path(exists=True, dir_okay=False),
+    # type=click.Path(exists=True, dir_okay=False),
+    type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=False,
@@ -2891,7 +3119,12 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     help="""more complex linear regression formula for use with limma.
               Supersedes `group` option""",
 )
-@click.option("--impute-missing-values", default=False, show_default=True, is_flag=True)
+@click.option(
+    "--impute-missing-values / --no-impute-missing-values",
+    default=False,
+    show_default=True,
+    is_flag=True,
+)
 @click.option(
     "--contrasts",
     default=None,
@@ -2899,7 +3132,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 )
 @click.option(
     "--genefile",
-    type=click.Path(exists=True, dir_okay=False),
+    # type=click.Path(exists=True, dir_okay=False),
+    type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=False,
@@ -2927,6 +3161,14 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     show_default=True,
     help="<experimental> alpha for top genes that are not highlight_selected_genes",
 )
+@click.option(
+    "--fill-na-zero / --no-fill-na-zero",
+    show_default=True,
+    default=False,
+    is_flag=True,
+    help="""
+""",
+)
 @click.pass_context
 def volcano(
     ctx,
@@ -2953,6 +3195,7 @@ def volcano(
     figsize,
     pch,
     alpha,
+    fill_na_zero,
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -2967,12 +3210,18 @@ def volcano(
     yaxis = "pValue" if p_value else "pAdj"
 
     genes = None
-    if genefile:
+    #
+    if genefile and isinstance(genefile, Path):
         genes = parse_gid_file(genefile)
 
     gids_to_highlight = None
-    if highlight_geneids is not None:
+    name_for_gids_to_highlight = None
+    if highlight_geneids is not None and not isinstance(highlight_geneids, dict):
         gids_to_highlight = parse_gid_file(highlight_geneids)
+        name_for_gids_to_highlight = Path(highlight_geneids).name
+    elif isinstance(highlight_geneids, dict):
+        name_for_gids_to_highlight = list(highlight_geneids.keys())[0]
+        gids_to_highlight = highlight_geneids[name_for_gids_to_highlight]
 
     width, height = figsize
 
@@ -3000,6 +3249,8 @@ def volcano(
         pch=pch,
         alpha=alpha,
         force_highlight_geneids=force_highlight_geneids,
+        fill_na_zero=fill_na_zero,
+        extra_outname_info=name_for_gids_to_highlight,
     )
 
 
@@ -3020,23 +3271,24 @@ def volcano(
 @click.option(
     "--geneset",
     type=click.Choice(
-        (
-            "hallmark",
-            "go_biological",
-            "curated.CP.all",
-            "curated.CP.KEGG",
-            "curated.CGP",
-            "oncogenic.C6",
-            "curated.CP.BioCarta",
-            "curated.CP.Reactome",
-            "curated.CGP",
-            "curated.CP.PID",
-            "go.All",
-            "go.Bio",
-            "go.Cell",
-            "go.Molecular",
-            "motif.gene.sets",
-        )
+        GENESET_MAPPING.keys()
+        # (
+        #    "hallmark",
+        #    "go_biological",
+        #    "curated.CP.all",
+        #    "curated.CP.KEGG",
+        #    "curated.CGP",
+        #    "oncogenic.C6",
+        #    "curated.CP.BioCarta",
+        #    "curated.CP.Reactome",
+        #    "curated.CGP",
+        #    "curated.CP.PID",
+        #    "go.All",
+        #    "go.Bio",
+        #    "go.Cell",
+        #    "go.Molecular",
+        #    "motif.gene.sets",
+        # )
     ),
     default=("hallmark",),
     show_default=True,
@@ -3078,7 +3330,12 @@ def volcano(
     default="phenotype",
     show_default=True,
 )
-@click.option("--plot-top-x", default=10, show_default=True)
+@click.option(
+    "--plot-top-x",
+    default=10,
+    show_default=True,
+    help="number of enrichment plots to generate for each group",
+)
 @click.option(
     "--rnd-type",
     type=click.Choice(("no_balance", "equalize_and_balance")),
@@ -3186,31 +3443,27 @@ def gsea(
     """
     Run GSEA on specified groups
     """
+
+    gsea_jar = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0], "GSEA", "gsea-3.0.jar"
+    )
+
     use_cluster2 = True
 
     rnd_seed = seed or rnd_seed
     # ===============================================================================================
     stat_metric_cutoff = 0.25 if stat_metric == "FWER p-val" else 0.05
-    if use_cluster2:
-        try:
-            from rpy2.robjects import r
-            import rpy2.robjects as robjects
-            from rpy2.robjects import pandas2ri
-            from rpy2.robjects.packages import importr
-        except ModuleNotFoundError:
-            print("rpy2 needs to be installed")
-            return
-
-        pandas2ri.activate()
-        r_source = robjects.r["source"]
-        r_file = os.path.join(
-            os.path.split(os.path.abspath(__file__))[0], "R", "clusterplot.R"
-        )
-
-        r_source(r_file)
-        grdevices = importr("grDevices")
-        cluster2 = robjects.r["cluster2"]
     # ===============================================================================================
+    r_source = robjects.r["source"]
+    r_file = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0], "R", "clusterplot.R"
+    )
+
+    r_source(r_file)
+    grdevices = importr("grDevices")
+    cluster2 = robjects.r["cluster2"]
+    # ===============================================================================================
+    # TODO move out
 
     if "--gmt" in sys.argv and "--geneset" not in sys.argv:
         geneset = tuple()
@@ -3245,6 +3498,7 @@ def gsea(
 
     # we can groupby one or more groups separated with :
     all_groups = group.split(":")
+    logger.info(f"Grouping by {all_groups}")
     gsea_groups = pheno.groupby(all_groups).groups
     for grp, ids in gsea_groups.items():
         pheno.loc[ids, "GSEA_GROUP"] = str.join("", grp)
@@ -3277,7 +3531,10 @@ def gsea(
     if ngroups < 2:
         raise ValueError("Must have at least 2 groups")
 
-    import itertools
+    def maybe_reorder_groups(groups):
+        if "cont" in groups[1].lower() and "cont" not in groups[0].lower():
+            return groups[::-1]
+        return groups
 
     for groups in itertools.combinations(pheno[group].unique(), 2):
         # # project 731
@@ -3287,21 +3544,15 @@ def gsea(
         #     continue
         # if not groups[0][-3:] == groups[1][-3:]:  # skip different time
         #     continue
-        print(groups)
+        logger.info(groups)
+        groups = maybe_reorder_groups(groups)
+        logger.info(f"groups after reorder: {groups}")
         # for groups in itertools.combinations(classes, 2):
 
         # samples0 = classes[groups[0]]
         # samples1 = classes[groups[1]]
 
         nsamples = pheno[pheno[group].isin(groups)].pipe(len)
-        # later
-        # nsamples = len(samples0) + len(samples1)
-        # group0 = '_'.join(groups[0])
-        # group1 = '_'.join(groups[1])
-        # cls_comparison = '#{1}_versus_{0}'.format(group0, group1)
-
-        # hack for abbvie
-        # if groups[0][0:3] != groups[1][0:3]: continue
 
         cls_comparison = "#{1}_versus_{0}".format(*groups)
 
@@ -3322,27 +3573,6 @@ def gsea(
 
         # param_file = os.path.abspath(namegen('gsea_params') + '.txt')
         param_file = namegen("gsea_params") + ".txt"
-
-        gsea_jar = os.path.join(
-            os.path.split(os.path.abspath(__file__))[0], "GSEA", "gsea-3.0.jar"
-        )
-        geneset_mapping = {
-            "hallmark": "h.all.v7.0.entrez.gmt",
-            "go_biological": "c5.bp.v7.0.entrez.gmt",
-            "curated.all": "c2.all.v7.0.entrez.gmt",
-            "curated.CGP": "c2.cgp.v7.0.entrez.gmt",
-            "curated.CP.all": "c2.cp.v7.0.entrez.gmt",
-            "curated.CP.BioCarta": "c2.cp.biocarta.v7.0.entrez.gmt",
-            "curated.CP.KEGG": "c2.cp.kegg.v7.0.entrez.gmt",
-            "curated.CP.Reactome": "c2.cp.reactome.v7.0.entrez.gmt",
-            "curated.CP.PID": "c2.cp.pid.v7.0.entrez.gmt",
-            "oncogenic.C6": "c6.all.v7.0.entrez.gmt",
-            "go.All": "c5.all.v7.0.entrez.gmt",
-            "go.Bio": "c5.bp.v7.0.entrez.gmt",
-            "go.Cell": "c5.cc.v7.0.entrez.gmt",
-            "go.Molecular": "c5.mf.v7.0.entrez.gmt",
-            "motif.gene.sets": "c3.all.v7.0.entrez.gmt",
-        }
 
         # # get most recent, sort by name and take last
         # homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
@@ -3381,7 +3611,10 @@ def gsea(
         expression.columns = expression.columns.str.replace("-", "_")
         if not no_homologene_remap:
             expression = hgene_map(expression)
-        expression = expression[pheno[pheno[group].isin(groups)].index]
+        ix0 = pheno[pheno[group] == (groups[0])].index
+        ix1 = pheno[pheno[group] == (groups[1])].index
+        ixs = [*ix0, *ix1]  # ixs in pheno are sample names
+        expression = expression[ixs]
         # expression = expression.fillna('na')
         expression.index.name = "NAME"
 
@@ -3392,12 +3625,17 @@ def gsea(
 
         for gs in geneset:
 
+            # old:
+            # outname = namegen("gsea", pathway=os.path.basename(gs))
+            # new:
             outname = namegen("gsea", pathway=os.path.basename(gs))
+
+            # this is outdir for gsea result
             outdir = os.path.abspath(os.path.join(data_obj.outpath, "gsea"))
             report_name = os.path.split(outname)[-1]
 
             if not os.path.exists(gs):
-                f = geneset_mapping.get(gs)
+                f = GENESET_MAPPING.get(gs)
                 geneset_file = os.path.join(
                     os.path.split(os.path.abspath(__file__))[0], "GSEA", "genesets", f
                 )
@@ -3419,8 +3657,13 @@ def gsea(
                 g.write("# {}\n".format(" ".join(groups)))
                 # g.write('{}\n'.format(' '.join(classes)))
                 # g.write('{}\n'.format(' '.join(pheno[group])))
+
+                _a = pheno[pheno[group] == groups[0]][group].values
+                _b = pheno[pheno[group] == groups[1]][group].values
+                _out = str.join(" ", [*_a, *_b]) + "\n"
                 g.write(
-                    "{}\n".format(" ".join(pheno[pheno[group].isin(groups)][group]))
+                    _out
+                    # "{}\n".format(" ".join(pheno[pheno[group].isin(groups)][group]))
                 )
 
                 g.file.flush()
@@ -3604,8 +3847,8 @@ def gsea(
             # edge case when nes_range is zero??
             if np.isnan(figwidth):
                 figwidth = 4  # ??
+            figheight = 2 + (len(gsea_sig) * 0.8)
 
-            figheight = max(4, min(gsea_sig.pipe(len) // 1.25, 24))
             fig = plt.figure(figsize=(figwidth, figheight))
             gs = mpl.gridspec.GridSpec(
                 2,
@@ -3708,7 +3951,10 @@ def gsea(
                 # heatmap of individual gene sets
 
                 outpath = os.path.join(
-                    data_obj.outpath, "GSEA_pathways", cls_comparison.strip("#")
+                    # data_obj.outpath, "GSEA_pathways", cls_comparison.strip("#")
+                    data_obj.outpath,
+                    "gsea",
+                    cls_comparison.strip("#"),
                 )
                 outpath = os.path.abspath(outpath)
 
@@ -3746,6 +3992,7 @@ def gsea(
                     try:
                         genes = genesets[gs]
                     except KeyError:
+                        logger.warning(f"Skipping {gs}")
                         continue  # GSEA limits how many results it outputs.
                         # This can happen when there are many differential pathways
                     z_score = "0"
@@ -3761,7 +4008,9 @@ def gsea(
                         + col_meta[col_meta[group] == groups[1]].index.tolist()
                     )
 
-                    X = expression.replace(0, np.nan).dropna(0, "all")[
+                    X = expression.replace(to_replace=0, value=np.nan).dropna(
+                        axis=0, how="all"
+                    )[
                         _cols
                     ]  # drop if all zero
                     _mask = data_obj.mask.copy()
@@ -3874,27 +4123,33 @@ def gsea(
                         row_annot_df = None
 
                         # clean this section up..
+                        gene_symbol_fontsize = 7
+                        # min_figheight = 6.5
+                        # figheight = 12
                         gene_symbols = True
-                        figheight = 12
-                        gene_symbol_fontsize = 8
-                        min_figheight = 6.5
+                        # genes is the subselection passed to cluster2
                         if (
                             gene_symbols
                         ):  # make sure there is enough room for the symbols
+                            logger.info("gene_symbols is True")
                             figheight = max(
-                                ((gene_symbol_fontsize + 2.2) / 72) * len(genes),
-                                min_figheight,
+                                ((gene_symbol_fontsize + 2) / 72) * len(genes), 12
                             )
-                            # len(genes), not len(X)!
+                            logger.info(f"length of matrix is {len(genes)}")
+                            logger.info(f"set figheight to {figheight}")
                             if figheight > 218:  # maximum figheight in inches
                                 gene_symbol_fontsize = max(218 / figheight, 6)
                                 figheight = 218
+                        logger.info(f"set figheight to {figheight}")
 
-                        plt_size = 6
                         min_figwidth = 4
                         figwidth = (
                             max(min(len(X.columns) / 2, 16), min_figwidth) + 1
                         )  # add an inch for annotations
+                        logger.info(f"setting figwidth to {figwidth}")
+                        if len(col_meta) > 5:
+                            figwidth += 2
+                            logger.info(f"setting figwidth to {figwidth}")
 
                         gr_devices = {
                             ".png": grdevices.png,
@@ -3955,6 +4210,7 @@ def gsea(
                                         }
                                     )
                                 except Exception as e:  ## ???
+                                    logger.error(e)
                                     return
                                 metadata_color_list.append(entry)
 
@@ -4125,6 +4381,7 @@ def gsea(
     "--rank-plots",
     default=False,
     is_flag=True,
+    show_default=True,
     help="Plot rank plots for each gene set",
 )
 @click.option(
@@ -4663,6 +4920,7 @@ def bar(
 
     data_obj = ctx.obj["data_obj"]
     metadata = data_obj.col_metadata
+
     if genefile:
         gene = gene + tuple(parse_gid_file(genefile))
     if len(gene) == 0:
@@ -4671,6 +4929,13 @@ def bar(
     outpath = os.path.join(data_obj.outpath, "bar")
     if not os.path.exists(outpath):
         os.makedirs(outpath)
+
+    data = data_obj.areas_log_shifted.copy()
+    data[data_obj.areas == 0] = 0  # fill the zeros back
+    data[data_obj.mask] = np.NaN
+    data.index = data.index.astype(str)
+
+    logger.info(f"batch applied is set to {data_obj.batch_applied}")
 
     outfunc = partial(
         get_outname,
@@ -4687,11 +4952,6 @@ def bar(
     )
     # if color is not None and average is not None:
     #     raise ValueError('Cannot specify color and average at the same time.')
-
-    data = data_obj.areas_log_shifted.copy()
-    data[data_obj.areas == 0] = 0  # fill the zeros back
-    data[data_obj.mask] = np.NaN
-    data.index = data.index.astype(str)
 
     from .rutils import gr_devices, robjects, close_grdevice
 

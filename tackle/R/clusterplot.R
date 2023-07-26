@@ -66,8 +66,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      show_gene_symbols = FALSE,
                      z_score = NULL, z_score_by = NULL,
                      standard_scale = NULL,
-                     row_dend_side = "left",
-                     row_names_side = "right",
+                     row_dend_side = "right",
+                     row_names_side = "left",
+                     row_annot_side = "left",
                      mask = NULL, show_missing_values = TRUE, max_autoclusters = 30,
                      row_cluster = TRUE, col_cluster = TRUE, seed = NA,
                      metadata = NULL, col_data = NULL, figsize = NULL, normed = NULL,
@@ -79,7 +80,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      cluster_row_slices = TRUE,
                      cluster_col_slices = TRUE,
                      cut_by = NULL,
-                     order_by_abundance = FALSE) {
+                     order_by_abundance = FALSE,
+                     linear = FALSE,
+                     savedir = NULL,
+                     ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
   col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE, levels = col_data$name)
@@ -190,9 +194,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       ## row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", nrow = 2)
       row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
     }
-    row_data_args[["annotation_name_side"]] <- "top"
-    row_data_args[["gp"]] <- gpar(fontsize = 8, col = NA)
-    row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 8)
+    row_data_args[["annotation_name_side"]] <- "top" # top, bottom
+    row_data_args[["gp"]] <- gpar(fontsize = 11, col = NA)
+    row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 11)
     row_data_args[["annotation_width"]] <- unit(.15, "in")
   }
   ## ===============  COLUMN ANNOTATION ============================================
@@ -365,13 +369,17 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   cell_fun <- NULL
   if (!is.null(annot_mat)) {
+    .base_fontsize <- 6.5
     annot_mat <- annot_mat %>%
       mutate(GeneID = factor(GeneID, levels = toplot$GeneID, ordered = TRUE)) %>%
       arrange(GeneID)
     cell_fun <- function(j, i, x, y, width, height, fill) {
       row <- i
       col <- j + 1
-      grid.text(sprintf("%.0f", annot_mat[row, col]), x, y, gp = gpar(fontsize = 6.5))
+      value <- sprintf("%.0f", annot_mat[row, col])
+      .fontsize <- .base_fontsize
+      if (nchar(value) > 3) .fontsize <- .fontsize - 1
+      grid.text(sprintf("%.0f", annot_mat[row, col]), x, y, gp = gpar(fontsize = .fontsize))
     }
   }
 
@@ -388,7 +396,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       genes = ComplexHeatmap::anno_mark(
         at = ixs,
         labels = thelabels,
-        labels_gp = gpar(fontsize = 9)
+        labels_gp = gpar(fontsize = 14)
       )
     )
   }
@@ -411,8 +419,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # dis <- dist_no_na(X)
     # browser()
     sil <- cluster::silhouette(clusters$cluster, dis)
+    .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
+    browser()
     dev.new()
-    pdf("silhouette.pdf", width = 10, height = 20)
+    pdf(.file, width = 10, height = 20)
     print(plot(sil, col = "grey"))
     dev.off()
     sil_df <- cbind(toplot$GeneID, toplot$GeneSymbol, sil) %>%
@@ -427,15 +437,20 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # test:
   ## cut_by <- 'response'
   if (!is.null(cut_by)) {
-    col_data[[cut_by]] <- col_data[[cut_by]] %>% factor(ordered = TRUE)
-    column_split <- col_data[[cut_by]] %>% factor(ordered = TRUE, levels = unique(col_data[[cut_by]]))
+    cut_by_cols <- cut_by
+    # cut_by_cols <- unlist(strsplit(cut_by, ":")) # split by colon
+    for (.col in cut_by_cols) {
+      col_data[[.col]] <- factor(col_data[[.col]], ordered = TRUE)
+    }
+    column_split <- lapply(col_data[cut_by_cols], as.factor)
+    # col_data[[cut_by]] <- col_data[[cut_by]] %>% factor(ordered = TRUE)
+    # column_split <- col_data[[cut_by]] %>% factor(ordered = TRUE, levels = unique(col_data[[cut_by]]))
     # column_split <- col_data[, c(cut_by, 'name')]
   }
 
 
   ## print(head(toplot[col_data$name]))
   print("##################################")
-  # print(cluster_col_slices)
 
   mat <- toplot[col_data$name]
   # library(seriation)
@@ -450,7 +465,37 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # row_cluster <- as.dendrogram(o1[[1]])
   # col_cluster <- as.dendrogram(o2[[1]])
 
+  # title = ifelse(is.null(z_score), ifelse(linear == TRUE, "iBAQ", "log(iBAQ)"), "zscore(log(iBAQ))"),
+  .title <- ifelse(linear == TRUE, "iBAQ", "log(iBAQ)")
+  if (is.null(z_score)) z_score <- FALSE
+  if (z_score == TRUE | z_score == "0") .title <- paste0(.title, " zscore")
+  if (!is.null(z_score_by)) .title <- paste0(.title, " by ", z_score_by)
+  # {
+  #   heatmap_legend_param$title <- paste0("zscore ", heatmap_legend_param$title)
+  # }
+  if (is.null(standard_scale == TRUE)) .title <- paste0(.title, " (standardized)")
+
+  .legend_width <- if (is.null(z_score_by)) unit(2.5, "cm") else unit(4.4, "cm")
+  heatmap_legend_param <- list(
+    title = .title,
+    direction = "horizontal",
+    just = "bottom",
+    legend_width = .legend_width
+  )
+  # legend_width = ifelse(is.null(z_score_by), unit(1.5, "cm"), unit(4, "cm"))
+  # print(heatmap_legend_param)
+
+  # need to use as.character so switch works
+  right_annotation <- switch(is.null(gene_annot),
+    "TRUE" = NULL,
+    "FALSE" = gene_annot
+  )
+
   ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
+  # browser()
+  # toplot %>% mutate(across(where(is.matrix), as.vector)) %>% readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
+  #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
+
   ht <- Heatmap(toplot[col_data$name],
     name = "mat",
     row_split = discrete_clusters,
@@ -460,6 +505,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     border = TRUE,
     cell_fun = cell_fun,
     row_dend_side = row_dend_side, #' right',
+    # row_names_side = row_names_side, #' left',
     row_names_side = row_names_side, #' left',
     ## top_annotation=hc,
     ## right_annotation=gene_annot,
@@ -487,17 +533,24 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     column_names_side = "top",
     show_parent_dend_line = TRUE,
     row_dend_width = unit(1.2, "in"),
-    heatmap_legend_param = list(title = ifelse(is.null(z_score), "log(iBAQ)", "zscore")),
-    right_annotation = gene_annot,
-    left_annotation = row_annot
+    heatmap_legend_param = heatmap_legend_param,
+    # right_annotation = gene_annot,
+    right_annotation = switch(row_annot_side == "right",
+      row_annot,
+      right_annotation
+    ),
+    left_annotation = switch(row_annot_side == "left",
+      row_annot,
+      NULL
+    ),
   )
 
-  ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = "right", padding = unit(c(10, 2, 2, 2), "mm"))
+  ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = "bottom", padding = unit(c(10, 2, 2, 2), "mm"))
   ht_row_order <- row_order(ht)
 
   if (!is.null(annot_mat)) {
     xunit <- ifelse(row_cluster == TRUE, 1, 2.4)
-    print(xunit)
+    # print(xunit)
     decorate_heatmap_body("mat", {
       grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
     })
