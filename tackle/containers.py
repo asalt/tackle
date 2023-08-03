@@ -1794,9 +1794,6 @@ class Data:
             # robjects.r('print(fit)')
 
             robjects.r.assign("contrasts_array", contrasts_array)
-            import ipdb
-
-            ipdb.set_trace()
 
             robjects.r(
                 """contrasts_matrix <- makeContrasts(contrasts = contrasts_array,
@@ -1973,7 +1970,7 @@ class Data:
             else:
                 _area_col = "AreaSum_dstrAdj"
                 _area_col = "iBAQ_dstrAdj"
-                _area_col = "AreaSum_u2g_max"
+                #_area_col = "AreaSum_u2g_max"
             level_formatter = level + "_" + _area_col
 
         outname = (
@@ -2048,8 +2045,8 @@ class Data:
                 _area_col = "FOT_TF"
             else:
                 _area_col = "iBAQ_dstrAdj"
-                _area_col = "AreaSum_dstrAdj"
-                _area_col = "AreaSum_u2g_max"
+                #_area_col = "AreaSum_dstrAdj"
+                #_area_col = "AreaSum_u2g_max"
 
             cols = [
                 "SRA",
