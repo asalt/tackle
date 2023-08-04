@@ -12,8 +12,7 @@ except AttributeError:
 
 from .utils import get_outname, parse_gid_file, fix_name
 
-#from .containers import GeneMapper
-
+# from .containers import GeneMapper
 
 
 def volcanoplot(
@@ -46,7 +45,7 @@ def volcanoplot(
 
     data_obj = ctx.obj["data_obj"]
 
-    #gm = GeneMapper()
+    # gm = GeneMapper()
     gm = get_gene_mapper()
 
     if yaxis not in ("pValue", "pAdj"):
@@ -169,7 +168,7 @@ def volcanoplot(
         if highlight_geneids is not None:
             df.loc[df.index.intersection(highlight_geneids), "highlight"] = True
         #     df.
-        #if highlight_geneids
+        # if highlight_geneids
 
         df["signedlogP"] = df.apply(
             lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
@@ -190,43 +189,48 @@ def volcanoplot(
         #     df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
         _xtra = {}
         if extra_outname_info is not None:
-            _xtra['n'] = extra_outname_info
+            _xtra["n"] = extra_outname_info
 
         _b = None
-        if not data_obj.batch_nonparametric and data_obj.batch_applied==True:
+        if not data_obj.batch_nonparametric and data_obj.batch_applied == True:
             _b = "parametric"
         elif data_obj.batch_applied == True:
-            _b = "nonparam",
+            _b = ("nonparam",)
+
+        # impute_missing_values = (impute_missing_values,)
+        # fill_na_zero = (fill_na_zero,)
 
         outname = get_outname(
             "volcanoplot",
             name=data_obj.outpath_name,
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
-            #batch_me=_b,
+            # batch_me=_b,
             colors_only=data_obj.colors_only,
             batch=data_obj.batch_applied,
             normtype=data_obj.normtype,
+            imv="T" if impute_missing_values else "F",
+            fna="T" if fill_na_zero else "F",
             group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
             outpath=os.path.join(data_obj.outpath, "volcano"),
             **_xtra,
         )
 
         slicepoint = 170
-        space = min(10, 170+len(outname))
+        space = min(10, 170 + len(outname))
         if len(outname) > 255:
-            outname = outname.replace('timepoint', 'T')
-            outname = outname.replace('time', 'T')
-            #outname = outname.replace('time', 'T')
+            outname = outname.replace("timepoint", "T")
+            outname = outname.replace("time", "T")
+            # outname = outname.replace('time', 'T')
         while len(outname) > 255:
-            outname = outname[:slicepoint] + ".." + outname[slicepoint+space:]
+            outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
             slicepoint += 20
             if slicepoint > 255:
-                break # file name too long
+                break  # file name too long
 
         out = outname + ".tsv"
         print("Saving", out, "...", end="", flush=True)
-        export_data = df # this is a "results" dataframe from the stat running method
+        export_data = df  # this is a "results" dataframe from the stat running method
         if only_sig:
             _log2_cutoff = np.sqrt(foldchange)
             export_data = df.query("pAdj < @sig & abs(log2_FC) > @_log2_cutoff")
@@ -291,12 +295,12 @@ def volcanoplot(
         }
 
         df["FunCats"] = df.FunCats.fillna("").astype(str)
-        df["GeneSymbol"] = df['GeneSymbol'].fillna("").astype(str)
+        df["GeneSymbol"] = df["GeneSymbol"].fillna("").astype(str)
         df.index = df.index.astype(
             "str"
         )  # make uniform dtype so rpy2 does not crash in conversion
         df = df.reset_index()
-        df = df[~df['t'].isna()]
+        df = df[~df["t"].isna()]
 
         for file_fmt in file_fmts:
 
@@ -338,8 +342,9 @@ def volcanoplot(
 
     return
 
+
 from .containers import get_gene_mapper
 
-    # =============================================================================================
-    # end
-    # =============================================================================================
+# =============================================================================================
+# end
+# =============================================================================================

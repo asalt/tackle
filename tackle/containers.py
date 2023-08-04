@@ -1692,6 +1692,10 @@ class Data:
         if not fill_na_zero:
             mat[self.mask] = np.nan
 
+        if fill_na_zero:
+            mat[self.mask] = 0
+            mat[mat == 0] = 0
+
         if impute_missing_values:
 
             downshift, scale = 1.8, 0.8
@@ -1709,10 +1713,10 @@ class Data:
                 outpath=self.outpath,
             )
 
-            mask_values = mat[self.mask].copy()
+            # mask_values = mat[self.mask].copy()
 
             mat[self.mask] = np.nan
-            # mat[mat == 0] = np.nan
+            mat[mat == 0] = np.nan
             mat = utils.impute_missing(
                 mat, downshift=downshift, scale=scale, make_plot=True
             )
@@ -1970,7 +1974,7 @@ class Data:
             else:
                 _area_col = "AreaSum_dstrAdj"
                 _area_col = "iBAQ_dstrAdj"
-                #_area_col = "AreaSum_u2g_max"
+                # _area_col = "AreaSum_u2g_max"
             level_formatter = level + "_" + _area_col
 
         outname = (
@@ -2045,8 +2049,8 @@ class Data:
                 _area_col = "FOT_TF"
             else:
                 _area_col = "iBAQ_dstrAdj"
-                #_area_col = "AreaSum_dstrAdj"
-                #_area_col = "AreaSum_u2g_max"
+                # _area_col = "AreaSum_dstrAdj"
+                # _area_col = "AreaSum_u2g_max"
 
             cols = [
                 "SRA",

@@ -3164,7 +3164,7 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option(
     "--fill-na-zero / --no-fill-na-zero",
     show_default=True,
-    default=False,
+    default=True,
     is_flag=True,
     help="""
 """,
