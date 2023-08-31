@@ -147,7 +147,6 @@ logger = _get_logger(__name__)
 
 
 def run(data_obj):
-
     # if 'scatter' in plots or 'all' in data_obj.plots:
     if data_obj.make_plot("scatter"):
         g = scatterplot(
@@ -249,12 +248,10 @@ class Path_or_Geneset(click.Path):
         return {matches[0]: gs[matches[0]]}
 
     def convert(self, value, param, ctx):
-
         try:
             res = click.Path.convert(self, value, param, ctx)
             return res
         except:
-
             # f = GENESET_MAPPING.get("hallmark")
             choices = (
                 "hallmark",
@@ -276,14 +273,12 @@ class Path_or_Geneset(click.Path):
 
 
 class Path_or_Subcommand(click.Path):
-
     EXCEPTIONS = ("make_config", "replot_gsea")  # this one we just run
 
     def __init__(self, *args, **kwargs):
         super(Path_or_Subcommand, self).__init__(*args, **kwargs)
 
     def convert(self, value, param, ctx):
-
         commands = ctx.command.commands.keys()
 
         if value in self.EXCEPTIONS:
@@ -323,7 +318,6 @@ class Path_or_Glob(click.Path):
         super(Path_or_Glob, self).__init__(*args, **kwargs)
 
     def convert(self, value, param, ctx):
-
         try:
             return click.Path.convert(self, value, param, ctx)
         except click.BadParameter as e:
@@ -334,7 +328,6 @@ class Path_or_Glob(click.Path):
 
 
 def validate_cluster_number(ctx, param, value):
-
     if value == "auto":
         return "auto"
 
@@ -376,7 +369,6 @@ def validate_in_config(*entries, valid_entries=None):
 
 
 def validate_seed(ctx, param, value):
-
     if value == "None" or value is None:
         return None
 
@@ -1149,7 +1141,6 @@ def make_config(
     ext = ext[1:]
 
     if infer_inputfile and delimiter is None:
-
         sep = SEP_DICT.get(ext)
         if sep is None:
             warn(
@@ -1199,7 +1190,6 @@ def make_config(
 )
 @click.pass_context
 def scatter(ctx, colors_only, shade_correlation, stat):
-
     data_obj = ctx.obj["data_obj"]
     file_fmts = ctx.obj["file_fmts"]
 
@@ -1286,7 +1276,6 @@ def scatter(ctx, colors_only, shade_correlation, stat):
 @click.option("--gene-symbols", default=False, is_flag=True, show_default=True)
 @click.pass_context
 def export(ctx, level, genesymbols, gene_symbols, linear):
-
     # =====
 
     # =====
@@ -1498,7 +1487,6 @@ def cluster(
     z_score,
     z_score_by,
 ):
-
     if order_by_abundance and row_cluster:
         print("Not ")
 
@@ -1542,7 +1530,6 @@ def cluster(
 
     annot_mat = None
     if annotate:
-
         # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
         _cols = [x for x in data_obj.data.columns if x not in ("Metric")]
         annot_mat = (
@@ -1637,7 +1624,6 @@ def cluster(
     )
 
     if kmeans_res is not None:
-
         fig = kmeans_res["cluster_center_plot"]["fig"]
         outname = outname_func("{}clusters_centers".format(kmeans_clusters))
         save_multiple(fig, outname, *file_fmts)
@@ -1717,7 +1703,6 @@ def cluster(
 )
 @click.pass_context
 def pca(ctx, annotate, max_pc, color, marker, genefile):
-
     data_obj = ctx.obj["data_obj"]
 
     genes = None
@@ -1815,7 +1800,6 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 def pca2(
     ctx, annotate, frame, normalize_by, center, scale, max_pc, color, marker, genefile
 ):
-
     outname_kws = dict()
 
     # try:
@@ -2091,7 +2075,7 @@ def pca2(
     show_default=True,
 )
 @click.option(
-    "--volcano-topn", default=99, show_default=True, help="Top n to plot total"
+    "--volcano-topn", default=100, show_default=True, help="Top n to plot total"
 )
 @click.option(
     "--volcano-sortby",
@@ -2279,7 +2263,6 @@ def cluster2(
     z_score_by,
     add_human_ratios,
 ):
-
     outname_kws = dict()
 
     outname_kws["rds"] = "l" if row_dend_side == "left" else "r"
@@ -2358,30 +2341,38 @@ def cluster2(
             name_group = name_group.group(1)
         logger.info(f"volcanofile name group is {name_group}")
         outname_kws["volcano_file"] = name_group
+        outname_kws["direction"] = volcano_direction
         _df = pd.read_table(volcano_file)
-        if np.isfinite(volcano_topn):
-            if volcano_direction == "both":
-                _df = pd.concat(
-                    [
-                        _df.sort_values(by=volcano_sortby, ascending=False).head(
-                            int(volcano_topn / 2)
-                        ),
-                        _df.sort_values(by=volcano_sortby, ascending=False).tail(
-                            int(volcano_topn / 2)
-                        ),
-                    ]
+        if not np.isfinite(volcano_topn):
+            _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
+        else:  # np.isfinite(volcano_topn):
+            #
+            _n = (
+                int(volcano_topn / 2)
+                if volcano_direction == "both"
+                else int(volcano_topn)
+            )
+            if volcano_sortby == "log2_FC":
+                _up = _df.sort_values(by="log2_FC", ascending=False).head(_n)
+                _dn = _df.sort_values(by="log2_FC", ascending=False).tail(_n)
+            elif volcano_sortby == "pValue":
+                _up = (
+                    _df.query("log2_FC>0")
+                    .sort_values(by="pValue", ascending=True)
+                    .head(_n)
                 )
-            elif volcano_direction == "up":
-                _df = _df.sort_values(by=volcano_sortby, ascending=False).head(
-                    int(volcano_topn)
-                )
-            elif volcano_direction == "down":
-                _df = _df.sort_values(by=volcano_sortby, ascending=False).tail(
-                    int(volcano_topn)
+                _dn = (
+                    _df.query("log2_FC<0")
+                    .sort_values(by="pValue", ascending=True)
+                    .head(_n)
                 )
 
-        else:
-            _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
+            if volcano_direction == "both":
+                _df = pd.concat([_up, _dn])
+            elif volcano_direction == "up":
+                _df = _up
+            elif volcano_direction == "down":
+                _df = _dn
         _tmp.append(_df)
     if _tmp:
         _dfs = pd.concat(_tmp)
@@ -2535,7 +2526,6 @@ def cluster2(
     ## ============================================================
     annot_mat = None
     if annotate:
-
         # annot_mat = (data_obj.data.loc[ idx[X.index.tolist(), annotate], : ]
         _cols = [x for x in data_obj.data.columns if x not in ("Metric")]
         annot_mat = (
@@ -2943,7 +2933,6 @@ def cluster2(
 )
 @click.pass_context
 def metrics(ctx, full, before_filter, before_norm):
-
     data_obj = ctx.obj["data_obj"]
     file_fmts = ctx.obj["file_fmts"]
 
@@ -3433,6 +3422,7 @@ def gsea(
     set_min,
     number,
     group,
+    contrasts,  # TODO add contrasts  parsing to determine directionality and
     plot_genes,
     plot_genes_sig,
     annotate,
@@ -3533,7 +3523,9 @@ def gsea(
 
     def maybe_reorder_groups(groups):
         if "cont" in groups[1].lower() and "cont" not in groups[0].lower():
-            return groups[::-1]
+            return groups[::-1]  # switch it
+        if "wt" in groups[1].lower() and "wt" not in groups[0].lower():
+            return groups[::-1]  # switch it
         return groups
 
     for groups in itertools.combinations(pheno[group].unique(), 2):
@@ -3624,7 +3616,6 @@ def gsea(
             geneset = [*geneset, gmt]
 
         for gs in geneset:
-
             # old:
             # outname = namegen("gsea", pathway=os.path.basename(gs))
             # new:
@@ -3925,7 +3916,6 @@ def gsea(
             save_multiple(fig, outname, *file_fmts)
 
             if plot_genes or plot_genes_sig:
-
                 # load genesets
                 genesets = dict()
                 with open(geneset_file, "r") as f:
@@ -3983,7 +3973,6 @@ def gsea(
                 # for ix, row in gsea_sig.iterrows():
                 # _expression = data_obj.areas_log_shifted
                 for ix, row in iter_:
-
                     force_plot_genes = False
                     gs = row["GS<br> follow link to MSigDB"]
 
@@ -4060,7 +4049,6 @@ def gsea(
                         # .loc[ pd.IndexSlice[X.index.tolist(), annotate], _cols ]
                         # .reset_index(level=1, drop=True)
                         if not no_homologene_remap:
-
                             ## TODO cleanup
                             # annot_mat = (data_obj.data.query('Metric == "{}"'.format(annotate))
                             #             .set_index("GeneID")
@@ -4111,7 +4099,6 @@ def gsea(
 
                     # result = clusterplot(X,
                     if use_cluster2:
-
                         # rpy2 complient
                         if annot_mat is None:
                             annot_mat = robjects.NULL
@@ -4262,7 +4249,6 @@ def gsea(
                             print("done.", flush=True)
 
                     else:
-
                         result = clusterplot(
                             X,
                             main_title=main_title,
@@ -4595,7 +4581,6 @@ def box(
     xtickrotation,
     xticksize,
 ):
-
     if group is None:
         raise ValueError("Must specify group")
     data_obj = ctx.obj["data_obj"]
@@ -4661,7 +4646,6 @@ def box(
     }
 
     for g in gene:
-
         symbol = data_obj.gid_symbol.get(g, "")
         if g not in data.index:
             warn("GeneID {} ({}) not in dataset, skipping..".format(g, symbol))
@@ -4715,7 +4699,6 @@ def box(
 )
 @click.pass_context
 def dendrogram(ctx, color, marker, linkage):
-
     figwidth = 10
     figheight = 10
     try:
@@ -5254,5 +5237,4 @@ def genecorr(
 
 
 if __name__ == "__main__":
-
     main(obj={})
