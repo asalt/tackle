@@ -29,6 +29,7 @@ makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
 }
 yaxis.choices <- c("pValue", "pAdj")
 number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue")
+direction.choices <- c("both", "up", "down")
 
 # :fc_cutoff: cutoff for absolute fold change cutoff
 volcanoplot <- function(X, max_labels = 35,
@@ -36,6 +37,7 @@ volcanoplot <- function(X, max_labels = 35,
                         alpha = 1.,
                         fc_cutoff = 4, sig = 0.05, label_cex = 1,
                         show_all = FALSE, yaxis = yaxis.choices,
+                        direction = direction.choices,
                         group0 = "", group1 = "",
                         sig_metric = "pAdj",
                         number_by = "abs_log2_FC",
@@ -52,6 +54,7 @@ volcanoplot <- function(X, max_labels = 35,
 
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
+  direction <- match.arg(direction, direction.choices)
   linear_fc_cutoff <- fc_cutoff
   ## if (fc_cutoff > 0) {
   ##   fc_cutoff <- abs(log2(fc_cutoff))
@@ -88,8 +91,14 @@ volcanoplot <- function(X, max_labels = 35,
   ## X[ , 'usd' ] = '#88888888'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
-  X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
-  X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
+  if (direction != "up") {
+    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
+  }
+  if (direction != "down") {
+    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
+  }
+  # X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
+  # X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
   X[, "alpha"] <- .20 # new column
   ## X[ X$highlight == TRUE, 'usd' ] = "#67ff3d"
   ## X[ X$highlight == TRUE, 'usd' ] = "purple"
@@ -133,46 +142,41 @@ volcanoplot <- function(X, max_labels = 35,
   ## ======================================================================
   ## = calculations for deciding on which dots to show ===============
   ## ======================================================================
-  if (number_by == "abs_log2_FC") {
-    to_label <- head(
-      order(abs(X[X$highlight == TRUE, "log2_FC"]), X[X$highlight == TRUE, "pValue"],
-        decreasing = c(TRUE, FALSE)
-      ),
-      max_labels
-    )
-    max_labels <- max_labels - length(to_label)
-
-    to_label <- head(
-      order(abs(X[, "log2_FC"]), X[, "pValue"], decreasing = c(TRUE, FALSE)),
-      max_labels
-    )
-  } else if (number_by == "log2_FC") {
-    to_label1 <- X %>%
-      filter(log2_FC < 0 & FC > fc_cutoff & Sig != "N.S.") %>%
-      arrange(log2_FC) %>%
-      head(round(max_labels, 2)) %>%
-      rownames()
-    to_label2 <- X %>%
-      filter(log2_FC > 0 & FC > fc_cutoff & Sig != "N.S.") %>%
-      arrange(-log2_FC) %>%
-      head(round(max_labels, 2)) %>%
-      rownames()
-
-
-    to_label <- c(to_label1, to_label2)
-  } else {
-    to_label1 <- X %>%
-      filter(log2_FC < 0 & FC > fc_cutoff & Sig != "N.S.") %>%
-      arrange(pValue) %>%
-      head(round(max_labels, 2)) %>%
-      rownames()
-    to_label2 <- X %>%
-      filter(log2_FC > 0 & FC > fc_cutoff & Sig != "N.S.") %>%
-      arrange(pValue) %>%
-      head(round(max_labels, 2)) %>%
-      rownames()
-    to_label <- c(to_label1, to_label2)
+  to_label1 <- c()
+  to_label2 <- c()
+  if (number_by == "log2_FC") {
+    if (direction != "up") {
+      to_label1 <- X %>%
+        filter(log2_FC < 0 & FC > fc_cutoff & Sig != "N.S.") %>%
+        arrange(log2_FC) %>%
+        head(round(max_labels, 2)) %>%
+        rownames()
+    }
+    if (direction != "down") {
+      to_label2 <- X %>%
+        filter(log2_FC > 0 & FC > fc_cutoff & Sig != "N.S.") %>%
+        arrange(-log2_FC) %>%
+        head(round(max_labels, 2)) %>%
+        rownames()
+    }
+  } else if (number_by == "pValue") {
+    if (direction != "up") {
+      to_label1 <- X %>%
+        filter(log2_FC < 0 & FC > fc_cutoff & Sig != "N.S.") %>%
+        arrange(pValue) %>%
+        head(round(max_labels, 2)) %>%
+        rownames()
+    }
+    if (direction != "down") {
+      to_label2 <- X %>%
+        filter(log2_FC > 0 & FC > fc_cutoff & Sig != "N.S.") %>%
+        arrange(pValue) %>%
+        head(round(max_labels, 2)) %>%
+        rownames()
+    }
   }
+  to_label <- c(to_label1, to_label2)
+  ## ======================================================================
 
   X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < sig), "label"] <- TRUE
   X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < sig), "label"] <- TRUE
@@ -212,8 +216,24 @@ volcanoplot <- function(X, max_labels = 35,
   # }
 
   ## ratio_sig <- paste0( dim( filter(X, Sig == sig_filter_str) )[1], '/', dim(X)[1] )
-  ratio_sig <- paste0(dim(X[X$Sig == sig_filter_str, ])[1], "/", dim(X)[1])
-  footnote <- paste(ratio_sig, "sig. at", sig_filter_str)
+  if (direction == "both") {
+    value_sig <- dim(X[X$Sig == sig_filter_str, ])[1]
+  } else if (direction == "up") {
+    value_sig <- dim(X[(X$Sig == sig_filter_str) && (X$log2_FC > 0), ])[1]
+  } else if (direction == "down") {
+    value_sig <- dim(X[(X$Sig == sig_filter_str) && (X$log2_FC < 0), ])[1]
+  }
+
+  ratio_sig <- paste0(value_sig, "/", dim(X)[1])
+
+  if (direction == "both") {
+    spacer <- ""
+  } else if (direction == "up") {
+    spacer <- "up"
+  } else if (direction == "down") {
+    spacer <- "down"
+  }
+  footnote <- paste(ratio_sig, "sig.", spacer, "at", sig_filter_str)
   if (fc_cutoff != 0) {
     footnote <- paste(footnote, "and", linear_fc_cutoff, "F.C.")
   }

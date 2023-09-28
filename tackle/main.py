@@ -3013,6 +3013,15 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     help="fold change cutoff",
 )
 @click.option(
+    "-d",
+    "--direction",
+    type=click.Choice(("up", "down", "both")),
+    default="both",
+    show_default=True,
+    help="direction of fold change",
+    # no suggestion appeared
+)
+@click.option(
     "-e",
     "--expression-data",
     default=False,
@@ -3164,6 +3173,7 @@ def volcano(
     annot_scale,
     bg_marker_color,
     # point_size,
+    direction,
     foldchange,
     expression_data,
     number,
@@ -3220,6 +3230,7 @@ def volcano(
         expression_data,
         number=number,
         number_by=number_by,
+        direction=direction,
         only_sig=only_sig,
         sig=sig,
         sig_metric=sig_metric,
@@ -3356,6 +3367,11 @@ def volcano(
     default=None,
     help="""Specify group for GSEA.
                 Supersedes main --group option, also allows specifying genes for gene-pathway association""",
+)
+@click.option(
+    "--contrasts",
+    default=None,
+    help="""""",
 )
 @click.option(
     "--plot-genes",

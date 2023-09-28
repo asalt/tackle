@@ -23,6 +23,7 @@ def volcanoplot(
     only_sig=False,
     sig=0.05,
     genes=None,
+    direction="both",
     sig_metric="pAdj",
     number_by="log2_FC",
     yaxis="pAdj",
@@ -42,7 +43,6 @@ def volcanoplot(
     fill_na_zero=False,
     extra_outname_info=None,
 ):
-
     data_obj = ctx.obj["data_obj"]
 
     # gm = GeneMapper()
@@ -190,6 +190,9 @@ def volcanoplot(
         _xtra = {}
         if extra_outname_info is not None:
             _xtra["n"] = extra_outname_info
+        direction_codes = {"up": "U", "down": "D", "both": "B"}
+        # if direction != "both":
+        _xtra["dir"] = direction_codes.get(direction, "?")
 
         _b = None
         if not data_obj.batch_nonparametric and data_obj.batch_applied == True:
@@ -206,6 +209,7 @@ def volcanoplot(
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
             # batch_me=_b,
+            sort=number_by,
             colors_only=data_obj.colors_only,
             batch=data_obj.batch_applied,
             normtype=data_obj.normtype,
@@ -303,7 +307,6 @@ def volcanoplot(
         df = df[~df["t"].isna()]
 
         for file_fmt in file_fmts:
-
             grdevice = gr_devices[file_fmt]
             gr_kw = gr_kws[file_fmt]
             out = outname + file_fmt
@@ -319,6 +322,7 @@ def volcanoplot(
                 max_labels=number,
                 fc_cutoff=foldchange,
                 number_by=number_by,
+                direction=direction,
                 force_highlight_geneids=force_highlight_geneids,
                 bg_marker_color=bg_marker_color,
                 sig=sig,
