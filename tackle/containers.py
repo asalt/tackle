@@ -310,7 +310,6 @@ class Annotations:
 
     @property
     def df(self):
-
         if self._df is not None:
             return self._df
 
@@ -337,7 +336,6 @@ class Annotations:
         return self._categories
 
     def get_annot(self, cat):
-
         df = self.df
 
         # if cat == 'NUC':
@@ -349,7 +347,6 @@ class Annotations:
 
 class HGeneMapper:
     def __init__(self):
-
         homologene_f = sorted(
             glob.glob(os.path.join(PWD, "data", "homologene*data")),
             reverse=True,
@@ -437,7 +434,6 @@ hgenemapper = _hgenemapper
 
 
 def assign_sra(df):
-
     # df['SRA'] = 'A'
     # cat_type = CategoricalDtype(categories=['S', 'R', 'A'],
     #                             ordered=True)
@@ -869,7 +865,6 @@ class Data:
 
     @property
     def normtype(self) -> str:
-
         array = [
             "ifot",
             "ifot_ki",
@@ -891,7 +886,6 @@ class Data:
         ...
 
     def load_data(self, only_local=False):
-
         exps = OrderedDict()
         gid_funcat_mapping = dict()
         config = self.config
@@ -963,6 +957,8 @@ class Data:
             try:
                 df.index = df.index.astype("int").astype("str")
             except TypeError:
+                pass
+            except ValueError:
                 pass
 
             if (
@@ -1091,9 +1087,7 @@ class Data:
                 # df = normalize(df, name, ifot=self.ifot, ifot_ki=self.ifot_ki, ifot_tf=self.ifot_tf,
                 #                median=self.median)
                 if self.export_all:  # have to calculate more columns
-
                     for taxonid in df.TaxonID.unique():
-
                         df.loc[df.TaxonID == taxonid, "iBAQ_dstrAdj_FOT"] = normalize(
                             df.loc[df.TaxonID == taxonid], ifot=True
                         )
@@ -1616,7 +1610,7 @@ class Data:
             )
 
         # df = pandas2ri.ri2py(res)
-        nas = sum(df.isnull().any(1))
+        nas = sum(df.isnull().any(axis=1))
         if nas > 0:
             print(
                 "{} Gene Product(s) became NAN after batch normalization, dropping".format(
@@ -1674,7 +1668,9 @@ class Data:
         contrasts_str=None,
         impute_missing_values=False,
         fill_na_zero=False,
-    ) -> "Dict[pd.DataFrame]":  # put type annotation in quotes as a bug workaround (probably fixed in later version of python)
+    ) -> (
+        "Dict[pd.DataFrame]"
+    ):  # put type annotation in quotes as a bug workaround (probably fixed in later version of python)
         """
         Still work in progress.
 
@@ -1697,7 +1693,6 @@ class Data:
             mat[mat == 0] = 0
 
         if impute_missing_values:
-
             downshift, scale = 1.8, 0.8
 
             inpute_plotname = get_outname(
@@ -1758,7 +1753,6 @@ class Data:
             r("block <- NULL")
             r("cor <- NULL")
             if self.block:
-
                 r('block <- as.factor(pheno[["{}"]])'.format(self.block))
                 r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
                 r("cor <- corfit$consensus")
@@ -1814,12 +1808,20 @@ class Data:
 
             results = dict()
             for coef, name in enumerate(contrasts_array, 1):
-
                 result = r(
                     """ topTable(fit2, n=Inf, sort.by='none', coef={}, confint=TRUE) """.format(
                         coef
                     )
-                ).rename(
+                )
+
+                try:
+                    result = pandas2ri.ri2py(result)
+                except (
+                    AttributeError
+                ):  # needed for name change rpy 3+ ? not sure exactly when change occurred
+                    result = pandas2ri.rpy2py(result)
+
+                result = result.rename(
                     columns={
                         "logFC": "log2_FC",
                         "adj.P.Val": "pAdj",
@@ -1937,7 +1939,6 @@ class Data:
         return False
 
     def perform_data_export(self, level="all", genesymbols=False, linear=False):
-
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
         #                                               self.non_zeros)
@@ -2073,7 +2074,6 @@ class Data:
                 ["recno", "runno", "searchno"]
             ).pipe(len)
             for col in export.columns:
-
                 identifier = self.col_metadata.loc[col][
                     ["recno", "runno", "searchno", "label"]
                 ].to_dict()
@@ -2153,7 +2153,6 @@ class Data:
             for_export.to_csv(outname, sep="\t", index=False)
 
         elif level == "align":
-
             export = self.df_filtered.sort_index(level=[0, 1])
             column_number_mapping = dict()
             data = list()
@@ -2227,7 +2226,6 @@ class Data:
             gene_metadata = dict()
 
             for ix, col in enumerate(export.columns, 1):
-
                 identifier = self.col_metadata.loc[col][
                     ["recno", "runno", "searchno", "label"]
                 ].to_dict()
@@ -2508,7 +2506,6 @@ class _ScatterMapper(MyHeatMapper):
         yticklabels=True,
         mask=None,
     ):
-
         super(_ScatterMapper, self).__init__(
             data,
             vmin,
@@ -2539,7 +2536,6 @@ class _ScatterMapper(MyHeatMapper):
             self.marker_size = marker_size
 
     def _draw_data(self, ax, **kws):
-
         data = self.plot_data
 
         range_y = np.arange(data.shape[0], dtype=int) + 0.5
@@ -2570,7 +2566,6 @@ def scattermap(
     ax=None,
     **kwargs,
 ):
-
     plotter = _ScatterMapper(
         data,
         marker,
@@ -2599,7 +2594,6 @@ def scattermap(
 
 
 class MyClusterGrid(ClusterGrid):
-
     # def __init__(self, *args, heatmap_height_ratio=.8,
     #              dendrogram_width_ratio=.16, heatmap_width_ratio=.8,
     #              expected_size_dendrogram=1.0, expected_size_colors=0.25:
@@ -3027,7 +3021,6 @@ class MyDendrogramPlotter(sb.matrix._DendrogramPlotter):
         rotate,
         force_optimal_ordering=False,
     ):
-
         self.force_optimal_ordering = force_optimal_ordering
         super(sb.matrix._DendrogramPlotter, self).__init__(
             data, linkage, metric, method, axis, label, rotate
