@@ -1725,6 +1725,13 @@ class Data:
 
         # pheno = self.col_metadata.T
         pheno = self.col_metadata.copy()
+        pheno.index = (
+            pheno.index.str.replace(":", "_")
+            .str.replace(" ", "_")
+            .str.replace("-", "_")
+            .str.replace("+", "_")
+            .str.replace("?", "qmk")
+        )
         for col in ("recno", "runno", "searchno"):
             pheno[col] = pheno[col].astype(str)
         robjects.r.assign("pheno", pheno)
@@ -1800,6 +1807,7 @@ class Data:
             )
 
             robjects.r("""print(contrasts_matrix)""")
+
             contrast_fit = robjects.r(
                 """
             fit2 <- contrasts.fit(fit, contrasts_matrix) %>% eBayes(robust=TRUE, trend=TRUE)
