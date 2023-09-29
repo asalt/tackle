@@ -1989,6 +1989,9 @@ def pca2(
 )
 # @click.option('--circle-col-markers', is_flag=True, default=False, show_default=True)
 # @click.option('--circle-col-marker-size', default=60, show_default=True)
+@click.option("--color-low", default="blue", show_default=True)
+@click.option("--color-mid", default="white", show_default=True)
+@click.option("--color-high", default="red", show_default=True)
 @click.option(
     "--figsize",
     nargs=2,
@@ -2222,6 +2225,9 @@ def cluster2(
     annotate,
     cmap,
     cut_by,
+    color_low,
+    color_mid,
+    color_high,
     col_cluster,
     row_cluster,
     cluster_row_slices,
@@ -2522,6 +2528,8 @@ def cluster2(
                 cut_by = robjects.NULL
     if cut_by is None:
         cut_by = robjects.NULL
+    elif cut_by is not None:
+        outname_kws["cut_by"] = str.join("_", cut_by)
 
     ## ============================================================
     annot_mat = None
@@ -2740,6 +2748,9 @@ def cluster2(
 
         call_kws = dict(
             data=X,
+            color_low=color_low,
+            color_mid=color_mid,
+            color_high=color_high,
             cut_by=cut_by,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
@@ -3005,6 +3016,16 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     help='"rgb(a)" for background marker color',
 )
 @click.option(
+    "--color-down",
+    default="blue",
+    help='"rgb(a)" for downregulated',
+)
+@click.option(
+    "--color-up",
+    default="red",
+    help='"rgb(a)" for upregulated',
+)
+@click.option(
     "-f",
     "--foldchange",
     type=float,
@@ -3172,6 +3193,8 @@ def volcano(
     ctx,
     annot_scale,
     bg_marker_color,
+    color_down,
+    color_up,
     # point_size,
     direction,
     foldchange,
@@ -3251,6 +3274,8 @@ def volcano(
         force_highlight_geneids=force_highlight_geneids,
         fill_na_zero=fill_na_zero,
         extra_outname_info=name_for_gids_to_highlight,
+        color_down=color_down,
+        color_up=color_up,
     )
 
 
@@ -3810,14 +3835,15 @@ def gsea(
                 continue
                 # return
             cutoff_val = min(abs(gsea_sig.head(number)["NES"].dropna()))
+
             tokeep1 = (
-                gsea_sig.query("NES>0 & abs(NES)>=@cutoff_val")
+                gsea_sig[(gsea_sig["NES"] > 0) & (gsea_sig["NES"] >= cutoff_val)]
                 .NES.sort_values(ascending=False)
                 .head(number)
                 .index
             )
             tokeep2 = (
-                gsea_sig.query("NES<0 & abs(NES)>=@cutoff_val")
+                gsea_sig[(gsea_sig["NES"] < 0) & (gsea_sig["NES"] >= cutoff_val)]
                 .NES.sort_values(ascending=False)
                 .head(number)
                 .index

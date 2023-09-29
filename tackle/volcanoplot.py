@@ -42,6 +42,8 @@ def volcanoplot(
     alpha=1.0,
     fill_na_zero=False,
     extra_outname_info=None,
+    color_down="blue",
+    color_up="red",
 ):
     data_obj = ctx.obj["data_obj"]
 
@@ -325,6 +327,8 @@ def volcanoplot(
                 direction=direction,
                 force_highlight_geneids=force_highlight_geneids,
                 bg_marker_color=bg_marker_color,
+                color_down=color_down,
+                color_up=color_up,
                 sig=sig,
                 sig_metric=sig_metric,
                 yaxis=yaxis,

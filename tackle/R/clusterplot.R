@@ -83,6 +83,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      order_by_abundance = FALSE,
                      linear = FALSE,
                      savedir = NULL,
+                     color_low = "blue",
+                     color_mid = "white",
+                     color_high = "red",
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
@@ -232,6 +235,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## Add more args here
     col_data_args <- as.list(col_data %>% select(-name))
     col_data_args <- col_data_args[order(names(col_data_args))]
+    col_data_args[["gp"]] <- gpar(col = "#444444")
+
     # $metadata_colors <- NULL
     ## Custom colers
     if (!is.null(metadata_colors)) {
@@ -357,7 +362,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       quantile(na.rm = TRUE, probs = seq(0, 1, .025))
     minval <- quantiles[["2.5%"]]
     maxval <- quantiles[["97.5%"]]
-    col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
+    # col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
+    col <- colorRamp2(c(minval, 0, maxval), c(color_low, color_mid, color_high))
   }
 
   ## quantiles <- exprs_long %>% select(zscore) %>% quantile(na.rm=TRUE, probs=seq(0,1,.025))

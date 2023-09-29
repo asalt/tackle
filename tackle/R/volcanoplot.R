@@ -47,6 +47,8 @@ volcanoplot <- function(X, max_labels = 35,
                         force_highlight_geneids = FALSE,
                         annot_cex = 1.,
                         marker_cex = 1.4,
+                        color_down = "blue",
+                        color_up = "red",
                         ...) {
   POINT_SIZE <- marker_cex
   # pch <- 21 # if we want a fillable shape
@@ -92,10 +94,10 @@ volcanoplot <- function(X, max_labels = 35,
   ## X[ (X$pAdj < sig & X$log2_Fold_Change > fc_cutoff), 'usd' ] = 'red'
   ## X[ (X$pAdj < sig & X$log2_Fold_Change < -fc_cutoff), 'usd' ] = 'blue'
   if (direction != "up") {
-    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
+    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- color_down
   }
   if (direction != "down") {
-    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
+    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- color_up
   }
   # X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- "blue"
   # X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- "red"
@@ -314,7 +316,7 @@ volcanoplot <- function(X, max_labels = 35,
     annotate("text", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
       label = c(group0, group1),
       size = annot_size,
-      hjust = c(0, 1), vjust = c(0, 0), color = c("blue", "red")
+      hjust = c(0, 1), vjust = c(0, 0), color = c(color_down, color_up) # default blue and red
     ) +
     labs(
       x = expression(paste("log"[2], " Fold Change")),
