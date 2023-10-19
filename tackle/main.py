@@ -1892,10 +1892,13 @@ def pca2(
         # print(data_obj.col_metadata.columns)
         # color = data_obj.col_metadata.columns[0]
         color = "recno"
+
     if color:
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
             mapping = data_obj.metadata_colors[color]
             # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
+            keys = col_meta[color].unique()
+            mapping = {k: mapping[k] for k in keys}
             color_list = robjects.vectors.ListVector(mapping)
         else:
             ncolors = col_meta[color].nunique()
@@ -3598,14 +3601,13 @@ def gsea(
             batch_method="parametric"
             if not data_obj.batch_nonparametric
             else "nonparametric",
-            outpath=os.path.join(data_obj.outpath, "gsea"),
+            # outpath=os.path.join(data_obj.outpath, "gsea"),
             normtype=data_obj.normtype,
             stat_metric=stat_metric,
             cls=cls_comparison.strip("#"),
         )
 
         # param_file = os.path.abspath(namegen('gsea_params') + '.txt')
-        param_file = namegen("gsea_params") + ".txt"
 
         # # get most recent, sort by name and take last
         # homologene_f = sorted(glob.glob(os.path.join(os.path.split(os.path.abspath(__file__))[0],
@@ -3660,10 +3662,16 @@ def gsea(
             # old:
             # outname = namegen("gsea", pathway=os.path.basename(gs))
             # new:
-            outname = namegen("gsea", pathway=os.path.basename(gs))
+            outname = namegen(
+                "gsea",
+                pathway=os.path.basename(gs),
+                outpath=os.path.join(
+                    data_obj.outpath, "gsea", "summaries"
+                ),  # outpath for the summary barplot
+            )
 
             # this is outdir for gsea result
-            outdir = os.path.abspath(os.path.join(data_obj.outpath, "gsea"))
+            outdir = os.path.abspath(os.path.join(data_obj.outpath, "gsea", "results"))
             report_name = os.path.split(outname)[-1]
 
             if not os.path.exists(gs):
@@ -3675,11 +3683,36 @@ def gsea(
                 geneset_file = gs
 
             # with NamedTemporaryFile(suffix='.txt') as f, NamedTemporaryFile(mode='w', suffix='.cls') as g:
-            with named_temp(suffix=".txt") as f, named_temp(
-                mode="w", suffix=".cls"
-            ) as g:
-                expression.to_csv(f.name, sep="\t")
-                f.close()  # windows compat
+            # f = namegen("gsea", pathway=os.path.basename(gs)) + ".txt"
+            f = (
+                namegen(
+                    "gsea",
+                    outpath=os.path.join(data_obj.outpath, "gsea", "inputs"),
+                )
+                + ".txt"
+            )
+            f = Path(f)
+            expression.to_csv(f, sep="\t")
+            param_file = (
+                namegen(
+                    "gsea_params",
+                    pathway=os.path.basename(gs),
+                    outpath=os.path.join(data_obj.outpath, "gsea", "inputs"),
+                )
+                + ".txt"
+            )
+
+            # g_name = namegen("gsea", pathway=os.path.basename(gs)) + ".cls"
+            g_name = (
+                namegen(
+                    "gsea",
+                    outpath=os.path.join(data_obj.outpath, "gsea", "inputs"),
+                )
+                + ".cls"
+            )
+            with open(g_name, "w") as g:
+                # expression.to_csv(f.name, sep="\t")
+                # f.close()  # windows compat
                 # with open('./results/gsea/kip_dda_kinases_pheno.cls', 'w') as g:
 
                 ## =========================== cls file ================================== #
@@ -3698,72 +3731,72 @@ def gsea(
                     # "{}\n".format(" ".join(pheno[pheno[group].isin(groups)][group]))
                 )
 
-                g.file.flush()
-                g.close()  # windows compat
+                # g.file.flush()
+                # g.close()  # windows compat
 
-                # rpt_name\t{rpt_name}
-                params = """
-                collapse\t{collapse}
-                metric\t{metric}
-                mode\t{mode}
-                norm\t{norm}
-                order\tdescending
-                include_only_symbols\tfalse
-                permute\t{permute}
-                plot_top_x\t{plot_top_x}
-                rnd_type\t{rnd_type}
-                set_max\t{set_max}
-                set_min\t{set_min}
-                nperm\t{nperm}
-                res\t{res}
-                cls\t{cls}{cls_comparison}
-                gmx\t{gmx}
-                out\t{outdir}
-                rpt_label\t{rpt_label}
-                rnd_seed\t{rnd_seed}
-                gui\tfalse
-                """.format(
-                    collapse=collapse,
-                    metric=metric,
-                    mode=mode,
-                    norm=norm,
-                    permute=permute,
-                    rnd_type=rnd_type,
-                    scoring_scheme=scoring_scheme,
-                    sort=sort,
-                    set_max=set_max,
-                    set_min=set_min,
-                    nperm=number_of_permutations,
-                    plot_top_x=plot_top_x,
-                    cls_comparison=cls_comparison,
-                    rnd_seed=rnd_seed,
-                    # rpt_name=report_name,
-                    res=os.path.abspath(f.name),
-                    cls=os.path.abspath(g.name),
-                    gmx=os.path.abspath(geneset_file),
-                    outdir=outdir,
-                    rpt_label=report_name,
+            # rpt_name\t{rpt_name}
+            params = """
+            collapse\t{collapse}
+            metric\t{metric}
+            mode\t{mode}
+            norm\t{norm}
+            order\tdescending
+            include_only_symbols\tfalse
+            permute\t{permute}
+            plot_top_x\t{plot_top_x}
+            rnd_type\t{rnd_type}
+            set_max\t{set_max}
+            set_min\t{set_min}
+            nperm\t{nperm}
+            res\t{res}
+            cls\t{cls}{cls_comparison}
+            gmx\t{gmx}
+            out\t{outdir}
+            rpt_label\t{rpt_label}
+            rnd_seed\t{rnd_seed}
+            gui\tfalse
+            """.format(
+                collapse=collapse,
+                metric=metric,
+                mode=mode,
+                norm=norm,
+                permute=permute,
+                rnd_type=rnd_type,
+                scoring_scheme=scoring_scheme,
+                sort=sort,
+                set_max=set_max,
+                set_min=set_min,
+                nperm=number_of_permutations,
+                plot_top_x=plot_top_x,
+                cls_comparison=cls_comparison,
+                rnd_seed=rnd_seed,
+                # rpt_name=report_name,
+                res=str(f),
+                cls=g.name,  # g is a handle, f is a Path
+                gmx=geneset_file,
+                outdir=outdir,
+                rpt_label=report_name,
+            )
+            with open(param_file, "w") as param_handle:
+                param_handle.write(params)
+
+            try:
+                res = subprocess.run(
+                    [
+                        "java",
+                        "-Xmx8192m",
+                        "-cp",
+                        gsea_jar,
+                        "xtools.gsea.Gsea",
+                        "-param_file",
+                        param_file,
+                    ],
+                    # stdout=subprocess.PIPE
                 )
-                with open(param_file, "w") as f:
-                    f.write(params)
+            except subprocess.CalledProcessError:
+                continue
 
-                try:
-                    res = subprocess.run(
-                        [
-                            "java",
-                            "-Xmx8192m",
-                            "-cp",
-                            gsea_jar,
-                            "xtools.gsea.Gsea",
-                            "-param_file",
-                            param_file,
-                        ],
-                        # stdout=subprocess.PIPE
-                    )
-                except subprocess.CalledProcessError:
-                    continue
-
-                res.check_returncode()
+            res.check_returncode()
 
             folders = [
                 os.path.abspath(os.path.join(outdir, f))
@@ -3843,7 +3876,7 @@ def gsea(
                 .index
             )
             tokeep2 = (
-                gsea_sig[(gsea_sig["NES"] < 0) & (gsea_sig["NES"] >= cutoff_val)]
+                gsea_sig[(gsea_sig["NES"] < 0) & (gsea_sig["NES"] <= -cutoff_val)]
                 .NES.sort_values(ascending=False)
                 .head(number)
                 .index
@@ -3986,26 +4019,27 @@ def gsea(
                     # data_obj.outpath, "GSEA_pathways", cls_comparison.strip("#")
                     data_obj.outpath,
                     "gsea",
+                    "summaries",
                     cls_comparison.strip("#"),
                 )
                 outpath = os.path.abspath(outpath)
 
                 missing_values = "masked"
-                outname_func = partial(
-                    get_outname,
-                    name=data_obj.outpath_name,
-                    taxon=data_obj.taxon,
-                    non_zeros=data_obj.non_zeros,
-                    colors_only=data_obj.colors_only,
-                    batch=data_obj.batch_applied,
-                    batch_method="parametric"
-                    if not data_obj.batch_nonparametric
-                    else "nonparametric",
-                    outpath=outpath,
-                    normtype=data_obj.normtype,
-                    missing_values=missing_values,
-                    cls=cls_comparison.strip("#"),
-                )
+                # outname_func = partial(
+                #     get_outname,
+                #     name=data_obj.outpath_name,
+                #     taxon=data_obj.taxon,
+                #     non_zeros=data_obj.non_zeros,
+                #     colors_only=data_obj.colors_only,
+                #     batch=data_obj.batch_applied,
+                #     batch_method="parametric"
+                #     if not data_obj.batch_nonparametric
+                #     else "nonparametric",
+                #     outpath=outpath,
+                #     normtype=data_obj.normtype,
+                #     missing_values=missing_values,
+                #     cls=cls_comparison.strip("#"),
+                # )
 
                 if plot_genes_sig:
                     iter_ = gsea_sig[gsea_sig[stat_metric] < 0.25].iterrows()
@@ -4246,11 +4280,16 @@ def gsea(
                         if metadata_color_list:
                             metadata_colorsR = metadata_color_list
 
-                        outname = outname_func("geneset", pathway=gs)
+                        # outname = outname_func("geneset", pathway=gs)
+
+                        plot_outname = namegen(
+                            "gsea",
+                            outpath=os.path.join(data_obj.outpath, "gsea", "pathways"),
+                        )
                         for file_fmt in ctx.obj["file_fmts"]:
                             grdevice = gr_devices[file_fmt]
                             gr_kw = gr_kws[file_fmt]
-                            out = outname + file_fmt
+                            out = plot_outname + file_fmt
 
                             grdevice(file=out, **gr_kw)
                             print("Saving", out, "...", end="", flush=True)
@@ -4290,7 +4329,7 @@ def gsea(
                             grdevices.dev_off()
                             print("done.", flush=True)
 
-                    else:
+                    else:  # this is not used anymore
                         result = clusterplot(
                             X,
                             main_title=main_title,
