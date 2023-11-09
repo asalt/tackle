@@ -19,6 +19,8 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  normalize_by = NULL,
                  title = NULL,
                  annot_str = NULL,
+                 fig_width=9,
+                 fig_height=8,
                  ...) {
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
@@ -111,7 +113,8 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       # color <- "repeat"
       p <- autoplot(pca_res,
         data = forpca,
-        colour = color, shape = shape,
+        colour = color,
+        shape = shape,
         label = label, label.repel = label_repel,
         label.label = label_column,
         frame = showframe,
@@ -153,7 +156,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       if (ext == ".pdf" || ext == "pdf") {
         device <- grDevices::cairo_pdf
       }
-      ggplot2::ggsave(out, p, device = device, width = 9, height = 8)
+      ggplot2::ggsave(out, p, device = device, width = fig_width, height = fig_height)
     }
   }
 }
