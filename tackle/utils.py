@@ -321,7 +321,6 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
         return df[df.GeneID.isin(gids)]
 
     else:
-
         all_gids = set()
 
         # for sample, grp in metadata.T.groupby(subgroup):
@@ -355,7 +354,6 @@ def filter_observations(df, column, nonzero_value, subgroup=None, metadata=None)
 
 
 def filter_sra(df, SRA="S", number_sra=1):
-
     if SRA is None:
         SRA = "S"
 
@@ -381,7 +379,6 @@ def filter_sra(df, SRA="S", number_sra=1):
 
 
 def filter_upept(df, number=1):
-
     # mask = ((df.loc[ idx[:, 'SRA'], :].isin(sra_list))
 
     pept_table = (
@@ -397,7 +394,6 @@ def filter_upept(df, number=1):
 
 
 def filter_funcats(df_long, funcats):
-
     mask = (
         df_long.loc[idx[:, "FunCats"], df_long.columns[0]]
         .str.contains(funcats)
@@ -419,7 +415,6 @@ def filter_funcats(df_long, funcats):
 
 
 def filter_taxon(df, taxon=9606):
-
     mask = df.loc[df.query('Metric == "TaxonID"').index, df.columns[2]] == taxon
     gids = df.loc[mask.index].GeneID
     # mask = df.loc[ idx[:, ('TaxonID')], : ] == 9606
@@ -482,7 +477,6 @@ def remove_ticklabels(fig=None, ax=None):
 
 
 def plot_cbar(ax):
-
     labels = list(reversed(["{:.1f}".format(x) for x in np.arange(1, -1.1, -STEP)]))
     cmap = mpl.colors.ListedColormap(r_colors)
     cbar = mpl.colorbar.ColorbarBase(ax, cmap=cmap)
@@ -492,7 +486,6 @@ def plot_cbar(ax):
 
 
 def make_xaxis(ax, yloc=0, offset=0.05, fmt_str="%1.1f", **props):
-
     xmin, xmax = ax.get_xlim()
     locs = [loc for loc in ax.xaxis.get_majorticklocs() if loc >= xmin and loc <= xmax]
     (tickline,) = ax.plot(
@@ -570,7 +563,6 @@ def plot_delegator(
 
 
 def annotate_stat(x, y, ax, text, **kwargs):
-
     # textsplit = text.split('\n')
     # maxlen = max(len(x) for x in textsplit)
     # size = 30
@@ -592,7 +584,6 @@ def annotate_stat(x, y, ax, text, **kwargs):
 
 
 def scatter(x, y, ax, xymin, xymax, **kwargs):
-
     s = 4
     marker = "."
     if "text" in kwargs:
@@ -762,7 +753,6 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     # import ipdb; ipdb.set_trace()
 
     def regex_symbol_xtract(line):
-
         rgx_word = re.compile("([A-Za-z]+\d*)(?=\W)")
         genesymbol = rgx_word.search(line)
         if genesymbol is None:
@@ -916,7 +906,6 @@ def fillna_meta(df, index_col):
 
 
 def standardize_meta(df):
-
     # gm = GeneMapper()
     gm = get_gene_mapper()
     # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
@@ -925,16 +914,22 @@ def standardize_meta(df):
 
     if "Symbol" in df and "GeneSymbol" in df:
         logger.warning(f"both Symbol and GeneSymbol are present")
-        logger.warning(f"Symbol : {df.Symbol.head()}")
-        logger.warning(f"GeneSymbol : {df.GeneSymbol.head()}")
-        logger.warning(f"Setting GeneSymbol to Symbol")
+        if (
+            df.Symbol.fillna("") != df.GeneSymbol.fillna("")
+        ).all():  # then we have a problem and need to rectify
+            logger.warning(f"Symbol : {df.Symbol.head()}")
+            logger.warning(f"GeneSymbol : {df.GeneSymbol.head()}")
+            logger.warning(f"Setting GeneSymbol to Symbol")
         if df.GeneSymbol.isna().sum() > 0 and df.Symbol.isna().sum() == 0:
             df["GeneSymbol"] = df.Symbol
         elif df.Symbol.isna().sum() > 0 and df.GeneSymbol.isna().sum() == 0:
             df["Symbol"] = df.GeneSymbol
         # now replace if that failed
+        lookup_dict = df.GeneSymbol.to_dict()
         if df.GeneSymbol.isna().sum() > 0 or df.Symbol.isna().sum() < 0:
-            df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
+            df["GeneSymbol"] = df.index.map(
+                lambda x: lookup_dict.get(x, gm.symbol.get(str(x), x))
+            )
     # df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     # df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
     return df
@@ -962,7 +957,6 @@ DEFAULT_NAS = [
 
 
 def isna_str(entry):
-
     return pd.isna(entry) | True if entry in DEFAULT_NAS else False
 
 
@@ -1047,7 +1041,6 @@ def normalize(
     outcol=None,
     taxon=None,
 ):
-
     if ifot:  # normalize by ifot but without keratins
         nonzero_ix = (df[~df.GeneID.isin(ifot_normalizer.to_ignore)]).index
         norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].sum()
@@ -1115,7 +1108,6 @@ def genefilter(
     ignored_geneid_subset=None,
     fix_histones=True,
 ):
-
     if funcats:  # do this after possible normalization
         df = df[df["FunCats"].fillna("").str.contains(funcats, case=False)]
     if funcats_inverse:  # do this after possible normalization
@@ -1295,7 +1287,6 @@ class DefaultOrderedDict(OrderedDict):
 
 
 def hgene_map(expression, keep_orig=False, boolean=False):
-
     # get most recent, sort by name and take last
     homologene_f = sorted(
         glob.glob(
@@ -1360,6 +1351,7 @@ def hgene_map(expression, keep_orig=False, boolean=False):
 
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
+
 
 # workaround for windows
 @contextmanager
