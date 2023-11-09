@@ -9,6 +9,8 @@ from seaborn import heatmap
 import seaborn as sb
 from six import string_types
 from typing import Dict
+import rpy2
+from rpy2.rinterface_lib.embedded import RRuntimeError
 
 # import sys
 import os
@@ -1442,15 +1444,25 @@ class Data:
                 self.export_all and not self.normed
             ):  # batch normalize the other requested area columns
                 for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED":
+                    logger.info(f"Batch normalizing {col}")
                     frame = (
                         self.df_filtered.loc[idx[:, col + "_log10"], :]
                         .reset_index(level=1, drop=True)
                         .astype(float)
                     )
                     # get rid of "Metric" index level, batch_normalize not expecting it
-                    res = self.batch_normalize(frame, prior_plot=False)
+                    try:
+                        res = self.batch_normalize(frame, prior_plot=False)
+                    except Exception as e:
+                        logger.warn(f"Could not batch normalize {col}, skipping")
+                        continue
+                    if res is None:
+                        logger.warn(f"Could not batch normalize {col}, skipping")
+                        continue
+
                     self.df_filtered.loc[idx[:, col + "_log10"], :] = res.values
                     self.df_filtered.loc[idx[:, col], :] = np.power(res, 10).values
+
             elif self.export_all and self.normed:
                 warn(
                     """No support for full export with norm channel. Please ignore
@@ -1585,17 +1597,25 @@ class Data:
             grdevices.png(file=outname + ".png", width=5, height=5, units="in", res=300)
         else:
             plot_prior = False
-        res = sva.ComBat(
-            dat=data.values,
-            batch=batch,
-            mod=mod,
-            par_prior=not self.batch_nonparametric,
-            mean_only=False,
-            prior_plots=plot_prior,
-        )
+
+        try:
+            res = sva.ComBat(
+                dat=data.values,
+                batch=batch,
+                mod=mod,
+                par_prior=not self.batch_nonparametric,
+                mean_only=False,
+                prior_plots=plot_prior,
+            )
+
+        except RRuntimeError:
+            res = None
 
         if plot_prior:
             grdevices.dev_off()
+
+        if res is None:
+            return None
 
         try:
             df = pd.DataFrame(
@@ -1659,6 +1679,8 @@ class Data:
         df.index = [maybe_int(x) for x in df.index]
         df.index.name = "GeneID"
 
+        pandas2ri.deactivate()  # this is important, otherwise rpy2 will try to convert all dataframes to r dataframes?
+        # true?
         return df
 
     # def calc_padj(self):
