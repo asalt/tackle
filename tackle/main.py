@@ -1788,6 +1788,17 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     help="What meta entry to mark PCA",
 )
 @click.option(
+    "--figsize",
+    nargs=2,
+    type=float,
+    default=(9, 8),
+    show_default=True,
+    help="""Optionally specify the figuresize (width, height) in inches
+              If not specified, tries to use a reasonable default depending on the number of
+              samples.
+              """,
+)
+@click.option(
     "--genefile",
     type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
@@ -1798,7 +1809,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 )
 @click.pass_context
 def pca2(
-    ctx, annotate, frame, normalize_by, center, scale, max_pc, color, marker, genefile
+    ctx, annotate, frame, normalize_by, center, scale, max_pc, color, marker, figsize, genefile
 ):
     outname_kws = dict()
 
@@ -1940,6 +1951,8 @@ def pca2(
         marker_list=robjects.NULL,
         title=outname_kws.get("genefile") or robjects.NULL,
         annot_str=outname_kws.get("genefile") or robjects.NULL,
+        fig_width = figsize[0],
+        fig_height = figsize[1],
     )
 
 
@@ -2051,6 +2064,11 @@ def pca2(
 )
 @click.option(
     "--gene-annot", type=click.Path(exists=True, dir_okay=False), help="annotate"
+)
+@click.option(
+    "--gsea-input",
+    type=Path_or_Glob(exists=True, dir_okay=True),
+    default=None
 )
 # @click.option("--colorbar-direction", click.Choice(["horizontal", "vertical"]))
 @click.option(
@@ -2243,6 +2261,7 @@ def cluster2(
     genesymbols,
     gene_symbol_fontsize,
     gene_annot,
+    gsea_input,
     highlight_geneids,
     linear,
     legend_include,
@@ -2286,6 +2305,8 @@ def cluster2(
         cluster_func = None
 
     # =================================================================
+    if gsea_input is not None:
+        raise NotImplementedError()
 
     pandas2ri.activate()
     r_source = robjects.r["source"]
@@ -2326,7 +2347,7 @@ def cluster2(
     if genefile and not isinstance(genefile, dict):
         genes = parse_gid_file(genefile, sheet=genefile_sheet)  # default 0
         outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
-    elif genefile and isinstance(genefile, dict):
+    elif genefile and isinstance(genefile, dict):  # this is if already processed
         _key = list(genefile.keys())[0]
         genes = genefile[_key]
         outname_kws["genefile"] = _key
@@ -2337,6 +2358,7 @@ def cluster2(
     # print(len(X))
 
     ## filter by volcano output
+    # ================================ volcano file parsing =================================
     _tmp = list()
     _fc, _pval, _ptype = volcano_filter_params
     # for f in volcano_file:
@@ -2390,6 +2412,7 @@ def cluster2(
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
 
+    # ================================ end of volcano file parsing =================================
     if cluster_file[0] is not None:
         if cluster_file[0].endswith("xlsx"):
             _df = pd.read_excel(cluster_file[0])
@@ -2417,6 +2440,7 @@ def cluster2(
         X = X.loc[_tokeep]
         outname_kws["subcluster"] = _thecluster
         main_title += f"\nCluster {_thecluster}"
+    # ========================= end of special ifle parsing ==========================
 
     gids_to_annotate = None
     if gene_annot:
@@ -4285,6 +4309,7 @@ def gsea(
                         plot_outname = namegen(
                             "gsea",
                             outpath=os.path.join(data_obj.outpath, "gsea", "pathways"),
+                            pathway=gs,
                         )
                         for file_fmt in ctx.obj["file_fmts"]:
                             grdevice = gr_devices[file_fmt]
