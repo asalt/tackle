@@ -303,7 +303,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     }
     .minval <- min(.values, na.rm = T) * 0.975
     .maxval <- max(.values, na.rm = T) * 1.025
-    col_data_args[["col"]][[.entry]] <- circlize::colorRamp2(
+    col_data_args[["col"]][[.entry]] <- circlize::colorRamp2( # is this in the right place?
       breaks = c(.minval, .maxval),
       colors = c("#829ad3", "#2c303f")
     )
@@ -328,6 +328,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   }
 
 
+  col_data_args[["annotation_name_side"]] <- "left"
   # col_data_args[["annotation_legend_param"]][["at"]][["chr"]] <- as.matrix(colnames(col_data))
   if (!is.null(col_data)) {
     col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
@@ -426,8 +427,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # browser()
     sil <- cluster::silhouette(clusters$cluster, dis)
     .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
-    browser()
-    dev.new()
+    #browser()
+    #dev.new()
     pdf(.file, width = 10, height = 20)
     print(plot(sil, col = "grey"))
     dev.off()

@@ -1809,7 +1809,17 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 )
 @click.pass_context
 def pca2(
-    ctx, annotate, frame, normalize_by, center, scale, max_pc, color, marker, figsize, genefile
+    ctx,
+    annotate,
+    frame,
+    normalize_by,
+    center,
+    scale,
+    max_pc,
+    color,
+    marker,
+    figsize,
+    genefile,
 ):
     outname_kws = dict()
 
@@ -1951,8 +1961,8 @@ def pca2(
         marker_list=robjects.NULL,
         title=outname_kws.get("genefile") or robjects.NULL,
         annot_str=outname_kws.get("genefile") or robjects.NULL,
-        fig_width = figsize[0],
-        fig_height = figsize[1],
+        fig_width=figsize[0],
+        fig_height=figsize[1],
     )
 
 
@@ -2066,9 +2076,7 @@ def pca2(
     "--gene-annot", type=click.Path(exists=True, dir_okay=False), help="annotate"
 )
 @click.option(
-    "--gsea-input",
-    type=Path_or_Glob(exists=True, dir_okay=True),
-    default=None
+    "--gsea-input", type=Path_or_Glob(exists=True, dir_okay=True), default=None
 )
 # @click.option("--colorbar-direction", click.Choice(["horizontal", "vertical"]))
 @click.option(
@@ -2541,23 +2549,23 @@ def cluster2(
     ## ============================================================
     # experimental, best to be put in a separate function
     if cut_by is not None:
-        _to_none = True
         if ":" in cut_by:
             cut_by = cut_by.split(":")
         else:
             cut_by = [cut_by]
         cut_by = np.array(cut_by)
         for c in cut_by:
-            if col_meta is not None and c in col_meta.columns:
-                _to_none = False
-            if _to_none:
+            if col_meta is not None and c not in col_meta.columns:
                 print("{} not in column metadata".format(cut_by))
-                cut_by = robjects.NULL
-    if cut_by is None:
+                cut_by = None
+                break
+    if cut_by is not None:
+        if hasattr(cut_by, "__iter__"):
+            outname_kws["cut_by"] = str.join("_", cut_by)
+        else:
+            outname_kws["cut_by"] = cut_by
+    elif cut_by is None:
         cut_by = robjects.NULL
-    elif cut_by is not None:
-        outname_kws["cut_by"] = str.join("_", cut_by)
-
     ## ============================================================
     annot_mat = None
     if annotate:
@@ -3342,7 +3350,7 @@ def volcano(
         #    "motif.gene.sets",
         # )
     ),
-    default=("hallmark",),
+    default=(),
     show_default=True,
     multiple=True,
 )
