@@ -916,7 +916,6 @@ class Data:
             if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
                 exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
-            # import ipdb; ipdb.set_trace()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
             _na_taxon = df[df.TaxonID.isna()]
             if _na_taxon.pipe(len) > 0:
@@ -1743,6 +1742,7 @@ class Data:
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 
+        pandas2ri.activate()
         r.assign("edata", mat)
 
         # pheno = self.col_metadata.T
@@ -2354,8 +2354,9 @@ class Data:
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
+                pandas2ri.activate()
                 r.assign("m", _m)
-                r.assign("rid", export.index)
+                r.assign("rid", _m.index)
                 r.assign(
                     "rdesc",
                     export.GeneSymbol
@@ -2365,6 +2366,8 @@ class Data:
                 r.assign("cdesc", self.col_metadata)
                 r.assign("cid", self.col_metadata.index)
                 r.assign("outname", outname)
+                pandas2ri.deactivate()
+
                 # my_new_ds <- new("GCT", mat=m)
                 r(
                     'my_ds <- new("GCT", mat=as.matrix(m), rid=rid, cid=cid, cdesc=cdesc, rdesc=as.data.frame(rdesc))'
