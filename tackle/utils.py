@@ -894,10 +894,16 @@ def fillna_meta(df, index_col):
     selection = df[df.Metric == index_col]
     _cols = [x for x in df.columns if x not in ("GeneID", "Metric")]
 
+    # df.loc[selection.index, _cols] = (
+    #     df.loc[selection.index, _cols]
+    #     .fillna(method="ffill", axis=1)
+    #     .fillna(method="bfill", axis=1)
+    # )
+    # this should be the new code
     df.loc[selection.index, _cols] = (
         df.loc[selection.index, _cols]
-        .fillna(method="ffill", axis=1)
-        .fillna(method="bfill", axis=1)
+        .ffill(axis=1)
+        .bfill(axis=1)
     )
 
     # df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
@@ -1042,7 +1048,8 @@ def normalize(
     taxon=None,
 ):
     if ifot:  # normalize by ifot but without keratins
-        nonzero_ix = (df[~df.GeneID.isin(ifot_normalizer.to_ignore)]).index
+        # nonzero_ix = (df[~df.GeneID.isin(ifot_normalizer.to_ignore)]).index
+        nonzero_ix =  df[ (~df.GeneID.isin(ifot_normalizer.to_ignore)) & ( np.isfinite(df.iBAQ_dstrAdj) ) ].index
         norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].sum()
     elif median or quantile75 or quantile90:
         if quantile75:
