@@ -1213,7 +1213,7 @@ def scatter(ctx, colors_only, shade_correlation, stat):
     # ??
     # to_mask = (data_obj.mask | (data_obj.areas_log == data_obj.minval_log)).dropna(1)
     to_mask = (data_obj.mask | (data_obj.areas_log == data_obj.areas_log.min())).dropna(
-        1
+        axis=1
     )
     X[to_mask] = np.NaN
     # g = scatterplot(X.replace(0, np.NaN), stat=stat,
