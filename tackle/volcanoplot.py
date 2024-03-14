@@ -135,7 +135,9 @@ def volcanoplot(
     if global_xmax is None:
         global_xmax = abs(max(x["log2_FC"].abs().max() for x in results.values()))
     if global_ymax is None:
-        global_ymax = abs(max(-np.log10(x["pValue"].abs().max() for x in results.values()))
+        global_ymax = -np.log10(min(x["pValue"][x["pValue"] > 0].min() for x in results.values()))
+        # Use min to find the smallest p-value, then take the -log10. Exclude non-positive p-values.
+
     # TODO add check to ensure xmax and ymax  not smaller than all actual x and y values
     # now this
     for comparison, df in results.items():  # results contains dataf
