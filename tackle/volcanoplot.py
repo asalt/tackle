@@ -44,6 +44,8 @@ def volcanoplot(
     extra_outname_info=None,
     color_down="blue",
     color_up="red",
+    global_xmax=None,
+    global_ymax=None,
 ):
     data_obj = ctx.obj["data_obj"]
 
@@ -130,6 +132,11 @@ def volcanoplot(
         _genes = set(genes) & set(df.index)
         df = df.loc[_genes]
 
+    if global_xmax is None:
+        global_xmax = abs(max(x["log2_FC"].abs().max() for x in results.values()))
+    if global_ymax is None:
+        global_ymax = abs(max(-np.log10(x["pValue"].abs().max() for x in results.values()))
+    # TODO add check to ensure xmax and ymax  not smaller than all actual x and y values
     # now this
     for comparison, df in results.items():  # results contains dataf
         # df already contains the expression data by default now, as returned by the data_obj stat running method
@@ -341,6 +348,8 @@ def volcanoplot(
                 group1=group1,
                 alpha=alpha,
                 pch=pch,
+                global_xmax=global_xmax,
+                global_ymax=global_ymax,
                 # **kws,
             )
 
