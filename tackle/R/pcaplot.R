@@ -62,8 +62,11 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     # forpca <- forpca %>% group_by(normalize_by) %>% select(-variable, -!!color, -!!shape) %>% scale( scale = .scalefunc, center = !!center)
     # .forpca <-
   }
+  nas <- forpca[ is.na(forpca$value), ]
+  names_to_remove <- unique(nas$GeneID)
+  forpca %<>% filter(!GeneID %in% names_to_remove)
   forpca %<>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
-  # browser()
+
   .forpca <- forpca %>% select(-variable, -!!color, -!!shape)
   pca_res <- prcomp(.forpca, scale. = F, center = F)
 
