@@ -517,9 +517,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage)
   }
   cluster_cols <- FALSE
-  if (col_cluster == TRUE){
+  if (col_cluster == TRUE && is.null(column_split)) {
     cluster_cols <- hclust_dendsort(t(toplot[col_data$name]), method = linkage)
+  } else if (col_cluster == TRUE && !is.null(column_split)) {
+    cluster_cols <- TRUE
   }
+
+
 
 
   ht <- Heatmap(toplot[col_data$name],
