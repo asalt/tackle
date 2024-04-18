@@ -6,6 +6,7 @@ suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 library(cluster)
+library(dendsort)
 
 ht_opt$message <- FALSE
 
@@ -39,9 +40,14 @@ myzscore <- function(value, minval = NA, remask = TRUE) {
 
 
 dist_no_na <- function(mat) {
-  mat[is.na(mat)] <- min(mat, na.rm = TRUE) * .9
-  edist <- dist(mat)
+  .min <- min(mat, na.rm = TRUE) 
+  mat[is.na(mat)] <- .min - (.min*.1)
+  edist <- dist(mat) 
   return(edist)
+}
+
+hclust_dendsort <- function(mat, method = 'complete', ...){
+  dist_no_na(mat) %>% hclust(method = method, ...) %>% dendsort() %>% as.dendrogram()
 }
 
 order_colmeta <- function(annot, the_order, name = "X") {
@@ -157,15 +163,15 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## dplyr::filter(n > 1L)
 
 
-  ## if ('HS_ratio' %in% colnames(col_data)){
-  ##   col_data[['HS_ratio']] <- cut(col_data[['HS_ratio']],
-  ##                                 breaks=0:8/8, labels = paste0('<', 1:8/8),
-  ##                                 ordered_result=TRUE
-  ##                                 )
-  ##   HS_ratio=colorRamp2(.breaks, c=c('white', 'black'))
-  ##   .numeric_vals <- as.numeric(as.factor(levels(col_data$HS_ratio)))
-  ##   .breaks <- c(.numeric_vals[1], .numeric_vals[length(.numeric_vals)])
-  ## }
+  if ('HS_ratio' %in% colnames(col_data)){
+    col_data[['HS_ratio']] <- cut(col_data[['HS_ratio']],
+                                  breaks=0:8/8, labels = paste0('<', 1:8/8),
+                                  ordered_result=TRUE
+                                  )
+    HS_ratio=colorRamp2(.breaks, c=c('white', 'black'))
+    .numeric_vals <- as.numeric(as.factor(levels(col_data$HS_ratio)))
+    .breaks <- c(.numeric_vals[1], .numeric_vals[length(.numeric_vals)])
+  }
 
   ## col_anno_df <- data.frame(select(col_data, -name))
   ## rownames(col_anno_df) <- col_data$name
@@ -447,7 +453,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     cut_by_cols <- cut_by
     # cut_by_cols <- unlist(strsplit(cut_by, ":")) # split by colon
     for (.col in cut_by_cols) {
-      col_data[[.col]] <- factor(col_data[[.col]], ordered = TRUE)
+
+      .levels <- unique(col_data[[.col]])
+      col_data[[.col]] <- factor(col_data[[.col]], ordered = TRUE, levels = .levels)
     }
     column_split <- lapply(col_data[cut_by_cols], as.factor)
     # col_data[[cut_by]] <- col_data[[cut_by]] %>% factor(ordered = TRUE)
@@ -502,6 +510,17 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # browser()
   # toplot %>% mutate(across(where(is.matrix), as.vector)) %>% readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
+  # browser()
+  # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
+  cluster_rows <- FALSE
+  if (row_cluster == TRUE){
+    cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage)
+  }
+  cluster_cols <- FALSE
+  if (col_cluster == TRUE){
+    cluster_cols <- hclust_dendsort(t(toplot[col_data$name]), method = linkage)
+  }
+
 
   ht <- Heatmap(toplot[col_data$name],
     name = "mat",
@@ -519,8 +538,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## left_annotation = row_annot,
     top_annotation = col_annot,
     column_title_rot = 0,
-    cluster_columns = col_cluster,
-    cluster_rows = row_cluster,
+    #cluster_columns = col_cluster,
+    # cluster_rows = row_cluster,
+    cluster_columns = cluster_cols,
+    cluster_rows = cluster_rows,
     cluster_row_slices = cluster_row_slices,
     cluster_column_slices = cluster_col_slices,
     show_row_names = show_gene_symbols,
@@ -528,7 +549,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     clustering_method_columns = linkage,
     clustering_distance_rows = dist_no_na,
     clustering_distance_columns = dist_no_na,
-    column_dend_reorder = TRUE,
+    # column_dend_reorder = TRUE,
     row_labels = toplot$GeneSymbol,
     row_names_gp = gpar(fontsize = gene_symbol_fontsize),
     column_names_gp = gpar(fontsize = 9),
@@ -552,8 +573,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ),
   )
 
+
   ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = "bottom", padding = unit(c(10, 2, 2, 2), "mm"))
   ht_row_order <- row_order(ht)
+
 
   if (!is.null(annot_mat)) {
     xunit <- ifelse(row_cluster == TRUE, 1, 2.4)
