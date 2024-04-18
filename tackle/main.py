@@ -111,7 +111,7 @@ from .barplot import barplot
 
 sys.setrecursionlimit(10000)
 
-TAXON_MAPPER = {"human": 9606, "mouse": 10090, "celegans": 6239}
+TAXON_MAPPER = {"human": 9606, "mouse": 10090, "celegans": 6239, "chick": 9031, "chicken": 9031,}
 
 
 ## what is the smarter way to do this?
@@ -746,7 +746,7 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
 )
 @click.option(
     "--taxon",
-    type=click.Choice(["human", "mouse", "celegans", "all"]),
+    type=click.Choice([*TAXON_MAPPER.keys(), "all"]),
     default="all",
     show_default=True,
 )
@@ -2513,6 +2513,7 @@ def cluster2(
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
+
     if add_human_ratios:
         col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
     # _expids = ('recno', 'runno', 'searchno', 'label')
@@ -2800,7 +2801,7 @@ def cluster2(
             force_plot_genes=force_plot_genes,
             # genes=genes or robjects.NULL, # this has been filtered above
             show_gene_symbols=gene_symbols,
-            standard_scale=True if standard_scale == True else robjects.NULL,
+            standard_scale = standard_scale or robjects.NULL,
             row_cluster=row_cluster,
             col_cluster=col_cluster,
             # metadata=data_obj.config if show_metadata else None,
@@ -3223,6 +3224,18 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
     help="""
 """,
 )
+@click.option(
+    "--global-xmax",
+    default=None,
+    type=float,
+    show_default=True,
+)
+@click.option(
+    "--global-ymax",
+    default=None,
+    type=float,
+    show_default=True,
+)
 @click.pass_context
 def volcano(
     ctx,
@@ -3253,6 +3266,8 @@ def volcano(
     pch,
     alpha,
     fill_na_zero,
+    global_xmax,
+    global_ymax
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -3311,6 +3326,8 @@ def volcano(
         extra_outname_info=name_for_gids_to_highlight,
         color_down=color_down,
         color_up=color_up,
+        global_xmax=global_xmax,
+        global_ymax=global_ymax,
     )
 
 
@@ -4206,204 +4223,196 @@ def gsea(
                         annot_mat.columns.name = annotate
 
                     # result = clusterplot(X,
-                    if use_cluster2:
-                        # rpy2 complient
-                        if annot_mat is None:
-                            annot_mat = robjects.NULL
+                    # if use_cluster2:
+                    # rpy2 complient
+                    if annot_mat is None:
+                        annot_mat = robjects.NULL
 
-                        r_source(r_file)
-                        grdevices = importr("grDevices")
-                        cluster2 = robjects.r["cluster2"]
+                    r_source(r_file)
+                    grdevices = importr("grDevices")
+                    cluster2 = robjects.r["cluster2"]
+                    robjects.pandas2ri.activate()
 
-                        row_annot_df = None
+                    row_annot_df = None
 
-                        # clean this section up..
-                        gene_symbol_fontsize = 7
-                        # min_figheight = 6.5
-                        # figheight = 12
-                        gene_symbols = True
-                        # genes is the subselection passed to cluster2
-                        if (
-                            gene_symbols
-                        ):  # make sure there is enough room for the symbols
-                            logger.info("gene_symbols is True")
-                            figheight = max(
-                                ((gene_symbol_fontsize + 2) / 72) * len(genes), 12
-                            )
-                            logger.info(f"length of matrix is {len(genes)}")
-                            logger.info(f"set figheight to {figheight}")
-                            if figheight > 218:  # maximum figheight in inches
-                                gene_symbol_fontsize = max(218 / figheight, 6)
-                                figheight = 218
-                        logger.info(f"set figheight to {figheight}")
-
-                        min_figwidth = 4
-                        figwidth = (
-                            max(min(len(X.columns) / 2, 16), min_figwidth) + 1
-                        )  # add an inch for annotations
-                        logger.info(f"setting figwidth to {figwidth}")
-                        if len(col_meta) > 5:
-                            figwidth += 2
-                            logger.info(f"setting figwidth to {figwidth}")
-
-                        gr_devices = {
-                            ".png": grdevices.png,
-                            ".pdf": grdevices.pdf,
-                            ".svg": grdevices.svg,
-                        }
-                        gr_kws = {
-                            ".png": dict(
-                                width=figwidth, height=figheight, units="in", res=300
-                            ),
-                            ".pdf": dict(
-                                width=figwidth,
-                                height=figheight,
-                            ),
-                            ".svg": dict(
-                                width=figwidth,
-                                height=figheight,
-                            ),
-                        }
-
-                        # need to clean up
-                        metadata_colorsR = None
-                        metadata_color_lists = None
-                        metacats = col_meta.dtypes[
-                            (col_meta.dtypes == "string")
-                            | (col_meta.dtypes == "object")
-                        ].index
-
-                        metadata_color_list = list()
-                        for metacat in metacats:
-                            if (
-                                data_obj.metadata_colors is not None
-                                and metacat in data_obj.metadata_colors
-                            ):
-                                # metadata_colorsR = robjects.ListVector([])
-                                # for key, x in data_obj.metadata_colors.items():
-                                mapping = data_obj.metadata_colors[metacat]
-                                entry = robjects.vectors.ListVector(
-                                    {metacat: robjects.vectors.ListVector(mapping)}
-                                )
-                                metadata_color_list.append(entry)
-                            else:
-                                ncolors = col_meta[metacat].nunique()
-                                cmap = sb.color_palette(n_colors=ncolors)
-                                color_iter = map(mpl.colors.rgb2hex, cmap)
-                                themapping = {
-                                    x: c
-                                    for x, c in zip(
-                                        col_meta[metacat].unique(), color_iter
-                                    )
-                                }
-                                try:
-                                    entry = robjects.vectors.ListVector(
-                                        {
-                                            metacat: robjects.vectors.ListVector(
-                                                themapping
-                                            )
-                                        }
-                                    )
-                                except Exception as e:  ## ???
-                                    logger.error(e)
-                                    return
-                                metadata_color_list.append(entry)
-
-                        if metadata_color_list:
-                            metadata_colorsR = metadata_color_list
-
-                        # outname = outname_func("geneset", pathway=gs)
-
-                        plot_outname = namegen(
-                            "gsea",
-                            outpath=os.path.join(data_obj.outpath, "gsea", "pathways"),
-                            pathway=gs,
+                    # clean this section up..
+                    gene_symbol_fontsize = 7
+                    # min_figheight = 6.5
+                    # figheight = 12
+                    gene_symbols = True
+                    # genes is the subselection passed to cluster2
+                    if gene_symbols:  # make sure there is enough room for the symbols
+                        logger.info("gene_symbols is True")
+                        figheight = max(
+                            ((gene_symbol_fontsize + 2) / 72) * len(genes), 12
                         )
-                        for file_fmt in ctx.obj["file_fmts"]:
-                            grdevice = gr_devices[file_fmt]
-                            gr_kw = gr_kws[file_fmt]
-                            out = plot_outname + file_fmt
+                        logger.info(f"length of matrix is {len(genes)}")
+                        logger.info(f"set figheight to {figheight}")
+                        if figheight > 218:  # maximum figheight in inches
+                            gene_symbol_fontsize = max(218 / figheight, 6)
+                            figheight = 218
+                    logger.info(f"set figheight to {figheight}")
 
-                            grdevice(file=out, **gr_kw)
-                            print("Saving", out, "...", end="", flush=True)
+                    min_figwidth = 4
+                    figwidth = (
+                        max(min(len(X.columns) / 2, 16), min_figwidth) + 1
+                    )  # add an inch for annotations
+                    logger.info(f"setting figwidth to {figwidth}")
+                    if len(col_meta) > 5:
+                        figwidth += 2
+                        logger.info(f"setting figwidth to {figwidth}")
 
-                            # heatmap = ret.rx('heatmap')
-                            # print(heatmap)
+                    gr_devices = {
+                        ".png": grdevices.png,
+                        ".pdf": grdevices.pdf,
+                        ".svg": grdevices.svg,
+                    }
+                    gr_kws = {
+                        ".png": dict(
+                            width=figwidth, height=figheight, units="in", res=300
+                        ),
+                        ".pdf": dict(
+                            width=figwidth,
+                            height=figheight,
+                        ),
+                        ".svg": dict(
+                            width=figwidth,
+                            height=figheight,
+                        ),
+                    }
 
-                            # have to put this here to preserve the call to ComplexHeatmap::draw in clusterplot.R
+                    # need to clean up
+                    metadata_colorsR = None
+                    metadata_color_lists = None
+                    metacats = col_meta.dtypes[
+                        (col_meta.dtypes == "string") | (col_meta.dtypes == "object")
+                    ].index
 
-                            result = cluster2(
-                                X,
-                                main_title=main_title,
-                                title_fontsize=title_fontsize,
-                                metadata_colors=metadata_colorsR or robjects.NULL,
-                                annot_mat=annot_mat,
-                                the_annotation=annotate or robjects.NULL,
-                                # cmap_name='RdBu_r',
-                                # highlight_gids=data_obj.highlight_gids,
-                                # highlight_gid_names=data_obj.highlight_gid_names,
-                                # force_optimal_ordering=True,
-                                # force_plot_genes=force_plot_genes,
-                                genes=genes,
-                                # gid_symbol=data_obj.gid_symbol,
-                                show_gene_symbols=True,
-                                z_score=z_score,
-                                row_cluster=row_cluster,
-                                col_cluster=col_cluster,
-                                # metadata=data_obj.config if show_metadata else None,
-                                col_data=col_meta,
-                                # nclusters=nclusters,
-                                show_missing_values=True,
-                                # normed=data_obj.normed,
-                                gene_symbol_fontsize=gene_symbol_fontsize,
-                                seed=1234,
+                    metadata_color_list = list()
+                    for metacat in metacats:
+                        if (
+                            data_obj.metadata_colors is not None
+                            and metacat in data_obj.metadata_colors
+                        ):
+                            # metadata_colorsR = robjects.ListVector([])
+                            # for key, x in data_obj.metadata_colors.items():
+                            mapping = data_obj.metadata_colors[metacat]
+                            entry = robjects.vectors.ListVector(
+                                {metacat: robjects.vectors.ListVector(mapping)}
                             )
+                            metadata_color_list.append(entry)
+                        else:
+                            ncolors = col_meta[metacat].nunique()
+                            cmap = sb.color_palette(n_colors=ncolors)
+                            color_iter = map(mpl.colors.rgb2hex, cmap)
+                            themapping = {
+                                x: c
+                                for x, c in zip(col_meta[metacat].unique(), color_iter)
+                            }
+                            try:
+                                entry = robjects.vectors.ListVector(
+                                    {metacat: robjects.vectors.ListVector(themapping)}
+                                )
+                            except Exception as e:  ## ???
+                                logger.error(e)
+                                return
+                            metadata_color_list.append(entry)
 
-                            grdevices.dev_off()
-                            print("done.", flush=True)
+                    if metadata_color_list:
+                        metadata_colorsR = metadata_color_list
 
-                    else:  # this is not used anymore
-                        result = clusterplot(
+                    # outname = outname_func("geneset", pathway=gs)
+
+                    plot_outname = namegen(
+                        "gsea",
+                        outpath=os.path.join(data_obj.outpath, "gsea", "pathways"),
+                        pathway=gs,
+                    )
+                    for file_fmt in ctx.obj["file_fmts"]:
+                        grdevice = gr_devices[file_fmt]
+                        gr_kw = gr_kws[file_fmt]
+                        out = plot_outname + file_fmt
+
+                        grdevice(file=out, **gr_kw)
+                        print("Saving", out, "...", end="", flush=True)
+
+                        # heatmap = ret.rx('heatmap')
+                        # print(heatmap)
+
+                        # have to put this here to preserve the call to ComplexHeatmap::draw in clusterplot.R
+
+                        result = cluster2(
                             X,
                             main_title=main_title,
+                            title_fontsize=title_fontsize,
+                            metadata_colors=metadata_colorsR or robjects.NULL,
                             annot_mat=annot_mat,
-                            cmap_name="RdBu_r",
-                            highlight_gids=data_obj.highlight_gids,
-                            highlight_gid_names=data_obj.highlight_gid_names,
-                            force_optimal_ordering=True,
-                            force_plot_genes=force_plot_genes,
+                            the_annotation=annotate or robjects.NULL,
+                            # cmap_name='RdBu_r',
+                            # highlight_gids=data_obj.highlight_gids,
+                            # highlight_gid_names=data_obj.highlight_gid_names,
+                            # force_optimal_ordering=True,
+                            # force_plot_genes=force_plot_genes,
                             genes=genes,
-                            gid_symbol=data_obj.gid_symbol,
-                            gene_symbols=True,
+                            # gid_symbol=data_obj.gid_symbol,
+                            show_gene_symbols=True,
                             z_score=z_score,
                             row_cluster=row_cluster,
                             col_cluster=col_cluster,
                             # metadata=data_obj.config if show_metadata else None,
                             col_data=col_meta,
-                            nclusters=nclusters,
+                            # nclusters=nclusters,
                             show_missing_values=True,
-                            mask=mask,
-                            figsize=None,
-                            normed=data_obj.normed,
-                            gene_symbol_fontsize=12,
-                            legend_include=legend_include,
-                            legend_exclude=legend_exclude,
+                            # normed=data_obj.normed,
+                            gene_symbol_fontsize=gene_symbol_fontsize,
                             seed=1234,
-                            metadata_colors=data_obj.metadata_colors,
-                            circle_col_markers=True,
-                            circle_col_marker_size=120,
-                            square=False,
                         )
 
-                        g = result["clustermap"]["clustergrid"]
+                        grdevices.dev_off()
+                        print("done.", flush=True)
 
-                        outname = outname_func("geneset", pathway=gs)
-                        save_multiple(
-                            g,
-                            outname,
-                            *file_fmts,
-                        )
-                        plt.close(g.fig)
+                    # else:  # this is not used anymore
+                    # result = clusterplot(
+                    #     X,
+                    #     main_title=main_title,
+                    #     annot_mat=annot_mat,
+                    #     cmap_name="RdBu_r",
+                    #     highlight_gids=data_obj.highlight_gids,
+                    #     highlight_gid_names=data_obj.highlight_gid_names,
+                    #     force_optimal_ordering=True,
+                    #     force_plot_genes=force_plot_genes,
+                    #     genes=genes,
+                    #     gid_symbol=data_obj.gid_symbol,
+                    #     gene_symbols=True,
+                    #     z_score=z_score,
+                    #     row_cluster=row_cluster,
+                    #     col_cluster=col_cluster,
+                    #     # metadata=data_obj.config if show_metadata else None,
+                    #     col_data=col_meta,
+                    #     nclusters=nclusters,
+                    #     show_missing_values=True,
+                    #     mask=mask,
+                    #     figsize=None,
+                    #     normed=data_obj.normed,
+                    #     gene_symbol_fontsize=12,
+                    #     legend_include=legend_include,
+                    #     legend_exclude=legend_exclude,
+                    #     seed=1234,
+                    #     metadata_colors=data_obj.metadata_colors,
+                    #     circle_col_markers=True,
+                    #     circle_col_marker_size=120,
+                    #     square=False,
+                    # )
+
+                    # g = result["clustermap"]["clustergrid"]
+
+                    # outname = outname_func("geneset", pathway=gs)
+                    # save_multiple(
+                    #     g,
+                    #     outname,
+                    #     *file_fmts,
+                    # )
+                    # plt.close(g.fig)
 
 
 @main.command("ssGSEA")
