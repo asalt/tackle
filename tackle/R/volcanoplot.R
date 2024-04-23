@@ -49,6 +49,8 @@ volcanoplot <- function(X, max_labels = 35,
                         marker_cex = 1.4,
                         color_down = "blue",
                         color_up = "red",
+                        global_xmax = NULL,
+                        global_ymax = NULL,
                         ...) {
   POINT_SIZE <- marker_cex
   # pch <- 21 # if we want a fillable shape
@@ -126,8 +128,8 @@ volcanoplot <- function(X, max_labels = 35,
   X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < sig), "alpha"] <- alpha
   X[(X$highlight == TRUE & X[, sig_metric] > sig), "alpha"] <- alpha # force highlight set alpha to 1
 
-  X$outline_width <- 0.2
-  X$outline <- "black"
+  X$outline_width <- 0.8
+  X$outline <- "#444444"
   X[, "label"] <- FALSE # new column
 
 
@@ -208,10 +210,23 @@ volcanoplot <- function(X, max_labels = 35,
   # X[X$highlight == TRUE, "label"] <- TRUE
 
   ## ymax <- max(-log10(X[, 'pValue'])) * 1.05
+  if (is.na(global_xmax)) {
+    xmax <- X[, "log2_FC"] %>%
+      abs() %>%
+      max()
+  } else {
+    xmax <- global_xmax
+  }
+
+
   ymax <- max(-log10(X[, ploty])) * 1.08
-  xmax <- X[, "log2_FC"] %>%
-    abs() %>%
-    max()
+  if (!is.null(global_ymax)) {
+    ymax <- global_ymax
+  }
+  print(paste0("ymax: ", ymax))
+  # xmax <- X[, "log2_FC"] %>%
+  #   abs() %>%
+  #   max()
 
   # if (!is.null(max_fc)) {
   #   xmax <- max_fc + .2
@@ -271,7 +286,7 @@ volcanoplot <- function(X, max_labels = 35,
   }
   .add_borderless <- function() {
     geom_point(
-      data = X[X$highlight == TRUE, ],
+      #data = X[X$highlight == TRUE, ],
       mapping = aes(color = usd, fill = usd),
       pch = 16, size = POINT_SIZE, cex = cex, show.legend = FALSE
     )
@@ -295,7 +310,7 @@ volcanoplot <- function(X, max_labels = 35,
 
 
   p <- ggplot(X, aes(log2_FC, -log10(get(ploty)), alpha = alpha, color = usd)) +
-    geom_point(mapping = aes(color = usd), size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = 16) +
+    geom_point(mapping = aes(fill = usd, color =outline), size = POINT_SIZE, cex = cex, show.legend = FALSE, pch = pch) +
     .geom_point_highlight_TRUE() +
     scale_alpha_identity() +
     scale_fill_identity() +
@@ -304,7 +319,7 @@ volcanoplot <- function(X, max_labels = 35,
     xlim(-xmax, xmax) +
     geom_text_repel(
       data = X[X$label == TRUE, ],
-      aes(label = GeneSymbol, alpha = alpha, color = usd), min.segment.length = .15,
+      aes(label = GeneSymbol, alpha = alpha ), color='black', min.segment.length = .15,
       point.padding = 1e-3,
       box.padding = .1, cex = label_cex,
       segment.size = .35, segment.alpha = .4,
@@ -313,10 +328,19 @@ volcanoplot <- function(X, max_labels = 35,
       show_legend = FALSE,
     ) +
     # annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
+    # geom_label(
+    #   data = data.frame(x = c(-xmax - .annot_space, xmax + .annot_space), y = c(0, 0), label = c(group0, group1)),
+    #   aes(x = x, y = y, label = label, fill = c(color_down, color_up)),
+    #   color = "black", # Border color
+    #   size = annot_size,
+    #   hjust = c(0, 1), vjust = c(0, 0)
+    # ) +
     annotate("text", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
       label = c(group0, group1),
+      color = "black", #border color
+      fill = c(color_down, color_up), # default blue and red
       size = annot_size,
-      hjust = c(0, 1), vjust = c(0, 0), color = c(color_down, color_up) # default blue and red
+      hjust = c(0, 1), vjust = c(0, 0)
     ) +
     labs(
       x = expression(paste("log"[2], " Fold Change")),
