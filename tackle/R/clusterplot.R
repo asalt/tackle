@@ -372,6 +372,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
     col <- colorRamp2(c(minval, 0, maxval), c(color_low, color_mid, color_high))
   }
+  
 
   ## quantiles <- exprs_long %>% select(zscore) %>% quantile(na.rm=TRUE, probs=seq(0,1,.025))
   ## minval <- exprs_long %>% select(zscore) %>% min(na.rm=TRUE) *.95
@@ -488,11 +489,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # {
   #   heatmap_legend_param$title <- paste0("zscore ", heatmap_legend_param$title)
   # }
-  browser()
-  if (is.null(standard_scale)) standard_scale <- FALSE
-  if (standard_scale == TRUE || !is.null(standard_scale) ) .title <- paste0(.title, " (standardized)")
+  if (!is.null(standard_scale) && standard_scale == TRUE) .title <- paste0(.title, " (standardized)")
 
-  .legend_width <- if (is.null(z_score_by) && is.null(standard_scale)) unit(2.5, "cm") else unit(4.4, "cm")
+  .legend_width <- if (is.null(z_score_by)) unit(2.5, "cm") else unit(4.4, "cm")
   heatmap_legend_param <- list(
     title = .title,
     direction = "horizontal",
