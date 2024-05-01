@@ -870,17 +870,18 @@ def main(
             metrics_unnormed_area = False
 
     # for keeping track of what to stack from data
-    cluster_annotate_cols = None
+    cluster_annotate_cols = list()
 
     # extract cluster annotation column for cluster if present
     # and not if --annotate is specified for pca
     # this is needed now so we keep the proper column when loading data
     # the logic should work!
+    if "--add-description" in sys.argv:
+        cluster_annotate_cols.append("Description")
 
     if "--annotate" in sys.argv and any(
         x in sys.argv for x in ("cluster", "cluster2", "gsea")
     ):
-        cluster_annotate_cols = list()
         # _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
         _annot_args = [i for i, x in enumerate(sys.argv) if x.strip() == "--annotate"]
         for i in _annot_args:
@@ -1968,6 +1969,13 @@ def pca2(
 
 @main.command("cluster2")
 @click.option(
+    "--add-description/--no-add-description",
+    default=False,
+    is_flag=True,
+    show_default=True,
+    help="will try to add gene description info to heatmap",
+)
+@click.option(
     "--annotate",
     type=click.Choice(
         [
@@ -2251,6 +2259,7 @@ when `auto` is set for `--nclusters`""",
 @click.pass_context
 def cluster2(
     ctx,
+    add_description,
     annotate,
     cmap,
     cut_by,
@@ -2457,11 +2466,11 @@ def cluster2(
     if linear:
         X = 10**X
 
-    if standard_scale is not None:
+    if standard_scale is not None and standard_scale != "None":
         if standard_scale == 1 or standard_scale == "1":
             X = ((X.T / X.max(1)).T).fillna(0)
         elif standard_scale == 0 or standard_scale == "0":
-            X = (X / X.max(1)).fillna(0)
+            X = (X / X.max(0)).fillna(0)
 
     symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
 
@@ -2627,6 +2636,24 @@ def cluster2(
         if figheight > 218:  # maximum figheight in inches
             FONTSIZE = max(218 / figheight, 6)
             figheight = 218
+
+    if gene_symbols and add_description:
+        # this could definitely be improved
+        description_frame = data_obj.data.query("Metric == 'Description'")
+        description_frame = description_frame.bfill(axis=1).ffill(axis=1)
+        cols_for_merge = ["GeneID", description_frame.columns[-1]]
+        to_merge = description_frame[cols_for_merge].rename(
+            columns={description_frame.columns[-1]: "Description"}
+        )
+        X = pd.merge(X, to_merge, how="left")
+        # try to remove excess info from description that are not useful for display
+        # this is uniprot based removal of identifiers
+        X["Description"] = X.Description.str.replace(r"OS=.*", "", regex=True)
+        X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
+        X = X.drop("Description", axis=1)
+
+
+
     logger.info(f"figsize: {figwidth} x {figheight}")
 
     # gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
