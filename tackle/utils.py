@@ -901,9 +901,7 @@ def fillna_meta(df, index_col):
     # )
     # this should be the new code
     df.loc[selection.index, _cols] = (
-        df.loc[selection.index, _cols]
-        .ffill(axis=1)
-        .bfill(axis=1)
+        df.loc[selection.index, _cols].ffill(axis=1).bfill(axis=1)
     )
 
     # df.loc[idx[:, index_col], :] = (selection.fillna(method='ffill', axis=1)
@@ -918,8 +916,19 @@ def standardize_meta(df):
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
 
+    if "TaxonID" not in df:
+        logger.warning(f"TaxonID not in df")
+        # try to look up by GeneID
+        # from mygene import MyGeneInfo
+
+        # mg = MyGeneInfo()
+
+        # taxonids_ = mg.getgenes(df.index.tolist(), fields="taxid", as_dataframe=True)
+        tid_lookup = df.GeneID.apply(lambda x: gm.taxon.get(x))
+        df["TaxonID"] = tid_lookup
+
     if "Symbol" in df and "GeneSymbol" in df:
-        logger.warning(f"both Symbol and GeneSymbol are present")
+        # logger.warning(f"both Symbol and GeneSymbol are present")
         if (
             df.Symbol.fillna("") != df.GeneSymbol.fillna("")
         ).all():  # then we have a problem and need to rectify
@@ -1049,7 +1058,10 @@ def normalize(
 ):
     if ifot:  # normalize by ifot but without keratins
         # nonzero_ix = (df[~df.GeneID.isin(ifot_normalizer.to_ignore)]).index
-        nonzero_ix =  df[ (~df.GeneID.isin(ifot_normalizer.to_ignore)) & ( np.isfinite(df.iBAQ_dstrAdj) ) ].index
+        nonzero_ix = df[
+            (~df.GeneID.isin(ifot_normalizer.to_ignore))
+            & (np.isfinite(df.iBAQ_dstrAdj))
+        ].index
         norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].sum()
     elif median or quantile75 or quantile90:
         if quantile75:

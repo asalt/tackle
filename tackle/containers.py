@@ -808,6 +808,7 @@ class Data:
         if self.metric_values is None:
             self._metric_values = DefaultOrderedDict(lambda: defaultdict(None))
 
+        # all of this is "incorrect" because this is being calculated at the gene level not a psms table
         sra = df.SRA.value_counts().to_dict()
         gpg = df.GPGroup.nunique()
         psms = {
@@ -917,6 +918,9 @@ class Data:
                 exp.df.rename(columns={"LabelFLAG": "EXPLabelFLAG"}, inplace=True)
             #  df = exp.df.query("EXPLabelFLAG==@labelquery").copy()
             df = exp.df[exp.df.EXPLabelFLAG.isin(labelquery)].copy()
+            # if Taxoid is not defined we try to define it here
+            if "TaxonID" not in df or df.TaxonID.isna().any():
+                pass
             _na_taxon = df[df.TaxonID.isna()]
             if _na_taxon.pipe(len) > 0:
                 _na_taxon_spfilter = _na_taxon.loc[
@@ -1068,7 +1072,7 @@ class Data:
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
                 #                        self.ifot_ki, self.ifot_tf, self.median)
                 for taxonid in df.TaxonID.unique():
-                    if taxonid == 0.0 or taxonid == "":
+                    if (taxonid == 0.0 or taxonid == "") and df[df.TaxonID != ''].pipe(len) > 0:
                         continue  # invalid
                     df.loc[df.TaxonID == taxonid, "area"] = do_normalization(
                         df.loc[df.TaxonID == taxonid],
@@ -1128,7 +1132,10 @@ class Data:
                 logger.warn(f"..no data after funcat filter")
 
             # unique peptide filter
-            df = df[df.PeptideCount_u2g >= self.unique_pepts]
+            if "PeptideCount_u2g" not in df:
+                logger.warn(f"PeptideCount_u2g not in df, skipping unique peptide filter")
+            else:
+                df = df[df.PeptideCount_u2g >= self.unique_pepts]
 
             # df = assign_cols(exp.df, name)
             if (
@@ -1176,7 +1183,8 @@ class Data:
                 for x in self.cluster_annotate_cols:
                     if x not in _cols:
                         _cols.append(x)
-            stacked_data = [df[_cols].stack() for df in exps.values()]
+
+            stacked_data = [df[list(set(_cols) & set(df.columns))].stack() for df in exps.values()]
         else:
             stacked_data = [df.stack() for df in exps.values()]
         print("stacking...", flush=True, end="")
@@ -1757,6 +1765,14 @@ class Data:
         for col in ("recno", "runno", "searchno"):
             pheno[col] = pheno[col].astype(str)
         robjects.r.assign("pheno", pheno)
+
+        # maybe but need error checking:
+        # robjects.r("pheno$treat <- factor(pheno$treat)")
+        # robjects.r("pheno$treat <- relevel(pheno$treat, 'mix')")
+        # robjects.r("pheno$geno <- factor(pheno$geno)")
+        # robjects.r("pheno$geno <- relevel(pheno$geno, 'mix')")
+
+        # robjects
         r("mod0 <- model.matrix(~1, pheno)")
 
         if self.group and not formula:
@@ -1778,6 +1794,8 @@ class Data:
         elif not self.pairs and self.limma:
             importr("limma")
             # r('suppressMessages(library(dplyr))')
+
+
             importr("dplyr", on_conflict="warn")
             r("block <- NULL")
             r("cor <- NULL")
