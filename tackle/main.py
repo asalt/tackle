@@ -878,6 +878,7 @@ def main(
     # the logic should work!
     if "--add-description" in sys.argv:
         cluster_annotate_cols.append("Description")
+        cluster_annotate_cols.append("GeneDescription")
 
     if "--annotate" in sys.argv and any(
         x in sys.argv for x in ("cluster", "cluster2", "gsea")
@@ -2639,18 +2640,26 @@ def cluster2(
 
     if gene_symbols and add_description:
         # this could definitely be improved
-        description_frame = data_obj.data.query("Metric == 'Description'")
-        description_frame = description_frame.bfill(axis=1).ffill(axis=1)
-        cols_for_merge = ["GeneID", description_frame.columns[-1]]
-        to_merge = description_frame[cols_for_merge].rename(
-            columns={description_frame.columns[-1]: "Description"}
-        )
-        X = pd.merge(X, to_merge, how="left")
-        # try to remove excess info from description that are not useful for display
-        # this is uniprot based removal of identifiers
-        X["Description"] = X.Description.str.replace(r"OS=.*", "", regex=True)
-        X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
-        X = X.drop("Description", axis=1)
+        description_frame = data_obj.data.query("Metric == 'GeneDescription'")
+        _cols = [x for x in description_frame if x not in ('GeneID', 'Metric')]
+        _descriptions = description_frame[_cols].stack().unique()
+        if all(x == '' for x in _descriptions):
+            description_frame = data_obj.data.query("Metric == 'Description'") # try another
+            _descriptions = description_frame[_cols].stack().unique()
+        if len(description_frame) == 0 or all(x == '' for x in _descriptions):
+            pass # fail
+        else:
+            description_frame = description_frame.bfill(axis=1).ffill(axis=1)
+            cols_for_merge = ["GeneID", description_frame.columns[-1]]
+            to_merge = description_frame[cols_for_merge].rename(
+                columns={description_frame.columns[-1]: "Description"}
+            )
+            X = pd.merge(X, to_merge, how="left")
+            # try to remove excess info from description that are not useful for display
+            # this is uniprot based removal of identifiers
+            X["Description"] = X.Description.str.replace(r"OS=.*", "", regex=True)
+            X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
+            X = X.drop("Description", axis=1)
 
 
 
