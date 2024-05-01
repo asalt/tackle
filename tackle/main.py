@@ -2904,11 +2904,11 @@ def cluster2(
         gr_kw = gr_kws[file_fmt]
         out = outname + file_fmt
         annot_mat_to_pass = annot_mat
-        if len(X) > 300 and annotate:
-            annot_mat_to_pass = None
-            logger.info(f"number of genes is {len(X)} >> 300, skipping annotation")
-            if "annotate" in outname_kws:
-                outname_kws.pop("annotate")
+        # if len(X) > 300 and annotate:
+        #     annot_mat_to_pass = None
+        #     logger.info(f"number of genes is {len(X)} >> 300, skipping annotation")
+        #     if "annotate" in outname_kws:
+        #         outname_kws.pop("annotate")
 
         #################################################################
         ##                          make plot                          ##
