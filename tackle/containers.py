@@ -1751,7 +1751,20 @@ class Data:
             plt.close(plt.gcf())
 
         pandas2ri.activate()
+
         r.assign("edata", mat)
+        variables = robjects.r("colnames(edata)")
+        # fix each individual column of `mod`
+        fixed_vars = [
+            x.replace(":", "_")
+            .replace(" ", "_")
+            .replace("-", "_")
+            .replace("+", "_")
+            .replace("?", "qmk")
+            for x in variables
+        ]
+        robjects.r.assign("fixed_vars", fixed_vars)
+        robjects.r("colnames(edata) <- fixed_vars")
 
         # pheno = self.col_metadata.T
         pheno = self.col_metadata.copy()
@@ -1804,7 +1817,6 @@ class Data:
                 r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
                 r("cor <- corfit$consensus")
 
-            fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             # need to make valid R colnames
             variables = robjects.r("colnames(mod)")
             # fix each individual column of `mod`
@@ -1819,6 +1831,8 @@ class Data:
             robjects.r.assign("fixed_vars", fixed_vars)
             robjects.r("colnames(mod) <- fixed_vars")
 
+
+            fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             if bool(contrasts_str) is False:
                 contrasts_array = list()
                 for group in itertools.combinations(
