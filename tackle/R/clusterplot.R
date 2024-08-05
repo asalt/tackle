@@ -534,7 +534,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     column_split = column_split,
     col = col,
     border = TRUE,
-    cell_fun = cell_fun,
+    # cell_fun = cell_fun,
     row_dend_side = row_dend_side, #' right',
     # row_names_side = row_names_side, #' left',
     row_names_side = row_names_side, #' left',
@@ -587,7 +587,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     xunit <- ifelse(row_cluster == TRUE, 1, 2.4)
     # print(xunit)
     decorate_heatmap_body("mat", {
-      grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
+      # grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
+      grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"), gp=gpar(fontsize=7))
+
     })
   }
 
