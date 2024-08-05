@@ -501,7 +501,7 @@ class Data:
         cmap_file=None,
         col_cluster=True,
         colors_only=False,
-        data_dir="./data",
+        data_dir="./data/e2g/",
         base_dir="./results",
         experiment_file=None,
         fill_na_zero=True,

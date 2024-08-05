@@ -1,6 +1,7 @@
 """
 
 """
+
 from dis import show_code
 import sys
 import os
@@ -36,7 +37,7 @@ import pandas as pd
 
 import matplotlib
 
-matplotlib.use("Agg")
+# matplotlib.use("Agg")
 #  # from matplotlib import gridspec
 #  import matplotlib.pyplot as plt
 #  from matplotlib.offsetbox import AnchoredText
@@ -111,7 +112,13 @@ from .barplot import barplot
 
 sys.setrecursionlimit(10000)
 
-TAXON_MAPPER = {"human": 9606, "mouse": 10090, "celegans": 6239, "chick": 9031, "chicken": 9031,}
+TAXON_MAPPER = {
+    "human": 9606,
+    "mouse": 10090,
+    "celegans": 6239,
+    "chick": 9031,
+    "chicken": 9031,
+}
 
 
 ## what is the smarter way to do this?
@@ -584,7 +591,7 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
 @click.option(
     "--data-dir",
     type=click.Path(exists=False, file_okay=False),
-    default="./data/",
+    default="./data/e2g/",
     show_default=True,
     help="location to store and read e2g files",
 )
@@ -935,10 +942,10 @@ def main(
         export_all = True
 
     if not os.path.exists(data_dir):
-        os.mkdir(data_dir)
+        os.makedirs(data_dir)
 
     if not os.path.exists(result_dir):
-        os.mkdir(result_dir)
+        os.makedirs(result_dir)
 
     if ctx.obj is None:
         ctx.obj = dict()
@@ -1007,9 +1014,9 @@ def main(
             non_zeros=data_obj.non_zeros,
             colors_only=data_obj.colors_only,
             batch=data_obj.batch_applied,
-            batch_method="parametric"
-            if not data_obj.batch_nonparametric
-            else "nonparametric",
+            batch_method=(
+                "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+            ),
             outpath=data_obj.outpath,
         )
         + ".tab"
@@ -1030,9 +1037,11 @@ def main(
                 non_zeros=data_obj.non_zeros,
                 colors_only=data_obj.colors_only,
                 batch=data_obj.batch_applied,
-                batch_method="parametric"
-                if not data_obj.batch_nonparametric
-                else "nonparametric",
+                batch_method=(
+                    "parametric"
+                    if not data_obj.batch_nonparametric
+                    else "nonparametric"
+                ),
                 outpath=data_obj.outpath,
             )
             + ".tab"
@@ -1050,9 +1059,9 @@ def main(
             non_zeros=data_obj.non_zeros,
             colors_only=data_obj.colors_only,
             batch=data_obj.batch_applied,
-            batch_method="parametric"
-            if not data_obj.batch_nonparametric
-            else "nonparametric",
+            batch_method=(
+                "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+            ),
             outpath=data_obj.outpath,
         )
         + ".tab"
@@ -1204,9 +1213,9 @@ def scatter(ctx, colors_only, shade_correlation, stat):
         colors_only=colors_only,
         batch=data_obj.batch_applied,
         stat=stat,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         outpath=data_obj.outpath,
     )
 
@@ -1592,9 +1601,9 @@ def cluster(
         non_zeros=data_obj.non_zeros,
         colors_only=data_obj.colors_only,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         outpath=data_obj.outpath,
         missing_values=missing_values,
@@ -1737,9 +1746,9 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
         taxon=data_obj.taxon,
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         colors_only=data_obj.colors_only,
         outpath=data_obj.outpath,
@@ -1853,9 +1862,9 @@ def pca2(
         taxon=data_obj.taxon,
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         center=center,
         scale=scale,
@@ -2641,13 +2650,15 @@ def cluster2(
     if gene_symbols and add_description:
         # this could definitely be improved
         description_frame = data_obj.data.query("Metric == 'GeneDescription'")
-        _cols = [x for x in description_frame if x not in ('GeneID', 'Metric')]
+        _cols = [x for x in description_frame if x not in ("GeneID", "Metric")]
         _descriptions = description_frame[_cols].stack().unique()
-        if all(x == '' for x in _descriptions):
-            description_frame = data_obj.data.query("Metric == 'Description'") # try another
+        if all(x == "" for x in _descriptions):
+            description_frame = data_obj.data.query(
+                "Metric == 'Description'"
+            )  # try another
             _descriptions = description_frame[_cols].stack().unique()
-        if len(description_frame) == 0 or all(x == '' for x in _descriptions):
-            pass # fail
+        if len(description_frame) == 0 or all(x == "" for x in _descriptions):
+            pass  # fail
         else:
             description_frame = description_frame.bfill(axis=1).ffill(axis=1)
             cols_for_merge = ["GeneID", description_frame.columns[-1]]
@@ -2660,8 +2671,6 @@ def cluster2(
             X["Description"] = X.Description.str.replace(r"OS=.*", "", regex=True)
             X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
             X = X.drop("Description", axis=1)
-
-
 
     logger.info(f"figsize: {figwidth} x {figheight}")
 
@@ -2826,9 +2835,9 @@ def cluster2(
             cut_by=cut_by,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
-            z_score=z_score
-            if z_score != "None" and z_score is not None
-            else robjects.NULL,
+            z_score=(
+                z_score if z_score != "None" and z_score is not None else robjects.NULL
+            ),
             z_score_by=z_score_by or robjects.NULL,
             row_annot_df=row_annot_df,
             col_data=col_data,
@@ -2837,7 +2846,7 @@ def cluster2(
             force_plot_genes=force_plot_genes,
             # genes=genes or robjects.NULL, # this has been filtered above
             show_gene_symbols=gene_symbols,
-            standard_scale = standard_scale or robjects.NULL,
+            standard_scale=standard_scale or robjects.NULL,
             row_cluster=row_cluster,
             col_cluster=col_cluster,
             # metadata=data_obj.config if show_metadata else None,
@@ -2867,6 +2876,17 @@ def cluster2(
         )
         call_kws.update(kws)
         logger.info(f"call_kws: {call_kws}")
+
+        if len(out) > 299:  # quick fix
+            out_path, out_name = os.path.split(out)
+            out_name = (
+                out_name.replace("treatment", "treat")
+                .replace("clustermap", "cmap")
+                .replace("normtype", "norm")
+                .replace("volcano_file", "vfile")
+                .replace("direction_", "")
+            )
+            out = os.path.join(out_path, out_name)
 
         grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
         ret = cluster2(**call_kws)
@@ -3303,7 +3323,7 @@ def volcano(
     alpha,
     fill_na_zero,
     global_xmax,
-    global_ymax
+    global_ymax,
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -3683,9 +3703,9 @@ def gsea(
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
             batch=data_obj.batch_applied,
-            batch_method="parametric"
-            if not data_obj.batch_nonparametric
-            else "nonparametric",
+            batch_method=(
+                "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+            ),
             # outpath=os.path.join(data_obj.outpath, "gsea"),
             normtype=data_obj.normtype,
             stat_metric=stat_metric,
@@ -4600,9 +4620,9 @@ def ssGSEA(
         non_zeros=data_obj.non_zeros,
         colors_only=data_obj.colors_only,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         outpath=data_obj.outpath,
     )
@@ -4760,9 +4780,9 @@ def box(
         non_zeros=data_obj.non_zeros,
         colors_only=data_obj.colors_only,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         outpath=outpath,
     )
@@ -4888,9 +4908,9 @@ def dendrogram(ctx, color, marker, linkage):
         taxon=data_obj.taxon,
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         outpath=data_obj.outpath,
     )
@@ -5086,9 +5106,9 @@ def bar(
         non_zeros=data_obj.non_zeros,
         colors_only=data_obj.colors_only,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         outpath=outpath,
     )
@@ -5257,9 +5277,9 @@ def genecorr(
         non_zeros=data_obj.non_zeros,
         colors_only=data_obj.colors_only,
         batch=data_obj.batch_applied,
-        batch_method="parametric"
-        if not data_obj.batch_nonparametric
-        else "nonparametric",
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
         normtype=data_obj.normtype,
         outpath=outpath,
     )
