@@ -347,6 +347,18 @@ class Annotations:
         return df[~df[cat].isna()]
 
 
+class HistoneInfo:
+    def __init__(self):
+        self.file = os.path.join(PWD, "data", "histones.tsv")
+        self._df = None
+
+    @property
+    def df(self):
+        if self._df is None:
+            self._df = pd.read_table(self.file, dtype="string")
+        return self._df
+
+
 class HGeneMapper:
     def __init__(self):
         homologene_f = sorted(
@@ -1072,7 +1084,9 @@ class Data:
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
                 #                        self.ifot_ki, self.ifot_tf, self.median)
                 for taxonid in df.TaxonID.unique():
-                    if (taxonid == 0.0 or taxonid == "") and df[df.TaxonID != ''].pipe(len) > 0:
+                    if (taxonid == 0.0 or taxonid == "") and df[df.TaxonID != ""].pipe(
+                        len
+                    ) > 0:
                         continue  # invalid
                     df.loc[df.TaxonID == taxonid, "area"] = do_normalization(
                         df.loc[df.TaxonID == taxonid],
@@ -1133,7 +1147,9 @@ class Data:
 
             # unique peptide filter
             if "PeptideCount_u2g" not in df:
-                logger.warn(f"PeptideCount_u2g not in df, skipping unique peptide filter")
+                logger.warn(
+                    f"PeptideCount_u2g not in df, skipping unique peptide filter"
+                )
             else:
                 df = df[df.PeptideCount_u2g >= self.unique_pepts]
 
@@ -1184,7 +1200,9 @@ class Data:
                     if x not in _cols:
                         _cols.append(x)
 
-            stacked_data = [df[list(set(_cols) & set(df.columns))].stack() for df in exps.values()]
+            stacked_data = [
+                df[list(set(_cols) & set(df.columns))].stack() for df in exps.values()
+            ]
         else:
             stacked_data = [df.stack() for df in exps.values()]
         print("stacking...", flush=True, end="")
@@ -1192,6 +1210,26 @@ class Data:
         self.data = pd.concat(stacked_data, axis=1, keys=exps.keys())
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
+
+        histone_info = HistoneInfo()
+
+        histone_values = self.data[self.data.GeneID.isin(histone_info.df.GeneID)].query(
+            "Metric=='iBAQ_dstrAdj'"
+        )
+
+        _value_cols = [x for x in self.data.columns if x != "GeneID" and x != "Metric"]
+        histone_values["geneid_sortable"] = [
+            int(x) if x.isnumeric() else x for x in histone_values.GeneID
+        ]
+
+        histone_values = histone_values.sort_values(
+            by=[_value_cols[0], "geneid_sortable"]
+        )
+        histone_vals_nodups = histone_values.drop_duplicates(_value_cols)
+        _to_remove = set(histone_values.GeneID) - set(histone_vals_nodups.GeneID)
+
+        self.data = self.data[~self.data.GeneID.isin(_to_remove)]
+
         print("done", flush=True)
 
         ##
@@ -1370,9 +1408,9 @@ class Data:
                 non_zeros=self.non_zeros,
                 colors_only=self.colors_only,
                 batch=self.batch_applied,
-                batch_method="parametric"
-                if not self.batch_nonparametric
-                else "nonparametric",
+                batch_method=(
+                    "parametric" if not self.batch_nonparametric else "nonparametric"
+                ),
                 outpath=self.outpath,
             )
 
@@ -1595,9 +1633,9 @@ class Data:
                 non_zeros=self.non_zeros,
                 colors_only=self.colors_only,
                 batch=self.batch_applied,
-                batch_method="parametric"
-                if not self.batch_nonparametric
-                else "nonparametric",
+                batch_method=(
+                    "parametric" if not self.batch_nonparametric else "nonparametric"
+                ),
                 normtype=self.normtype,
                 outpath=self.outpath,
             )
@@ -1731,9 +1769,9 @@ class Data:
                 non_zeros=self.non_zeros,
                 colors_only=self.colors_only,
                 batch=self.batch_applied,
-                batch_method="parametric"
-                if not self.batch_nonparametric
-                else "nonparametric",
+                batch_method=(
+                    "parametric" if not self.batch_nonparametric else "nonparametric"
+                ),
                 outpath=self.outpath,
             )
 
@@ -1808,7 +1846,6 @@ class Data:
             importr("limma")
             # r('suppressMessages(library(dplyr))')
 
-
             importr("dplyr", on_conflict="warn")
             r("block <- NULL")
             r("cor <- NULL")
@@ -1830,7 +1867,6 @@ class Data:
             ]
             robjects.r.assign("fixed_vars", fixed_vars)
             robjects.r("colnames(mod) <- fixed_vars")
-
 
             fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
             if bool(contrasts_str) is False:
@@ -2049,9 +2085,9 @@ class Data:
                 non_zeros=self.non_zeros,
                 colors_only=self.colors_only,
                 batch=self.batch_applied,
-                batch_method="parametric"
-                if not self.batch_nonparametric
-                else "nonparametric",
+                batch_method=(
+                    "parametric" if not self.batch_nonparametric else "nonparametric"
+                ),
                 # outpath=self.outpath,
                 outpath=os.path.join(self.outpath, "export"),
             )
@@ -2342,9 +2378,11 @@ class Data:
                     non_zeros=self.non_zeros,
                     colors_only=self.colors_only,
                     batch=self.batch_applied,
-                    batch_method="parametric"
-                    if not self.batch_nonparametric
-                    else "nonparametric",
+                    batch_method=(
+                        "parametric"
+                        if not self.batch_nonparametric
+                        else "nonparametric"
+                    ),
                     outpath=self.outpath,
                 )
                 + ".tsv"
@@ -2391,9 +2429,11 @@ class Data:
                 r.assign("rid", _m.index)
                 r.assign(
                     "rdesc",
-                    export.GeneSymbol
-                    if "GeneSymbol" in export.columns
-                    else export.index,
+                    (
+                        export.GeneSymbol
+                        if "GeneSymbol" in export.columns
+                        else export.index
+                    ),
                 )
                 r.assign("cdesc", self.col_metadata)
                 r.assign("cid", self.col_metadata.index)
