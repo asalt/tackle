@@ -34,3 +34,6 @@ data/raw/*json
 *.ini
 
 scripts/*.txt
+
+*.gmt
+*.zip
