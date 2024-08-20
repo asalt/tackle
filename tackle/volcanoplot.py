@@ -60,9 +60,9 @@ def volcanoplot(
         print("Must supply a group value.")
         return
 
-    if group and data_obj.col_metadata[group].nunique() < 2:
-        print("Error in volcanoplot, number of groups must be at least 2.")
-        return
+    # if group and data_obj.col_metadata[group].nunique() < 2:
+    #     print("Error in volcanoplot, number of groups must be at least 2.")
+    #     return
     # if data_obj.col_metadata.loc[group].nunique() != 2:
     #     print('Error in volcanoplot, number of groups must be exactly 2.')
     #     return
