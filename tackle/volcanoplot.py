@@ -1,18 +1,29 @@
 import os
 import itertools
 
-
 import numpy as np
 import pandas as pd
 
 try:
     pd.NA
 except AttributeError:
-    pd.NA = "NA"
+    pd.NA = "NA"  # not sure if using this, could be in main.py
 
 from .utils import get_outname, parse_gid_file, fix_name
 
 # from .containers import GeneMapper
+
+
+try:
+    from rpy2.robjects import r
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
+
+    _viaR = True
+except ModuleNotFoundError:
+    _viaR = False
+    print("Must install rpy2")
 
 
 def volcanoplot(
@@ -132,11 +143,17 @@ def volcanoplot(
         _genes = set(genes) & set(df.index)
         df = df.loc[_genes]
 
-    if global_xmax is None:
+    if global_xmax is None or global_xmax is True:
         global_xmax = abs(max(x["log2_FC"].abs().max() for x in results.values()))
-    if global_ymax is None:
-        global_ymax = -np.log10(min(x["pValue"][x["pValue"] > 0].min() for x in results.values()))
+    elif global_xmax is False:
+        global_xmax = robjects.NA_Real
+    if global_ymax is None or global_ymax is True:
+        global_ymax = -np.log10(
+            min(x["pValue"][x["pValue"] > 0].min() for x in results.values())
+        )
         # Use min to find the smallest p-value, then take the -log10. Exclude non-positive p-values.
+    elif global_ymax is False:
+        global_ymax = robjects.NA_Real
 
     # TODO add check to ensure xmax and ymax  not smaller than all actual x and y values
     # now this
@@ -267,20 +284,6 @@ def volcanoplot(
         export_cols = [x for x in export_data.columns if x not in ("highlight",)]
         export_data[export_cols].to_csv(out, sep="\t")
         print("done", flush=True)
-
-        try:
-            from rpy2.robjects import r
-            import rpy2.robjects as robjects
-            from rpy2.robjects import pandas2ri
-            from rpy2.robjects.packages import importr
-
-            _viaR = True
-        except ModuleNotFoundError:
-            _viaR = False
-
-        if not _viaR:
-            print("Must install rpy2")
-            return
 
         pandas2ri.activate()
         r_source = robjects.r["source"]

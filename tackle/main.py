@@ -296,7 +296,7 @@ class Path_or_Subcommand(click.Path):
             click.echo(help_txt)
             sys.exit(0)
 
-        return click.Path.convert(self, value, param, ctx)
+        return super().convert(value, param, ctx)
 
 
 class int_or_ratio(click.ParamType):
@@ -3099,7 +3099,18 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
         non_zeros=non_zeros,
         file_fmts=file_fmts,
     )
+ 
+class Float_or_Bool(click.ParamType):
+    name = "float-or-bool"
 
+    def convert(self, value, param, ctx):
+        try:
+            if value.lower() in ["true", "false"]:
+                return value.lower() == "true"
+            else:
+                return float(value)
+        except ValueError:
+            self.fail(f"{value} is not a valid float or bool", param, ctx)
 
 @main.command("volcano")
 @click.option(
@@ -3283,13 +3294,13 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 @click.option(
     "--global-xmax",
     default=None,
-    type=float,
+    type=Float_or_Bool(),
     show_default=True,
 )
 @click.option(
     "--global-ymax",
     default=None,
-    type=float,
+    type=Float_or_Bool(),
     show_default=True,
 )
 @click.pass_context
