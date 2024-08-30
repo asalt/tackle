@@ -92,6 +92,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      color_low = "blue",
                      color_mid = "white",
                      color_high = "red",
+                     fixed_size = FALSE,
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
@@ -525,8 +526,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   }
 
   .mat <- toplot[col_data$name]
-  ht_width = unit(ncol(.mat) * .20, "in" )
-  ht_height = unit(nrow(.mat) * .20, "in" )
+  if (!is.null(fixed_size) && fixed_size == TRUE){
+      ht_width <- unit(ncol(.mat) * .20, "in" )
+      ht_height <- unit(nrow(.mat) * .20, "in" )
+    } else{
+        ht_width <- NULL
+        ht_height <- NULL
+    }
 
 
   ht <- Heatmap(.mat,
