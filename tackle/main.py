@@ -2635,10 +2635,14 @@ def cluster2(
     )
     # =================================================================
 
-    min_figwidth = 5
+    # min_figwidth = 5
     if figsize is None:  # either None or length 2 tuple
-        figheight = 12
-        figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+        #figheight = 12
+        # figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+        figheight = 4 + (X.shape[0] * .22)
+        figwidth = 8 + (X.shape[1] * .26)
+        if col_cluster:
+            figheight += 3.2
     else:
         figwidth, figheight = figsize
     if gene_symbols:  # make sure there is enough room for the symbols
@@ -2798,20 +2802,24 @@ def cluster2(
         if main_title is None:
             main_title = robjects.NULL
 
-        figheight = 12
-        if gene_symbols:
-            figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
-            # figheight = max(
-            #     ((gene_symbol_fontsize + 2) / 72) * (0.7 * (len(X) + 4)), 12
-            # )
-            if figheight > 218:  # maximum figheight in inches
-                figheight = 218
-        min_figwidth = 3
+        # figheight = 12
+        # if gene_symbols:
+        #     figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
+        #     # figheight = max(
+        #     #     ((gene_symbol_fontsize + 2) / 72) * (0.7 * (len(X) + 4)), 12
+        #     # )
+        # min_figwidth = 3
         if figsize is None:  # either None or length 2 tuple
-            figheight = 12
-            figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+            figheight = 4.4 + (X.shape[0] * .22)
+            figwidth = 8 + (X.shape[1] * .26)
+            # figheight = 12
+            # figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+            if col_cluster:
+                figheight += 3.2
         else:
             figwidth, figheight = figsize
+        if figheight > 218:  # maximum figheight in inches
+            figheight = 218
 
         logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
         gr_kws = {
@@ -2922,7 +2930,6 @@ def cluster2(
     for file_fmt in ctx.obj["file_fmts"]:
         grdevice = gr_devices[file_fmt]
         gr_kw = gr_kws[file_fmt]
-        out = outname + file_fmt
         annot_mat_to_pass = annot_mat
         # if len(X) > 300 and annotate:
         #     annot_mat_to_pass = None
@@ -2933,6 +2940,13 @@ def cluster2(
         #################################################################
         ##                          make plot                          ##
         #################################################################
+
+        nrow_ncol = "_{0}x{1}".format(*X.shape)
+        out = (
+            outname_func("clustermap", **outname_kws)
+            + nrow_ncol
+            + file_fmt
+        )
 
         plot_and_save(
             X,
@@ -2982,8 +2996,10 @@ def cluster2(
             if gene_symbols is True:  # force override
                 _show_gene_symbols = True
 
+            nrow_col = "{_{0}x{1}".format(*subX.shape)
             out = (
                 outname_func("clustermap", geneset=fix_name(annotation), **outname_kws)
+                + nrow_ncol
                 + file_fmt
             )
             plot_and_save(

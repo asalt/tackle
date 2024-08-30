@@ -524,13 +524,16 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     cluster_cols <- TRUE
   }
 
+  .mat <- toplot[col_data$name]
+  ht_width = unit(ncol(.mat) * .20, "in" )
+  ht_height = unit(nrow(.mat) * .20, "in" )
 
 
-
-  ht <- Heatmap(toplot[col_data$name],
+  ht <- Heatmap(.mat,
     name = "mat",
+    width = ht_width,
+    height = ht_height,
     row_split = discrete_clusters,
-    ## column_split = cbind(kout_samples$cluster),
     column_split = column_split,
     col = col,
     border = TRUE,
