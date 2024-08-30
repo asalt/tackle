@@ -2165,6 +2165,13 @@ def pca2(
               (Default all are included)""",
 )
 @click.option(
+    "--optimal-figsize",
+    default=False,
+    is_flag=True,
+    show_default=True,
+    help="Use the best figure size to display row names. May fail for pdf export if too big.",
+)
+@click.option(
     "--sample-reference",
     type=str,
     help="metadata key to choose what samples to keep as specified by `--sample-include`",
@@ -2293,6 +2300,7 @@ def cluster2(
     linear,
     legend_include,
     legend_exclude,
+    optimal_figsize,
     sample_reference,
     sample_include,
     linkage,
@@ -2634,23 +2642,6 @@ def cluster2(
         outpath=os.path.join(data_obj.outpath, "cluster2"),
     )
     # =================================================================
-
-    # min_figwidth = 5
-    if figsize is None:  # either None or length 2 tuple
-        #figheight = 12
-        # figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
-        figheight = 4 + (X.shape[0] * .22)
-        figwidth = 8 + (X.shape[1] * .26)
-        if col_cluster:
-            figheight += 3.2
-    else:
-        figwidth, figheight = figsize
-    if gene_symbols:  # make sure there is enough room for the symbols
-        figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
-        if figheight > 218:  # maximum figheight in inches
-            FONTSIZE = max(218 / figheight, 6)
-            figheight = 218
-
     if gene_symbols and add_description:
         # this could definitely be improved
         description_frame = data_obj.data.query("Metric == 'GeneDescription'")
@@ -2676,24 +2667,13 @@ def cluster2(
             X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
             X = X.drop("Description", axis=1)
 
-    logger.info(f"figsize: {figwidth} x {figheight}")
+    # logger.info(f"figsize: {figwidth} x {figheight}")
 
     # gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
     gr_devices = {
         ".png": grdevices.png,
         ".pdf": grdevices.cairo_pdf,
         ".svg": grdevices.svg,
-    }
-    gr_kws = {
-        ".png": dict(width=figwidth, height=figheight, units="in", res=300),
-        ".pdf": dict(
-            width=figwidth,
-            height=figheight,
-        ),
-        ".svg": dict(
-            width=figwidth,
-            height=figheight,
-        ),
     }
 
     # DONE: IDEA - for all entries in the column and row data that do not have a predefined colormap,
@@ -2781,7 +2761,7 @@ def cluster2(
         X,
         out,
         grdevice,
-        gr_kws=None,
+        # gr_kws=None,
         annot_mat=None,
         main_title=None,
         file_fmt=".pdf",
@@ -2790,10 +2770,7 @@ def cluster2(
         """
         # gr_kws is redefined here (update fighiehgt /width), no need to take it as input
         """
-        if gr_kws is not None:
-            logger.info(f"gr_kws: {gr_kws}")
-        if gr_kws is None:
-            gr_kws = dict()
+        gr_kws = dict()
         # grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
         print("Saving", out, "...", end="", flush=True)
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
@@ -2802,24 +2779,25 @@ def cluster2(
         if main_title is None:
             main_title = robjects.NULL
 
-        # figheight = 12
-        # if gene_symbols:
-        #     figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
-        #     # figheight = max(
-        #     #     ((gene_symbol_fontsize + 2) / 72) * (0.7 * (len(X) + 4)), 12
-        #     # )
-        # min_figwidth = 3
+        min_figwidth = 5
         if figsize is None:  # either None or length 2 tuple
-            figheight = 4.4 + (X.shape[0] * .22)
-            figwidth = 8 + (X.shape[1] * .26)
-            # figheight = 12
-            # figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
-            if col_cluster:
-                figheight += 3.2
+            if optimal_figsize:
+                figheight = 4 + (X.shape[0] * .22)
+                figwidth = 8 + (X.shape[1] * .26)
+                if col_cluster:
+                    figheight += 3.2
+            else:
+                figheight = 12
+                figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
         else:
             figwidth, figheight = figsize
-        if figheight > 218:  # maximum figheight in inches
-            figheight = 218
+            if gene_symbols and not optimal_figsize:  # make sure there is enough room for the symbols
+                figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
+                if figheight > 218:  # maximum figheight in inches
+                    FONTSIZE = max(218 / figheight, 6)
+                    figheight = 218
+
+
 
         logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
         gr_kws = {
@@ -2881,6 +2859,7 @@ def cluster2(
             savedir=os.path.abspath(
                 os.path.join(data_obj.outpath, "cluster2")
             ),  # this is for saving things within the r function
+            fixed_size = True if optimal_figsize else False,
         )
         call_kws.update(kws)
         logger.info(f"call_kws: {call_kws}")
@@ -2929,7 +2908,7 @@ def cluster2(
 
     for file_fmt in ctx.obj["file_fmts"]:
         grdevice = gr_devices[file_fmt]
-        gr_kw = gr_kws[file_fmt]
+        # gr_kw = gr_kws[file_fmt]
         annot_mat_to_pass = annot_mat
         # if len(X) > 300 and annotate:
         #     annot_mat_to_pass = None
