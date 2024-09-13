@@ -1,14 +1,16 @@
 import logging
+from collections import OrderedDict
 
-# from .utils import *
+from .utils import *
 # from . import utils
+from .utils import read_config
 from scipy.cluster import hierarchy
 from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
 from seaborn import despine
 from seaborn import heatmap
 import seaborn as sb
 from six import string_types
-from typing import Dict
+from typing import Dict, Type, Any
 import rpy2
 from rpy2.rinterface_lib.embedded import RRuntimeError
 
@@ -17,13 +19,12 @@ import os
 import re
 import json
 from collections.abc import Iterable
-from functools import lru_cache
+from functools import lru_cache, partial, cached_property
 from datetime import datetime
 import operator as op
 
 # from collections import OrderedDict, Counter
 import itertools
-from functools import partial
 from warnings import warn
 from matplotlib import cm, gridspec
 
@@ -230,10 +231,46 @@ def join_and_create_path(*strings, verbose=True):
 
 PWD = os.path.split(os.path.abspath(__file__))[0]
 
+class SingletonManager:
+    _instances : Dict[Type, Any] = {}
 
-class GeneMapper:
+    @classmethod
+    def get_instance(cls, instance_class: Type) -> Any:
+        if instance_class not in cls._instances:
+            cls._instances[instance_class] = instance_class()
+        return cls._instances[instance_class]
+
+class LazyLoader:
+    read_kws = {"dtype":str}
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self._df = None
+
+
+    def read(self, **read_kws):
+        if not os.path.exists(self.file_path):
+            logger.error(f"Could not find {self.file_path}")
+            return None
+        logger.info(f"Loading file {self.file_path}")
+        if self.file_path.endswith("tsv"):
+            _reader = pd.read_table
+        elif self.file_path.endswith("xlsx"):
+            _reader = pd.read_excel
+        else:
+            logger.error(f"Unsupported file format: {self.file_path}")
+        logger.info(f"Loading file file {self.file_path}")
+        return _reader(self.file_path, **read_kws)
+
+    #@cached_property
+    @property
+    def df(self):
+        if self._df is None:
+            self._df = self.read(**self.read_kws)
+        return self._df
+
+class GeneMapper(LazyLoader):
     def __init__(self):
-        self.file = os.path.join(
+        file_path = os.path.join(
             PWD,
             "data",
             # 'data', 'genetable_hsmmgg.tab'
@@ -246,15 +283,12 @@ class GeneMapper:
         self._funcat = None
         self._description = None
         self._taxon = None
+        super().__init__(file_path)
 
-    @property
-    def df(self):
-        if self._df is None:
-            logger.info(f"Reading gene table from {self.file}")
-            self._df = pd.read_table(self.file, index_col="GeneID", dtype=str)
-            self._df.index = self._df.index.astype(str)
-            self._df["FunCats"] = self._df["FunCats"].fillna("")
-        return self._df
+    # def read(self, **read_kws):
+    #     df = super().read(**read_kws)
+    #     df["FunCats"] = df["FunCats"].fillna("")
+    #     return df
 
     @property
     def symbol(self):
@@ -265,14 +299,14 @@ class GeneMapper:
     @property
     def funcat(self):
         if self._funcat is None:
-            self._funcat = self.df["FunCats"].to_dict()
+            self._funcat = self.df["FunCats"].fillna("").to_dict()
         return self._funcat
 
     @property
     def description(self):
         if self._description is None:
             self._description = self.df["GeneDescription"].to_dict()
-        return self._description
+        return self._description 
 
     @property
     def taxon(self):
@@ -281,82 +315,43 @@ class GeneMapper:
         return self._taxon
 
 
-from .utils import *
-from . import utils
-
-
-class Annotations:
+class Annotations(LazyLoader):
     def __init__(self):
-        self.file = os.path.join(PWD, "data", "combined_annotations_new.xlsx")
-        self._categories = None
-        self._df = None
+        file_path = os.path.join(PWD, "data", "combined_annotations_new.tsv")
+        super().__init__(file_path)
+        # self._categories = None
+        # self._df = None
 
-    @property
-    def colnames(self):
-        if self._df is None:
-            df = self.read(file=self.file, nrows=1)
-        self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
-
-    def read(self, file=None, nrows=None):
-        if not os.path.exists(self.file):
-            logger.error(f"Could not find {self.file}")
-            return
-            # file = self.file
-        if file.endswith("tsv"):
-            reader = partial(pd.read_table, nrows=nrows, dtype=str)
-        elif file.endswith("xlsx"):
-            reader = partial(pd.read_excel, nrows=nrows, dtype=str)
-        df = reader(file)
-        self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
-        return df
-
-    @property
-    def df(self):
-        if self._df is not None:
-            return self._df
-
-        # logger.info(f"Loading annotations file {self.file}")
-        # logger.info(f"Reading annotations from {self.file}")
-        logger.info(f"Loading annotations file {self.file}")
-        if self.file.endswith("tsv"):
-            df = pd.read_table(self.file, dtype=str)
-        elif self.file.endswith("xlsx"):
-            df = pd.read_excel(self.file, dtype=str)
+    def read(self, **read_kws):
+        df = super().read(**read_kws)
         if "NUCLEUS" in df:
             df["NUCLEUS"] = df["CYTO_NUC"].isin(["NUCLEUS", "BOTH"])
             df["NUCLEUS"] = df["NUCLEUS"].replace(False, "")
-        self._df = df
-        self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
-        return self._df
+        # self._categories = [x for x in self.df if x not in ("GeneID", "GeneSymbol")]
+        return df
 
     @property
     def categories(self):
-        df = None
-        if self._df is None:
-            df = self.read(file=self.file, nrows=1)
+        df = self._df
+        if df is None:
+            df = self.read(nrows=1)
         self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
-    def get_annot(self, cat):
-        df = self.df
+    # def get_annot(self, cat):
+    #     df = self.df
+    #     # if cat == 'NUC':
+    #     # return df[(~df['CYTO_NUC'].isna()) & (df['CYTO_NUC'] != 'CYTOPLASM') ]
+    #     if cat not in df:
+    #         raise ValueError("{cat} must be one of {self.categories}")
+    #     return df[~df[cat].isna()]
 
-        # if cat == 'NUC':
-        # return df[(~df['CYTO_NUC'].isna()) & (df['CYTO_NUC'] != 'CYTOPLASM') ]
-        if cat not in df:
-            raise ValueError("{cat} must be one of {self.categories}")
-        return df[~df[cat].isna()]
 
-
-class HistoneInfo:
+class HistoneInfo(LazyLoader):
+    read_kws = dict(dtype="string")
     def __init__(self):
-        self.file = os.path.join(PWD, "data", "histones.tsv")
-        self._df = None
-
-    @property
-    def df(self):
-        if self._df is None:
-            self._df = pd.read_table(self.file, dtype="string")
-        return self._df
+        file_path = os.path.join(PWD, "data", "histones.tsv")
+        super().__init__(file_path)
 
 
 class HGeneMapper:
@@ -370,27 +365,26 @@ class HGeneMapper:
 
     @property
     def df(self):
-        if self._df is not None:
-            return self._df
-        logger.info(f"Loading homologene file {self.file}")
+        if self._df is None:
+            logger.info(f"Loading homologene file {self.file}")
 
-        homologene = pd.read_table(
-            self.file,
-            header=None,
-            dtype=str,
-            names=(
-                "Homologene",
-                "TaxonID",
-                "GeneID",
-                "Symbol",
-                "ProteinGI",
-                "ProteinAccession",
-            ),
-        )
-        self._df = homologene
+            homologene = pd.read_table(
+                self.file,
+                header=None,
+                dtype=str,
+                names=(
+                    "Homologene",
+                    "TaxonID",
+                    "GeneID",
+                    "Symbol",
+                    "ProteinGI",
+                    "ProteinAccession",
+                ),
+            )
+            self._df = homologene
+        return self._df
 
     def map_to_human(self, gids):
-        self.df
         homologene = self.df
         hgene_query = homologene[homologene.GeneID.isin(gids)]
         gid_hgene = (
@@ -408,43 +402,38 @@ class HGeneMapper:
         return results
 
 
-_genemapper = None
+get_gene_mapper = lambda: SingletonManager.get_instance(GeneMapper)
+get_annotation_mapper = lambda: SingletonManager.get_instance(Annotations)
+get_hgene_mapper = lambda: SingletonManager.get_instance(HGeneMapper)
+# _genemapper = None
 
 
-def get_gene_mapper(cls=GeneMapper):
-    global _genemapper
-    if _genemapper is None:
-        _genemapper = GeneMapper()
-    return _genemapper
+# def get_gene_mapper(cls=GeneMapper):
+#     global _genemapper
+#     if _genemapper is None:
+#         _genemapper = GeneMapper()
+#     return _genemapper
+# _genemapper = get_gene_mapper()
+# genemapper = _genemapper
 
-
-_genemapper = get_gene_mapper()
-genemapper = _genemapper
-
-_annotmapper = None
-
-
-def get_annotation_mapper(cls=Annotations):
-    global _annotmapper
-    if _annotmapper is None:
-        _annotmapper = Annotations()
-    return _annotmapper
+# _annotmapper = None
+# def get_annotation_mapper(cls=Annotations):
+#     global _annotmapper
+#     if _annotmapper is None:
+#         _annotmapper = Annotations()
+#     return _annotmapper
 
 
 from .utils import parse_metadata
 
-_hgenemapper = None
-
-
-def get_hgene_mapper(cls=HGeneMapper):
-    global _hgenemapper
-    if _hgenemapper is None:
-        _hgenemapper = HGeneMapper()
-    return _hgenemapper
-
-
-_hgenemapper = get_hgene_mapper()
-hgenemapper = _hgenemapper
+# _hgenemapper = None
+# def get_hgene_mapper(cls=HGeneMapper):
+#     global _hgenemapper
+#     if _hgenemapper is None:
+#         _hgenemapper = HGeneMapper()
+#     return _hgenemapper
+# _hgenemapper = get_hgene_mapper()
+# hgenemapper = _hgenemapper
 
 
 def assign_sra(df):
@@ -484,7 +473,7 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     hg_gene_df = pd.DataFrame.from_dict(
         hg_gene_dict, orient="index", columns=["GeneID_hs"]
     )
-    dfout = df.merge(hg_gene_df, left_on="GeneID", right_index=True, how="left").merge(
+    dfout = df.merge(hg_gene_df, left_on="GeneID",  right_index=True, how="left").merge(
         annotator.df[["GeneID", *annotations]].rename(columns=dict(GeneID="GeneID_hs")),
         on="GeneID_hs",
         how="left",
@@ -1018,6 +1007,9 @@ class Data:
             )
             gid_funcat_mapping.update(funcats_dict)
 
+            genemapper = get_gene_mapper()
+            hgenemapper = get_hgene_mapper()
+
             if (df.FunCats == "").all():
                 df["FunCats"] = df.GeneID.map(genemapper.funcat).fillna("")
             if (df.FunCats == "").all():  # again
@@ -1042,7 +1034,7 @@ class Data:
                     df.loc[loc, "TaxonID"] = ""
                 else:
                     df.loc[:, "TaxonID"] = [
-                        _genemapper.taxon.get(x, "") for x in df.index
+                        genemapper.taxon.get(x, "") for x in df.index
                     ]
 
             if labeltype == "TMT" or labeltype == "iTRAQ":  # depreciated
@@ -1417,7 +1409,7 @@ class Data:
             to_impute = (
                 self._areas.replace(0, np.NAN).divide(self.minval).applymap(np.log10)
             )
-            imputed = utils.impute_missing(
+            imputed = impute_missing(
                 to_impute, downshift=downshift, scale=scale, make_plot=True
             )
             plt.savefig(inpute_plotname + ".png", dpi=90)
@@ -1779,7 +1771,7 @@ class Data:
 
             mat[self.mask] = np.nan
             mat[mat == 0] = np.nan
-            mat = utils.impute_missing(
+            mat = impute_missing(
                 mat, downshift=downshift, scale=scale, make_plot=True
             )
             # now add back the mask values?
@@ -2242,9 +2234,10 @@ class Data:
             gm = get_gene_mapper()
             for_export = pd.merge(
                 for_export,
-                gm.df[["median_isoform_mass"]],
+                gm.df[["GeneID", "median_isoform_mass"]],
                 left_on="GeneID",
-                right_index=True,
+                right_on="GeneID",
+                right_index=False,
                 how="left",
             )
             # "median_isoform_mass",
@@ -2408,7 +2401,8 @@ class Data:
                         x,
                         # _genemapper.symbol.get(x, '?')
                         # _genemapper.symbol.get(str(int(x)), x),
-                        _genemapper.symbol.get(x, x),
+                        # _genemapper.symbol.get(x, x),
+                        get_gene_mapper().symbol.get(x, x),
                     )
                 )
                 # index column is GeneID, add GeneSymbol
