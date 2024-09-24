@@ -1855,25 +1855,6 @@ def pca2(
         X = X.loc[_tokeep]
         outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
 
-    # ======================================
-    outname_func = partial(
-        get_outname,
-        name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
-        non_zeros=data_obj.non_zeros,
-        batch=data_obj.batch_applied,
-        batch_method=(
-            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
-        ),
-        normtype=data_obj.normtype,
-        center=center,
-        scale=scale,
-        norm_by=normalize_by,
-        # outpath=data_obj.outpath,
-        outpath=os.path.join(data_obj.outpath, "pca"),
-        **outname_kws,
-    )
-    # ======================================
 
     # now convert to correct orientation
     # variable <color> <shape> gene1 gene2 gene3 ...
@@ -1890,6 +1871,29 @@ def pca2(
         dfm[color] = dfm[color].astype(str)
     if marker in dfm:
         dfm[marker] = dfm[marker].astype(str)
+
+    # ======================================
+    outname_func = partial(
+        get_outname,
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        batch=data_obj.batch_applied,
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
+        normtype=data_obj.normtype,
+        center=center,
+        scale=scale,
+        norm_by=normalize_by,
+        # outpath=data_obj.outpath,
+        outpath=os.path.join(data_obj.outpath, "pca"),
+        colby=color,
+        markby=marker,
+        **outname_kws,
+    )
+    # ======================================
+
 
     robjects.pandas2ri.activate()
     r_source = robjects.r["source"]
@@ -2379,9 +2383,11 @@ def cluster2(
         X = X[col_meta.index]
 
     genes = None
+    column_title = None
     if genefile and not isinstance(genefile, dict):
         genes = parse_gid_file(genefile, sheet=genefile_sheet)  # default 0
         outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
+        column_title = outname_kws["genefile"]
     elif genefile and isinstance(genefile, dict):  # this is if already processed
         _key = list(genefile.keys())[0]
         genes = genefile[_key]
@@ -2408,6 +2414,7 @@ def cluster2(
         logger.info(f"volcanofile name group is {name_group}")
         outname_kws["volcano_file"] = name_group
         outname_kws["direction"] = volcano_direction
+        column_title = name_group
         _df = pd.read_table(volcano_file)
         if not np.isfinite(volcano_topn):
             _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
@@ -2764,6 +2771,7 @@ def cluster2(
         # gr_kws=None,
         annot_mat=None,
         main_title=None,
+        column_title=column_title, # defined in outer scope
         file_fmt=".pdf",
         **kws,
     ):
