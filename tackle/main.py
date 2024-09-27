@@ -2431,12 +2431,12 @@ def cluster2(
             elif volcano_sortby == "pValue":
                 _up = (
                     _df.query("log2_FC>0")
-                    .sort_values(by="pValue", ascending=True)
+                    .sort_values(by=["pValue", "log2_FC"], ascending=[True, False])
                     .head(_n)
                 )
                 _dn = (
                     _df.query("log2_FC<0")
-                    .sort_values(by="pValue", ascending=True)
+                    .sort_values(by=["pValue", "log2_FC"], ascending=[True, True])
                     .head(_n)
                 )
 
@@ -2499,7 +2499,7 @@ def cluster2(
 
     symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
 
-    genemapper = GeneMapper()
+    genemapper = get_gene_mapper()
     symbols = [
         data_obj.gid_symbol.get(x, genemapper.symbol.get(str(x), str(x)))
         for x in X.index
@@ -2848,7 +2848,7 @@ def cluster2(
             cluster_func=cluster_func or robjects.NULL,
             max_autoclusters=max_autoclusters,
             show_missing_values=show_missing_values,
-            main_title=main_title,
+            main_title=main_title or column_title,
             # mask=data_obj.mask,
             # figsize=figsize,
             linear=linear,  # linear transformation not done in R yet
@@ -5003,7 +5003,7 @@ def dendrogram(ctx, color, marker, linkage):
 )
 @click.option(
     "--genefile",
-    type=click.Path(exists=True, dir_okay=False),
+    type=Path_or_Geneset(exists=True, dir_okay=False),
     default=None,
     show_default=True,
     multiple=False,
@@ -5097,8 +5097,15 @@ def bar(
     data_obj = ctx.obj["data_obj"]
     metadata = data_obj.col_metadata
 
-    if genefile:
+    if genefile and not isinstance(genefile, dict):
         gene = gene + tuple(parse_gid_file(genefile))
+    elif genefile and isinstance(genefile, dict):  # this is if already processed
+        _key = list(genefile.keys())[0]
+        gene = genefile[_key]
+
+    # if genefile and isinstance(genefile, Path):
+    #     genes = parse_gid_file(genefile)
+
     if len(gene) == 0:
         raise ValueError("Must supply at least 1 gene")
 
@@ -5215,6 +5222,7 @@ def bar(
                 average or robjects.NULL,
                 group or robjects.NULL,
                 group_order=group_order or robjects.NULL,
+                cmap=cmap or robjects.NULL,
                 title=title,
                 ylab=ylab,
             )
