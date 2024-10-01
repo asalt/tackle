@@ -269,6 +269,7 @@ class LazyLoader:
         return self._df
 
 class GeneMapper(LazyLoader):
+    read_kws = {"dtype": {"GeneID": str}, "index_col":"GeneID"}
     def __init__(self):
         file_path = os.path.join(
             PWD,
@@ -2232,12 +2233,13 @@ class Data:
                 for_export = add_annotations(for_export, self.annotations)
 
             gm = get_gene_mapper()
+            for_export['GeneDescription'] = for_export.apply(lambda x: gm.description.get(x['GeneID'], x['GeneDescription']), axis=1)
             for_export = pd.merge(
                 for_export,
-                gm.df[["GeneID", "median_isoform_mass"]],
+                gm.df[["median_isoform_mass"]],
                 left_on="GeneID",
                 right_on="GeneID",
-                right_index=False,
+                right_index=True,
                 how="left",
             )
             # "median_isoform_mass",
