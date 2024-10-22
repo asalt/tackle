@@ -1187,6 +1187,15 @@ def make_config(
     help="Only plot colors on correlationplot, no datapoints",
 )
 @click.option(
+    "--histogram/--no-histogram",
+    default=False,
+    is_flag=True,
+    show_default=True,
+    help="",
+)
+@click.option("--size",
+    default=None)
+@click.option(
     "--shade-correlation/--no-shade-correlation",
     default=True,
     is_flag=True,
@@ -1200,7 +1209,7 @@ def make_config(
     show_default=True,
 )
 @click.pass_context
-def scatter(ctx, colors_only, shade_correlation, stat):
+def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
     data_obj = ctx.obj["data_obj"]
     file_fmts = ctx.obj["file_fmts"]
 
@@ -1233,9 +1242,11 @@ def scatter(ctx, colors_only, shade_correlation, stat):
         stat=stat,
         colors_only=colors_only,
         shade_correlation=shade_correlation,
+        plt_size = size or robjects.NULL,
         outname=outname,
         file_fmts=file_fmts,
         mask=data_obj.mask,
+        histogram = histogram,
     )
     if g is None:  # plotted and saved via R
         return
@@ -2406,7 +2417,10 @@ def cluster2(
     if volcano_file is not None:
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
-        name_group = re.search("(?<=group)[_]?(.*)(?=\.tsv)", volcanofile_basename)
+        if "Batch" in volcanofile_basename:
+            volcanofile_basename = volcanofile_basename[ volcanofile_basename.find("Batch")+12:]
+            # name_group = volcanofile_basename[ volcanofile_basename.find("_group"): ]
+        name_group = re.search(r"(?<=group)[_]?(.*)(?=\.tsv)", volcanofile_basename)
         if name_group is None:
             name_group = volcanofile_basename
         else:
@@ -2439,6 +2453,7 @@ def cluster2(
                     .sort_values(by=["pValue", "log2_FC"], ascending=[True, True])
                     .head(_n)
                 )
+                _dn = _dn[::-1]
 
             if volcano_direction == "both":
                 _df = pd.concat([_up, _dn])
@@ -2833,6 +2848,7 @@ def cluster2(
                 z_score if z_score != "None" and z_score is not None else robjects.NULL
             ),
             z_score_by=z_score_by or robjects.NULL,
+            # data_obj.normtype, # can add normtype info here to label on cbar, perhaps 
             row_annot_df=row_annot_df,
             col_data=col_data,
             # cmap_name=cmap or np.nan,
@@ -2848,7 +2864,7 @@ def cluster2(
             cluster_func=cluster_func or robjects.NULL,
             max_autoclusters=max_autoclusters,
             show_missing_values=show_missing_values,
-            main_title=main_title or column_title,
+            main_title=main_title or column_title or robjects.NULL,
             # mask=data_obj.mask,
             # figsize=figsize,
             linear=linear,  # linear transformation not done in R yet
