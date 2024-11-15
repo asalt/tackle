@@ -5,6 +5,7 @@
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
+suppressPackageStartupMessages(library(stringr))
 library(cluster)
 library(dendsort)
 
@@ -194,7 +195,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       arrange(GeneID)
 
     row_data_args <- as.list(select(row_annot_df, -GeneID))
-    # row_data_args[["na_col"]] <- "white"
+    row_data_args[["na_col"]] <- "white"
     row_data_args[["border"]] <- FALSE
     row_data_args[["which"]] <- "row"
     row_data_args[["annotation_legend_param"]] <- list()
@@ -207,7 +208,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     row_data_args[["annotation_name_side"]] <- "top" # top, bottom
     row_data_args[["gp"]] <- gpar(fontsize = 11, col = NA)
     row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 11)
-    row_data_args[["annotation_width"]] <- unit(.15, "in")
+    row_data_args[["annotation_width"]] <- unit(.004, "in") * ncol(row_annot_df)
   }
   ## ===============  COLUMN ANNOTATION ============================================
 
@@ -329,13 +330,14 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## ========================================================================
   ## Now make the annotations, with all arguments populated
   row_annot <- NULL
+  col_data_args[["annotation_name_side"]] <- "left"
   if (!is.null(row_annot_df)) { # only if we have row data to plot
     row_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, row_data_args)
     # TODO continuous variables
+    col_data_args[["annotation_name_side"]] <- "right"
   }
 
 
-  col_data_args[["annotation_name_side"]] <- "left"
   # col_data_args[["annotation_legend_param"]][["at"]][["chr"]] <- as.matrix(colnames(col_data))
   if (!is.null(col_data)) {
     col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
@@ -569,7 +571,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     column_names_gp = gpar(fontsize = 9),
     ## border = FALSE,
     column_names_rot = 90,
-    column_title = main_title,
+    column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 60) ,
     column_title_gp = gpar(fontsize = title_fontsize),
     column_title_side = "top",
     column_names_side = "top",

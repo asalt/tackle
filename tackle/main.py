@@ -99,6 +99,7 @@ from .pcaplot import pcaplot
 from .utils import fix_name, _get_logger
 from . import utils
 from .utils import *
+from tackle import containers 
 from .containers import (
     Data,
     GeneMapper,
@@ -2017,6 +2018,9 @@ def pca2(
     show_default=True,
 )
 @click.option(
+    "--annotate-genes", default=False, is_flag=True, help="add gene annotations to heatmap"
+)
+@click.option(
     "--cluster-col-slices/--no-cluster-col-slices",
     default=True,
     is_flag=True,
@@ -2106,7 +2110,7 @@ def pca2(
     help="Gene Symbol font size",
 )
 @click.option(
-    "--gene-annot", type=click.Path(exists=True, dir_okay=False), help="annotate"
+    "--gene-annot", type=click.Path(exists=True, dir_okay=False), help="annotate genes with provided file"
 )
 @click.option(
     "--gsea-input", type=Path_or_Glob(exists=True, dir_okay=True), default=None
@@ -2293,6 +2297,7 @@ def cluster2(
     ctx,
     add_description,
     annotate,
+    annotate_genes,
     cmap,
     cut_by,
     color_low,
@@ -2546,13 +2551,22 @@ def cluster2(
         df_ = df_.set_index("GeneID")
         row_annot_track.append(df_)
 
+
+    # import ipdb; ipdb.set_trace()
+    # #xx = containers.add_annotations(X)
+    # this needs rewriting
+    if annotate_genes:
+        aa = containers.get_annotation_mapper()
+        row_annot_track.append(aa.df[[x for x in aa.df if x !="GeneSymbol" and x !="MitoCarta_Pathways"]].set_index("GeneID"))
+        outname_kws['geneannot']='T'
+
     row_annot_df = None
     if row_annot_track:
         row_annot_df = pd.concat(row_annot_track, axis=1)
         # make a dataframe that spans all genes about to be plotted
         ixs_ = X.GeneID.astype(str)
-        missing_ = set(ixs_) - set(row_annot_df.index)
-        intersect_ixs_ = set(ixs_) & set(row_annot_df.index)
+        missing_ = list(set(ixs_) - set(row_annot_df.index))
+        intersect_ixs_ = list(set(ixs_) & set(row_annot_df.index))
         missing_df_ = pd.DataFrame(index=missing_, columns=row_annot_df.columns)
         row_annot_df = pd.concat(
             [row_annot_df.loc[intersect_ixs_], missing_df_], axis=0
@@ -2689,8 +2703,6 @@ def cluster2(
             X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
             X = X.drop("Description", axis=1)
 
-    # logger.info(f"figsize: {figwidth} x {figheight}")
-
     # gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
     gr_devices = {
         ".png": grdevices.png,
@@ -2735,11 +2747,17 @@ def cluster2(
             # this is taken care of in R..
             # Unclear if this can be converted here. Calling R's `unlist` function on the resulting ListVector
         else:
-            if metacat not in col_meta:
-                continue
-            themapping = get_default_color_mapping(
-                col_meta[metacat]
-            )  # set everything but float
+            # if metacat not in col_meta:
+            #     continue
+            if metacat in col_meta:
+                themapping = get_default_color_mapping(
+                    col_meta[metacat]
+                )  # set everything but float
+            if row_annot_df is not None and metacat in row_annot_df:
+                themapping = get_default_color_mapping(
+                    row_annot_df[metacat]
+                )  # set everything but float
+            # import ipdb; ipdb.set_trace()
             if themapping is not None:
                 entry = robjects.vectors.ListVector(
                     {metacat: robjects.vectors.ListVector(themapping)}
@@ -2788,6 +2806,7 @@ def cluster2(
         main_title=None,
         column_title=column_title, # defined in outer scope
         file_fmt=".pdf",
+        figsize = None,
         **kws,
     ):
         """
@@ -2958,6 +2977,7 @@ def cluster2(
             annot_mat=annot_mat_to_pass,
             main_title=main_title,
             file_fmt=file_fmt,
+            figsize = figsize,
         )
 
         ##################################################################
