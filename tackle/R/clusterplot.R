@@ -200,19 +200,25 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     row_data_args[["which"]] <- "row"
     row_data_args[["annotation_legend_param"]] <- list()
     ## rotate all legends to horizontal (place on bottom via draw, below)
+    row_data_args[["show_legend"]] <- c()
+
 
     for (thename in names(select(row_annot_df, -GeneID))) {
-      ## row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", nrow = 2)
-      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
+      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", ncol = 1)
+      row_data_args[["show_legend"]][thename] <- T
+      if (length(setdiff(unique(row_annot_df[[thename]]), c(""))  ) == 1) {
+          row_data_args[["show_legend"]][thename] <- F
+      }
+      #row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
     }
     row_data_args[["annotation_name_side"]] <- "top" # top, bottom
     row_data_args[["gp"]] <- gpar(fontsize = 11, col = NA)
     row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 11)
     row_data_args[["annotation_width"]] <- unit(.004, "in") * ncol(row_annot_df)
+
   }
   ## ===============  COLUMN ANNOTATION ============================================
 
-  # browser()
   col_data_args <- NULL # will get defined if not is.na col_data
   if (!is.null(col_data)) {
     col_order <- toplot %>%
