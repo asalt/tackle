@@ -463,8 +463,8 @@ def assign_sra(df):
 def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     annotator = get_annotation_mapper()
     overlap = set(annotator.df.GeneID) & set(df.GeneID)
-    if overlap == len(df):  # human data
-        dfout = df.merge(annotator.df[[annotations]], on="GeneID")
+    if (len(overlap) / len(df)) > .2:  # human data
+        dfout = df.merge(annotator.df[["GeneID", *annotations]], on="GeneID", how='left')
         return dfout
 
     logger.info(f"Trying to map genes to hs through homologene")
@@ -1608,9 +1608,10 @@ class Data:
         if self.covariate is not None:
             r("mod  <- model.matrix(~as.factor({}), pheno)".format(self.covariate))
             mod = r["mod"]
-            self.batch_applied = self.batch + "_Cov_{}".format(self.group)
+            self.batch_applied = self.batch + "_Cov_{}".format(self.covariate)
         else:
-            mod = r("model.matrix(~1, pheno)")
+            r("mod <- model.matrix(~1, pheno)")
+            mod = r["mod"]
             self.batch_applied = self.batch + "_noCov"
         # r.assign('batch', 'pheno${}'.format(self.batch))
         batch = pheno[self.batch]
