@@ -13,7 +13,7 @@ ht_opt$message <- FALSE
 
 myzscore <- function(value, minval = NA, remask = TRUE) {
   mask <- is.na(value)
-  if (is.na(minval)) minval <- min(value, na.rm = TRUE)
+  if (is.na(minval)) minval <- min(value, na.rm = TRUE) - sd(value, na.rm = T)
 
   if (minval == Inf) {
     minval <- 0
@@ -500,7 +500,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # }
   if (!is.null(standard_scale) && standard_scale == TRUE) .title <- paste0(.title, " (standardized)")
 
-  .legend_width <- if (is.null(z_score_by)) unit(2.5, "cm") else unit(4.4, "cm")
+  .legend_width <- if (is.null(z_score_by)) unit(2.8, "cm") else unit(4.2, "cm")
   heatmap_legend_param <- list(
     title = .title,
     direction = "horizontal",
@@ -593,10 +593,11 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       row_annot,
       NULL
     ),
+    row_names_max_width = unit(80, "mm")
   )
 
 
-  ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = "bottom", padding = unit(c(10, 2, 2, 2), "mm"))
+  ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = "bottom", padding = unit(c(10, 8, 2, 8), "mm")) # top right bottom left
   ht_row_order <- row_order(ht)
 
 
