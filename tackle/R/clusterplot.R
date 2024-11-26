@@ -13,7 +13,18 @@ ht_opt$message <- FALSE
 
 myzscore <- function(value, minval = NA, remask = TRUE) {
   mask <- is.na(value)
-  if (is.na(minval)) minval <- min(value, na.rm = TRUE) - sd(value, na.rm = T)
+
+  if (all(is.na(c(value))) && is.na(minval)){
+    minval<-0
+    value[1] <- 0
+  }
+
+  if (is.na(minval)) {
+  .sd <-- sd(value, na.rm = T)
+    if (is.na(.sd)) .sd <- 0
+    minval <- min(value, na.rm = TRUE) - .sd
+}
+
 
   if (minval == Inf) {
     minval <- 0
@@ -41,14 +52,14 @@ myzscore <- function(value, minval = NA, remask = TRUE) {
 
 
 dist_no_na <- function(mat) {
-  .min <- min(mat, na.rm = TRUE) 
+  .min <- min(mat, na.rm = TRUE)
   mat[is.na(mat)] <- .min - (.min*.1)
-  edist <- dist(mat) 
+  edist <- dist(mat)
   return(edist)
 }
 
 hclust_dendsort <- function(mat, method = 'complete', ...){
-  dist_no_na(mat) %>% hclust(method = method, ...) %>% dendsort() %>% as.dendrogram()
+  dist_no_na(mat) %>% hclust(method = method, ...) %>% dendsort(isReverse=T, type="min") %>% as.dendrogram()
 }
 
 order_colmeta <- function(annot, the_order, name = "X") {
@@ -381,7 +392,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
     col <- colorRamp2(c(minval, 0, maxval), c(color_low, color_mid, color_high))
   }
-  
+
 
   ## quantiles <- exprs_long %>% select(zscore) %>% quantile(na.rm=TRUE, probs=seq(0,1,.025))
   ## minval <- exprs_long %>% select(zscore) %>% min(na.rm=TRUE) *.95
@@ -582,7 +593,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     column_title_side = "top",
     column_names_side = "top",
     show_parent_dend_line = TRUE,
-    row_dend_width = unit(1.2, "in"),
+    row_dend_width = unit(2.8, "in"),
     heatmap_legend_param = heatmap_legend_param,
     # right_annotation = gene_annot,
     right_annotation = switch(row_annot_side == "right",
