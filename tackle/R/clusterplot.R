@@ -79,6 +79,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      genes = NULL,
                      row_annot_df = NULL,
                      gids_to_annotate = NULL,
+                     gene_annot_fontsize = 8,
                      nclusters = NULL,
                      cluster_func = NULL,
                      show_gene_symbols = FALSE,
@@ -430,7 +431,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       genes = ComplexHeatmap::anno_mark(
         at = ixs,
         labels = thelabels,
-        labels_gp = gpar(fontsize = 14)
+        labels_gp = gpar(fontsize = gene_annot_fontsize)
       )
     )
   }
@@ -451,10 +452,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## row_cluster <- FALSE
     dis <- dist_no_na(X)^2
     # dis <- dist_no_na(X)
-    # browser()
     sil <- cluster::silhouette(clusters$cluster, dis)
     .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
-    #browser()
     #dev.new()
     pdf(.file, width = 10, height = 20)
     print(plot(sil, col = "grey"))
@@ -495,7 +494,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # o2 <- agnes(dist_no_na(t(mat)), method = "ward")
   # # o1 <- seriate(dist_no_na(mat), method = "GW_ward")
   # # o2 <- seriate(dist_no_na(t(mat)), method = "GW_ward")
-  # browser()
   # o1 <- seriate(o1$diss, method = "GW_ward")
   # o2 <- seriate(o2$diss, method = "GW_ward")
   # row_cluster <- as.dendrogram(o1[[1]])
@@ -521,17 +519,19 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # legend_width = ifelse(is.null(z_score_by), unit(1.5, "cm"), unit(4, "cm"))
   # print(heatmap_legend_param)
 
-  # need to use as.character so switch works
-  right_annotation <- switch(is.null(gene_annot),
-    "TRUE" = NULL,
-    "FALSE" = gene_annot
-  )
+
+  # right_annotation <- ifelse(is.null(gene_annot), NULL, gene_annot)
+
+  right_annotation <- if (is.null(gene_annot)) {
+    NULL
+  } else {
+    gene_annot
+  }
+
 
   ## ht <- Heatmap(toplot %>% dplyr::select(-GeneID, -GeneSymbol),
-  # browser()
   # toplot %>% mutate(across(where(is.matrix), as.vector)) %>% readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
-  # browser()
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
   cluster_rows <- FALSE
   if (row_cluster == TRUE){
@@ -596,14 +596,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     row_dend_width = unit(2.8, "in"),
     heatmap_legend_param = heatmap_legend_param,
     # right_annotation = gene_annot,
-    right_annotation = switch(row_annot_side == "right",
-      row_annot,
-      right_annotation
-    ),
-    left_annotation = switch(row_annot_side == "left",
-      row_annot,
-      NULL
-    ),
+    right_annotation = if (row_annot_side == "right") row_annot else right_annotation,
+    left_annotation = if (row_annot_side == "left") row_annot else NULL,
     row_names_max_width = unit(80, "mm")
   )
 
