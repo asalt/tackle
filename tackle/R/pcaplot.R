@@ -11,6 +11,7 @@ library(ggfortify)
 ## ; variable <color> <shape> gene1 gene2 gene3 ...
 pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  color = NULL, shape = NULL, label = FALSE,
+                 encircle = TRUE,
                  showframe = TRUE, frame.type = "t",
                  max_pc = 2, color_list = NULL, marker_list = NULL,
                  names_from = "GeneID",
@@ -54,7 +55,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     # .forpca <- forpca %>% select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
   } else {
     forpca <- data %>%
-      group_by(GeneID, !!normalize_by) %>%
+      group_by(GeneID, !!sym(normalize_by)) %>%
       mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
       ungroup()
     # .forpca <- forpca %>% pivot_wider(names_from = !!names_from, values_from = value) %>% select(-variable)
@@ -66,6 +67,11 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   names_to_remove <- unique(nas$GeneID)
   forpca %<>% filter(!GeneID %in% names_to_remove)
   forpca %<>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
+
+  if (!is.null(color) && any(names(forpca) == color)) {
+      forpca <- forpca %>%
+        mutate(!!color := as.factor(!!sym(color)))
+  }
 
   .forpca <- forpca %>% select(-variable, -!!color, -!!shape)
   pca_res <- prcomp(.forpca, scale. = F, center = F)
@@ -131,6 +137,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
         max.overlaps = Inf,
         title = title, # why doesn't this work?
       ) +
+        labs(title = title) +
         ggplot2::scale_color_manual(values = color_list) +
         ggplot2::scale_fill_manual(values = color_list) +
         ggplot2::theme_classic(base_size = 20) +
@@ -144,11 +151,31 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
         ) +
         scale_x_continuous(sec.axis = sec_axis(~.)) + # hack: https://stackoverflow.com/questions/63055640/how-to-keep-top-and-bottom-axes-in-ggplot-while-removing-the-panel-border
         scale_y_continuous(sec.axis = sec_axis(~.)) +
+        scale_shape_manual(values = c(16, 17, 15, 7, 9, 12, 13, 14)) +
         geom_hline(yintercept = 0, color = "grey50", show.legend = NA) +
         geom_vline(xintercept = 0, color = "grey50")
-      if (!is.null(annot_str)) p <- p + annotate("text", x = -Inf, y = -Inf, hjust = 0, vjust = 0, label = annot_str)
+      if (!is.null(annot_str)) p <- p + annotate("text", x = -Inf, y = -Inf, hjust = 0, vjust = 0,
+                                                 label = annot_str %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 40))
+
+      if (!is.null(normalize_by)) p <- p + labs(caption = paste("centered within ", normalize_by))
 
 
+      # THIS doesn't work
+      # probably cannot do this (easily) with autoplot
+      # if (!is.null(color) & (encircle == TRUE) ) {
+      #     p <- p +
+      #         ggalt::geom_encircle(
+      #                            mapping = aes(#group = !!sym(color),
+      #                                          fill = !!sym(color),
+      #                                          #colour = !!sym(color)),
+      #                            alpha = .2,
+      #                            size = 1,
+      #                            show.legend = F,
+      #                            na.rm = T
+      #                            ) +
+      #     scale_color_manual(values = color_list) +
+      #     scale_fill_manual(values = color_list)
+      # }
 
       # print(p)
 
