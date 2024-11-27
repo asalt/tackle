@@ -232,7 +232,7 @@ def volcanoplot(
         # fill_na_zero = (fill_na_zero,)
 
         outname = get_outname(
-            "volcanoplot",
+            "vplt",
             name=data_obj.outpath_name,
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
@@ -248,17 +248,33 @@ def volcanoplot(
             **_xtra,
         )
 
+        # slicepoint = 170
+        # space = min(10, 170 + len(outname))
+        # if len(outname) > 255:
+        #     outname = outname.replace("timepoint", "T")
+        #     outname = outname.replace("time", "T")
+        #     # outname = outname.replace('time', 'T')
+        # while len(outname) > 255:
+        #     outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
+        #     slicepoint += 20
+        #     if slicepoint > 255:
+        #         break  # file name too long
+
         slicepoint = 170
-        space = min(10, 170 + len(outname))
+        space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
         if len(outname) > 255:
             outname = outname.replace("timepoint", "T")
             outname = outname.replace("time", "T")
-            # outname = outname.replace('time', 'T')
+
         while len(outname) > 255:
-            outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
+            # Ensure you're slicing within the bounds of the string
+            if slicepoint + space >= len(outname):
+                space = len(outname) - slicepoint - 1  # Avoid out-of-bounds slicing
+
+            outname = outname[:slicepoint] + ".." + outname[slicepoint + space:]
             slicepoint += 20
-            if slicepoint > 255:
-                break  # file name too long
+            space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
+      
 
         out = outname + ".tsv"
         print("Saving", out, "...", end="", flush=True)
@@ -279,7 +295,7 @@ def volcanoplot(
                 print(
                     "Error trying to subselect data for export. Try specifying group if you have not."
                 )
-                export_data = export_data.join(data_obj.areas_log_shifted)
+                export_data = export_data.join(data_obj.areas_log_shifted  / np.log10(2) )
 
         export_cols = [x for x in export_data.columns if x not in ("highlight",)]
         export_data[export_cols].to_csv(out, sep="\t")
@@ -343,12 +359,12 @@ def volcanoplot(
                 color_up=color_up,
                 sig=sig,
                 sig_metric=sig_metric,
-                yaxis=yaxis,
+                yax=yaxis,
                 label_cex=label_scale,
                 annot_cex=annot_scale,
                 marker_cex=marker_scale,
                 max_fc=max_fc,
-                # point_size=1.4,
+                point_size=1.4,
                 group0=group0,
                 group1=group1,
                 alpha=alpha,

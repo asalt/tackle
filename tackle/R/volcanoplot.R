@@ -265,8 +265,8 @@ volcanoplot <- function(X, max_labels = 35,
       str_replace(":", "\n") %>%
       str_replace("\\-", " \\-\n")
   }
-  group0 <- add_newlines(group0)
-  group1 <- add_newlines(group1)
+  group0 <- add_newlines(group0) %>% stringr::str_wrap(24)
+  group1 <- add_newlines(group1) %>% stringr::str_wrap(24)
   if ((max_nchar) > 15) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
   if ((max_nchar) > 35) annot_size <- annot_size - .5
@@ -291,7 +291,7 @@ volcanoplot <- function(X, max_labels = 35,
       pch = 16, size = POINT_SIZE, cex = cex, show.legend = FALSE
     )
   }
-  print(pch)
+  # print(pch)
 
   if (pch == 21) .geom_point_highlight_TRUE <- .add_border
   if (pch == 16) .geom_point_highlight_TRUE <- .add_borderless
