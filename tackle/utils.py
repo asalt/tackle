@@ -1,6 +1,7 @@
 """
 
 """
+
 import os
 import re
 import configparser
@@ -69,6 +70,7 @@ def get_default_color_mapping(s: pd.Series) -> dict:
     themapping = {
         str(x): c for x, c in zip(s.unique(), color_iter)
     }  # have to make str?
+    themapping = {k: v for k, v in themapping.items() if k}
 
     # update for boolean
     for k in RESERVED_COLORS.keys():
@@ -135,6 +137,14 @@ def fix_name(x):
         .replace("+", "")
         .replace("(", "")
         .replace(")", "")
+        .replace(")", "")
+        .replace("fraction", "frac")
+        .replace("treatment", "treat")
+        .replace("clustermap", "")
+        .replace("normtype", "")
+        .replace("zscore_by", "zby")
+        .replace("annotate", "annot")
+        # .replace("an", "annot")
     )
 
 
@@ -868,7 +878,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
 def get_file_name(full_file):
     # fname, ext = os.path.splitext(full_file)
     fname, ext = os.path.splitext(os.path.basename(full_file))
-    grp = re.search("\w+", fname)
+    grp = re.search(r"\w+", fname)
     if grp:
         return grp.group()
     else:
@@ -1220,6 +1230,7 @@ def get_outname(
     :colors_only: does nothing, depreciated
 
     """
+    print(f"plottype is {plottype}")
     colors = "colors_only" if colors_only else "annotated"
     if "missing_values" in kwargs:
         kwargs.pop("missing_values")
@@ -1231,12 +1242,32 @@ def get_outname(
         kwarg_values.append(s)
     kwarg_string = "_".join(kwarg_values) if kwarg_values else ""
 
-    batch_str = "{}Batch_{}_".format(batch_method, batch) if batch else ""
+    batch_str = ("{}Batch_{}_".format(batch_method, batch) if batch else "").replace(
+        "parametricBatch", "paramBatch"
+    )
+    if bool(plottype) and os.path.split(outpath)[-1] != plottype: # or dtype, doesn't have to be a plot
+        outpath = os.path.join(outpath, plottype)
 
-    "{}".format(kwargs)
-    fname = "{}_{}_{}_{}more_nonzero_{}{}".format(
-        name, plottype, taxon, non_zeros, batch_str, kwarg_string
+
+    if batch_str:
+        outpath = os.path.join(outpath, batch_str)
+    if taxon != "all":
+        outpath = os.path.join(outpath, taxon)
+
+
+    # "{}".format(kwargs)
+    fname = "{}more_nonzero_{}".format(
+        #name,
+        #plottype,
+         non_zeros, kwarg_string
     ).strip("_")
+    fname = (
+        fname.replace("noCov_", "")
+        .replace("norm_", "")
+        .replace("sort_", "")
+        .replace("Treatment", "treat")
+        .replace("median", "med")
+    )
     ret = os.path.join(outpath, fname)
     if os.name == "nt" and len(ret) > 260:
         ret = ret[:260]
@@ -1388,3 +1419,27 @@ def named_temp(*args, **kwargs):
 from .containers import get_gene_mapper
 
 # from .containers import GeneMapper
+
+
+def validate_in_config(*entries, valid_entries=None):
+    import difflib
+
+    correct = list()
+    for entry in entries:
+        if entry not in valid_entries:
+            closest_match = difflib.get_close_matches(
+                entry, valid_entries, n=1, cutoff=0.6
+            )
+            if closest_match:
+                response2 = "Did you  mean {}".format(closest_match[0])
+            else:
+                response2 = ""
+            click.echo(
+                """{} is not in the config file. {}
+            """.format(
+                    entry, response2
+                )
+            )
+        else:
+            correct.append(entry)
+    return correct
