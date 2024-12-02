@@ -7,7 +7,8 @@ import sys
 import os
 from pathlib import Path
 import itertools
-import gseapy as gp
+
+# import gseapy as gp
 
 try:
     import rpy2
@@ -99,7 +100,8 @@ from .pcaplot import pcaplot
 from .utils import fix_name, _get_logger
 from . import utils
 from .utils import *
-from tackle import containers 
+from tackle import containers
+from . import clusterplot_dispatcher
 from .containers import (
     Data,
     GeneMapper,
@@ -350,30 +352,6 @@ def validate_cluster_number(ctx, param, value):
 
     else:
         raise click.BadParameter("must be one of `None`, `auto` or an integer")
-
-
-def validate_in_config(*entries, valid_entries=None):
-    import difflib
-
-    correct = list()
-    for entry in entries:
-        if entry not in valid_entries:
-            closest_match = difflib.get_close_matches(
-                entry, valid_entries, n=1, cutoff=0.6
-            )
-            if closest_match:
-                response2 = "Did you  mean {}".format(closest_match[0])
-            else:
-                response2 = ""
-            click.echo(
-                """{} is not in the config file. {}
-            """.format(
-                    entry, response2
-                )
-            )
-        else:
-            correct.append(entry)
-    return correct
 
 
 def validate_seed(ctx, param, value):
@@ -1194,8 +1172,7 @@ def make_config(
     show_default=True,
     help="",
 )
-@click.option("--size",
-    default=None)
+@click.option("--size", default=None)
 @click.option(
     "--shade-correlation/--no-shade-correlation",
     default=True,
@@ -1243,11 +1220,11 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
         stat=stat,
         colors_only=colors_only,
         shade_correlation=shade_correlation,
-        plt_size = size or robjects.NULL,
+        plt_size=size or robjects.NULL,
         outname=outname,
         file_fmts=file_fmts,
         mask=data_obj.mask,
-        histogram = histogram,
+        histogram=histogram,
     )
     if g is None:  # plotted and saved via R
         return
@@ -1867,7 +1844,6 @@ def pca2(
         X = X.loc[_tokeep]
         outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
 
-
     # now convert to correct orientation
     # variable <color> <shape> gene1 gene2 gene3 ...
 
@@ -1905,7 +1881,6 @@ def pca2(
         **outname_kws,
     )
     # ======================================
-
 
     robjects.pandas2ri.activate()
     r_source = robjects.r["source"]
@@ -2018,7 +1993,10 @@ def pca2(
     show_default=True,
 )
 @click.option(
-    "--annotate-genes", default=False, is_flag=True, help="add gene annotations to heatmap"
+    "--annotate-genes",
+    default=False,
+    is_flag=True,
+    help="add gene annotations to heatmap",
 )
 @click.option(
     "--cluster-col-slices/--no-cluster-col-slices",
@@ -2110,7 +2088,9 @@ def pca2(
     help="Gene Symbol font size",
 )
 @click.option(
-    "--gene-annot", type=click.Path(exists=True, dir_okay=False), help="annotate genes with provided file"
+    "--gene-annot",
+    type=click.Path(exists=True, dir_okay=False),
+    help="annotate genes with provided file",
 )
 @click.option(
     "--gsea-input", type=Path_or_Glob(exists=True, dir_okay=True), default=None
@@ -2346,6 +2326,62 @@ def cluster2(
     z_score_by,
     add_human_ratios,
 ):
+    clusterplot_dispatcher.run(
+        ctx,
+        add_description,
+        annotate,
+        annotate_genes,
+        cmap,
+        cut_by,
+        color_low,
+        color_mid,
+        color_high,
+        col_cluster,
+        row_cluster,
+        cluster_row_slices,
+        cluster_col_slices,
+        figsize,
+        force_plot_genes,
+        genefile,
+        genefile_sheet,
+        gene_symbols,
+        genesymbols,
+        gene_symbol_fontsize,
+        gene_annot,
+        gsea_input,
+        highlight_geneids,
+        linear,
+        legend_include,
+        legend_exclude,
+        optimal_figsize,
+        sample_reference,
+        sample_include,
+        linkage,
+        max_autoclusters,
+        nclusters,
+        cluster_func,
+        main_title,
+        order_by_abundance,
+        volcano_file,
+        volcano_filter_params,
+        volcano_topn,
+        volcano_direction,
+        volcano_sortby,
+        cluster_file,
+        row_annot_side,
+        row_dend_side,
+        row_names_side,
+        seed,
+        show_metadata,
+        standard_scale,
+        show_missing_values,
+        z_score,
+        z_score_by,
+        add_human_ratios,
+    )
+
+
+def _xx():  # not called, old code
     outname_kws = dict()
 
     outname_kws["rds"] = "l" if row_dend_side == "left" else "r"
@@ -2423,7 +2459,9 @@ def cluster2(
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
         if "Batch" in volcanofile_basename:
-            volcanofile_basename = volcanofile_basename[ volcanofile_basename.find("Batch")+12:]
+            volcanofile_basename = volcanofile_basename[
+                volcanofile_basename.find("Batch") + 12 :
+            ]
             # name_group = volcanofile_basename[ volcanofile_basename.find("_group"): ]
         name_group = re.search(r"(?<=group)[_]?(.*)(?=\.tsv)", volcanofile_basename)
         if name_group is None:
@@ -2551,14 +2589,17 @@ def cluster2(
         df_ = df_.set_index("GeneID")
         row_annot_track.append(df_)
 
-
     # import ipdb; ipdb.set_trace()
     # #xx = containers.add_annotations(X)
     # this needs rewriting
     if annotate_genes:
         aa = containers.get_annotation_mapper()
-        row_annot_track.append(aa.df[[x for x in aa.df if x !="GeneSymbol" and x !="MitoCarta_Pathways"]].set_index("GeneID"))
-        outname_kws['geneannot']='T'
+        row_annot_track.append(
+            aa.df[
+                [x for x in aa.df if x != "GeneSymbol" and x != "MitoCarta_Pathways"]
+            ].set_index("GeneID")
+        )
+        outname_kws["geneanno"] = "T"
 
     row_annot_df = None
     if row_annot_track:
@@ -2646,14 +2687,14 @@ def cluster2(
             .astype(int)
         )
         annot_mat.columns.name = annotate
-        outname_kws["annotate"] = annotate
+        outname_kws["annot"] = annotate
 
         annot_mat["GeneID"] = annot_mat.index
         annot_mat = annot_mat[["GeneID"] + [x for x in annot_mat if x != "GeneID"]]
 
     # ============================================================
     if z_score_by is not None:
-        outname_kws["zscore_by"] = z_score_by
+        outname_kws["zby"] = z_score_by
 
     if linear:
         outname_kws["linear"] = "linear"
@@ -2702,6 +2743,7 @@ def cluster2(
             X["Description"] = X.Description.str.replace(r"OS=.*", "", regex=True)
             X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
             X = X.drop("Description", axis=1)
+        outname_kws["descr"] = "T"
 
     # gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
     gr_devices = {
@@ -2804,9 +2846,9 @@ def cluster2(
         # gr_kws=None,
         annot_mat=None,
         main_title=None,
-        column_title=column_title, # defined in outer scope
+        column_title=column_title,  # defined in outer scope
         file_fmt=".pdf",
-        figsize = None,
+        figsize=None,
         **kws,
     ):
         """
@@ -2824,22 +2866,26 @@ def cluster2(
         min_figwidth = 5
         if figsize is None:  # either None or length 2 tuple
             if optimal_figsize:
-                figheight = 4 + (X.shape[0] * .22)
-                figwidth = 8 + (X.shape[1] * .26)
+                figheight = 4 + (X.shape[0] * 0.22)
+                figwidth = 8 + (X.shape[1] * 0.26)
                 if col_cluster:
                     figheight += 3.2
             else:
                 figheight = 12
                 figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+            if row_annot_df is not None and row_annot_df is not robjects.NULL:
+                figwidth += 0.15 * len(row_annot_df.columns)
+                figheight += 0.4 * len(row_annot_df.columns)
         else:
             figwidth, figheight = figsize
-            if gene_symbols and not optimal_figsize:  # make sure there is enough room for the symbols
+            if (
+                gene_symbols and not optimal_figsize
+            ):  # make sure there is enough room for the symbols
                 figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
                 if figheight > 218:  # maximum figheight in inches
                     FONTSIZE = max(218 / figheight, 6)
                     figheight = 218
-
-
+        print(figwidth, figheight)
 
         logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
         gr_kws = {
@@ -2867,7 +2913,7 @@ def cluster2(
                 z_score if z_score != "None" and z_score is not None else robjects.NULL
             ),
             z_score_by=z_score_by or robjects.NULL,
-            # data_obj.normtype, # can add normtype info here to label on cbar, perhaps 
+            # data_obj.normtype, # can add normtype info here to label on cbar, perhaps
             row_annot_df=row_annot_df,
             col_data=col_data,
             # cmap_name=cmap or np.nan,
@@ -2902,7 +2948,7 @@ def cluster2(
             savedir=os.path.abspath(
                 os.path.join(data_obj.outpath, "cluster2")
             ),  # this is for saving things within the r function
-            fixed_size = True if optimal_figsize else False,
+            fixed_size=True if optimal_figsize else False,
         )
         call_kws.update(kws)
         logger.info(f"call_kws: {call_kws}")
@@ -2964,11 +3010,7 @@ def cluster2(
         #################################################################
 
         nrow_ncol = "_{0}x{1}".format(*X.shape)
-        out = (
-            outname_func("clustermap", **outname_kws)
-            + nrow_ncol
-            + file_fmt
-        )
+        out = outname_func("clustermap", **outname_kws) + nrow_ncol + file_fmt
 
         plot_and_save(
             X,
@@ -2977,7 +3019,7 @@ def cluster2(
             annot_mat=annot_mat_to_pass,
             main_title=main_title,
             file_fmt=file_fmt,
-            figsize = figsize,
+            figsize=figsize,
         )
 
         ##################################################################
@@ -3025,6 +3067,7 @@ def cluster2(
                 + nrow_ncol
                 + file_fmt
             )
+            out = fix_name(out)  # make it shorter
             plot_and_save(
                 subX,
                 out,
@@ -3138,7 +3181,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
         non_zeros=non_zeros,
         file_fmts=file_fmts,
     )
- 
+
+
 class Float_or_Bool(click.ParamType):
     name = "float-or-bool"
 
@@ -3150,6 +3194,7 @@ class Float_or_Bool(click.ParamType):
                 return float(value)
         except ValueError:
             self.fail(f"{value} is not a valid float or bool", param, ctx)
+
 
 @main.command("volcano")
 @click.option(
