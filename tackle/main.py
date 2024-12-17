@@ -2108,6 +2108,18 @@ def pca2(
               """,
 )
 @click.option(
+    "--highlight-geneids-table",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    show_default=True,
+    multiple=False,
+    help="""Optional list of geneids to make into a track
+              on the left side of the heatmap
+              should start with geneid or genesymbol column.
+              can have multiple subsequent annotation columns
+              """,
+)
+@click.option(
     "--volcano-file",
     type=Path_or_Glob(exists=True, dir_okay=False),
     default=None,
@@ -2297,6 +2309,7 @@ def cluster2(
     gene_annot,
     gsea_input,
     highlight_geneids,
+    highlight_geneids_table,
     linear,
     legend_include,
     legend_exclude,
@@ -2350,6 +2363,7 @@ def cluster2(
         gene_annot,
         gsea_input,
         highlight_geneids,
+        highlight_geneids_table,
         linear,
         legend_include,
         legend_exclude,

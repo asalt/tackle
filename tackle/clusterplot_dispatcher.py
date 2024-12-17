@@ -58,6 +58,7 @@ def run(
     gene_annot,
     gsea_input,
     highlight_geneids,
+    highlight_geneids_table,
     linear,
     legend_include,
     legend_exclude,
@@ -278,6 +279,7 @@ def run(
     row_annot_track = list()
     # TODO parse and look for geneids
     for file_ in highlight_geneids:
+
         if file_.endswith("xlsx") or file_.endswith("xls"):
             df_ = pd.read_excel(file_, header=None, dtype=str)
         else:
@@ -294,7 +296,11 @@ def run(
         df_ = df_.set_index("GeneID")
         row_annot_track.append(df_)
 
-    # import ipdb; ipdb.set_trace()
+
+    if highlight_geneids_table:
+        df_ = parse_gid_file(highlight_geneids_table)
+        # import ipdb; ipdb.set_trace()
+        # row_annot_track.append(df_)
     # #xx = containers.add_annotations(X)
     # this needs rewriting
     if annotate_genes:
