@@ -14,16 +14,16 @@ ht_opt$message <- FALSE
 myzscore <- function(value, minval = NA, remask = TRUE) {
   mask <- is.na(value)
 
-  if (all(is.na(c(value))) && is.na(minval)){
-    minval<-0
+  if (all(is.na(c(value))) && is.na(minval)) {
+    minval <- 0
     value[1] <- 0
   }
 
   if (is.na(minval)) {
-  .sd <-- sd(value, na.rm = T)
+    .sd <- -sd(value, na.rm = T)
     if (is.na(.sd)) .sd <- 0
     minval <- min(value, na.rm = TRUE) - .sd
-}
+  }
 
 
   if (minval == Inf) {
@@ -53,13 +53,16 @@ myzscore <- function(value, minval = NA, remask = TRUE) {
 
 dist_no_na <- function(mat) {
   .min <- min(mat, na.rm = TRUE)
-  mat[is.na(mat)] <- .min - (.min*.1)
+  mat[is.na(mat)] <- .min - (.min * .1)
   edist <- dist(mat)
   return(edist)
 }
 
-hclust_dendsort <- function(mat, method = 'complete', ...){
-  dist_no_na(mat) %>% hclust(method = method, ...) %>% dendsort(isReverse=T, type="min") %>% as.dendrogram()
+hclust_dendsort <- function(mat, method = "complete", ...) {
+  dist_no_na(mat) %>%
+    hclust(method = method, ...) %>%
+    dendsort(isReverse = T, type = "min") %>%
+    as.dendrogram()
 }
 
 order_colmeta <- function(annot, the_order, name = "X") {
@@ -177,12 +180,12 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## dplyr::filter(n > 1L)
 
 
-  if ('HS_ratio' %in% colnames(col_data)){
-    col_data[['HS_ratio']] <- cut(col_data[['HS_ratio']],
-                                  breaks=0:8/8, labels = paste0('<', 1:8/8),
-                                  ordered_result=TRUE
-                                  )
-    HS_ratio=colorRamp2(.breaks, c=c('white', 'black'))
+  if ("HS_ratio" %in% colnames(col_data)) {
+    col_data[["HS_ratio"]] <- cut(col_data[["HS_ratio"]],
+      breaks = 0:8 / 8, labels = paste0("<", 1:8 / 8),
+      ordered_result = TRUE
+    )
+    HS_ratio <- colorRamp2(.breaks, c = c("white", "black"))
     .numeric_vals <- as.numeric(as.factor(levels(col_data$HS_ratio)))
     .breaks <- c(.numeric_vals[1], .numeric_vals[length(.numeric_vals)])
   }
@@ -218,16 +221,15 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     for (thename in names(select(row_annot_df, -GeneID))) {
       row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", ncol = 1)
       row_data_args[["show_legend"]][thename] <- T
-      if (length(setdiff(unique(row_annot_df[[thename]]), c(""))  ) == 1) {
-          row_data_args[["show_legend"]][thename] <- F
+      if (length(setdiff(unique(row_annot_df[[thename]]), c(""))) == 1) {
+        row_data_args[["show_legend"]][thename] <- F
       }
-      #row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
+      # row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
     }
     row_data_args[["annotation_name_side"]] <- "top" # top, bottom
     row_data_args[["gp"]] <- gpar(fontsize = 11, col = NA)
     row_data_args[["annotation_name_gp"]] <- gpar(fontsize = 11)
     row_data_args[["annotation_width"]] <- unit(.004, "in") * ncol(row_annot_df)
-
   }
   ## ===============  COLUMN ANNOTATION ============================================
 
@@ -454,7 +456,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # dis <- dist_no_na(X)
     sil <- cluster::silhouette(clusters$cluster, dis)
     .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
-    #dev.new()
+    # dev.new()
     pdf(.file, width = 10, height = 20)
     print(plot(sil, col = "grey"))
     dev.off()
@@ -473,7 +475,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     cut_by_cols <- cut_by
     # cut_by_cols <- unlist(strsplit(cut_by, ":")) # split by colon
     for (.col in cut_by_cols) {
-
       .levels <- unique(col_data[[.col]])
       col_data[[.col]] <- factor(col_data[[.col]], ordered = TRUE, levels = .levels)
     }
@@ -534,7 +535,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
   cluster_rows <- FALSE
-  if (row_cluster == TRUE){
+  if (row_cluster == TRUE) {
     cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage)
   }
   cluster_cols <- FALSE
@@ -545,13 +546,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   }
 
   .mat <- toplot[col_data$name]
-  if (!is.null(fixed_size) && fixed_size == TRUE){
-      ht_width <- unit(ncol(.mat) * .20, "in" )
-      ht_height <- unit(nrow(.mat) * .20, "in" )
-    } else{
-        ht_width <- NULL
-        ht_height <- NULL
-    }
+  if (!is.null(fixed_size) && fixed_size == TRUE) {
+    ht_width <- unit(ncol(.mat) * .20, "in")
+    ht_height <- unit(nrow(.mat) * .20, "in")
+  } else {
+    ht_width <- NULL
+    ht_height <- NULL
+  }
 
 
   ht <- Heatmap(.mat,
@@ -570,8 +571,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## right_annotation=gene_annot,
     ## left_annotation = row_annot,
     top_annotation = col_annot,
-    column_title_rot = 0,
-    #cluster_columns = col_cluster,
+    # cluster_columns = col_cluster,
     # cluster_rows = row_cluster,
     cluster_columns = cluster_cols,
     cluster_rows = cluster_rows,
@@ -584,12 +584,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     clustering_distance_columns = dist_no_na,
     # column_dend_reorder = TRUE,
     row_labels = toplot$GeneSymbol,
-    row_names_gp = gpar(fontsize = gene_symbol_fontsize),
+    row_names_gp = gpar(fontsize = gene_symbol_fontsize, fontface = "bold"),
     column_names_gp = gpar(fontsize = 9),
+    column_title_rot = 45,
     ## border = FALSE,
     column_names_rot = 90,
-    column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 60) ,
-    column_title_gp = gpar(fontsize = title_fontsize),
+    # column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 60) ,
+    column_title_gp = gpar(fontsize = 9),
     column_title_side = "top",
     column_names_side = "top",
     show_parent_dend_line = TRUE,
@@ -602,7 +603,12 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   )
 
 
-  ht <- ComplexHeatmap::draw(ht, heatmap_legend_side = "bottom", padding = unit(c(10, 8, 2, 8), "mm")) # top right bottom left
+  ht <- ComplexHeatmap::draw(ht,
+    column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 80),
+    column_title_gp = gpar(fontsize = 13, fontface = "bold", just = "left"),
+    heatmap_legend_side = "bottom",
+    padding = unit(c(10, 8, 2, 8), "mm")
+  ) # top right bottom left
   ht_row_order <- row_order(ht)
 
 
@@ -611,8 +617,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # print(xunit)
     decorate_heatmap_body("mat", {
       # grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
-      grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"), gp=gpar(fontsize=7))
-
+      grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"), gp = gpar(fontsize = 7))
     })
   }
 
