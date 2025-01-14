@@ -198,6 +198,9 @@ def plot_imputed(edata_impute, observed, missing, downshift, scale):
     sb.distplot(edata_impute.stack(), label="All Data", ax=ax, kde=False)
     sb.distplot(observed, label="Observed Values", ax=ax, kde=False)
     sb.distplot(edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False)
+
+    # sb.distplot(edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False)
+
     ax.legend(fontsize=10, loc="upper right", markerscale=0.4)
     # ax.set_xlim(0, 10)
     title = "downshift : {:.2g} scale : {:.2g}".format(downshift, scale)
@@ -720,13 +723,13 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
         "GeneID": str,
     }
     if gids.endswith(".csv"):
-        _df = pd.read_csv(gids, dtype=_dtype)
+        _df = pd.read_csv(gids, dtype=_dtype, comment="#")
     elif gids.endswith(".tsv") | gids.endswith(".txt"):
-        _df = pd.read_table(gids, dtype=_dtype)
+        _df = pd.read_table(gids, dtype=_dtype, comment="#")
     elif gids.endswith(".xlsx"):  # try to parse plain text file
-        _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet)
+        _df = pd.read_excel(gids, dtype=_dtype, sheet_name=sheet, comment="#")
     else:  # maybe no extension, and is text
-        _df = pd.read_table(gids, dtype=_dtype)
+        _df = pd.read_table(gids, dtype=_dtype, comment="#")
 
     _df.columns = _df.columns.str.lower()
 
@@ -746,8 +749,8 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
             if gid.empty:
                 warn("Could not find GeneID from genesymbol {}".format(genesymbol))
                 return
-        else:
-            print(genesymbol, gid)
+        # else:
+        #     print(genesymbol, gid)
         return gid.index[0]
 
     #
@@ -1217,12 +1220,12 @@ def assign_cols(df, name):
 
 def get_outname(
     plottype: str,
-    name,
     taxon,
     non_zeros,
     colors_only=None,
     batch=None,
     batch_method="parametric",
+    name=None,  # depreciated
     outpath=".",
     **kwargs,
 ):
@@ -1245,21 +1248,22 @@ def get_outname(
     batch_str = ("{}Batch_{}_".format(batch_method, batch) if batch else "").replace(
         "parametricBatch", "paramBatch"
     )
-    if bool(plottype) and os.path.split(outpath)[-1] != plottype: # or dtype, doesn't have to be a plot
+    if (
+        bool(plottype) and os.path.split(outpath)[-1] != plottype
+    ):  # or dtype, doesn't have to be a plot
         outpath = os.path.join(outpath, plottype)
-
 
     if batch_str:
         outpath = os.path.join(outpath, batch_str)
     if taxon != "all":
         outpath = os.path.join(outpath, taxon)
 
-
     # "{}".format(kwargs)
     fname = "{}more_nonzero_{}".format(
-        #name,
-        #plottype,
-         non_zeros, kwarg_string
+        # name,
+        # plottype,
+        non_zeros,
+        kwarg_string,
     ).strip("_")
     fname = (
         fname.replace("noCov_", "")
@@ -1268,11 +1272,16 @@ def get_outname(
         .replace("Treatment", "treat")
         .replace("median", "med")
     )
+
+    # here is where we could split the path further
+    # this might not be necessary here anymore
+    # unsure how often this is hit
+    if os.name == "nt" and len(fname) > 260:
+        fname = fname[:260]
+    elif len(fname) > 333:
+        fname = fname[:333]
+    # import ipdb; ipdb.set_trace()
     ret = os.path.join(outpath, fname)
-    if os.name == "nt" and len(ret) > 260:
-        ret = ret[:260]
-    elif len(ret) > 333:
-        ret = ret[:333]
     if not os.path.exists(outpath):
         os.makedirs(outpath)
 
