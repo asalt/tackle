@@ -244,6 +244,7 @@ class LazyLoader:
     read_kws = {"dtype":str}
     def __init__(self, file_path: str):
         self.file_path = file_path
+        #self._df = pd.DataFrame() # change from None for a good reason. noteo right now this breaks the code
         self._df = None
 
 
@@ -269,7 +270,7 @@ class LazyLoader:
         return self._df
 
 class GeneMapper(LazyLoader):
-    read_kws = {"dtype": {"GeneID": str}, "index_col":"GeneID"}
+    read_kws = {"dtype": {"GeneID": str, "TaxonID": str}, "index_col":"GeneID"}
     def __init__(self):
         file_path = os.path.join(
             PWD,
@@ -279,7 +280,7 @@ class GeneMapper(LazyLoader):
             # "genetable20201208.tsv",
             "genetable20201208_median_isoform_mass.tsv",
         )
-        self._df = None
+        # self._df = None
         self._symbol = None
         self._funcat = None
         self._description = None
@@ -321,7 +322,7 @@ class Annotations(LazyLoader):
         file_path = os.path.join(PWD, "data", "combined_annotations_new.tsv")
         super().__init__(file_path)
         # self._categories = None
-        # self._df = None
+        # self._df = None # do not reinitialize here
 
     def read(self, **read_kws):
         df = super().read(**read_kws)
@@ -334,8 +335,9 @@ class Annotations(LazyLoader):
     @property
     def categories(self):
         df = self._df
-        if df is None:
+        if df is None or (isinstance(df, pd.DataFrame) and df.DataFrame.empty):
             df = self.read(nrows=1)
+        # import ipdb; ipdb.set_trace()
         self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
@@ -362,7 +364,7 @@ class HGeneMapper:
             reverse=True,
         )[0]
         self.file = homologene_f
-        self._df = None
+        self._df = None # do not reinitialize here # generally but here we are not inheriting
 
     @property
     def df(self):
@@ -888,6 +890,7 @@ class Data:
 
     def get_outname(self, plottype: str, **kwargs):
         # TODO move utils.get_outname to here?
+        # no
         ...
 
     def load_data(self, only_local=False):
@@ -2411,6 +2414,9 @@ class Data:
                 # index column is GeneID, add GeneSymbol
                 order = ["GeneSymbol"]
                 order += [x for x in export.columns if x not in order]
+            # add annotations 
+            annot_mapper = get_annotation_mapper()
+
             if level == "area":
                 export[order].to_csv(outname, sep="\t")
 
@@ -2418,6 +2424,11 @@ class Data:
                 outname = outname.strip(".tsv")  # gct will be added automatically
                 cmapR = importr("cmapR")
                 # data_obj = ctx.obj["data_obj"]
+                _export = export.reset_index().merge(annot_mapper.df[[x for x in annot_mapper.df if x not in ["GeneSymbol",]]], on='GeneID', how='left')
+                _export.index = _export.GeneID
+                export = _export
+                rdesc = export[list(set(export.columns) - set(self.col_metadata.index))].copy()
+                rdesc['id'] = rdesc.GeneID # 'id' col for cmapR
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
@@ -2425,14 +2436,16 @@ class Data:
                 r.assign("m", _m)
                 r.assign("rid", _m.index)
                 r.assign(
-                    "rdesc",
-                    (
-                        export.GeneSymbol
-                        if "GeneSymbol" in export.columns
-                        else export.index
-                    ),
+                    "rdesc", rdesc
+                    #(
+                    #    export.GeneSymbol
+                    #    if "GeneSymbol" in export.columns
+                    #    else export.index
+                    #),
                 )
-                r.assign("cdesc", self.col_metadata)
+                cdesc = self.col_metadata.copy() 
+                cdesc['id'] = cdesc.index
+                r.assign("cdesc", cdesc)
                 r.assign("cid", self.col_metadata.index)
                 r.assign("outname", outname)
                 pandas2ri.deactivate()
@@ -2441,8 +2454,9 @@ class Data:
                 r(
                     'my_ds <- new("GCT", mat=as.matrix(m), rid=rid, cid=cid, cdesc=cdesc, rdesc=as.data.frame(rdesc))'
                 )
+                # import ipdb; ipdb.set_trace()
                 r(
-                    'write_gct(my_ds, file.path(".", outname), precision=8)'
+                    'write_gct(my_ds, file.path(".", outname), precision=4)'
                 )  # r doesn't keep the path relative for some reason
                 # r('print(paste("Wrote", outname))')
 
