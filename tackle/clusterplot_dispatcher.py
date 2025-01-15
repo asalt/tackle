@@ -3,6 +3,7 @@
 # from . import rutils
 import os
 import re
+from copy import deepcopy
 from functools import partial
 import numpy as np
 import pandas as pd
@@ -13,7 +14,10 @@ import rpy2.robjects as robjects
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
 
+grdevices = importr("grDevices")
+
 from . import utils
+from . import grdevice_helper
 from . import containers
 from .utils import (
     fix_name,
@@ -112,7 +116,6 @@ def run(
     )
 
     r_source(r_file)
-    grdevices = importr("grDevices")
     cluster2 = robjects.r["cluster2"]
 
     # =================================================================
@@ -179,6 +182,11 @@ def run(
         outname_kws["direction"] = volcano_direction
         column_title = name_group
         _df = pd.read_table(volcano_file)
+        if "pValue" not in _df and "p-value" in _df:
+            _df = _df.rename(columns={"p-value": "pValue"})
+        if "log2_FC" not in _df and "Value" in _df:  #
+            _df = _df.rename(columns={"Value": "log2_FC"})
+
         if not np.isfinite(volcano_topn):
             _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
         else:  # np.isfinite(volcano_topn):
@@ -295,7 +303,6 @@ def run(
         df_.columns = ["GeneID", title_]
         df_ = df_.set_index("GeneID")
         row_annot_track.append(df_)
-
 
     if highlight_geneids_table:
         df_ = parse_gid_file(highlight_geneids_table)
@@ -419,7 +426,7 @@ def run(
     # data_obj.do_cluster()
     outname_func = partial(
         get_outname,
-        name=data_obj.outpath_name,
+        # name=data_obj.outpath_name,
         taxon=data_obj.taxon,
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
@@ -427,7 +434,7 @@ def run(
         link=linkage,
         missing_values=missing_values,
         normtype=data_obj.normtype,
-        outpath=data_obj.outpath, #, "cluster2")
+        outpath=data_obj.outpath,  # , "cluster2")
     )
     # =================================================================
     if gene_symbols and add_description:
@@ -455,16 +462,6 @@ def run(
             X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
             X = X.drop("Description", axis=1)
         outname_kws["descr"] = "T"
-
-    # gr_devices = {".png": grdevices.png, ".pdf": grdevices.pdf, ".svg": grdevices.svg}
-    gr_devices = {
-        ".png": grdevices.png,
-        ".pdf": grdevices.cairo_pdf,
-        ".svg": grdevices.svg,
-    }
-
-    # DONE: IDEA - for all entries in the column and row data that do not have a predefined colormap,
-    # assign defaults here (otherwise ComplexHeatmap will assign random colors, which are not always good choices)
 
     metadata_colorsR = None
     metadata_color_lists = None
@@ -559,8 +556,8 @@ def run(
     def plot_and_save(
         X,
         out,
-        grdevice,
         # gr_kws=None,
+        grdevice=None,  # depreciated
         annot_mat=None,
         main_title=None,
         column_title=column_title,  # defined in outer scope
@@ -571,8 +568,6 @@ def run(
         """
         # gr_kws is redefined here (update fighiehgt /width), no need to take it as input
         """
-        gr_kws = dict()
-        # grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
         print("Saving", out, "...", end="", flush=True)
         # have to put this here to preserve the layout set by ComplexHeatmap::draw
         if annot_mat is None:
@@ -603,20 +598,6 @@ def run(
                     FONTSIZE = max(218 / figheight, 6)
                     figheight = 218
         print(figwidth, figheight)
-
-        logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
-        gr_kws = {
-            ".png": dict(width=figwidth, height=figheight, units="in", res=300),
-            ".pdf": dict(
-                width=figwidth,
-                height=figheight,
-            ),
-            ".svg": dict(
-                width=figwidth,
-                height=figheight,
-            ),
-        }
-        gr_kw = gr_kws[file_fmt]
 
         call_kws = dict(
             data=X,
@@ -668,7 +649,7 @@ def run(
             fixed_size=True if optimal_figsize else False,
         )
         call_kws.update(kws)
-        logger.info(f"call_kws: {call_kws}")
+        # logger.info(f"call_kws: {call_kws}")
 
         if len(out) > 299:  # quick fix
             out_path, out_name = os.path.split(out)
@@ -678,13 +659,20 @@ def run(
                 .replace("normtype", "norm")
                 .replace("volcano_file", "vfile")
                 .replace("direction_", "")
+                .replace("genotype", "geno")
             )
             out = os.path.join(out_path, out_name)
 
-        grdevice(file=out, **gr_kw)  # grDevices::png or pdf, etc
-        ret = cluster2(**call_kws)
+        logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
+
+        print(figwidth, figheight)
+        grdevice = grdevice_helper.get_device(
+            filetype=file_fmt, width=figwidth, height=figheight
+        )
+        grdevice(file=out)  # open file for saving
+        ret = cluster2(**call_kws)  # draw
         # print(ret[0])
-        grdevices.dev_off()
+        grdevices.dev_off()  # close file
         print("done.", flush=True)
 
         sil_df = None
@@ -710,10 +698,10 @@ def run(
 
     if cluster_func is not None:
         outname_kws[cluster_func] = nclusters
-    outname = outname_func("clustermap", **outname_kws)
+    # outname = outname_func("clustermap", **outname_kws)
 
     for file_fmt in ctx.obj["file_fmts"]:
-        grdevice = gr_devices[file_fmt]
+        # grdevice = gr_devices[file_fmt] # this is now done within plot_and_save
         # gr_kw = gr_kws[file_fmt]
         annot_mat_to_pass = annot_mat
         # if len(X) > 300 and annotate:
@@ -726,15 +714,25 @@ def run(
         ##                          make plot                          ##
         #################################################################
 
-        _ncol = len([ x for x in X.columns if x not in ("GeneID", "GeneSymbol") ])
+        _ncol = len([x for x in X.columns if x not in ("GeneID", "GeneSymbol")])
         _nrow = X.shape[0]
         nrow_ncol = "_{0}x{1}".format(_nrow, _ncol)
-        out = outname_func("clustermap", **outname_kws) + nrow_ncol + file_fmt
+        # import ipdb; ipdb.set_trace()
+        outname_base_name = "clustermap"
+        extra_outname_kws = dict()
+        if "volcano_file" in outname_kws:  # 'hack' to nest 1 folder deeper
+            volcano_file = outname_kws.pop("volcano_file")
+            outname_base_name = os.path.join(outname_base_name, volcano_file)
+            extra_outname_kws["volcano_file"] = volcano_file
+
+        out = outname_func(outname_base_name, **outname_kws) + nrow_ncol + file_fmt
+
+        outname_kws.update(extra_outname_kws)
 
         plot_and_save(
             X,
             out,
-            grdevice,
+            # grdevice,
             annot_mat=annot_mat_to_pass,
             main_title=main_title,
             file_fmt=file_fmt,
@@ -750,7 +748,8 @@ def run(
 
         for annotation in data_obj.annotations:
             annotator = get_annotation_mapper()
-            annot_df = annotator.get_annot(annotation)
+            # annot_df = annotator.get_annot(annotation)
+            annot_df = annotator.df
 
             subX = X[X.GeneID.isin(annot_df.GeneID)]
             if subX.empty:  # try mapping to homologene
@@ -780,7 +779,7 @@ def run(
             if gene_symbols is True:  # force override
                 _show_gene_symbols = True
 
-            nrow_col = "{_{0}x{1}".format(*subX.shape)
+            nrow_col = "_{0}x{1}".format(*subX.shape)
             out = (
                 outname_func("clustermap", geneset=fix_name(annotation), **outname_kws)
                 + nrow_ncol
