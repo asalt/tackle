@@ -1369,7 +1369,7 @@ class Data:
 
             self._areas = areas
 
-        self._mask = self._areas.applymap(np.isnan)
+        self._mask = self._areas.replace(0, np.nan).applymap(np.isnan)
         self._zeros = self._areas == 0
         if len(self.areas) == 0:
             raise ValueError("No data")
@@ -1607,6 +1607,11 @@ class Data:
         except AttributeError:
             pd.NA = "NA"  # bugfix for pandas < 1.0
         r.assign("pheno", pheno)
+
+        # could "facet" this by batch then impute. likely not super critical with tight scale
+        # print(data.shape)
+        data = impute_missing(data.replace(0, pd.NA), downshift=0, scale=0.1, make_plot=False).astype(float)
+        # print(data.shape)
 
         if self.covariate is not None:
             r("mod  <- model.matrix(~as.factor({}), pheno)".format(self.covariate))

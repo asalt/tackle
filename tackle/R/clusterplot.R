@@ -11,7 +11,7 @@ library(dendsort)
 
 ht_opt$message <- FALSE
 
-myzscore <- function(value, minval = NA, remask = TRUE) {
+myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
   mask <- is.na(value)
 
   if (all(is.na(c(value))) && is.na(minval)) {
@@ -30,8 +30,9 @@ myzscore <- function(value, minval = NA, remask = TRUE) {
     minval <- 0
   }
 
-  value[is.na(value)] <- minval
+  if (fillna) value[is.na(value)] <- minval
   # todo make smaller than min val
+  # done
   out <- scale(value)
 
   # if all NA:
@@ -87,6 +88,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      cluster_func = NULL,
                      show_gene_symbols = FALSE,
                      z_score = NULL, z_score_by = NULL,
+                     z_score_fillna = TRUE,
                      standard_scale = NULL,
                      row_dend_side = "right",
                      row_names_side = "left",
@@ -146,13 +148,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     exprs_long <- exprs_long %>%
       mutate(value = na_if(value, 0)) %>%
       group_by(GeneID) %>%
-      mutate(zscore = myzscore(value), zscore_impute = myzscore(value, remask = FALSE)) %>%
+      mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
       ungroup()
   } else if (!is.null(z_score_by) & z_score == "0") {
     exprs_long <- exprs_long %>%
       mutate(value = na_if(value, 0)) %>%
       group_by(GeneID, !!as.name(z_score_by)) %>%
-      mutate(zscore = myzscore(value), zscore_impute = myzscore(value, remask = FALSE)) %>%
+      mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
       ungroup()
   }
   ## else if (is.null(z_score)) {

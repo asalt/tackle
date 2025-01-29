@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import itertools
 
-# import gseapy as gp
+import gseapy as gp
 
 try:
     import rpy2
@@ -247,10 +247,11 @@ class Path_or_Geneset(click.Path):
         gs = gp.parser.read_gmt(geneset_file)
         matches = [x for x in gs.keys() if value in x or value in x.lower()]
         if len(matches) == 0:
-            print("No matches found")
+            logger.warning("No matches found")
+            # print("No matches found")
             return
         if len(matches) > 1:
-            print("more than 1 match, just returning one at a time")
+            logger.warning("more than 1 match, just returning one at a time")
             return
             # todo more than one at the same time
         # return {m, gs['m'] for m in matches}
@@ -2285,6 +2286,9 @@ when `auto` is set for `--nclusters`""",
 )
 @click.option("--z-score-by", type=str, default=None, show_default=True)
 @click.pass_context
+@click.option(
+    "--z-score-fillna/--z-score-nofillna", is_flag=True, show_default=True, default=True,
+)
 def cluster2(
     ctx,
     add_description,
@@ -2337,7 +2341,8 @@ def cluster2(
     show_missing_values,
     z_score,
     z_score_by,
-    add_human_ratios,
+    z_score_fillna,
+    add_human_ratios, # does not work
 ):
     clusterplot_dispatcher.run(
         ctx,
@@ -2391,6 +2396,7 @@ def cluster2(
         show_missing_values,
         z_score,
         z_score_by,
+        z_score_fillna,
         add_human_ratios,
     )
 
