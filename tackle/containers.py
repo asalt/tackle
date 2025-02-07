@@ -928,6 +928,28 @@ class Data:
                     record, exp, exps, name, self.funcats, self.geneid_subset
                 )
 
+
+            dummy_filter = lambda x, *args, **kwargs: x
+            taxon_filter = TAXON_MAPPER.get(self.taxon)
+            if taxon_filter is None:
+                filter_func = dummy_filter
+            else:
+
+                def filter_func(x):
+                    return x[x["TaxonID"] == taxon_filter]
+
+
+            df = genefilter(
+                df,
+                funcats=self.funcats,
+                funcats_inverse=self.funcats_inverse,
+                geneid_subset=self.geneid_subset,
+                ignored_geneid_subset=self.ignore_geneid_subset,
+            ).pipe(filter_func)
+
+            if len(df) < 1:
+                logger.warn(f"..no data after funcat filter")
+
             do_normalization = partial(
                 normalize,
                 name=name,
@@ -997,15 +1019,6 @@ class Data:
                     #       .pipe(normalize, median=True, outcol='iBAQ_dstrAdj_MED')
                     # )
 
-            dummy_filter = lambda x, *args, **kwargs: x
-            taxon_filter = TAXON_MAPPER.get(self.taxon)
-            if taxon_filter is None:
-                filter_func = dummy_filter
-            else:
-
-                def filter_func(x):
-                    return x[x["TaxonID"] == taxon_filter]
-
             if (
                 self.metrics
                 and not self.metrics_after_filter
@@ -1013,15 +1026,6 @@ class Data:
             ):
                 self._update_metrics(df, name, area_column="area")
 
-            df = genefilter(
-                df,
-                funcats=self.funcats,
-                funcats_inverse=self.funcats_inverse,
-                geneid_subset=self.geneid_subset,
-                ignored_geneid_subset=self.ignore_geneid_subset,
-            ).pipe(filter_func)
-            if len(df) < 1:
-                logger.warn(f"..no data after funcat filter")
 
             # unique peptide filter
             if "PeptideCount_u2g" not in df:
