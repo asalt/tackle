@@ -19,6 +19,7 @@ grdevices = importr("grDevices")
 from . import utils
 from . import grdevice_helper
 from . import containers
+from . import statfile_sorter
 from .utils import (
     fix_name,
     _get_logger,
@@ -90,6 +91,7 @@ def run(
     show_missing_values,
     z_score,
     z_score_by,
+    z_score_fillna,
     add_human_ratios,
 ):
     outname_kws = dict()
@@ -161,10 +163,14 @@ def run(
 
     ## filter by volcano output
     # ================================ volcano file parsing =================================
+
     _tmp = list()
     _fc, _pval, _ptype = volcano_filter_params
     # for f in volcano_file:
     if volcano_file is not None:
+        X = statfile_sorter.sort_files(
+            [volcano_file], X, direction=volcano_direction, topn=volcano_topn
+        )
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
         if "Batch" in volcanofile_basename:
@@ -181,51 +187,52 @@ def run(
         outname_kws["volcano_file"] = name_group
         outname_kws["direction"] = volcano_direction
         column_title = name_group
-        _df = pd.read_table(volcano_file)
-        if "pValue" not in _df and "p-value" in _df:
-            _df = _df.rename(columns={"p-value": "pValue"})
-        if "log2_FC" not in _df and "Value" in _df:  #
-            _df = _df.rename(columns={"Value": "log2_FC"})
+        # _df = pd.read_table(volcano_file)
+        # if "pValue" not in _df and "p-value" in _df:
+        #     _df = _df.rename(columns={"p-value": "pValue"})
+        # if "log2_FC" not in _df and "Value" in _df:  #
+        #     _df = _df.rename(columns={"Value": "log2_FC"})
 
-        if not np.isfinite(volcano_topn):
-            _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
-        else:  # np.isfinite(volcano_topn):
-            #
-            _n = (
-                int(volcano_topn / 2)
-                if volcano_direction == "both"
-                else int(volcano_topn)
-            )
-            if volcano_sortby == "log2_FC":
-                _up = _df.sort_values(by="log2_FC", ascending=False).head(_n)
-                _dn = _df.sort_values(by="log2_FC", ascending=False).tail(_n)
-            elif volcano_sortby == "pValue":
-                _up = (
-                    _df.query("log2_FC>0")
-                    .sort_values(by=["pValue", "log2_FC"], ascending=[True, False])
-                    .head(_n)
-                )
-                _dn = (
-                    _df.query("log2_FC<0")
-                    .sort_values(by=["pValue", "log2_FC"], ascending=[True, True])
-                    .head(_n)
-                )
-                _dn = _dn[::-1]
+        # if not np.isfinite(volcano_topn):
+        #     _df = _df[(abs(_df["log2_FC"]) > np.log2(_fc)) & (_df[_ptype] < _pval)]
+        # else:  # np.isfinite(volcano_topn):
+        #     #
+        #     _n = (
+        #         int(volcano_topn / 2)
+        #         if volcano_direction == "both"
+        #         else int(volcano_topn)
+        #     )
+        #     if volcano_sortby == "log2_FC":
+        #         _up = _df.sort_values(by="log2_FC", ascending=False).head(_n)
+        #         _dn = _df.sort_values(by="log2_FC", ascending=False).tail(_n)
+        #     elif volcano_sortby == "pValue":
+        #         _up = (
+        #             _df.query("log2_FC>0")
+        #             .sort_values(by=["pValue", "log2_FC"], ascending=[True, False])
+        #             .head(_n)
+        #         )
+        #         _dn = (
+        #             _df.query("log2_FC<0")
+        #             .sort_values(by=["pValue", "log2_FC"], ascending=[True, True])
+        #             .head(_n)
+        #         )
+        #         _dn = _dn[::-1]
 
-            if volcano_direction == "both":
-                _df = pd.concat([_up, _dn])
-            elif volcano_direction == "up":
-                _df = _up
-            elif volcano_direction == "down":
-                _df = _dn
-        _tmp.append(_df)
-    if _tmp:
-        _dfs = pd.concat(_tmp)
-        _genes = _dfs.GeneID.astype(str).unique()
-        _tokeep = [x for x in _genes if x in X.index]  # preserve order
-        # X = X.loc[set(X.index) & set(genes)]
-        X = X.loc[_tokeep]
+        #     if volcano_direction == "both":
+        #         _df = pd.concat([_up, _dn])
+        #     elif volcano_direction == "up":
+        #         _df = _up
+        #     elif volcano_direction == "down":
+        #         _df = _dn
+        # _tmp.append(_df)
+    # if _tmp:
+    #     _dfs = pd.concat(_tmp)
+    #     _genes = _dfs.GeneID.astype(str).unique()
+    #     _tokeep = [x for x in _genes if x in X.index]  # preserve order
+    #     # X = X.loc[set(X.index) & set(genes)]
+    #     X = X.loc[_tokeep]
 
+    # import ipdb; ipdb.set_trace()
     # ================================ end of volcano file parsing =================================
     if cluster_file[0] is not None:
         if cluster_file[0].endswith("xlsx"):
@@ -254,7 +261,7 @@ def run(
         X = X.loc[_tokeep]
         outname_kws["subcluster"] = _thecluster
         main_title += f"\nCluster {_thecluster}"
-    # ========================= end of special ifle parsing ==========================
+    # ========================= end of special file parsing ==========================
 
     gids_to_annotate = None
     if gene_annot:
@@ -411,6 +418,11 @@ def run(
         annot_mat = annot_mat[["GeneID"] + [x for x in annot_mat if x != "GeneID"]]
 
     # ============================================================
+
+    if z_score != "None" and z_score is not None:
+        outname_kws["zscore"] = z_score
+    else:
+        outname_kws["zscore"] = "none"
     if z_score_by is not None:
         outname_kws["zby"] = z_score_by
 
@@ -431,6 +443,7 @@ def run(
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
         batch_method="param" if not data_obj.batch_nonparametric else "nonparam",
+        fillna=z_score_fillna,
         link=linkage,
         missing_values=missing_values,
         normtype=data_obj.normtype,
@@ -611,6 +624,7 @@ def run(
                 z_score if z_score != "None" and z_score is not None else robjects.NULL
             ),
             z_score_by=z_score_by or robjects.NULL,
+            z_score_fillna=z_score_fillna,
             # data_obj.normtype, # can add normtype info here to label on cbar, perhaps
             row_annot_df=row_annot_df,
             col_data=col_data,
@@ -684,13 +698,19 @@ def run(
         if sil_df is not None:
             row_orders = ret[2]
             the_orders = [
-                row_orders.rx2(str(n)) - 1 for n in row_orders.names
-            ]  # subtract 1  for zero indexing
+                [x - 1 for x in row_orders.rx2(int(str(n)))] for n in row_orders.names
+            ]
             the_orders = [x for y in the_orders for x in y]
+
+            # [0]
+
+            # the_orders = [
+            #     row_orders.rx2(int(str(n))) - 1 for n in row_orders.names
+            # ]  # subtract 1  for zero indexing
 
             cluster_metrics = sil_df.iloc[the_orders]
 
-            out = outname_func("clustermap_clusters", **outname_kws)
+            out = outname_func("clustermap", **outname_kws) + ".tsv"
             print("saving", out)
             cluster_metrics.to_csv(out, index=False, sep="\t")
 
