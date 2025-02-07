@@ -2,6 +2,7 @@ import logging
 from collections import OrderedDict
 
 from .utils import *
+
 # from . import utils
 from .utils import read_config
 from scipy.cluster import hierarchy
@@ -56,6 +57,8 @@ except ModuleNotFoundError as e:
 except RRuntimeError as e:
     print("sva is not installed", e, sep="\n")
 
+from .constants import *
+from .logger import get_logger
 
 try:
     pd.NA
@@ -80,141 +83,11 @@ def my_zscore(x, minval=None, remask=True):
     return ret
 
 
-def _get_logger():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    ch.setFormatter(formatter)
-    # add the handlers to the logger
-    logger.addHandler(ch)
-    try:
-        fh = logging.FileHandler("tackle.log")
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-    except PermissionError:
-        pass
-
-    # fh.setLevel(logging.DEBUG)
-    # create console handler with a higher log level
-    return logger
-
-
-logger = _get_logger()
+logger = get_logger(__name__)
+np.NAN = np.nan
 
 
 idx = pd.IndexSlice
-
-TAXON_MAPPER = {
-    "human": 9606,
-    "mouse": 10090,
-    "celegans": 6239,
-}
-
-
-LABEL_MAPPER = {
-    "none": [0, "0", "none"],  # hard coded number IDs for labels
-    "126": [1260, "TMT_126", "TMT126", "126"],
-    "126C": [1260, "TMT_126", "TMT126", "126"],
-    "127C": [1270, "TMT_127C", "TMT_127_C", "127C"],
-    "127C": [1270, "TMT_127C", "TMT_127_C", "127C"],
-    "127_C": [1270, "TMT_127C", "TMT_127_C", "127C"],
-    "127": [1271, "TMT_127N", "TMT_127_N", "127N"],
-    "127N": [1271, "TMT_127N", "TMT_127_N", "127N"],
-    "127_N": [1271, "TMT_127N", "TMT_127_N", "127N"],
-    "128": [1280, "TMT_128C", "TMT_128_C", "128C"],
-    "128C": [1280, "TMT_128C", "TMT_128_C", "128C"],
-    "128_C": [1280, "TMT_128C", "TMT_128_C", "128C"],
-    "128N": [1281, "TMT_128N", "TMT_128_N", "128N"],
-    "128_N": [1281, "TMT_128N", "TMT_128_N", "128N"],
-    "129C": [1290, "TMT_129C", "TMT_129_C", "129C"],
-    "129_C": [1290, "TMT_129C", "TMT_129_C", "129C"],
-    "129": [1291, "TMT_129N", "TMT_129_N", "129N"],
-    "129N": [1291, "TMT_129N", "TMT_129_N", "129N"],
-    "129_N": [1291, "TMT_129N", "TMT_129_N", "129N"],
-    "130": [1300, "TMT_130C", "TMT_130_C", "130C"],
-    "130C": [1300, "TMT_130C", "TMT_130_C", "130C"],
-    "130_C": [1300, "TMT_130C", "TMT_130_C", "130C"],
-    "130N": [1301, "TMT_130N", "TMT_130_N", "130N"],
-    "130_N": [1301, "TMT_130N", "TMT_130_N", "130N"],
-    "131N": [1310, "TMT_131N", "TMT_131_N", "131N"],
-    "131_N": [1310, "TMT_131N", "TMT_131_N", "131N"],
-    "131": [1310, "TMT_131N", "TMT_131_N", "131N"],
-    "131C": [1311, "TMT_131C", "TMT_131_C", "131C"],
-    "131_C": [1311, "TMT_131C", "TMT_131_C", "131C"],
-    "132N": [1321, "TMT_132N", "TMT_132_N", "132N"],
-    "132_N": [1321, "TMT_132N", "TMT_132_N", "132N"],
-    "132C": [1320, "TMT_132C", "TMT_132_C", "132C"],
-    "132_C": [1320, "TMT_132C", "TMT_132_C", "132C"],
-    "133N": [1331, "TMT_133N", "TMT_133_N", "133N"],
-    "133_N": [1331, "TMT_133N", "TMT_133_N", "133N"],
-    "133C": [1330, "TMT_133C", "TMT_133_C", "133C"],
-    "133_C": [1330, "TMT_133C", "TMT_133_C", "133C"],
-    "134": [1340, "TMT_134", "TMT134", "TMT_134", "134", 134, "TMT_134_N"],
-    "134N": [1340, "TMT_134", "TMT134", "TMT_134", "134", "TMT_134_N", 134],
-    "134_N": [1340, "TMT_134", "TMT134", "TMT_134", "134", "TMT_134_N", 134],
-    "134C": [
-        1341,
-        "TMT_134_C",
-        "TMT134C",
-        "TMT_134C",
-    ],
-    "135": [
-        1350,
-        "TMT_135",
-        "TMT_135_N",
-    ],
-    "135N": [
-        1350,
-        "TMT_135",
-        "TMT_135_N",
-    ],
-    # "1260": [1260, "TMT_126", "TMT126"],
-    # "1270": [1270, "TMT_126", "TMT126"],
-    # "1271": [1271, "TMT_126", "TMT126"],
-    # "1280": [1280, "TMT_126", "TMT126"],
-    # "1281": [1281, "TMT_126", "TMT126"],
-    # "1290": [1290, "TMT_126", "TMT126"],
-    # "1291": [1291, "TMT_126", "TMT126"],
-    # "1300": [1300, "TMT_126", "TMT126"],
-    # "1301": [1301, "TMT_126", "TMT126"],
-    # "1310": [1310, "TMT_130", "TMT130"],
-    # "1311": [1311, "TMT_131", "TMT131"],
-    # "1320": [1320, "TMT_126", "TMT126"],
-    # "1321": [1321, "TMT_126", "TMT126"],
-    # "1330": [1330, "TMT_126", "TMT126"],
-    # "1331": [1331, "TMT_136", "TMT126"],
-    # "131": [1310, "TMT_131", "TMT131"],
-    1260: "TMT_126",
-    1270: "TMT_127_C",
-    1271: "TMT_127_N",
-    1280: "TMT_128_C",
-    1281: "TMT_128_N",
-    1290: "TMT_129_C",
-    1291: "TMT_129_N",
-    1300: "TMT_130_C",
-    1301: "TMT_130_N",
-    1310: "TMT_131_C",
-    1311: "TMT_131_N",
-    1321: "TMT_132_C",
-    1320: "TMT_132_N",
-    1331: "TMT_133_C",
-    1330: "TMT_133_N",
-    1340: "TMT_134",
-    "113": 113,
-    "114": 114,
-    "115": 115,
-    "116": 116,
-    "117": 117,
-    "118": 118,
-    "119": 119,
-    "121": 121,
-}
 
 
 def join_and_create_path(*strings, verbose=True):
@@ -231,8 +104,9 @@ def join_and_create_path(*strings, verbose=True):
 
 PWD = os.path.split(os.path.abspath(__file__))[0]
 
+
 class SingletonManager:
-    _instances : Dict[Type, Any] = {}
+    _instances: Dict[Type, Any] = {}
 
     @classmethod
     def get_instance(cls, instance_class: Type) -> Any:
@@ -240,13 +114,14 @@ class SingletonManager:
             cls._instances[instance_class] = instance_class()
         return cls._instances[instance_class]
 
+
 class LazyLoader:
-    read_kws = {"dtype":str}
+    read_kws = {"dtype": str}
+
     def __init__(self, file_path: str):
         self.file_path = file_path
-        #self._df = pd.DataFrame() # change from None for a good reason. noteo right now this breaks the code
+        # self._df = pd.DataFrame() # change from None for a good reason. noteo right now this breaks the code
         self._df = None
-
 
     def read(self, **read_kws):
         if not os.path.exists(self.file_path):
@@ -262,15 +137,17 @@ class LazyLoader:
         logger.info(f"Loading file file {self.file_path}")
         return _reader(self.file_path, **read_kws)
 
-    #@cached_property
+    # @cached_property
     @property
     def df(self):
         if self._df is None:
             self._df = self.read(**self.read_kws)
         return self._df
 
+
 class GeneMapper(LazyLoader):
-    read_kws = {"dtype": {"GeneID": str, "TaxonID": str}, "index_col":"GeneID"}
+    read_kws = {"dtype": {"GeneID": str, "TaxonID": str}, "index_col": "GeneID"}
+
     def __init__(self):
         file_path = os.path.join(
             PWD,
@@ -308,7 +185,7 @@ class GeneMapper(LazyLoader):
     def description(self):
         if self._description is None:
             self._description = self.df["GeneDescription"].to_dict()
-        return self._description 
+        return self._description
 
     @property
     def taxon(self):
@@ -352,6 +229,7 @@ class Annotations(LazyLoader):
 
 class HistoneInfo(LazyLoader):
     read_kws = dict(dtype="string")
+
     def __init__(self):
         file_path = os.path.join(PWD, "data", "histones.tsv")
         super().__init__(file_path)
@@ -364,7 +242,9 @@ class HGeneMapper:
             reverse=True,
         )[0]
         self.file = homologene_f
-        self._df = None # do not reinitialize here # generally but here we are not inheriting
+        self._df = (
+            None  # do not reinitialize here # generally but here we are not inheriting
+        )
 
     @property
     def df(self):
@@ -465,8 +345,10 @@ def assign_sra(df):
 def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     annotator = get_annotation_mapper()
     overlap = set(annotator.df.GeneID) & set(df.GeneID)
-    if (len(overlap) / len(df)) > .2:  # human data
-        dfout = df.merge(annotator.df[["GeneID", *annotations]], on="GeneID", how='left')
+    if (len(overlap) / len(df)) > 0.2:  # human data
+        dfout = df.merge(
+            annotator.df[["GeneID", *annotations]], on="GeneID", how="left"
+        )
         return dfout
 
     logger.info(f"Trying to map genes to hs through homologene")
@@ -476,7 +358,7 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     hg_gene_df = pd.DataFrame.from_dict(
         hg_gene_dict, orient="index", columns=["GeneID_hs"]
     )
-    dfout = df.merge(hg_gene_df, left_on="GeneID",  right_index=True, how="left").merge(
+    dfout = df.merge(hg_gene_df, left_on="GeneID", right_index=True, how="left").merge(
         annotator.df[["GeneID", *annotations]].rename(columns=dict(GeneID="GeneID_hs")),
         on="GeneID_hs",
         how="left",
@@ -1385,7 +1267,7 @@ class Data:
             gids &= set(self.geneid_subset)
 
         gids = tuple(gids)
-        self.minval = self._areas.replace(0, np.NAN).stack().dropna().min()
+        self.minval = self._areas.replace(0, np.nan).stack().dropna().min()
         logger.info(f"total values {self._areas.count().sum()}")
         logger.info(f"total zeros {self._zeros.sum().sum()}")
         logger.info(f"min nonzero val: {self.minval:.4g}")
@@ -1610,7 +1492,9 @@ class Data:
 
         # could "facet" this by batch then impute. likely not super critical with tight scale
         # print(data.shape)
-        data = impute_missing(data.replace(0, pd.NA), downshift=0, scale=0.1, make_plot=False).astype(float)
+        data = impute_missing(
+            data.replace(0, pd.NA), downshift=0, scale=0.1, make_plot=False
+        ).astype(float)
         # print(data.shape)
 
         if self.covariate is not None:
@@ -1781,9 +1665,7 @@ class Data:
 
             mat[self.mask] = np.nan
             mat[mat == 0] = np.nan
-            mat = impute_missing(
-                mat, downshift=downshift, scale=scale, make_plot=True
-            )
+            mat = impute_missing(mat, downshift=downshift, scale=scale, make_plot=True)
             # now add back the mask values?
             # - this might be important when batch correction is performed, otherwise should have no effect?
             # mat = mat + mask_values.fillna(0)
@@ -2242,7 +2124,9 @@ class Data:
                 for_export = add_annotations(for_export, self.annotations)
 
             gm = get_gene_mapper()
-            for_export['GeneDescription'] = for_export.apply(lambda x: gm.description.get(x['GeneID'], x['GeneDescription']), axis=1)
+            for_export["GeneDescription"] = for_export.apply(
+                lambda x: gm.description.get(x["GeneID"], x["GeneDescription"]), axis=1
+            )
             for_export = pd.merge(
                 for_export,
                 gm.df[["median_isoform_mass"]],
@@ -2403,7 +2287,7 @@ class Data:
             #     export = export.apply(lambda x: 10**x)
             if not self.impute_missing_values:  # not necessary here
                 export[self.areas == 0] = 0  # fill the zeros back
-                export[self.mask] = np.NaN
+                export[self.mask] = np.nan
             order = export.columns
             if genesymbols:
                 # export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
@@ -2419,7 +2303,7 @@ class Data:
                 # index column is GeneID, add GeneSymbol
                 order = ["GeneSymbol"]
                 order += [x for x in export.columns if x not in order]
-            # add annotations 
+            # add annotations
             annot_mapper = get_annotation_mapper()
 
             if level == "area":
@@ -2429,11 +2313,36 @@ class Data:
                 outname = outname.strip(".tsv")  # gct will be added automatically
                 cmapR = importr("cmapR")
                 # data_obj = ctx.obj["data_obj"]
-                _export = export.reset_index().merge(annot_mapper.df[[x for x in annot_mapper.df if x not in ["GeneSymbol",]]], on='GeneID', how='left')
-                _export.index = _export.GeneID
-                export = _export
-                rdesc = export[list(set(export.columns) - set(self.col_metadata.index))].copy()
-                rdesc['id'] = rdesc.GeneID # 'id' col for cmapR
+                _export = export.reset_index().merge(
+                    annot_mapper.df[
+                        [
+                            x
+                            for x in annot_mapper.df
+                            if x
+                            not in [
+                                "GeneSymbol",
+                            ]
+                        ]
+                    ],
+                    on="GeneID",
+                    how="left",
+                )
+                gene_mapper_df = get_gene_mapper().df
+                # Select only columns that are NOT in rdesc
+                exclude_cols = set(_export.columns)  # Get existing columns
+                filtered_df = gene_mapper_df[
+                    [col for col in gene_mapper_df.columns if col not in exclude_cols]
+                ]
+                _export = _export.merge(filtered_df, on="GeneID", how="left")
+                rdesc = (
+                    _export[list(set(_export.columns) - set(self.col_metadata.index))]
+                    .copy()
+                    .fillna("")
+                )
+                rdesc["id"] = rdesc.GeneID  # 'id' col for cmapR
+                rdesc.index = rdesc.GeneID  # 'id' col for cmapR
+
+                # _export.index = _export.GeneID
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
@@ -2441,15 +2350,16 @@ class Data:
                 r.assign("m", _m)
                 r.assign("rid", _m.index)
                 r.assign(
-                    "rdesc", rdesc
-                    #(
+                    "rdesc",
+                    rdesc,
+                    # (
                     #    export.GeneSymbol
                     #    if "GeneSymbol" in export.columns
                     #    else export.index
-                    #),
+                    # ),
                 )
-                cdesc = self.col_metadata.copy() 
-                cdesc['id'] = cdesc.index
+                cdesc = self.col_metadata.copy()
+                cdesc["id"] = cdesc.index
                 r.assign("cdesc", cdesc)
                 r.assign("cid", self.col_metadata.index)
                 r.assign("outname", outname)
