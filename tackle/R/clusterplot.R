@@ -11,6 +11,22 @@ library(dendsort)
 
 ht_opt$message <- FALSE
 
+# extract_hierarchy <- function(hclust_obj) {
+#   tree_data <- data.frame(
+#     Node = seq_along(hclust_obj$merge[, 1]),
+#     Left = hclust_obj$merge[, 1],   # Left child
+#     Right = hclust_obj$merge[, 2],  # Right child
+#     Height = hclust_obj$height      # Merge height (for cutting reference)
+#   )
+#
+#   # Convert negative numbers to actual labels (original data points)
+#   labels <- hclust_obj$labels
+#   tree_data$Left[tree_data$Left < 0] <- labels[-tree_data$Left[tree_data$Left < 0]]
+#   tree_data$Right[tree_data$Right < 0] <- labels[-tree_data$Right[tree_data$Right < 0]]
+#
+#   return(tree_data)
+# }
+
 myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
   mask <- is.na(value)
 
@@ -34,6 +50,8 @@ myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
   # todo make smaller than min val
   # done
   out <- scale(value)
+
+  # value[is.na(value)] <- 0 if you wanted to put all NA in the middle
 
   # if all NA:
   if (sum(!is.finite(out)) == length(out)) {
@@ -163,10 +181,12 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   if (is.null(z_score)) {
     toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = value, names_from = name)
     ## deal with this later
-    tocluster <- exprs_long %>% pivot_wider(
-      id_cols = c(GeneID, GeneSymbol),
-      values_from = value, names_from = name
-    )
+    tocluster <- exprs_long %>%
+      pivot_wider(
+        id_cols = c(GeneID, GeneSymbol),
+        values_from = value, names_from = name
+      )
+    tocluster[is.na(tocluster)] <- 0
   } else if (!is.null(z_score)) {
     toplot <- exprs_long %>% pivot_wider(id_cols = c(GeneID, GeneSymbol), values_from = zscore, names_from = name)
     tocluster <- exprs_long %>% pivot_wider(
@@ -457,11 +477,11 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     dis <- dist_no_na(X)^2
     # dis <- dist_no_na(X)
     sil <- cluster::silhouette(clusters$cluster, dis)
-    .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
-    # dev.new()
-    pdf(.file, width = 10, height = 20)
-    print(plot(sil, col = "grey"))
-    dev.off()
+    # .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
+    # # dev.new()
+    # pdf(.file, width = 10, height = 20)
+    # print(plot(sil, col = "grey"))
+    # dev.off()
     sil_df <- cbind(toplot$GeneID, toplot$GeneSymbol, sil) %>%
       as.data.frame() %>%
       rename(GeneID = V1, GeneSymbol = V2)
@@ -537,8 +557,11 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
   cluster_rows <- FALSE
-  if (row_cluster == TRUE) {
+  if (row_cluster == TRUE && is.null(discrete_clusters)) {
     cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage)
+  }
+  if (row_cluster == TRUE && !is.null(discrete_clusters)) {
+    cluster_rows <- TRUE
   }
   cluster_cols <- FALSE
   if (col_cluster == TRUE && is.null(column_split)) {
@@ -621,6 +644,22 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       # grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
       grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"), gp = gpar(fontsize = 7))
     })
+  }
+
+
+  # new not well tested
+  # not ready yet
+  # export cluster
+  if (FALSE) {
+    row_dendrogram <- row_dend(ht) %>% as.hclust()
+    row_cluster_info <- data.frame(
+      GeneID = toplot$GeneID,
+      GeneSymbol = toplot$GeneSymbol
+    )
+    for (i in 1:15) {
+      cluster_labels <- cutree(row_dendrogram, k = i)
+      row_cluster_info[paste0("cutree_", i)] <- cluster_labels
+    }
   }
 
 
