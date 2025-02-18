@@ -31,16 +31,17 @@ sort_presets = {
         "dn_query": "log2_FC < 0",
         "reverse_dn": False,
     },
-    "signedlogp": {
-        "sort_func": "signedlogp",  # sort by "signedlogp" column
+    "signedlogP": {
+        #"sort_func": "signedlogP",  # sort by "signedlogp" column
+        "sort_func": lambda df: df["signedlogP"].abs(),
         "ascending": False,         # typically bigger is more significant
-        "up_query": "signedlogp > 0",
-        "dn_query": "signedlogp < 0",
+        "up_query": "signedlogP > 0",
+        "dn_query": "signedlogP < 0",
         "reverse_dn": False,
     },
     "abs_signedlogp": {
         # We can define a callable function for the sort key:
-        "sort_func": lambda df: df["signedlogp"].abs(),
+        "sort_func": lambda df: df["signedlogP"].abs(),
         "ascending": False,
         # If up/down is meaningless here, just set them to None
         "up_query": None,
@@ -187,7 +188,7 @@ def process_file(
 def sort_files(
     volcano_files: list[str],
     X: pd.DataFrame,
-    sort_by: str = "signedlogp",   # default
+    sort_by: str = "signedlogP",   # default
     direction: str = "both",       # default
     topn: int = 50                 # default
 ) -> pd.DataFrame:
@@ -198,6 +199,8 @@ def sort_files(
       - Combines them
       - Returns X filtered by the relevant GeneIDs
     """
+    print(f"Sorting by {sort_by}")
+    print(f"topn: {topn}")
     
     # Normalize to a list
     if isinstance(volcano_files, str):
@@ -221,6 +224,7 @@ def sort_files(
             pass
             # gene_set = final_df.index.astype(str).unique()
         if gene_set is not None and len(gene_set) > 0:
+            #import ipdb; ipdb.set_trace()
             keep_genes = [g for g in gene_set if g in X.index]
             X = X.loc[keep_genes]
     

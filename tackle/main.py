@@ -2140,6 +2140,9 @@ def pca2(
     "--volcano-topn", default=100, show_default=True, help="Top n to plot total"
 )
 @click.option(
+    "--volcano-top-n", default=None, help="Alias for volcano-topn"
+)
+@click.option(
     "--volcano-sortby",
     default="log2_FC",
     type=click.Choice(["log2_FC", "pValue", "pAdj"]),
@@ -2329,6 +2332,7 @@ def cluster2(
     volcano_file,
     volcano_filter_params,
     volcano_topn,
+    volcano_top_n,
     volcano_direction,
     volcano_sortby,
     cluster_file,
@@ -2344,6 +2348,7 @@ def cluster2(
     z_score_fillna,
     add_human_ratios, # does not work
 ):
+    volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
     clusterplot_dispatcher.run(
         ctx,
         add_description,
@@ -2383,7 +2388,6 @@ def cluster2(
         order_by_abundance,
         volcano_file,
         volcano_filter_params,
-        volcano_topn,
         volcano_direction,
         volcano_sortby,
         cluster_file,
@@ -2398,6 +2402,7 @@ def cluster2(
         z_score_by,
         z_score_fillna,
         add_human_ratios,
+        volcano_topn = volcano_topn
     )
 
 

@@ -78,7 +78,6 @@ def run(
     order_by_abundance,
     volcano_file,
     volcano_filter_params,
-    volcano_topn,
     volcano_direction,
     volcano_sortby,
     cluster_file,
@@ -93,8 +92,10 @@ def run(
     z_score_by,
     z_score_fillna,
     add_human_ratios,
+    volcano_topn=50,
 ):
     outname_kws = dict()
+    print(volcano_direction)
 
     outname_kws["rds"] = "l" if row_dend_side == "left" else "r"
     outname_kws["cc"] = "T" if col_cluster else "F"
