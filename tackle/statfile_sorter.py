@@ -25,7 +25,7 @@ sort_presets = {
         "reverse_dn": True,
     },
     "log2_FC": {
-        "sort_func": "log2_FC",  # just sort by the column "log2_FC"
+        "sort_func": lambda df: (df["log2_FC"] * 1/(df["pValue"]+1e-9)),  # just sort by the column "log2_FC"
         "ascending": False,      # bigger FC => more interesting
         "up_query": "log2_FC > 0",
         "dn_query": "log2_FC < 0",

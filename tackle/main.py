@@ -8,18 +8,17 @@ import os
 from pathlib import Path
 import itertools
 
-import gseapy as gp
+# import gseapy as gp
 
-try:
-    import rpy2
-    from rpy2.robjects import r
-    import rpy2.robjects as robjects
-    from rpy2.robjects import pandas2ri
-    from rpy2.robjects.packages import importr
-
-    robjects.pandas2ri.activate()
-except ModuleNotFoundError:
-    print("rpy2 needs to be installed")
+# try:
+#     import rpy2
+#     from rpy2.robjects import r
+#     import rpy2.robjects as robjects
+#     from rpy2.robjects import pandas2ri
+#     from rpy2.robjects.packages import importr
+#     robjects.pandas2ri.activate()
+# except ModuleNotFoundError:
+#     print("rpy2 needs to be installed")
 
 #  import re
 #  import json
@@ -42,27 +41,14 @@ import matplotlib
 #  # from matplotlib import gridspec
 #  import matplotlib.pyplot as plt
 #  from matplotlib.offsetbox import AnchoredText
-import seaborn as sb
 
 #  from seaborn.distributions import _freedman_diaconis_bins
-#  import click
+import click
 
 # try:
 #     from quick import gui_option
 # except ModuleNotFoundError:
 #     pass
-
-rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
-sb.set_context("paper")
-sb.set_style("white", rc)
-
-rc = {
-    "font.family": "sans-serif",
-}
-sb.set_context("notebook")
-sb.set_style("white", rc)
-sb.set_palette("muted")
-sb.set_color_codes()
 
 __version__ = "0.5.01"
 
@@ -89,14 +75,12 @@ GENESET_MAPPING = {
     "go.Molecular.Mm": "m5.go.mf.v2022.1.Mm.entrez.gmt",
 }
 
-from bcmproteomics_ext import ispec
+# from bcmproteomics_ext import ispec
 
-sb.set_context("notebook", font_scale=1.4)
 
 from .scatterplot import scatterplot
 from .clusterplot import clusterplot
 from .metrics import make_metrics
-from .pcaplot import pcaplot
 from .utils import fix_name, _get_logger
 from . import utils
 from .utils import *
@@ -1214,7 +1198,7 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
     to_mask = (data_obj.mask | (data_obj.areas_log == data_obj.areas_log.min())).dropna(
         axis=1
     )
-    X[to_mask] = np.NaN
+    X[to_mask] = np.nan
     # g = scatterplot(X.replace(0, np.NaN), stat=stat,
     g = scatterplot(
         X,
@@ -1711,6 +1695,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
         genes = parse_gid_file(genefile)
 
     # # fig, ax = pcaplot(data_obj.areas_log_shifted, data_obj.config, col_data = data_obj.col_metadata)
+    from .pcaplot import pcaplot
 
     figs = pcaplot(
         data_obj.areas_log_shifted,
@@ -1789,6 +1774,12 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     help="What meta entry to mark PCA",
 )
 @click.option(
+    "--fillna",
+    type=click.Choice(["min", "avg"]),
+    default="min",
+    show_default=True,
+)
+@click.option(
     "--figsize",
     nargs=2,
     type=float,
@@ -1819,10 +1810,17 @@ def pca2(
     max_pc,
     color,
     marker,
+    fillna,
     figsize,
     genefile,
 ):
     outname_kws = dict()
+
+    import seaborn as sb
+    sb.set_palette("muted")
+    sb.set_color_codes()
+    sb.set_context("notebook", font_scale=1.4)
+
 
     # try:
     #     import rpy2.robjects as robjects
@@ -1850,7 +1848,7 @@ def pca2(
 
     # dfm = df.melt(id_vars=['GeneID', 'GeneSymbol'])
     dfm = (
-        X.fillna(0)
+        X #.fillna(0)
         .reset_index()
         .melt(id_vars=["GeneID"])
         .merge(col_meta, left_on="variable", right_index=True)
@@ -1875,6 +1873,7 @@ def pca2(
         center=center,
         scale=scale,
         norm_by=normalize_by,
+        fillna=fillna,
         # outpath=data_obj.outpath,
         outpath=os.path.join(data_obj.outpath, "pca"),
         colby=color,
@@ -1883,6 +1882,8 @@ def pca2(
     )
     # ======================================
 
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
     robjects.pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "pcaplot.R")
@@ -1918,17 +1919,19 @@ def pca2(
         color = "recno"
 
     if color:
+        color_values = col_meta[color].unique()
+        color_values.sort()
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
             mapping = data_obj.metadata_colors[color]
             # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
-            keys = col_meta[color].unique()
+            keys = color_values
             mapping = {k: mapping[k] for k in keys}
             color_list = robjects.vectors.ListVector(mapping)
         else:
             ncolors = col_meta[color].nunique()
             cmap = sb.color_palette(palette="bright", n_colors=ncolors)
             color_iter = map(mpl.colors.rgb2hex, cmap)
-            themapping = {x: c for x, c in zip(col_meta[color].unique(), color_iter)}
+            themapping = {x: c for x, c in zip(color_values, color_iter)}
             # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
             color_list = robjects.vectors.ListVector(themapping)
 
@@ -1958,6 +1961,7 @@ def pca2(
         scale=scale,
         normalize_by=normalize_by or robjects.NULL,
         label=annotate,
+        fillna=fillna or "min",
         showframe=frame,
         max_pc=max_pc,
         color_list=color_list,
@@ -1988,6 +1992,7 @@ def pca2(
             "PeptideCount_S_u2g",
             "PeptideCount_u2g",
             "SRA",
+            "area",
         ]
     ),
     default=None,
@@ -2034,6 +2039,8 @@ def pca2(
 @click.option("--color-low", default="blue", show_default=True)
 @click.option("--color-mid", default="white", show_default=True)
 @click.option("--color-high", default="red", show_default=True)
+@click.option("--figwidth", nargs=1, type=float, default=None, show_default=True)
+@click.option("--figheight", nargs=1, type=float, default=None, show_default=True)
 @click.option(
     "--figsize",
     nargs=2,
@@ -2139,9 +2146,7 @@ def pca2(
 @click.option(
     "--volcano-topn", default=100, show_default=True, help="Top n to plot total"
 )
-@click.option(
-    "--volcano-top-n", default=None, help="Alias for volcano-topn"
-)
+@click.option("--volcano-top-n", default=None, help="Alias for volcano-topn")
 @click.option(
     "--volcano-sortby",
     default="log2_FC",
@@ -2285,12 +2290,21 @@ when `auto` is set for `--nclusters`""",
     help="""Whether or not to show missing values on the cluster plot and missing values""",
 )
 @click.option(
+    "--cluster-fillna",
+    type=click.Choice(["min", "avg"]),
+    default="min",
+    show_default=True,
+)
+@click.option(
     "--z-score", type=click.Choice(["None", "0", "1"]), default="0", show_default=True
 )
 @click.option("--z-score-by", type=str, default=None, show_default=True)
 @click.pass_context
 @click.option(
-    "--z-score-fillna/--z-score-nofillna", is_flag=True, show_default=True, default=True,
+    "--z-score-fillna/--z-score-nofillna",
+    is_flag=True,
+    show_default=True,
+    default=True,
 )
 def cluster2(
     ctx,
@@ -2306,6 +2320,8 @@ def cluster2(
     row_cluster,
     cluster_row_slices,
     cluster_col_slices,
+    figwidth,
+    figheight,
     figsize,
     force_plot_genes,
     genefile,
@@ -2343,10 +2359,11 @@ def cluster2(
     show_metadata,
     standard_scale,
     show_missing_values,
+    cluster_fillna,
     z_score,
     z_score_by,
     z_score_fillna,
-    add_human_ratios, # does not work
+    add_human_ratios,  # does not work
 ):
     volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
     clusterplot_dispatcher.run(
@@ -2363,6 +2380,8 @@ def cluster2(
         row_cluster,
         cluster_row_slices,
         cluster_col_slices,
+        figwidth,
+        figheight,
         figsize,
         force_plot_genes,
         genefile,
@@ -2398,11 +2417,12 @@ def cluster2(
         show_metadata,
         standard_scale,
         show_missing_values,
+        cluster_fillna,
         z_score,
         z_score_by,
         z_score_fillna,
         add_human_ratios,
-        volcano_topn = volcano_topn
+        volcano_topn=volcano_topn,
     )
 
 
@@ -3352,7 +3372,7 @@ class Float_or_Bool(click.ParamType):
 )
 @click.option(
     "--impute-missing-values / --no-impute-missing-values",
-    default=False,
+    default=True,
     show_default=True,
     is_flag=True,
 )
@@ -3702,6 +3722,22 @@ def gsea(
     """
     Run GSEA on specified groups
     """
+
+    import seaborn as sb
+    rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
+    sb.set_context("paper")
+    sb.set_style("white", rc)
+
+    rc = {
+        "font.family": "sans-serif",
+    }
+    sb.set_context("notebook")
+    sb.set_style("white", rc)
+    sb.set_palette("muted")
+    sb.set_color_codes()
+
+    sb.set_context("notebook", font_scale=1.4)
+
 
     gsea_jar = os.path.join(
         os.path.split(os.path.abspath(__file__))[0], "GSEA", "gsea-3.0.jar"
@@ -4723,6 +4759,23 @@ def ssGSEA(
     """
     Run ssGSEA with specified geneset
     """
+
+    import seaborn as sb
+    rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
+    sb.set_context("paper")
+    sb.set_style("white", rc)
+
+    rc = {
+        "font.family": "sans-serif",
+    }
+    sb.set_context("notebook")
+    sb.set_style("white", rc)
+    sb.set_palette("muted")
+    sb.set_color_codes()
+
+    sb.set_context("notebook", font_scale=1.4)
+
+
     from .ssGSEA import ssGSEA
 
     data_obj = ctx.obj["data_obj"]
@@ -4880,6 +4933,22 @@ def box(
     xtickrotation,
     xticksize,
 ):
+
+    import seaborn as sb
+    rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
+    sb.set_context("paper")
+    sb.set_style("white", rc)
+
+    rc = {
+        "font.family": "sans-serif",
+    }
+    sb.set_context("notebook")
+    sb.set_style("white", rc)
+    sb.set_palette("muted")
+    sb.set_color_codes()
+
+    sb.set_context("notebook", font_scale=1.4)
+
     if group is None:
         raise ValueError("Must specify group")
     data_obj = ctx.obj["data_obj"]
@@ -4911,7 +4980,7 @@ def box(
 
     data = data_obj.areas_log_shifted.copy()
     data[data_obj.areas == 0] = 0  # fill the zeros back
-    data[data_obj.mask] = np.NaN
+    data[data_obj.mask] = np.nan
 
     try:
         from rpy2.robjects import r
@@ -5192,6 +5261,22 @@ def bar(
     xtickrotation,
     xticksize,
 ):
+
+    import seaborn as sb
+    rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
+    sb.set_context("paper")
+    sb.set_style("white", rc)
+
+    rc = {
+        "font.family": "sans-serif",
+    }
+    sb.set_context("notebook")
+    sb.set_style("white", rc)
+    sb.set_palette("muted")
+    sb.set_color_codes()
+
+    sb.set_context("notebook", font_scale=1.4)
+
     log = not linear
 
     if average == True and group is None:
@@ -5221,7 +5306,7 @@ def bar(
 
     data = data_obj.areas_log_shifted.copy()
     data[data_obj.areas == 0] = 0  # fill the zeros back
-    data[data_obj.mask] = np.NaN
+    data[data_obj.mask] = np.nan
     data.index = data.index.astype(str)
 
     logger.info(f"batch applied is set to {data_obj.batch_applied}")
@@ -5416,7 +5501,7 @@ def genecorr(
 
     data = data_obj.areas_log_shifted.copy()
     data[data_obj.areas == 0] = 0  # fill the zeros back
-    data[data_obj.mask] = np.NaN
+    data[data_obj.mask] = np.nan
     data.index = data.index.astype(str)
 
     for g in gene:

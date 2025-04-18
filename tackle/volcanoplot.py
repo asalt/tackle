@@ -14,16 +14,15 @@ from .utils import get_outname, parse_gid_file, fix_name
 # from .containers import GeneMapper
 
 
-try:
-    from rpy2.robjects import r
-    import rpy2.robjects as robjects
-    from rpy2.robjects import pandas2ri
-    from rpy2.robjects.packages import importr
-
-    _viaR = True
-except ModuleNotFoundError:
-    _viaR = False
-    print("Must install rpy2")
+# try:
+#     from rpy2.robjects import r
+#     import rpy2.robjects as robjects
+#     from rpy2.robjects import pandas2ri
+#     from rpy2.robjects.packages import importr
+#     _viaR = True
+# except ModuleNotFoundError:
+#     _viaR = False
+#     print("Must install rpy2")
 
 
 def volcanoplot(
@@ -59,6 +58,12 @@ def volcanoplot(
     global_ymax=None,
 ):
     data_obj = ctx.obj["data_obj"]
+
+
+    from rpy2.robjects import r
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
 
     # gm = GeneMapper()
     gm = get_gene_mapper()
@@ -160,12 +165,17 @@ def volcanoplot(
     for comparison, df in results.items():  # results contains dataf
         # df already contains the expression data by default now, as returned by the data_obj stat running method
 
+        _comparison_name = None
+        _comparison = comparison
+        if "=" in _comparison:
+            _comparison_name, _comparison = _comparison.split("=", maxsplit=1)
+
         # too nested
         # group0, group1 establish
-        groups = comparison.split(" - ")
+        groups = _comparison.split(" - ")
         if len(groups) == 2:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
-            group1, group0 = [_clean(x) for x in comparison.split(" - ")]
+            group1, group0 = [_clean(x) for x in _comparison.split(" - ")]
             # print(group0, group1)
             group0_fix, group1_fix = (
                 fix_group_name(group0, meta.columns),
@@ -178,7 +188,7 @@ def volcanoplot(
             # pass
             # group1, group0 = [x.strip() for x in comparison.split("-")]
             # import ipdb; ipdb.set_trace()
-            group1, group0 = [x.strip() for x in comparison.split(" - ")]
+            group1, group0 = [x.strip() for x in _comparison.split(" - ")]
             group0_fix, group1_fix = (
                 fix_group_name(group0, meta.columns),
                 fix_group_name(group1, meta.columns),
@@ -200,7 +210,7 @@ def volcanoplot(
 
         df["signedlogP"] = df.apply(
             lambda x: -np.log10(x["pValue"]) * (1 if x["log2_FC"] > 0 else -1), axis=1
-        )
+        ).fillna(0)
 
         # # df['GeneSymbol'] = df.index.map(lambda x: data_obj.gid_symbol.get(x, '?'))
         # df["GeneSymbol"] = df.index.map(
@@ -230,9 +240,13 @@ def volcanoplot(
 
         # impute_missing_values = (impute_missing_values,)
         # fill_na_zero = (fill_na_zero,)
+        if _comparison_name is None:
+            _groupname = "{}_vs_{}".format(group0_fix, group1_fix)
+        else:
+            _groupname = _comparison_name
 
         outname = get_outname(
-            "vplt",
+            "volcano",
             name=data_obj.outpath_name,
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
@@ -243,38 +257,26 @@ def volcanoplot(
             normtype=data_obj.normtype,
             imv="T" if impute_missing_values else "F",
             fna="T" if fill_na_zero else "F",
-            group="{}_vs_{}".format(fix_name(group0_fix), fix_name(group1_fix)),
+            group=_groupname.replace(":", "_"),
             outpath=os.path.join(data_obj.outpath, "volcano"),
             **_xtra,
         )
-
-        # slicepoint = 170
-        # space = min(10, 170 + len(outname))
-        # if len(outname) > 255:
-        #     outname = outname.replace("timepoint", "T")
-        #     outname = outname.replace("time", "T")
-        #     # outname = outname.replace('time', 'T')
-        # while len(outname) > 255:
-        #     outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
-        #     slicepoint += 20
-        #     if slicepoint > 255:
-        #         break  # file name too long
 
         slicepoint = 170
         space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
         if len(outname) > 255:
             outname = outname.replace("timepoint", "T")
             outname = outname.replace("time", "T")
+            outname = outname.replace("genotype", "geno")
 
         while len(outname) > 255:
             # Ensure you're slicing within the bounds of the string
             if slicepoint + space >= len(outname):
                 space = len(outname) - slicepoint - 1  # Avoid out-of-bounds slicing
 
-            outname = outname[:slicepoint] + ".." + outname[slicepoint + space:]
+            outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
             slicepoint += 20
             space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
-      
 
         out = outname + ".tsv"
         print("Saving", out, "...", end="", flush=True)
@@ -295,7 +297,7 @@ def volcanoplot(
                 print(
                     "Error trying to subselect data for export. Try specifying group if you have not."
                 )
-                export_data = export_data.join(data_obj.areas_log_shifted  / np.log10(2) )
+                export_data = export_data.join(data_obj.areas_log_shifted / np.log10(2))
 
         export_cols = [x for x in export_data.columns if x not in ("highlight",)]
         export_data[export_cols].to_csv(out, sep="\t")

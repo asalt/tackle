@@ -12,8 +12,6 @@ from seaborn import heatmap
 import seaborn as sb
 from six import string_types
 from typing import Dict, Type, Any
-import rpy2
-from rpy2.rinterface_lib.embedded import RRuntimeError
 
 # import sys
 import os
@@ -41,21 +39,20 @@ try:
     ModuleNotFoundError
 except:
     ModuleNotFoundError = type("ModuleNotFoundError", (Exception,), {})
-try:
-    from rpy2.rinterface import RRuntimeError
-except Exception as e:
-    RRuntimeError = type("RRuntimeError", (Exception,), {})
-try:
-    from rpy2 import robjects
-    from rpy2.robjects import r
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects import pandas2ri
-
-    sva = importr("sva")
-except ModuleNotFoundError as e:
-    print("Failure in rpy2 import and load", e, sep="\n")
-except RRuntimeError as e:
-    print("sva is not installed", e, sep="\n")
+# try:
+#     from rpy2.rinterface import RRuntimeError
+# except Exception as e:
+#     RRuntimeError = type("RRuntimeError", (Exception,), {})
+# try:
+#     from rpy2 import robjects
+#     # from rpy2.robjects import r
+#     from rpy2.robjects.packages import importr
+#     from rpy2.robjects import pandas2ri
+#     sva = importr("sva")
+# except ModuleNotFoundError as e:
+#     print("Failure in rpy2 import and load", e, sep="\n")
+# except RRuntimeError as e:
+#     print("sva is not installed", e, sep="\n")
 
 from .constants import *
 from .logger import get_logger
@@ -744,9 +741,11 @@ class Data:
     @staticmethod
     @lru_cache()
     def get_e2g(recno, runno, searchno, data_dir, only_local=False):
+        from bcmproteomics_ext import ispec
         e2g = ispec.E2G(
             recno, runno, searchno, data_dir=data_dir, only_local=only_local
         )
+        # import ipdb; ipdb.set_trace()
         e2g.df["GeneID"] = e2g.df["GeneID"].apply(maybe_int)
         e2g.df.index = e2g.df.GeneID
         standardize_meta(e2g.df)
@@ -827,6 +826,7 @@ class Data:
                 df = df.loc[_tokeep]
 
             if df.GeneID.value_counts().max() > 1:
+                # import ipdb; ipdb.set_trace()
                 warn("droping duplicate geneids, figure out why there are dups")
                 df = df.drop_duplicates("GeneID")
             # QUICK FIX
@@ -928,7 +928,6 @@ class Data:
                     record, exp, exps, name, self.funcats, self.geneid_subset
                 )
 
-
             dummy_filter = lambda x, *args, **kwargs: x
             taxon_filter = TAXON_MAPPER.get(self.taxon)
             if taxon_filter is None:
@@ -937,7 +936,6 @@ class Data:
 
                 def filter_func(x):
                     return x[x["TaxonID"] == taxon_filter]
-
 
             df = genefilter(
                 df,
@@ -1025,7 +1023,6 @@ class Data:
                 and not self.metrics_unnormed_area
             ):
                 self._update_metrics(df, name, area_column="area")
-
 
             # unique peptide filter
             if "PeptideCount_u2g" not in df:
@@ -1344,7 +1341,7 @@ class Data:
             new_cols = list()
             for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED":
                 frame = self.df_filtered.loc[idx[:, col], :]
-                if self.impute_missing_values:
+                if self.impute_missing_values and False:  # disable this
                     frame_log = self.impute_missing(frame).reset_index()
                 else:
                     minval = frame.replace(0, np.NAN).stack().dropna().min()
@@ -1493,12 +1490,13 @@ class Data:
         except AttributeError:
             pd.NA = "NA"  # bugfix for pandas < 1.0
         r.assign("pheno", pheno)
+        batch = pheno[self.batch]
 
-        # could "facet" this by batch then impute. likely not super critical with tight scale
-        # print(data.shape)
-        data = impute_missing(
-            data.replace(0, pd.NA), downshift=0, scale=0.1, make_plot=False
-        ).astype(float)
+        for item, grp in pheno.groupby(batch):
+            cols = grp.index
+            data.loc[:, cols] = impute_missing(
+                    data.loc[:, cols].replace(0, pd.NA), downshift=0, scale=0.1, make_plot=False
+            ).astype(float)
         # print(data.shape)
 
         if self.covariate is not None:
@@ -1510,7 +1508,6 @@ class Data:
             mod = r["mod"]
             self.batch_applied = self.batch + "_noCov"
         # r.assign('batch', 'pheno${}'.format(self.batch))
-        batch = pheno[self.batch]
         # res = sva.ComBat(dat=self._areas_log.fillna(0), batch=batch,
         #                  mod=mod, par_prior=True, mean_only=False)
         # prior_plot, plot_prior = False, False
@@ -1579,11 +1576,16 @@ class Data:
         df.columns = data.columns
         _minval = df[~self._mask].min().min()
         logger.info(f"minval after refnorm: {_minval}")
-        if self.fill_na_zero:
-            # this works as is (df is a copy of original data)
-            # df.loc[mask] does not work
-            df[self._mask] = _minval + (_minval * 0.1)
 
+        df[self._mask] = pd.NA
+        # if self.fill_na_zero:
+        #     # this works as is (df is a copy of original data)
+        #     # df.loc[mask] does not work
+        #     df[self._mask] = _minval + (_minval * 0.1)
+        # elif not self.fill_na_zero:
+        #     df[self._mask] = pd.NA
+
+        # import ipdb; ipdb.set_trace()
         # ===============================================================================
         # reassign mask - ComBat can impute some NA values
         # : resolve this for normed data
@@ -1605,7 +1607,7 @@ class Data:
 
         # self._areas_log = df.dropna(how='any')
 
-        df = df.dropna(how="any")
+        # df = df.dropna(how="any")
         # self._areas_log.columns = self._areas_log.columns  # r changes certain characters in column names
         # self._areas_log.columns = self._areas.columns  # r changes certain characters in column names
         assert len(df.columns) == len(data.columns)
@@ -1634,8 +1636,12 @@ class Data:
         Should return a dictionary of form:
         {comparison: DataFrame of results}
         """
+        from rpy2.robjects import pandas2ri
+        from rpy2 import robjects 
         pandas2ri.activate()
-        r_source = r["source"]
+
+        pandas2ri.activate()
+        r_source = robjects.r["source"]
         r_file = os.path.join(
             os.path.split(os.path.abspath(__file__))[0], "R", "pvalue_cov.R"
         )
@@ -1678,7 +1684,8 @@ class Data:
 
         pandas2ri.activate()
 
-        r.assign("edata", mat)
+        robjects.r.assign("edata", mat)
+        r = robjects.r
         variables = robjects.r("colnames(edata)")
         # fix each individual column of `mod`
         fixed_vars = [
@@ -1731,6 +1738,7 @@ class Data:
         if not self.pairs and not self.limma:  # standard t test
             pvalues = r("pvalue.batch(as.matrix(edata), mod, mod0, ncov)")
         elif not self.pairs and self.limma:
+            from rpy2.robjects.packages import importr
             importr("limma")
             # r('suppressMessages(library(dplyr))')
 
@@ -1750,6 +1758,8 @@ class Data:
                 .replace(" ", "_")
                 .replace("-", "_")
                 .replace("+", "_")
+                .replace(r"/", "_")
+                #.replace(r"\\", "_")
                 .replace("?", "qmk")
                 for x in variables
             ]
@@ -2351,6 +2361,7 @@ class Data:
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
                 pandas2ri.activate()
+                r = robjects.r
                 r.assign("m", _m)
                 r.assign("rid", _m.index)
                 r.assign(

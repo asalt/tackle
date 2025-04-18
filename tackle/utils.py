@@ -25,7 +25,6 @@ from seaborn.distributions import _freedman_diaconis_bins as seaborn_bin_calc
 import click
 
 
-from bcmproteomics_ext import ispec
 
 # sb.set_context('notebook', font_scale=1.8)
 
@@ -1147,7 +1146,7 @@ def genefilter(
     if geneid_subset:  # do this at the end
         df = df.loc[set(df.index) & set(geneid_subset)]
     if ignored_geneid_subset:
-        tokeep = set(df.index) - set(ignored_geneid_subset)
+        tokeep = list(set(df.index) - set(ignored_geneid_subset))
         df = df.loc[tokeep]
     # valid_ixs = (x for x in df.index if not np.isnan(x))
     # if fix_histones:
