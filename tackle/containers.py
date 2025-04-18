@@ -1640,7 +1640,6 @@ class Data:
         from rpy2 import robjects 
         pandas2ri.activate()
 
-        pandas2ri.activate()
         r_source = robjects.r["source"]
         r_file = os.path.join(
             os.path.split(os.path.abspath(__file__))[0], "R", "pvalue_cov.R"
@@ -2324,6 +2323,7 @@ class Data:
                 export[order].to_csv(outname, sep="\t")
 
             if level == "gct":
+                from rpy2.robjects.packages import importr
                 outname = outname.strip(".tsv")  # gct will be added automatically
                 cmapR = importr("cmapR")
                 # data_obj = ctx.obj["data_obj"]
@@ -2360,6 +2360,8 @@ class Data:
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
+                from rpy2 import robjects 
+                from rpy2.robjects import pandas2ri
                 pandas2ri.activate()
                 r = robjects.r
                 r.assign("m", _m)
