@@ -6,10 +6,11 @@ suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 suppressPackageStartupMessages(library(stringr))
+# options(error = recover)
 library(cluster)
 library(dendsort)
 
-ht_opt$message <- FALSE
+ht_opt$message <- FALSE 
 
 # extract_hierarchy <- function(hclust_obj) {
 #   tree_data <- data.frame(
@@ -73,12 +74,23 @@ myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
 dist_no_na <- function(mat) {
   .min <- min(mat, na.rm = TRUE)
   mat[is.na(mat)] <- .min - (.min * .1)
+  #mat[is.na(mat)] <- 0
   edist <- dist(mat)
   return(edist)
 }
 
-hclust_dendsort <- function(mat, method = "complete", ...) {
-  dist_no_na(mat) %>%
+dist_no_na_avg <- function(mat) {
+  mat[is.na(mat)] <- 0
+  # row_means <- rowMeans(mat, na.rm = TRUE)  # Compute mean for each row, ignoring NA
+  # # Replace NA values with the corresponding row mean
+  # for (i in seq_len(nrow(mat))) {
+  #   mat[i, is.na(mat[i, ])] <- row_means[i]
+  # }
+  edist <- dist(mat)  # Compute Euclidean distance
+  return(edist)
+}
+hclust_dendsort <- function(mat, method = "complete", dist_no_na_func=dist_no_na, ...) {
+  dist_no_na_func(mat) %>%
     hclust(method = method, ...) %>%
     dendsort(isReverse = T, type = "min") %>%
     as.dendrogram()
@@ -107,6 +119,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      show_gene_symbols = FALSE,
                      z_score = NULL, z_score_by = NULL,
                      z_score_fillna = TRUE,
+                     cluster_fillna = "min",
                      standard_scale = NULL,
                      row_dend_side = "right",
                      row_names_side = "left",
@@ -272,7 +285,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # col_annot_df <- NULL
     # col_data_args[["annotation_legend_param"]][["at"]][["chr"]] <- as.matrix(colnames(col_data))
     # if (!is.null(col_data) && !is.null(metadata_colors)) {
-    #   browser()
 
     #   # col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
     #   col_annot <- columnAnnotation(
@@ -309,7 +321,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
             if (entry_name %in% names(col_data_args)) {
               col_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
             }
-            ## if (entry_name == 'IDG') browser()
             if (entry_name %in% names(row_data_args)) { # cannot put color mappings that do not exist
               if (key %in% row_data_args[[entry_name]]) {
                 row_data_args[["col"]][[entry_name]][[key]] <- final_val[1]
@@ -338,7 +349,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   #   col_data_args[["annotation_legend_param"]][[thename]] <- list(fontsize = 8)
   # }
   .missing_color_definition <- setdiff(col_data_simple_annot_names, col_data_color_names)
-  # browser()
 
   # .PROTECTED_ENTRIES <- c("label", "replicate")
   .PROTECTED_ENTRIES <- c()
@@ -348,7 +358,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     }
     .values <- col_data_args[[.entry]]
     if (typeof(.values) == "character") {
-      # browser()
       next
     }
     .minval <- min(.values, na.rm = T) * 0.975
@@ -359,7 +368,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     )
   }
   # missing_in_col_
-  # browser()
 
   # l_simple_anno <- sapply(col_data_args, is.atomic)
 
@@ -532,12 +540,15 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # }
   if (!is.null(standard_scale) && standard_scale == TRUE) .title <- paste0(.title, " (standardized)")
 
-  .legend_width <- if (is.null(z_score_by)) unit(2.8, "cm") else unit(4.2, "cm")
+  .legend_width <- if (is.null(z_score_by)) unit(3.0, "cm") else unit(4.4, "cm")
   heatmap_legend_param <- list(
     title = .title,
     direction = "horizontal",
-    just = "bottom",
-    legend_width = .legend_width
+    #just = "bottom",
+    title_position = "topcenter",
+    legend_width = .legend_width,
+    gap = unit(2, "mm"),
+    labels_gp = gpar(fontsize=8)
   )
   # legend_width = ifelse(is.null(z_score_by), unit(1.5, "cm"), unit(4, "cm"))
   # print(heatmap_legend_param)
@@ -558,14 +569,18 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
   cluster_rows <- FALSE
   if (row_cluster == TRUE && is.null(discrete_clusters)) {
-    cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage)
+    cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage,
+        ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg)
+    )
   }
   if (row_cluster == TRUE && !is.null(discrete_clusters)) {
     cluster_rows <- TRUE
   }
   cluster_cols <- FALSE
   if (col_cluster == TRUE && is.null(column_split)) {
-    cluster_cols <- hclust_dendsort(t(toplot[col_data$name]), method = linkage)
+    cluster_cols <- hclust_dendsort(t(toplot[col_data$name]), method = linkage,
+        ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg)
+    )
   } else if (col_cluster == TRUE && !is.null(column_split)) {
     cluster_cols <- TRUE
   }
@@ -578,7 +593,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ht_width <- NULL
     ht_height <- NULL
   }
-
 
   ht <- Heatmap(.mat,
     name = "mat",
@@ -605,8 +619,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     show_row_names = show_gene_symbols,
     clustering_method_rows = linkage,
     clustering_method_columns = linkage,
-    clustering_distance_rows = dist_no_na,
-    clustering_distance_columns = dist_no_na,
+    clustering_distance_rows = ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
+    clustering_distance_columns = ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
     # column_dend_reorder = TRUE,
     row_labels = toplot$GeneSymbol,
     row_names_gp = gpar(fontsize = gene_symbol_fontsize, fontface = "bold"),
@@ -632,17 +646,17 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 80),
     column_title_gp = gpar(fontsize = 13, fontface = "bold", just = "left"),
     heatmap_legend_side = "bottom",
-    padding = unit(c(10, 8, 2, 8), "mm")
+    padding = unit(c(10, 8, 2, 8), "mm") # top, right, bottom, left?
   ) # top right bottom left
   ht_row_order <- row_order(ht)
 
 
   if (!is.null(annot_mat)) {
-    xunit <- ifelse(row_cluster == TRUE, 1, 2.4)
+    xunit <- ifelse(row_cluster == TRUE, -1.4, 3.6)
     # print(xunit)
     decorate_heatmap_body("mat", {
       # grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"))
-      grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-5, "mm"), gp = gpar(fontsize = 7))
+      grid.text(paste("Annotation:", the_annotation), unit(xunit, "cm"), unit(-2, "mm"), gp = gpar(fontsize = 7))
     })
   }
 
