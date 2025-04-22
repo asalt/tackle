@@ -2149,7 +2149,7 @@ def pca2(
 @click.option("--volcano-top-n", default=None, help="Alias for volcano-topn")
 @click.option(
     "--volcano-sortby",
-    default="log2_FC",
+    default="pValue",
     type=click.Choice(["log2_FC", "pValue", "pAdj"]),
     show_default=True,
 )
@@ -3415,7 +3415,7 @@ class Float_or_Bool(click.ParamType):
 @click.option(
     "--fill-na-zero / --no-fill-na-zero",
     show_default=True,
-    default=True,
+    default=False,
     is_flag=True,
     help="""
 """,
