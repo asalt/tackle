@@ -8,16 +8,8 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-import rpy2
-from rpy2.robjects import r
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.packages import importr
-
-grdevices = importr("grDevices")
 
 from . import utils
-from . import grdevice_helper
 from . import containers
 from . import statfile_sorter
 from .utils import (
@@ -53,6 +45,8 @@ def run(
     row_cluster,
     cluster_row_slices,
     cluster_col_slices,
+    figwidth,
+    figheight,
     figsize,
     force_plot_genes,
     genefile,
@@ -88,18 +82,30 @@ def run(
     show_metadata,
     standard_scale,
     show_missing_values,
+    cluster_fillna,
     z_score,
     z_score_by,
     z_score_fillna,
     add_human_ratios,
     volcano_topn=50,
 ):
+
+    from . import grdevice_helper
+    import rpy2
+    from rpy2.robjects import r
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
+
+    grdevices = importr("grDevices")
+
     outname_kws = dict()
     print(volcano_direction)
 
-    outname_kws["rds"] = "l" if row_dend_side == "left" else "r"
-    outname_kws["cc"] = "T" if col_cluster else "F"
-    outname_kws["rc"] = "T" if row_cluster else "F"
+    # hacky sloppy name assignment
+    outname_kws["rds" + "l" if row_dend_side == "left" else "rds" + "r"] = ""
+    outname_kws["rc"+ "T" if row_cluster else "rc" + "F"] = ""
+    outname_kws["cc" + "T" if col_cluster else "cc" + "F"] = ""
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
@@ -131,15 +137,17 @@ def run(
         raise NotImplementedError("Not Implemented !")
 
     if not figsize:  # returns empty tuple if not specified
-        figsize = None
-
+        figsize = (figwidth, figheight)
     missing_values = "masked" if show_missing_values else "unmasked"
+    if cluster_fillna == "avg": missing_values += "_avg"
+
 
     X = data_obj.areas_log
     X.index = X.index.astype(str)
     if show_missing_values:
         _mask = data_obj.mask
         X[_mask] = np.nan
+
     # filter if sample include is mentioned
     if sample_reference is not None:
         # we take a subset of the data
@@ -170,7 +178,9 @@ def run(
     # for f in volcano_file:
     if volcano_file is not None:
         X = statfile_sorter.sort_files(
-            [volcano_file], X, direction=volcano_direction, topn=volcano_topn
+            [volcano_file], X,
+            sort_by=volcano_sortby,
+            direction=volcano_direction, topn=volcano_topn,
         )
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
@@ -185,8 +195,9 @@ def run(
         else:
             name_group = name_group.group(1)
         logger.info(f"volcanofile name group is {name_group}")
-        outname_kws["volcano_file"] = name_group
-        outname_kws["direction"] = volcano_direction
+        outname_kws["vfile"] = name_group.replace(":", "_").replace("+", "_").replace("?", "qmk").replace("|","or").replace(r"/", "_").replace(r"\\", "_")
+        outname_kws["by"] = volcano_sortby
+        outname_kws["dir"] = volcano_direction
         column_title = name_group
         # _df = pd.read_table(volcano_file)
         # if "pValue" not in _df and "p-value" in _df:
@@ -233,7 +244,6 @@ def run(
     #     # X = X.loc[set(X.index) & set(genes)]
     #     X = X.loc[_tokeep]
 
-    # import ipdb; ipdb.set_trace()
     # ================================ end of volcano file parsing =================================
     if cluster_file[0] is not None:
         if cluster_file[0].endswith("xlsx"):
@@ -266,7 +276,7 @@ def run(
 
     gids_to_annotate = None
     if gene_annot:
-        gids_to_annotate = parse_gid_file(gene_annot)
+        gids_to_annotate = parse_gid_file(gene_annot) # info
 
     if linear:
         X = 10**X
@@ -309,12 +319,13 @@ def run(
                 )
             )
         df_.columns = ["GeneID", title_]
+        df_[title_] = df_[title_].fillna("")
         df_ = df_.set_index("GeneID")
+        # checking for uniqueness of the index would help avoid crashes
         row_annot_track.append(df_)
 
     if highlight_geneids_table:
         df_ = parse_gid_file(highlight_geneids_table)
-        # import ipdb; ipdb.set_trace()
         # row_annot_track.append(df_)
     # #xx = containers.add_annotations(X)
     # this needs rewriting
@@ -329,14 +340,18 @@ def run(
 
     row_annot_df = None
     if row_annot_track:
-        row_annot_df = pd.concat(row_annot_track, axis=1)
+        if len(row_annot_track) > 1: # more than 1 track to add
+            row_annot_df = pd.concat(row_annot_track, axis=1)
+        else: # if length one it duplicate the whole thing?
+            row_annot_df = row_annot_track[0]
         # make a dataframe that spans all genes about to be plotted
         ixs_ = X.GeneID.astype(str)
         missing_ = list(set(ixs_) - set(row_annot_df.index))
         intersect_ixs_ = list(set(ixs_) & set(row_annot_df.index))
         missing_df_ = pd.DataFrame(index=missing_, columns=row_annot_df.columns)
+        row_annot_df = row_annot_df.loc[intersect_ixs_]
         row_annot_df = pd.concat(
-            [row_annot_df.loc[intersect_ixs_], missing_df_], axis=0
+            [row_annot_df, missing_df_], axis=0
         ).fillna("")
 
     # data_obj.standard_scale    = data_obj.clean_input(standard_scale)
@@ -392,9 +407,9 @@ def run(
                 break
     if cut_by is not None:
         if hasattr(cut_by, "__iter__"):
-            outname_kws["cut_by"] = str.join("_", cut_by)
+            outname_kws["cut"] = str.join("_", cut_by)
         else:
-            outname_kws["cut_by"] = cut_by
+            outname_kws["cut"] = cut_by
     elif cut_by is None:
         cut_by = robjects.NULL
     ## ============================================================
@@ -437,18 +452,24 @@ def run(
 
     #
     # data_obj.do_cluster()
+    _d = {
+           "fna"+"T" if z_score_fillna else "F": "",
+           "mval"+"T" if missing_values else "F": "",
+           "l"+linkage:""
+           }
     outname_func = partial(
         get_outname,
         # name=data_obj.outpath_name,
-        taxon=data_obj.taxon,
+        tx=data_obj.taxon,
         non_zeros=data_obj.non_zeros,
         batch=data_obj.batch_applied,
         batch_method="param" if not data_obj.batch_nonparametric else "nonparam",
-        fillna=z_score_fillna,
-        link=linkage,
-        missing_values=missing_values,
-        normtype=data_obj.normtype,
+        #fna="T" if z_score_fillna else "F",
+        #l=linkage,
+        #mval="T" if missing_values else "F",
+        ntype=data_obj.normtype,
         outpath=data_obj.outpath,  # , "cluster2")
+        **_d,
     )
     # =================================================================
     if gene_symbols and add_description:
@@ -475,7 +496,7 @@ def run(
             X["Description"] = X.Description.str.replace(r"OS=.*", "", regex=True)
             X["GeneSymbol"] = X.GeneSymbol.astype(str) + " " + X.Description.astype(str)
             X = X.drop("Description", axis=1)
-        outname_kws["descr"] = "T"
+        outname_kws["desc"] = "T"
 
     metadata_colorsR = None
     metadata_color_lists = None
@@ -521,7 +542,6 @@ def run(
                 themapping = get_default_color_mapping(
                     row_annot_df[metacat]
                 )  # set everything but float
-            # import ipdb; ipdb.set_trace()
             if themapping is not None:
                 entry = robjects.vectors.ListVector(
                     {metacat: robjects.vectors.ListVector(themapping)}
@@ -589,7 +609,7 @@ def run(
         if main_title is None:
             main_title = robjects.NULL
 
-        min_figwidth = 5
+        min_figwidth = 5.4
         if figsize is None:  # either None or length 2 tuple
             if optimal_figsize:
                 figheight = 4 + (X.shape[0] * 0.22)
@@ -597,21 +617,37 @@ def run(
                 if col_cluster:
                     figheight += 3.2
             else:
-                figheight = 12
-                figwidth = max(min(len(X.columns) / 2, 16), min_figwidth)
+                figheight = 11
+                figwidth = max(min((len(X.columns) / 2)*1.2, 18), min_figwidth)
             if row_annot_df is not None and row_annot_df is not robjects.NULL:
                 figwidth += 0.15 * len(row_annot_df.columns)
                 figheight += 0.4 * len(row_annot_df.columns)
-        else:
-            figwidth, figheight = figsize
-            if (
-                gene_symbols and not optimal_figsize
-            ):  # make sure there is enough room for the symbols
-                figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
-                if figheight > 218:  # maximum figheight in inches
-                    FONTSIZE = max(218 / figheight, 6)
-                    figheight = 218
-        print(figwidth, figheight)
+
+        # for the width
+        if figsize is not None and figsize[0] is None:
+            if optimal_figsize:
+                figwidth = max(min((len(X.columns) / 2)*1.2, 18), min_figwidth)
+            else:
+                figwidth = 11
+            figsize = (figwidth, figsize[1])
+
+        # for the height
+        if figsize is not None and figsize[1] is None:
+            if optimal_figsize:
+                figheight = 4 + (X.shape[0] * 0.22)
+            else:
+                figheight = 11
+            figsize = (figsize[0], figheight)
+
+
+        figwidth, figheight = figsize
+        if (
+            gene_symbols and not optimal_figsize
+        ):  # make sure there is enough room for the symbols
+            figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
+            if figheight > 218:  # maximum figheight in inches
+                FONTSIZE = max(218 / figheight, 6)
+                figheight = 218
 
         call_kws = dict(
             data=X,
@@ -637,6 +673,7 @@ def run(
             standard_scale=standard_scale or robjects.NULL,
             row_cluster=row_cluster,
             col_cluster=col_cluster,
+            cluster_fillna = cluster_fillna,
             # metadata=data_obj.config if show_metadata else None,
             nclusters=nclusters or robjects.NULL,
             cluster_func=cluster_func or robjects.NULL,
@@ -672,15 +709,12 @@ def run(
                 out_name.replace("treatment", "treat")
                 .replace("clustermap", "cmap")
                 .replace("normtype", "norm")
-                .replace("volcano_file", "vfile")
-                .replace("direction_", "")
                 .replace("genotype", "geno")
             )
             out = os.path.join(out_path, out_name)
 
-        logger.info(f"figheight: {figheight}, figwidth: {figwidth}")
+        logger.info(f"figwidth: {figwidth}, figheight: {figheight}")
 
-        print(figwidth, figheight)
         grdevice = grdevice_helper.get_device(
             filetype=file_fmt, width=figwidth, height=figheight
         )
@@ -688,7 +722,7 @@ def run(
         ret = cluster2(**call_kws)  # draw
         # print(ret[0])
         grdevices.dev_off()  # close file
-        print("done.", flush=True)
+        print(".done", flush=True)
 
         sil_df = None
         try:
@@ -740,15 +774,18 @@ def run(
         nrow_ncol = "_{0}x{1}".format(_nrow, _ncol)
         # import ipdb; ipdb.set_trace()
         outname_base_name = "clustermap"
-        extra_outname_kws = dict()
-        if "volcano_file" in outname_kws:  # 'hack' to nest 1 folder deeper
-            volcano_file = outname_kws.pop("volcano_file")
+        this_outname_kws = outname_kws.copy()
+        if "vfile" in outname_kws:  # 'hack' to nest 1 folder deeper
+            volcano_file = this_outname_kws.pop("vfile")
             outname_base_name = os.path.join(outname_base_name, volcano_file)
-            extra_outname_kws["volcano_file"] = volcano_file
+            #extra_outname_kws["vf"] = volcano_file
 
-        out = outname_func(outname_base_name, **outname_kws) + nrow_ncol + file_fmt
 
-        outname_kws.update(extra_outname_kws)
+        #outname_kws.update(extra_outname_kws)
+        #this_outname_kws = outname_kws.copy()  # <- defensive copy
+        #this_outname_kws.update(extra_outname_kws)
+        #import ipdb; ipdb.set_trace()
+        out = outname_func(outname_base_name, **this_outname_kws) + nrow_ncol + file_fmt
 
         plot_and_save(
             X,
