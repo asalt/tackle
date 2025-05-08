@@ -1,9 +1,9 @@
-library(ggplot2)
-library(rlang)
-library(purrr)
-library(magrittr)
-library(tidyverse)
-library(ggfortify)
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(rlang))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(magrittr))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggfortify))
 # library(PCAtools)
 
 ## library(cluster)
@@ -15,14 +15,17 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  showframe = TRUE, frame.type = "t",
                  max_pc = 2, color_list = NULL, marker_list = NULL,
                  names_from = "GeneID",
+                 fillna = c("min", "avg"),
                  scale = FALSE,
                  center = TRUE,
                  normalize_by = NULL,
                  title = NULL,
                  annot_str = NULL,
-                 fig_width=9,
-                 fig_height=8,
+                 fig_width = 9,
+                 fig_height = 8,
                  ...) {
+  fillna <- match.arg(fillna)
+
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
   ##   left_join(col_data, by='name')
@@ -34,47 +37,87 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   # if (scale == TRUE){
   #  .scalefunc <- ~ apply(., 2, sd, na.rm = TRUE)
   # }
-  # browser()
 
   # forpca <- data %>%
   #   pivot_wider(id_cols = c(variable, !!normalize_by, !!color, !!shape), names_from = !!names_from, values_from = value)
 
 
+  #   fillna_func <- switch(fillna,
+  #     avg = function(x) mean(x, na.rm = TRUE),
+  #     min = function(x) min(x, na.rm = TRUE),
+  #     stop("Unsupported fillna type")
+  #   )
+  #
+  #   if (is.null(normalize_by)) {
+  #     forpca <- data %>%
+  #       group_by(GeneID) %>%
+  #       mutate(value = if_else(is.na(value), fillna_func(value), value)) %>%
+  #       mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
+  #       ungroup() %>%
+  #       mutate(value = if_else(is.na(value), 0, value))
+  #
+  #   } else {
+  #     forpca <- data %>%
+  #       group_by(GeneID, !!sym(normalize_by)) %>%
+  #       mutate(value = if_else(is.na(value), fillna_func(value), value)) %>%
+  #       mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
+  #       ungroup() %>%
+  #       mutate(value = if_else(is.na(value), 0, value))
+  #   }
+
+  fillna_func <- switch(fillna,
+    avg = function(x) mean(x, na.rm = TRUE),
+    min = function(x) min(x, na.rm = TRUE),
+    stop("Unsupported fillna type")
+  )
+
+  safe_scale <- function(x, center = TRUE, scale = TRUE) {
+    as.numeric(scale(x, center = center, scale = scale))
+  }
+
   if (is.null(normalize_by)) {
     forpca <- data %>%
       group_by(GeneID) %>%
-      mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
-      ungroup()
-
-
-    # pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
-    # select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
-
-    # .forpca <- forpca %>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
-    # .forpca <- forpca %>% pivot_wider(id_cols=variable, names_from = !!names_from, values_from = value) %>% select(-variable)
-    # .forpca <- forpca %>% select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
+      mutate(fill_value = fillna_func(value)) %>%
+      mutate(value = if_else(is.na(value), fill_value, value)) %>%
+      # select(-fill_value) %>%
+      mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
+      ungroup() # %>%
+    # mutate(value = if_else(is.na(value), 0, value))
   } else {
     forpca <- data %>%
       group_by(GeneID, !!sym(normalize_by)) %>%
-      mutate(value = scale(value, scale = !!scale, center = !!center)) %>%
-      ungroup()
-    # .forpca <- forpca %>% pivot_wider(names_from = !!names_from, values_from = value) %>% select(-variable)
-    # .forpca <- forpca %>% select(-variable, -!!color, -!!shape) %>% scale( scale = !!scale, center = !!center)
-    # forpca <- forpca %>% group_by(normalize_by) %>% select(-variable, -!!color, -!!shape) %>% scale( scale = .scalefunc, center = !!center)
-    # .forpca <-
+      mutate(fill_value = fillna_func(value)) %>%
+      mutate(value = if_else(is.na(value), fill_value, value)) %>%
+      # select(-fill_value) %>%
+      mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
+      ungroup() # %>%
+    # mutate(value = if_else(is.na(value), 0, value))
   }
-  nas <- forpca[ is.na(forpca$value), ]
+  print("Scaling done")
+
+
+
+  # extra guard for nas. shouldn't be necessary now that we fill nas with zeros or minval or avg val
+  nas <- forpca[is.na(forpca$value), ]
   names_to_remove <- unique(nas$GeneID)
-  forpca %<>% filter(!GeneID %in% names_to_remove)
-  forpca %<>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
+  forpca <- forpca %>% filter(!GeneID %in% names_to_remove)
+  .forpca <- forpca %>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
 
-  if (!is.null(color) && any(names(forpca) == color)) {
-      forpca <- forpca %>%
-        mutate(!!color := as.factor(!!sym(color)))
+  # if (!is.null(color) && any(names(forpca) == color)) {
+  if (!is.null(color)) {
+    .forpca <- .forpca %>%
+      mutate(!!color := factor(!!sym(color), levels = sort(unique(!!sym(color)))), ordered = TRUE)
   }
 
-  .forpca <- forpca %>% select(-variable, -!!color, -!!shape)
-  pca_res <- prcomp(.forpca, scale. = F, center = F)
+  # .forpca <- .forpca %>% select(-variable, -!!color, -!!shape)
+  # .forpca <- forpca %>% mutate(!!color := factor(.data[[color]], levels = sort(unique(.data[[color]])), ordered = TRUE))
+
+  # browser()
+  pca_res <- prcomp(.forpca %>% select(-variable, -!!color, -!!shape),
+    scale. = F, center = F
+  )
+  print("SVD done")
 
   #   .x <- forpca %>%
   # 	  group_by(!!normalize_by) %>%
@@ -109,6 +152,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
 
 
   pc_combos <- combn(1:max_pc, 2)
+  # browser()
 
   for (i in 1:dim(pc_combos)[2]) {
     x1 <- pc_combos[[1, i]]
@@ -121,10 +165,11 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       # .color <- expr(color)
       # color <- "repeat"
       p <- autoplot(pca_res,
-        data = forpca,
+        data = .forpca,
         colour = color,
         shape = shape,
-        label = label, label.repel = label_repel,
+        label = label,
+        label.repel = label_repel,
         label.label = label_column,
         frame = showframe,
         ## frame.colour = color,
@@ -154,8 +199,12 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
         scale_shape_manual(values = c(16, 17, 15, 7, 9, 12, 13, 14)) +
         geom_hline(yintercept = 0, color = "grey50", show.legend = NA) +
         geom_vline(xintercept = 0, color = "grey50")
-      if (!is.null(annot_str)) p <- p + annotate("text", x = -Inf, y = -Inf, hjust = 0, vjust = 0,
-                                                 label = annot_str %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 40))
+      if (!is.null(annot_str)) {
+        p <- p + annotate("text",
+          x = -Inf, y = -Inf, hjust = 0, vjust = 0,
+          label = annot_str %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 40)
+        )
+      }
 
       if (!is.null(normalize_by)) p <- p + labs(caption = paste("centered within ", normalize_by))
 
@@ -187,8 +236,8 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
         device <- grDevices::cairo_pdf
       }
       ggplot2::ggsave(out, p, device = device, width = fig_width, height = fig_height)
-    }
-  }
+    } # end of outfiletypes ext
+  } # end of pc combo loop
 }
 
 ## annotate(geom = "segment", y = Inf, yend = Inf, x = -Inf, xend = Inf, size = 1) +
