@@ -226,8 +226,6 @@ def volcanoplot(
         # if highlight_geneids is not None:
         #     df.loc[set(highlight_geneids) & set(df.index), "highlight"] = True
         _xtra = {}
-        if extra_outname_info is not None:
-            _xtra["n"] = extra_outname_info
         direction_codes = {"up": "U", "down": "D", "both": "B"}
         # if direction != "both":
         _xtra["dir"] = direction_codes.get(direction, "?")
@@ -257,7 +255,7 @@ def volcanoplot(
             normtype=data_obj.normtype,
             imv="T" if impute_missing_values else "F",
             fna="T" if fill_na_zero else "F",
-            group=_groupname.replace(":", "_"),
+            group=_groupname.replace(":", "_").replace(r"(", "").replace(")", "").replace("+", "_").replace(r"/", "dv"),
             outpath=os.path.join(data_obj.outpath, "volcano"),
             **_xtra,
         )
@@ -338,6 +336,27 @@ def volcanoplot(
         df = df.reset_index()
         df = df[~df["t"].isna()]
 
+        # make new outname
+
+        if extra_outname_info is not None:
+            _xtra["n"] = extra_outname_info
+
+        outname = get_outname(
+            "volcano",
+            name=data_obj.outpath_name,
+            taxon=data_obj.taxon,
+            non_zeros=data_obj.non_zeros,
+            # batch_me=_b,
+            sort=number_by,
+            colors_only=data_obj.colors_only,
+            batch=data_obj.batch_applied,
+            normtype=data_obj.normtype,
+            imv="T" if impute_missing_values else "F",
+            fna="T" if fill_na_zero else "F",
+            group=_groupname.replace(":", "_").replace(r"(", "").replace(")", "").replace("+", "_").replace(r"/", "dv"),
+            outpath=os.path.join(data_obj.outpath, "volcano"),
+            **_xtra,
+        )
         for file_fmt in file_fmts:
             grdevice = gr_devices[file_fmt]
             gr_kw = gr_kws[file_fmt]
