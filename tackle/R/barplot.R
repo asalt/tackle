@@ -42,11 +42,13 @@ barplot <- function(df, average = NULL, group = NULL, group_order = NULL, title 
       # If group_order is provided, set factor levels accordingly
       if (!is.null(group_order)) {
         df <- df %>%
-          mutate({{ group }} := factor(!!sym(group), levels = group_order , ordered = TRUE))
+          mutate({{ group }} := factor(!!sym(group), levels = group_order , ordered = TRUE)) %>% arrange( !!sym(group) )
+        df <- df %>% mutate(index = factor(index, ordered=TRUE))
       } else {
         # If no group_order, set the group as an ordered factor based on appearance
         df <- df %>%
-          mutate({{ group }} := as.factor(!!sym(group)))
+          mutate({{ group }} := factor(!!sym(group), levels=unique(!!sym(group)), ordered = TRUE)) %>% arrange( !!sym(group) )
+        df <- df %>% mutate(index = factor(index, levels=unique(index), ordered=TRUE))
       }
       
       # Optional: Create an 'index' for plotting if needed
