@@ -141,6 +141,10 @@ class Csv2Conf(object):
             sel = df.loc[df["name"] == name, "name"]
             df.loc[df["name"] == name, "name"] = name + "_" + sel.index.astype(str)
 
+        _order = ["name"] + [x for x in df.columns if x != "name"]
+        if "name" not in df.columns:
+            _order = order[1:]
+        df = df[_order]
         rows.append(df.columns.tolist())
         for _, row in df.iterrows():
             rows.append(row.tolist())
