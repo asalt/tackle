@@ -336,7 +336,7 @@ volcanoplot <- function(X, max_labels = 35,
     #   hjust = c(0, 1), vjust = c(0, 0)
     # ) +
     annotate("text", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
-      label = c(group0, group1),
+      label = c(str_replace_all(group0, "_", " ") %>% str_wrap(width=36), str_replace_all(group1, "_", " ") %>% str_wrap(width=36)),
       color = "black", #border color
       fill = c(color_down, color_up), # default blue and red
       size = annot_size,
