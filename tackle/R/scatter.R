@@ -7,13 +7,14 @@ scattermat <- function(x, histogram = FALSE, interactive = TRUE, square = TRUE,
                          "spearman"
                        ), colnames = NULL,
                        colors_only = FALSE,
+                        plt_size = NULL,
                        ...) {
   if (!is.null(colnames)) {
     names(x) <- colnames
   }
 
   nrows <- dim(x)[2]
-  plt_size <- nrows * .75
+  if (is.null(plt_size)) plt_size <- nrows * .75
   if (interactive) {
     dev.new(width = plt_size, height = plt_size)
   }
