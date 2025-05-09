@@ -198,9 +198,7 @@ def run(
         outname_kws["vfile"] = name_group.replace(":", "_").replace("+", "_").replace("?", "qmk").replace("|","or").replace(r"/", "_").replace(r"\\", "_")
         outname_kws["by"] = volcano_sortby
         outname_kws["dir"] = volcano_direction
-        column_title = name_group
-        # _df = pd.read_table(volcano_file)
-        # if "pValue" not in _df and "p-value" in _df:
+        column_title = name_group # _df = pd.read_table(volcano_file) # if "pValue" not in _df and "p-value" in _df:
         #     _df = _df.rename(columns={"p-value": "pValue"})
         # if "log2_FC" not in _df and "Value" in _df:  #
         #     _df = _df.rename(columns={"Value": "log2_FC"})
@@ -336,7 +334,7 @@ def run(
                 [x for x in aa.df if x != "GeneSymbol" and x != "MitoCarta_Pathways"]
             ].set_index("GeneID")
         )
-        outname_kws["geneanno"] = "T"
+        outname_kws["ganno"] = "T"
 
     row_annot_df = None
     if row_annot_track:
@@ -436,9 +434,9 @@ def run(
     # ============================================================
 
     if z_score != "None" and z_score is not None:
-        outname_kws["zscore"] = z_score
+        outname_kws["z"] = z_score
     else:
-        outname_kws["zscore"] = "none"
+        outname_kws["z"] = "none"
     if z_score_by is not None:
         outname_kws["zby"] = z_score_by
 
@@ -581,6 +579,7 @@ def run(
     #     col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
     # col_data = utils.set_pandas_datatypes(col_data)
 
+
     # rpy2 does not map None to robjects.NULL
     if row_annot_df is None:
         row_annot_df = robjects.NULL
@@ -610,21 +609,9 @@ def run(
             main_title = robjects.NULL
 
         min_figwidth = 5.4
-        if figsize is None:  # either None or length 2 tuple
-            if optimal_figsize:
-                figheight = 4 + (X.shape[0] * 0.22)
-                figwidth = 8 + (X.shape[1] * 0.26)
-                if col_cluster:
-                    figheight += 3.2
-            else:
-                figheight = 11
-                figwidth = max(min((len(X.columns) / 2)*1.2, 18), min_figwidth)
-            if row_annot_df is not None and row_annot_df is not robjects.NULL:
-                figwidth += 0.15 * len(row_annot_df.columns)
-                figheight += 0.4 * len(row_annot_df.columns)
 
         # for the width
-        if figsize is not None and figsize[0] is None:
+        if figsize is not None and figsize[0] is None and figsize[1] is not None:
             if optimal_figsize:
                 figwidth = max(min((len(X.columns) / 2)*1.2, 18), min_figwidth)
             else:
@@ -632,15 +619,33 @@ def run(
             figsize = (figwidth, figsize[1])
 
         # for the height
-        if figsize is not None and figsize[1] is None:
+        if figsize is not None and figsize[1] is None and figsize[0] is not None:
             if optimal_figsize:
                 figheight = 4 + (X.shape[0] * 0.22)
             else:
                 figheight = 11
             figsize = (figsize[0], figheight)
 
+        if figsize is None or (figsize[0] is None and figsize[1] is None):  # either None or length 2 tuple
+            if optimal_figsize:
+                figheight = 4 + (X.shape[0] * 0.22)
+                figwidth = 8.4 + (X.shape[1] * 0.26)
+                if col_cluster:
+                    figheight += 3.2
+            else:
+                figheight = 11
+                figwidth = max(min((len(X.columns) / 2)*1.2, 18), min_figwidth)
+
+            if row_annot_df is not None and row_annot_df is not robjects.NULL:
+                figwidth += (.4 + 0.26 * len(row_annot_df.columns))
+                figheight += (.2 + (0.4 * len(row_annot_df.columns)))
+
+            if add_description:
+                figwidth += 3.6
+            figsize = (figwidth, figheight)
 
         figwidth, figheight = figsize
+        
         if (
             gene_symbols and not optimal_figsize
         ):  # make sure there is enough room for the symbols

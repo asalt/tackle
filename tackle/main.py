@@ -108,37 +108,8 @@ TAXON_MAPPER = {
 }
 
 
-## what is the smarter way to do this?
 import logging
-
-
-# def _get_logger():
-#     logger = logging.getLogger(__name__)
-#     logger.setLevel(logging.DEBUG)
-#
-#     ch = logging.StreamHandler()
-#     ch.setLevel(logging.INFO)
-#     # create formatter and add it to the handlers
-#     formatter = logging.Formatter(
-#         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-#     )
-#     ch.setFormatter(formatter)
-#     # add the handlers to the logger
-#     logger.addHandler(ch)
-#     try:
-#         fh = logging.FileHandler("tackle.log")
-#         fh.setFormatter(formatter)
-#         logger.addHandler(fh)
-#     except PermissionError:
-#         pass
-#
-#     # fh.setLevel(logging.DEBUG)
-#     # create console handler with a higher log level
-#     return logger
-
-
 logger = _get_logger(__name__)
-
 
 def run(data_obj):
     # if 'scatter' in plots or 'all' in data_obj.plots:
@@ -228,6 +199,7 @@ class Path_or_Geneset(click.Path):
         geneset_file = os.path.join(
             os.path.split(os.path.abspath(__file__))[0], "GSEA", "genesets", f
         )
+        import gseapy as gp
         gs = gp.parser.read_gmt(geneset_file)
         matches = [x for x in gs.keys() if value in x or value in x.lower()]
         if len(matches) == 0:
@@ -634,6 +606,7 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
     type=click.Path(exists=True, dir_okay=False),
     default=None,
     show_default=True,
+    multiple=True,
     help="""Optional list of geneids to ignore. Should have 1 geneid per line. """,
 )
 @click.option(
@@ -1033,7 +1006,7 @@ def main(
     params = dict(ctx.params)
     params["file_format"] = " | ".join(params["file_format"])
     params["annotations"] = " | ".join(params["annotations"])
-    param_df = pd.DataFrame(params, index=[analysis_name]).T
+    param_df = pd.DataFrame.from_dict(params, orient='index', columns=[analysis_name])
     param_df.to_csv(outname, sep="\t")
 
     ctx.obj["data_obj"] = data_obj
@@ -3175,7 +3148,6 @@ def metrics(ctx, full, before_filter, before_norm):
     )
 
 
-from .overlap import make_overlap
 
 
 @main.command("overlap")
@@ -3217,6 +3189,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
 
     if group:
         validate_configfile(data_obj.experiment_file, group=group)
+
+    from .overlap import make_overlap
 
     make_overlap(
         data_obj,
@@ -5270,12 +5244,10 @@ def bar(
     rc = {
         "font.family": "sans-serif",
     }
-    sb.set_context("notebook")
     sb.set_style("white", rc)
     sb.set_palette("muted")
-    sb.set_color_codes()
-
     sb.set_context("notebook", font_scale=1.4)
+    sb.set_color_codes()
 
     log = not linear
 
