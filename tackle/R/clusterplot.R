@@ -73,6 +73,9 @@ myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
 
 dist_no_na <- function(mat) {
   .min <- min(mat, na.rm = TRUE)
+  if (.min == Inf) {
+    .min <- 0
+  }
   mat[is.na(mat)] <- .min - (.min * .1)
   #mat[is.na(mat)] <- 0
   edist <- dist(mat)
@@ -119,6 +122,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      show_gene_symbols = FALSE,
                      z_score = NULL, z_score_by = NULL,
                      z_score_fillna = TRUE,
+                     z_score_scale = !is.null(z_score), # an override for generating the color map and legend label
                      cluster_fillna = "min",
                      standard_scale = NULL,
                      row_dend_side = "right",
@@ -145,7 +149,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
-  col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE, levels = col_data$name)
 
   if (!is.null(cluster_func)) {
     if (cluster_func == "PAM") {
@@ -166,12 +169,25 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     distinct(GeneID, .keep_all = TRUE) %>%
     pivot_longer(c(-GeneSymbol, -GeneID))
 
+  # print(head(exprs_long))
+
+  # print(col_data)
+
   if (!is.null(col_data)) {
+    col_data[["name"]] <- factor(col_data[["name"]], ordered = TRUE, levels = col_data$name)
     exprs_long <- exprs_long %>%
       left_join(col_data, by = "name", copy = TRUE) %>%
       mutate(name = factor(name, levels = col_data$name, ordered = TRUE))
+  } else{
+      col_data <- data.frame(name = unique(exprs_long$name, X=NA))
+      rownames(col_data) <- col_data$name
+    #col_data  <- NULL
   }
+  # print(col_data)
 
+
+
+  # print(head(exprs_long))
 
   if (is.null(z_score)) {
     # do nothing
@@ -208,6 +224,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     )
   }
 
+  # print(head(toplot))
 
   ##   exprs_long %>%
   ## dplyr::group_by(GeneID, GeneSymbol, name) %>%
@@ -297,7 +314,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ## Add more args here
     col_data_args <- as.list(col_data %>% select(-name))
     col_data_args <- col_data_args[order(names(col_data_args))]
-    col_data_args[["gp"]] <- gpar(col = "#444444")
+    if (ncol(col_data %>% select(-name)) > 0){
+      col_data_args[["gp"]] <- gpar(col = "#444444")
+    }
 
     # $metadata_colors <- NULL
     ## Custom colers
@@ -341,6 +360,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # now handle continuous
   ##
   col_data_simple_annot_names <- intersect(col_data_args %>% names(), col_data %>% names())
+  #col_data_simple_annot_names <- intersect(col_data_args %>% names(), col_data %>% select(-name) %>% names())
 
   # col_data_args %>% sapply(is.atomic)
 
@@ -389,7 +409,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
 
   # col_data_args[["annotation_legend_param"]][["at"]][["chr"]] <- as.matrix(colnames(col_data))
-  if (!is.null(col_data)) {
+  # print(col_data_args)
+  col_annot <- NULL
+  if (!is.null(col_data) && ncol(col_data%>%select(-name))>0) {
     col_annot <- do.call(ComplexHeatmap::HeatmapAnnotation, col_data_args)
     # col_annot <- columnAnnotation(
     #   df = as.data.frame(col_data),
@@ -407,7 +429,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   ## print(colorRamp2(c(1,length(levels(col_data$HS_ratio))), c=c('white', 'black'))(1:8))
 
-  if (is.null(z_score)) {
+  if (is.null(z_score) && !z_score_scale) {
     quantiles <- exprs_long %>%
       select(value) %>%
       quantile(na.rm = TRUE, probs = seq(0, 1, .025))
@@ -417,9 +439,16 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     maxval <- quantiles[["95%"]]
     col <- colorRamp2(c(minval, 0, maxval), c("#FFFFCC", "orange", "red"))
   } else {
-    quantiles <- exprs_long %>%
-      select(zscore) %>%
-      quantile(na.rm = TRUE, probs = seq(0, 1, .025))
+      if (z_score_scale == TRUE && !"zscore" %in% colnames(exprs_long)){
+        quantiles <- exprs_long %>%
+          select(value) %>%
+          quantile(na.rm = TRUE, probs = seq(0, 1, .025))
+      }
+      else{
+        quantiles <- exprs_long %>%
+          select(zscore) %>%
+          quantile(na.rm = TRUE, probs = seq(0, 1, .025))
+      }
     minval <- quantiles[["2.5%"]]
     maxval <- quantiles[["97.5%"]]
     # col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
@@ -518,7 +547,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## print(head(toplot[col_data$name]))
   print("##################################")
 
-  mat <- toplot[col_data$name]
+  mat <- toplot
+  if (!is.null(col_data)) mat <- toplot[col_data$name]
+  # print(head(mat))
   # library(seriation)
   # library(cluster)
   # o1 <- agnes(dist_no_na(mat), method = "ward")
@@ -532,7 +563,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   # title = ifelse(is.null(z_score), ifelse(linear == TRUE, "iBAQ", "log(iBAQ)"), "zscore(log(iBAQ))"),
   .title <- ifelse(linear == TRUE, "iBAQ", "log(iBAQ)")
-  if (is.null(z_score)) z_score <- FALSE
+  if (is.null(z_score) && (z_score_scale==FALSE)) z_score <- FALSE
+  if (!is.null(z_score) || (z_score_scale==TRUE)) z_score <- TRUE
   if (z_score == TRUE | z_score == "0") .title <- paste0(.title, " zscore")
   if (!is.null(z_score_by)) .title <- paste0(.title, " by ", z_score_by)
   # {
@@ -585,7 +617,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     cluster_cols <- TRUE
   }
 
-  .mat <- toplot[col_data$name]
+  .mat <- toplot
+  # print(head(.mat))
+  if (!is.null(col_data)) .mat <- toplot[col_data$name]
+
   if (!is.null(fixed_size) && fixed_size == TRUE) {
     ht_width <- unit(ncol(.mat) * .20, "in")
     ht_height <- unit(nrow(.mat) * .20, "in")
@@ -642,11 +677,18 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   )
 
 
+  # ht_opt(LEGEND_PADDING = unit(1, "cm"), ADD = TRUE) # this does nothing?
+  # ht_opt(ANNOTATION_LEGEND_PADDING = unit(1, "cm"), ADD = TRUE) # this does nothing?
+  # we don't wnat to use COLUMN_ANNO_OPADDING or ROW_ANNO_PADDING
+  ht_opt$HEATMAP_LEGEND_PADDING <- unit(15, "mm")
+  ht_opt$ANNOTATION_LEGEND_PADDING <- unit(10, "mm")
+
+
   ht <- ComplexHeatmap::draw(ht,
     column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 80),
     column_title_gp = gpar(fontsize = 13, fontface = "bold", just = "left"),
     heatmap_legend_side = "bottom",
-    padding = unit(c(10, 8, 2, 8), "mm") # top, right, bottom, left?
+    padding = unit(c(10, 10, 2, 8), "mm") # bottom, left, top, right
   ) # top right bottom left
   ht_row_order <- row_order(ht)
 
