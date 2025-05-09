@@ -623,7 +623,10 @@ class Data:
             # self.geneid_subset = None
             # return
         # self.geneid_subset = parse_gid_file(geneids)
-        geneid_subset = parse_gid_file(geneids)
+        geneid_subset = set()
+        for f in geneids:
+            geneid_subset |= set(parse_gid_file(f))
+
         if len(geneid_subset) == 0:
             warn("No geneids found in file {}".format(geneids))
         return geneid_subset
@@ -1314,6 +1317,8 @@ class Data:
             elif not self.fill_na_zero:
                 self._areas_log = (
                     self._areas.astype(float).divide(self.minval).pipe(np.log10)
+                    .replace([np.inf, -np.inf], np.nan)
+
                 )
 
         self._areas_log.index.name = "GeneID"
@@ -1476,7 +1481,7 @@ class Data:
         from rpy2.robjects.packages import importr
 
         sva = importr("sva")
-        from rpy2.robjects import pandas2ri
+        from rpy2.robjects import pandas2ri, r
 
         pandas2ri.activate()
         grdevices = importr("grDevices")
@@ -1638,6 +1643,7 @@ class Data:
         """
         from rpy2.robjects import pandas2ri
         from rpy2 import robjects 
+        r = robjects.r
         pandas2ri.activate()
 
         r_source = robjects.r["source"]
@@ -1684,7 +1690,6 @@ class Data:
         pandas2ri.activate()
 
         robjects.r.assign("edata", mat)
-        r = robjects.r
         variables = robjects.r("colnames(edata)")
         # fix each individual column of `mod`
         fixed_vars = [
