@@ -81,23 +81,48 @@ def make_overlap(data_obj, group=None, file_fmts=('.png',), non_zeros=1., maxsiz
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
+    pandas2ri.activate()
 
     grdevices = importr("grDevices")
     grid = importr("grid")
     complex_heatmap = importr('ComplexHeatmap')
-    cmat = complex_heatmap.make_comb_mat(robjects.ListVector(overlap_dict))
-    upset_plot = complex_heatmap.UpSet(cmat,
-                                       top_annotation = complex_heatmap.upset_top_annotation(cmat,
-                                       height = grid.unit(2, 'in') ,
-                                       annotation_name_rot=90),
-    right_annotation = complex_heatmap.upset_right_annotation(cmat,
-                                                              width = grid.unit(1.5, 'in'))
-    )
+    robjects.r('library(ComplexHeatmap)')
+    robjects.r('library(grid)')
+
+
+    robjects.r.assign('listing', robjects.ListVector(overlap_dict))
+    robjects.r('cmat <- make_comb_mat(listing)')
+    robjects.r.assign('maxsize', maxsize)
+    robjects.r("""
+      if (ncol(cmat) > maxsize){
+        cmat <- cmat[, 1:maxsize]
+      }
+    """)
+    cmat = robjects.r['cmat']
 
 
 
+    upset_plot = robjects.r("""UpSet(
+        cmat,
+        top_annotation=upset_top_annotation(
+            cmat,
+            height=unit(2, "in"),
+            annotation_name_rot=90
+        ),
+        right_annotation=upset_right_annotation(
+            cmat,
+            width=unit(1.5, "in")
+        )
+    )""")
 
-    grdevices.png(outname+'.png')
+
+    width, height = cmat.shape
+    max_row_name = len(sorted(overlap_dict.keys(), key = lambda x: len(x))[-1])
+    figwidth = 2 + max(width, 2)*.4 + (max_row_name*.08)
+    figheight = 2 + height*.24
+    print(f"widthxheight: {figwidth}x{figheight}")
+
+    grdevices.png(outname+'.png', width=figwidth, height=figheight, units='in', res=300)
     complex_heatmap.draw(upset_plot)
     grdevices.dev_off()
     return # temporary
