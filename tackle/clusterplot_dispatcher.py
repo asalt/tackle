@@ -196,8 +196,8 @@ def run(
             name_group = name_group.group(1)
         logger.info(f"volcanofile name group is {name_group}")
         outname_kws["vfile"] = name_group.replace(":", "_").replace("+", "_").replace("?", "qmk").replace("|","or").replace(r"/", "_").replace(r"\\", "_")
-        outname_kws["by"] = volcano_sortby
-        outname_kws["dir"] = volcano_direction
+        outname_kws[volcano_sortby] = ""
+        outname_kws[f"dir_{volcano_direction[0]}"] = ""
         column_title = name_group # _df = pd.read_table(volcano_file) # if "pValue" not in _df and "p-value" in _df:
         #     _df = _df.rename(columns={"p-value": "pValue"})
         # if "log2_FC" not in _df and "Value" in _df:  #
@@ -334,7 +334,7 @@ def run(
                 [x for x in aa.df if x != "GeneSymbol" and x != "MitoCarta_Pathways"]
             ].set_index("GeneID")
         )
-        outname_kws["ganno"] = "T"
+        outname_kws["ganno"] = ""
 
     row_annot_df = None
     if row_annot_track:

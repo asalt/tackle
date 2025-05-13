@@ -3170,17 +3170,10 @@ def metrics(ctx, full, before_filter, before_norm):
     "--maxsize", default=15, help="Max number of overlaps to plot", show_default=True
 )
 @click.option(
-    "--non-zeros",
-    default=1.0,
-    show_default=True,
-    type=int_or_ratio(),
-    help="""Minimum number of non zeros OR fraction of nonzeros allowed for each sample
-              (or sample group. If a decimal is specified (e.g. 1.0), this indicates 100% of values are nonzero.
-              If an integer is specified (1), this indicates that 1 value is nonzero.
-              """,
+    "--plot-type", type = click.Choice(['upset', 'venn']), default="upset", show_default=True
 )
 @click.pass_context
-def overlap(ctx, figsize, group, maxsize, non_zeros):
+def overlap(ctx, figsize, group, plot_type, maxsize):
     """
     Plot gene product overlap across experiments
     """
@@ -3197,7 +3190,8 @@ def overlap(ctx, figsize, group, maxsize, non_zeros):
         figsize=figsize,
         group=group,
         maxsize=maxsize,
-        non_zeros=non_zeros,
+        plot_style=plot_type,
+        non_zeros=data_obj.non_zeros,
         file_fmts=file_fmts,
     )
 

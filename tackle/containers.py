@@ -215,13 +215,53 @@ class Annotations(LazyLoader):
         self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
-    # def get_annot(self, cat):
-    #     df = self.df
-    #     # if cat == 'NUC':
-    #     # return df[(~df['CYTO_NUC'].isna()) & (df['CYTO_NUC'] != 'CYTOPLASM') ]
-    #     if cat not in df:
-    #         raise ValueError("{cat} must be one of {self.categories}")
-    #     return df[~df[cat].isna()]
+
+    def map_gene_ids(self, gids, field='GeneID', taxon='9606', fallback_to_human=True, verbose=True):
+        gids = list(set(gids))
+        df = self.df
+
+        if field not in df.columns:
+            raise ValueError(f"{field} not found in annotation dataframe")
+
+        if verbose:
+            logger.info(f"Mapping {len(gids)} gene IDs using field: {field} with taxon: {taxon}")
+
+        # Attempt initial mapping from annotation dataframe
+        found = df[df[field].isin(gids)]
+        result = found[
+            [x for x in found if x != "MitoCarta_Pathways"]
+        ].set_index("GeneID")
+        result = result[["GeneSymbol", *[x for x in result if x != "GeneSymbol"]]]
+
+        # Determine whether to attempt homologene fallback
+        if fallback_to_human and taxon != "9606":
+            import ipdb; ipdb.set_trace()
+            missing = set(gids) - set(result)
+            if verbose:
+                logger.info(f"{len(missing)} IDs not found in annotation; attempting homologene remapping")
+
+            hmapper = get_hgene_mapper()
+            gmap = get_gene_mapper()
+
+            mapped_to_human = hmapper.map_to_human(missing)
+            mapped_ids = {k: v for k, v in mapped_to_human.items() if v is not None}
+
+            if verbose:
+                logger.info(f"Mapped {len(mapped_ids)} to human GeneIDs")
+
+            human_symbols = {
+                original_gid: gmap.symbol.get(mapped_gid)
+                for original_gid, mapped_gid in mapped_ids.items()
+                if mapped_gid in gmap.symbol
+            }
+
+            # Merge the results
+            result.update(human_symbols)
+
+        elif fallback_to_human and taxon == "9606" and verbose:
+            logger.info("Fallback to homologene skipped: taxon is human")
+
+        return result
 
 
 class HistoneInfo(LazyLoader):
