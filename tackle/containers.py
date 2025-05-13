@@ -211,7 +211,6 @@ class Annotations(LazyLoader):
         df = self._df
         if df is None or (isinstance(df, pd.DataFrame) and df.DataFrame.empty):
             df = self.read(nrows=1)
-        # import ipdb; ipdb.set_trace()
         self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
@@ -233,30 +232,39 @@ class Annotations(LazyLoader):
         ].set_index("GeneID")
         result = result[["GeneSymbol", *[x for x in result if x != "GeneSymbol"]]]
 
-        # Determine whether to attempt homologene fallback
+
         if fallback_to_human and taxon != "9606":
-            import ipdb; ipdb.set_trace()
-            missing = set(gids) - set(result)
+            missing = set(gids) - set(result.index)
             if verbose:
                 logger.info(f"{len(missing)} IDs not found in annotation; attempting homologene remapping")
 
             hmapper = get_hgene_mapper()
-            gmap = get_gene_mapper()
-
             mapped_to_human = hmapper.map_to_human(missing)
             mapped_ids = {k: v for k, v in mapped_to_human.items() if v is not None}
 
             if verbose:
                 logger.info(f"Mapped {len(mapped_ids)} to human GeneIDs")
 
-            human_symbols = {
-                original_gid: gmap.symbol.get(mapped_gid)
-                for original_gid, mapped_gid in mapped_ids.items()
-                if mapped_gid in gmap.symbol
-            }
+            # Make mapping DataFrame
+            map_df = pd.DataFrame.from_dict(mapped_ids, orient='index', columns=['human_gid'])
+            map_df.index.name = 'original_gid'
+            map_df = map_df.reset_index()
 
-            # Merge the results
-            result.update(human_symbols)
+            # Query your self.df using human_gid values
+            df_human = self.df[self.df.GeneID.isin(map_df.human_gid)]
+
+            # Merge annotations with original IDs
+            merged = map_df.merge(df_human, left_on='human_gid', right_on='GeneID', how='left')
+
+            # Final formatting: set index to original_gid
+            merged = merged.drop(["GeneID", "human_gid"], axis=1).rename(columns={"original_gid": "GeneID"})
+
+            # Drop/rename/reorder if needed
+            cols = [c for c in merged.columns if c != "GeneSymbol" and c != "MitoCarta_Pathways"]
+            merged = merged[["GeneSymbol"] + cols]
+
+            # Append to the existing result
+            result = pd.concat([result, merged])
 
         elif fallback_to_human and taxon == "9606" and verbose:
             logger.info("Fallback to homologene skipped: taxon is human")
