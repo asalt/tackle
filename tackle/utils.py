@@ -45,6 +45,10 @@ RESERVED_COLORS = {
     "True": "green",
     "False": "red",
     "NA": "grey",
+    "Tbio": "blue",
+    "Tchem": "green",
+    "Tclin": "pink",
+    "Tdark": "black",
 }
 
 
@@ -67,7 +71,7 @@ def get_default_color_mapping(s: pd.Series) -> dict:
     cmap = sb.color_palette(palette=palette, n_colors=ncolors)
     color_iter = map(mpl.colors.rgb2hex, cmap)
     themapping = {
-        str(x): c for x, c in zip(s.unique(), color_iter)
+        str(x): c for x, c in zip(sorted(s.unique()), color_iter)
     }  # have to make str?
     themapping = {k: v for k, v in themapping.items() if k}
 
@@ -229,9 +233,9 @@ def impute_missing_old(
     _mean = _norm_notna.mean()
     _sd = _norm_notna.std()
     _norm = stats.norm(loc=_mean - (_sd * downshift), scale=_sd * scale)
-    _number_na = frame.replace(0, np.NAN).isna().sum().sum()
+    _number_na = frame.replace(0, np.nan).isna().sum().sum()
 
-    # print(frame.replace(0, np.NAN).isna().sum())
+    # print(frame.replace(0, np.nan).isna().sum())
     random_value_list = list()
     for i in range(8):
         random_values = _norm.rvs(size=_number_na, random_state=random_state + i)
@@ -240,9 +244,9 @@ def impute_missing_old(
     random_values = np.mean(random_value_list, 0)
     assert random_values.shape == random_value_list[0].shape
 
-    # _areas_log = np.log10(frame.replace(0, np.NAN))
+    # _areas_log = np.log10(frame.replace(0, np.nan))
     # _areas_log += np.abs(_areas_log.min().min())
-    # _areas_log = frame.copy().replace(0, np.NAN)
+    # _areas_log = frame.copy().replace(0, np.nan)
     areas_log = frame.copy()
 
     start_ix = 0
@@ -708,6 +712,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     :symbol_gid_mapping: optional dictionary that maps symbols to geneid
     :sheet: excel sheet to use (when input is excel doc)
     """
+    from .containers import get_gene_mapper
     genemapper = get_gene_mapper()
 
     _df = None
@@ -923,6 +928,7 @@ def fillna_meta(df, index_col):
 
 def standardize_meta(df):
     # gm = GeneMapper()
+    from .containers import get_gene_mapper
     gm = get_gene_mapper()
     # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
@@ -1219,8 +1225,9 @@ def assign_cols(df, name):
 
 def get_outname(
     plottype: str,
-    taxon,
-    non_zeros,
+    taxon=None,
+    tx=None,
+    non_zeros=1,
     colors_only=None,
     batch=None,
     batch_method="parametric",
@@ -1232,6 +1239,8 @@ def get_outname(
     :colors_only: does nothing, depreciated
 
     """
+    if taxon is None and tx is not None:
+        taxon = tx
     print(f"plottype is {plottype}")
     colors = "colors_only" if colors_only else "annotated"
     if "missing_values" in kwargs:
@@ -1270,6 +1279,7 @@ def get_outname(
         .replace("sort_", "")
         .replace("Treatment", "treat")
         .replace("median", "med")
+        .replace("__", "_")
     )
 
     # here is where we could split the path further
@@ -1424,7 +1434,6 @@ def named_temp(*args, **kwargs):
             pass
 
 
-from .containers import get_gene_mapper
 
 # from .containers import GeneMapper
 
