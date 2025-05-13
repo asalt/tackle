@@ -329,8 +329,9 @@ def run(
     # this needs rewriting
     if annotate_genes:
         aa = containers.get_annotation_mapper()
+        annot_mapping = aa.map_gene_ids(X.GeneID.tolist(), taxon='10090')
         row_annot_track.append(
-            aa.df[
+            annot_mapping[
                 [x for x in aa.df if x != "GeneSymbol" and x != "MitoCarta_Pathways"]
             ].set_index("GeneID")
         )
