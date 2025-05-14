@@ -853,7 +853,7 @@ def run(
             plot_and_save(
                 subX,
                 out,
-                grdevice,
+                # grdevice,
                 main_title=annotation,
                 annot_mat=sub_annot_mat,
                 show_gene_symbols=_show_gene_symbols,

@@ -233,7 +233,7 @@ class Annotations(LazyLoader):
         result = result[["GeneSymbol", *[x for x in result if x != "GeneSymbol"]]]
 
 
-        if fallback_to_human and taxon != "9606":
+        if fallback_to_human or taxon != "9606":
             missing = set(gids) - set(result.index)
             if verbose:
                 logger.info(f"{len(missing)} IDs not found in annotation; attempting homologene remapping")
@@ -390,31 +390,38 @@ def assign_sra(df):
 def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     annotator = get_annotation_mapper()
     overlap = set(annotator.df.GeneID) & set(df.GeneID)
-    if (len(overlap) / len(df)) > 0.2:  # human data
-        dfout = df.merge(
-            annotator.df[["GeneID", *annotations]], on="GeneID", how="left"
-        )
-        return dfout
 
-    logger.info(f"Trying to map genes to hs through homologene")
-    hgene_mapper = get_hgene_mapper()
-    hg_gene_dict = hgene_mapper.map_to_human(df.GeneID)
+    annotations = annotator.map_gene_ids(df.GeneID)
+    if "GeneSymbol" in annotations:
+        annotations = annotations.drop("GeneSymbol", axis=1)
+    # if (len(overlap) / len(df)) > 0.2:  # human data
+    #     dfout = df.merge(
+    #         annotator.df[["GeneID", *annotations]], on="GeneID", how="left"
+    #     )
+    #     return dfout
 
-    hg_gene_df = pd.DataFrame.from_dict(
-        hg_gene_dict, orient="index", columns=["GeneID_hs"]
-    )
-    dfout = df.merge(hg_gene_df, left_on="GeneID", right_index=True, how="left").merge(
-        annotator.df[["GeneID", *annotations]].rename(columns=dict(GeneID="GeneID_hs")),
-        on="GeneID_hs",
-        how="left",
-    )
+    # logger.info(f"Trying to map genes to hs through homologene")
+    # hgene_mapper = get_hgene_mapper()
+    # hg_gene_dict = hgene_mapper.map_to_human(df.GeneID)
+
+    # hg_gene_df = pd.DataFrame.from_dict(
+    #     hg_gene_dict, orient="index", columns=["GeneID_hs"]
+    # )
+    dfout = df.merge(annotations, on="GeneID", how="left")
+
+    # .merge(
+    #     annotator.df[["GeneID", *annotations]].rename(columns=dict(GeneID="GeneID_hs")),
+    #     on="GeneID_hs",
+    #     how="left",
+    # )
+
     front = [
         "GeneID",
         "TaxonID",
         "GeneSymbol",
         "GeneDescription",
         "FunCats",  #'GeneCapacity',
-        *annotations,
+        *[x for x in annotations.columns if x != "GeneID"],
     ]
     col_order = [*front, *[x for x in dfout if x not in front]]
     return dfout[col_order]
