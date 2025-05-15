@@ -2176,6 +2176,12 @@ def pca2(
     help="samples to include b ased on metadata entry `--sample-reference`",
 )
 @click.option(
+    "--sample-exclude",
+    type=str,
+    multiple=True,
+    help="multiple sample names to exclude from heatmap",
+)
+@click.option(
     "--linkage",
     type=click.Choice(
         ["single", "complete", "average", "weighted", "centroid", "median", "ward.D2"]
@@ -2312,6 +2318,7 @@ def cluster2(
     optimal_figsize,
     sample_reference,
     sample_include,
+    sample_exclude,
     linkage,
     max_autoclusters,
     nclusters,
@@ -2372,6 +2379,7 @@ def cluster2(
         optimal_figsize,
         sample_reference,
         sample_include,
+        sample_exclude,
         linkage,
         max_autoclusters,
         nclusters,

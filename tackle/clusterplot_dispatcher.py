@@ -64,6 +64,7 @@ def run(
     optimal_figsize,
     sample_reference,
     sample_include,
+    sample_exclude, # list
     linkage,
     max_autoclusters,
     nclusters,
@@ -152,6 +153,12 @@ def run(
     if sample_reference is not None:
         # we take a subset of the data
         col_meta = col_meta.loc[col_meta[sample_reference].isin(sample_include)]
+        X = X[col_meta.index]
+
+    if sample_exclude is not None:
+        to_exclude = set(sample_exclude) & set(col_meta.index)
+        to_keep = [x for x in col_meta.index if x not in to_exclude] # use a list instead of set to preserve order
+        col_meta = col_meta.loc[to_keep]
         X = X[col_meta.index]
 
     genes = None
@@ -778,7 +785,6 @@ def run(
         _ncol = len([x for x in X.columns if x not in ("GeneID", "GeneSymbol")])
         _nrow = X.shape[0]
         nrow_ncol = "_{0}x{1}".format(_nrow, _ncol)
-        # import ipdb; ipdb.set_trace()
         outname_base_name = "clustermap"
         this_outname_kws = outname_kws.copy()
         if "vfile" in outname_kws:  # 'hack' to nest 1 folder deeper
@@ -790,7 +796,6 @@ def run(
         #outname_kws.update(extra_outname_kws)
         #this_outname_kws = outname_kws.copy()  # <- defensive copy
         #this_outname_kws.update(extra_outname_kws)
-        #import ipdb; ipdb.set_trace()
         out = outname_func(outname_base_name, **this_outname_kws) + nrow_ncol + file_fmt
 
         plot_and_save(
