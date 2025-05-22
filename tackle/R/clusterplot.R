@@ -563,8 +563,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   # title = ifelse(is.null(z_score), ifelse(linear == TRUE, "iBAQ", "log(iBAQ)"), "zscore(log(iBAQ))"),
   .title <- ifelse(linear == TRUE, "iBAQ", "log(iBAQ)")
-  if (is.null(z_score) && (z_score_scale==FALSE)) z_score <- FALSE
   if (!is.null(z_score) || (z_score_scale==TRUE)) z_score <- TRUE
+  if (is.null(z_score) && (z_score_scale==FALSE)) z_score <- FALSE
   if (z_score == TRUE | z_score == "0") .title <- paste0(.title, " zscore")
   if (!is.null(z_score_by)) .title <- paste0(.title, " by ", z_score_by)
   # {
