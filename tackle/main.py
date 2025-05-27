@@ -5260,7 +5260,7 @@ def bar(
         group_order = group_order.split("|")
 
     data_obj = ctx.obj["data_obj"]
-    metadata = data_obj.col_metadata
+    metadata = data_obj.col_metadata.fillna('')
 
     if genefile and not isinstance(genefile, dict):
         gene = gene + tuple(parse_gid_file(genefile))
@@ -5341,7 +5341,9 @@ def bar(
         }
 
         if linear:
+            zeroexpression = df[df['Expression'] == 0].where(lambda x: x==True).dropna()
             df["Expression"] = df["Expression"].apply(lambda x: np.power(10, x))
+            df.loc[zeroexpression.index, 'Expression'] = 0
             ylab = "Expression (linear)"
         elif log:
             ylab = "log10 Expression"
