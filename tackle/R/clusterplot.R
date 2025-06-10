@@ -134,7 +134,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      linkage = "average", gene_symbol_fontsize = 8,
                      metadata_colors = NULL, circle_col_markers = FALSE,
                      circle_col_marker_size = 12,
-                     force_plot_genes = FALSE, main_title = "",
+                     #force_plot_genes = FALSE,
+                     main_title = "",
                      title_fontsize = 9,
                      cluster_row_slices = TRUE,
                      cluster_col_slices = TRUE,
@@ -146,6 +147,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      color_mid = "white",
                      color_high = "red",
                      fixed_size = FALSE,
+                     figwidth = NULL,
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
@@ -684,8 +686,16 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ht_opt$ANNOTATION_LEGEND_PADDING <- unit(10, "mm")
 
 
+  ref_width <- 10     # reference width, e.g., 10 inches
+  str_wrap_size <- 80
+  if (is.numeric(figwidth)){
+      # dynamically shrink it based on figwidth
+    str_wrap_size <- round(str_wrap_size * figwidth / ref_width)
+  }
+  str_wrap_size <- max(20, min(str_wrap_size, 120)) # don’t let it go too small or big
+
   ht <- ComplexHeatmap::draw(ht,
-    column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 80),
+    column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = str_wrap_size),
     column_title_gp = gpar(fontsize = 13, fontface = "bold", just = "left"),
     heatmap_legend_side = "bottom",
     padding = unit(c(10, 10, 2, 8), "mm") # bottom, left, top, right
