@@ -175,6 +175,15 @@ def run(
         _tokeep = [x for x in genes if x in X.index]  # preserves order
         # X = X.loc[set(X.index) & set(genes)]
         X = X.loc[_tokeep]
+        X = X[~X.index.duplicated(keep='first')] # just in case there are duplicate ids
+        if force_plot_genes: # add these in and fill as NA
+            missing = set(genes) - set(X.index)
+            if missing:
+                Xmissing = pd.DataFrame(index=list(missing), columns=X.columns)
+                Xmissing.index.name = X.index.name
+                X = pd.concat([X, Xmissing])
+
+
     # print(len(X))
 
     ## filter by volcano output
@@ -436,8 +445,15 @@ def run(
         annot_mat.columns.name = annotate
         outname_kws["annot"] = annotate
 
+        missing = set(X.index) - set(annot_mat.index)
+        if missing:
+            _missing = pd.DataFrame(index=list(missing), columns=X.columns).fillna(0)
+            _missing.index.name = X.index.name
+            annot_mat = pd.concat([annot_mat, _missing])
+
         annot_mat["GeneID"] = annot_mat.index
         annot_mat = annot_mat[["GeneID"] + [x for x in annot_mat if x != "GeneID"]]
+        # fill
 
     # ============================================================
 
@@ -459,8 +475,8 @@ def run(
     #
     # data_obj.do_cluster()
     _d = {
-           "fna"+"T" if z_score_fillna else "F": "",
-           "mval"+"T" if missing_values else "F": "",
+           #"fna"+"T" if z_score_fillna else "F": "",
+           #"mval"+"T" if missing_values else "F": "",
            "l"+linkage:""
            }
     outname_func = partial(
@@ -473,7 +489,7 @@ def run(
         #fna="T" if z_score_fillna else "F",
         #l=linkage,
         #mval="T" if missing_values else "F",
-        ntype=data_obj.normtype,
+        norm=data_obj.normtype,
         outpath=data_obj.outpath,  # , "cluster2")
         **_d,
     )
@@ -606,6 +622,7 @@ def run(
         figsize=None,
         **kws,
     ):
+        nonlocal row_cluster, col_cluster
         """
         # gr_kws is redefined here (update fighiehgt /width), no need to take it as input
         """
@@ -662,6 +679,8 @@ def run(
                 FONTSIZE = max(218 / figheight, 6)
                 figheight = 218
 
+        if X.shape[0] < 2:
+            row_cluster, col_cluster = False, False
         call_kws = dict(
             data=X,
             color_low=color_low,
@@ -712,6 +731,7 @@ def run(
                 os.path.join(data_obj.outpath, "cluster2")
             ),  # this is for saving things within the r function
             fixed_size=True if optimal_figsize else False,
+            figwidth=figwidth or robjects.NULL,
         )
         call_kws.update(kws)
         # logger.info(f"call_kws: {call_kws}")
@@ -791,6 +811,9 @@ def run(
             volcano_file = this_outname_kws.pop("vfile")
             outname_base_name = os.path.join(outname_base_name, volcano_file)
             #extra_outname_kws["vf"] = volcano_file
+        if "genefile" in outname_kws:
+            _genefile = this_outname_kws.pop("genefile")
+            outname_base_name = os.path.join(outname_base_name, _genefile)
 
 
         #outname_kws.update(extra_outname_kws)
