@@ -64,6 +64,8 @@ def volcanoplot(
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
+    from rpy2.robjects.conversion import localconverter
+
 
     # gm = GeneMapper()
     gm = get_gene_mapper()
@@ -138,7 +140,7 @@ def volcanoplot(
         # group = ''.join(group_lst[:start] + group_lst[end:])
         # return group
 
-    max_fc = max(x.log2_FC.abs().max() for x in results.values())
+    max_fc = float(max(x.log2_FC.abs().max() for x in results.values()))
 
     def _clean(x):
         return x.strip("\( ").strip(" \)").strip()
@@ -149,13 +151,14 @@ def volcanoplot(
         df = df.loc[_genes]
 
     if global_xmax is None or global_xmax is True:
-        global_xmax = abs(max(x["log2_FC"].abs().max() for x in results.values()))
+        global_xmax = float(abs(max(x["log2_FC"].abs().max() for x in results.values())))
     elif global_xmax is False:
         global_xmax = robjects.NA_Real
     if global_ymax is None or global_ymax is True:
         global_ymax = -np.log10(
             min(x["pValue"][x["pValue"] > 0].min() for x in results.values())
         )
+        global_ymax = float(global_ymax)
         # Use min to find the smallest p-value, then take the -log10. Exclude non-positive p-values.
     elif global_ymax is False:
         global_ymax = robjects.NA_Real
@@ -187,7 +190,6 @@ def volcanoplot(
             # TODO handle this, maybe with user-config?
             # pass
             # group1, group0 = [x.strip() for x in comparison.split("-")]
-            # import ipdb; ipdb.set_trace()
             group1, group0 = [x.strip() for x in _comparison.split(" - ")]
             group0_fix, group1_fix = (
                 fix_group_name(group0, meta.columns),
@@ -249,7 +251,7 @@ def volcanoplot(
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
             # batch_me=_b,
-            sort=number_by,
+            #sort=number_by,
             colors_only=data_obj.colors_only,
             batch=data_obj.batch_applied,
             normtype=data_obj.normtype,
@@ -301,7 +303,7 @@ def volcanoplot(
         export_data[export_cols].to_csv(out, sep="\t")
         print("done", flush=True)
 
-        pandas2ri.activate()
+        # pandas2ri.activate()
         r_source = robjects.r["source"]
         r_file = os.path.join(
             os.path.split(os.path.abspath(__file__))[0], "R", "volcanoplot.R"
@@ -358,45 +360,45 @@ def volcanoplot(
             **_xtra,
         )
         for file_fmt in file_fmts:
-            grdevice = gr_devices[file_fmt]
-            gr_kw = gr_kws[file_fmt]
-            out = outname + file_fmt
-            print("Saving", out, "...", end="", flush=True)
+            with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+                grdevice = gr_devices[file_fmt]
+                gr_kw = gr_kws[file_fmt]
+                out = outname + file_fmt
+                print("Saving", out, "...", end="", flush=True)
 
-            grdevice(file=out, **gr_kw)
+                grdevice(file=out, **gr_kw)
 
-            # Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
-            # _data = df.reset_index()
-            # _data['FunCats'] = _data.FunCats.fillna('')
-            Rvolcanoplot(
-                df,
-                max_labels=number,
-                fc_cutoff=foldchange,
-                number_by=number_by,
-                direction=direction,
-                force_highlight_geneids=force_highlight_geneids,
-                bg_marker_color=bg_marker_color,
-                color_down=color_down,
-                color_up=color_up,
-                sig=sig,
-                sig_metric=sig_metric,
-                yax=yaxis,
-                label_cex=label_scale,
-                annot_cex=annot_scale,
-                marker_cex=marker_scale,
-                max_fc=max_fc,
-                point_size=1.4,
-                group0=group0,
-                group1=group1,
-                alpha=alpha,
-                pch=pch,
-                global_xmax=global_xmax,
-                global_ymax=global_ymax,
-                # **kws,
-            )
-
-            grdevices.dev_off()
-            print("done.", flush=True)
+                # Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
+                # _data = df.reset_index()
+                # _data['FunCats'] = _data.FunCats.fillna('')
+                Rvolcanoplot(
+                    df,
+                    max_labels=number,
+                    fc_cutoff=foldchange,
+                    number_by=number_by,
+                    direction=direction,
+                    force_highlight_geneids=force_highlight_geneids,
+                    bg_marker_color=bg_marker_color,
+                    color_down=color_down,
+                    color_up=color_up,
+                    sig=sig,
+                    sig_metric=sig_metric,
+                    yax=yaxis,
+                    label_cex=label_scale,
+                    annot_cex=annot_scale,
+                    marker_cex=marker_scale,
+                    max_fc=max_fc,
+                    point_size=1.4,
+                    group0=group0,
+                    group1=group1,
+                    alpha=alpha,
+                    pch=pch,
+                    global_xmax=global_xmax,
+                    global_ymax=global_ymax,
+                    # **kws,
+                )
+                grdevices.dev_off()
+                print("done.", flush=True)
         ## end for comparison, df in results.items():
 
     return

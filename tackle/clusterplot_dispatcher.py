@@ -97,6 +97,8 @@ def run(
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
+    from rpy2.robjects.conversion import localconverter
+
 
     grdevices = importr("grDevices")
 
@@ -119,7 +121,7 @@ def run(
     if gsea_input is not None:
         raise NotImplementedError()
 
-    pandas2ri.activate()
+    # pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(
         os.path.split(os.path.abspath(__file__))[0], "R", "clusterplot.R"
@@ -410,11 +412,21 @@ def run(
     ## ============================================================
     # experimental, best to be put in a separate function
     if cut_by is not None:
-        if ":" in cut_by:
-            cut_by = cut_by.split(":")
+        # Normalize to a list of strings
+        if isinstance(cut_by, str):
+            cut_by = cut_by.split(":") if ":" in cut_by else [cut_by]
         else:
-            cut_by = [cut_by]
-        cut_by = np.array(cut_by)
+            cut_by = list(cut_by)
+        # Validate columns exist in col_meta
+        if col_meta is not None:
+            for c in cut_by:
+                if c not in col_meta.columns:
+                    print(f"{c} not in column metadata")
+                    cut_by = None
+                    break
+        outname_kws["cut"] = "_".join(cut_by)  # Join list to string
+    else:
+        cut_by = robjects.NULL
         for c in cut_by:
             if col_meta is not None and c not in col_meta.columns:
                 print("{} not in column metadata".format(cut_by))
@@ -608,7 +620,7 @@ def run(
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
-    pandas2ri.activate()
+    # pandas2ri.activate()
 
     def plot_and_save(
         X,
@@ -646,17 +658,21 @@ def run(
         # for the height
         if figsize is not None and figsize[1] is None and figsize[0] is not None:
             if optimal_figsize:
-                figheight = 4 + (X.shape[0] * 0.22)
+                figheight = 4. + (X.shape[0] * 0.22)
+                if not main_title == robjects.NULL:
+                    figheight += .36
             else:
                 figheight = 11
             figsize = (figsize[0], figheight)
 
         if figsize is None or (figsize[0] is None and figsize[1] is None):  # either None or length 2 tuple
             if optimal_figsize:
-                figheight = 4 + (X.shape[0] * 0.22)
+                figheight = 4. + (X.shape[0] * 0.22)
+                if not main_title == robjects.NULL:
+                    figheight += .36
                 figwidth = 8.4 + (X.shape[1] * 0.26)
                 if col_cluster:
-                    figheight += 3.2
+                    figheight += 3.6
             else:
                 figheight = 11
                 figwidth = max(min((len(X.columns) / 2)*1.2, 18), min_figwidth)
@@ -686,7 +702,7 @@ def run(
             color_low=color_low,
             color_mid=color_mid,
             color_high=color_high,
-            cut_by=cut_by,
+            cut_by=robjects.vectors.StrVector(cut_by) or robjects.NULL,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
             z_score=(
@@ -748,14 +764,15 @@ def run(
 
         logger.info(f"figwidth: {figwidth}, figheight: {figheight}")
 
-        grdevice = grdevice_helper.get_device(
-            filetype=file_fmt, width=figwidth, height=figheight
-        )
-        grdevice(file=out)  # open file for saving
-        ret = cluster2(**call_kws)  # draw
-        # print(ret[0])
-        grdevices.dev_off()  # close file
-        print(".done", flush=True)
+        with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+            grdevice = grdevice_helper.get_device(
+                filetype=file_fmt, width=figwidth, height=figheight
+            )
+            grdevice(file=out)  # open file for saving
+            ret = cluster2(**call_kws)  # draw
+            # print(ret[0])
+            grdevices.dev_off()  # close file
+            print(".done", flush=True)
 
         sil_df = None
         try:

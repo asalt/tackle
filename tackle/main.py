@@ -1146,6 +1146,9 @@ def make_config(
 )
 @click.pass_context
 def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
+
+    import rpy2.robjects as robjects
+
     data_obj = ctx.obj["data_obj"]
     file_fmts = ctx.obj["file_fmts"]
 
@@ -1180,7 +1183,7 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
         shade_correlation=shade_correlation,
         plt_size=size or robjects.NULL,
         outname=outname,
-        file_fmts=file_fmts,
+        file_fmts=('.pdf', ), # file_fmts, # pnj doesmt work its too big
         mask=data_obj.mask,
         histogram=histogram,
     )
@@ -1794,15 +1797,6 @@ def pca2(
     sb.set_color_codes()
     sb.set_context("notebook", font_scale=1.4)
 
-
-    # try:
-    #     import rpy2.robjects as robjects
-    #     from rpy2.robjects import pandas2ri
-    #     from rpy2.robjects.packages import importr
-    # except ModuleNotFoundError:
-    #     print("rpy2 needs to be installed")
-    #     return
-
     data_obj = ctx.obj["data_obj"]
 
     X = data_obj.areas_log_shifted
@@ -1857,11 +1851,13 @@ def pca2(
 
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
-    robjects.pandas2ri.activate()
+    from rpy2.robjects.conversion import localconverter
+
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "pcaplot.R")
     r_source(r_file)
     pca2 = robjects.r["pca2"]
+    # robjects.pandas2ri.activate()
 
     # # columns to assign colors:
     # metadata_color_list = list()
@@ -1924,26 +1920,28 @@ def pca2(
     # metadata_colorframe = pd.DataFrame(metadata_color_list)
 
     file_fmts = ctx.obj["file_fmts"]
-    pca2(
-        dfm,
-        color=color or robjects.NULL,
-        shape=marker or robjects.NULL,
-        outfiletypes=np.array(file_fmts),
-        outname=outname_func("pca2"),
-        center=center,
-        scale=scale,
-        normalize_by=normalize_by or robjects.NULL,
-        label=annotate,
-        fillna=fillna or "min",
-        showframe=frame,
-        max_pc=max_pc,
-        color_list=color_list,
-        marker_list=robjects.NULL,
-        title=outname_kws.get("genefile") or robjects.NULL,
-        annot_str=outname_kws.get("genefile") or robjects.NULL,
-        fig_width=figsize[0],
-        fig_height=figsize[1],
-    )
+    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+        pca2(
+            dfm,
+            color=color or robjects.NULL,
+            shape=marker or robjects.NULL,
+            #outfiletypes=np.array(file_fmts),
+            outfiletypes=list(file_fmts),
+            outname=outname_func("pca2"),
+            center=center,
+            scale=scale,
+            normalize_by=normalize_by or robjects.NULL,
+            label=annotate,
+            fillna=fillna or "min",
+            showframe=frame,
+            max_pc=max_pc,
+            color_list=color_list,
+            marker_list=robjects.NULL,
+            title=outname_kws.get("genefile") or robjects.NULL,
+            annot_str=outname_kws.get("genefile") or robjects.NULL,
+            fig_width=figsize[0],
+            fig_height=figsize[1],
+        )
 
 
 @main.command("cluster2")
@@ -2464,7 +2462,7 @@ def _xx():  # not called, old code
     column_title = None
     if genefile and not isinstance(genefile, dict):
         genes = parse_gid_file(genefile, sheet=genefile_sheet)  # default 0
-        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
+        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0].replace('/', ''))
         column_title = outname_kws["genefile"]
     elif genefile and isinstance(genefile, dict):  # this is if already processed
         _key = list(genefile.keys())[0]
@@ -5239,6 +5237,9 @@ def bar(
 ):
 
     import seaborn as sb
+    from rpy2 import robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.conversion import localconverter
     rc = {"font.family": "serif", "font.serif": ["Times", "Palatino", "serif"]}
     sb.set_context("paper")
     sb.set_style("white", rc)
@@ -5384,15 +5385,16 @@ def bar(
             df["index"] = pd.Categorical(
                 df["index"], df["index"].drop_duplicates(), ordered=True
             )
-            p = Rbarplot(
-                df,
-                average or robjects.NULL,
-                group or robjects.NULL,
-                group_order=group_order or robjects.NULL,
-                cmap=cmap or robjects.NULL,
-                title=title,
-                ylab=ylab,
-            )
+            with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+                p = Rbarplot(
+                    df,
+                    average or robjects.NULL,
+                    group or robjects.NULL,
+                    group_order=group_order or robjects.NULL,
+                    cmap=cmap or robjects.NULL,
+                    title=title,
+                    ylab=ylab,
+                )
 
             close_grdevice()
             # grdevices.dev_off()

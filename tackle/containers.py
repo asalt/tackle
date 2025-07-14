@@ -1,5 +1,6 @@
 import logging
 from collections import OrderedDict
+import glob
 
 from .utils import *
 
@@ -214,8 +215,9 @@ class Annotations(LazyLoader):
         self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
-
-    def map_gene_ids(self, gids, field='GeneID', taxon='9606', fallback_to_human=True, verbose=True):
+    def map_gene_ids(
+        self, gids, field="GeneID", taxon="9606", fallback_to_human=True, verbose=True
+    ):
         gids = list(set(gids))
         df = self.df
 
@@ -223,20 +225,24 @@ class Annotations(LazyLoader):
             raise ValueError(f"{field} not found in annotation dataframe")
 
         if verbose:
-            logger.info(f"Mapping {len(gids)} gene IDs using field: {field} with taxon: {taxon}")
+            logger.info(
+                f"Mapping {len(gids)} gene IDs using field: {field} with taxon: {taxon}"
+            )
 
         # Attempt initial mapping from annotation dataframe
         found = df[df[field].isin(gids)]
-        result = found[
-            [x for x in found if x != "MitoCarta_Pathways"]
-        ].set_index("GeneID")
+        result = found[[x for x in found if x != "MitoCarta_Pathways"]].set_index(
+            "GeneID"
+        )
         result = result[["GeneSymbol", *[x for x in result if x != "GeneSymbol"]]]
+        result = result.reset_index()
 
-
-        if fallback_to_human or taxon != "9606":
-            missing = set(gids) - set(result.index)
+        missing = set(gids) - set(result.index)
+        if fallback_to_human or taxon != "9606" and len(missing) > 0:
             if verbose:
-                logger.info(f"{len(missing)} IDs not found in annotation; attempting homologene remapping")
+                logger.info(
+                    f"{len(missing)} IDs not found in annotation; attempting homologene remapping"
+                )
 
             hmapper = get_hgene_mapper()
             mapped_to_human = hmapper.map_to_human(missing)
@@ -246,25 +252,35 @@ class Annotations(LazyLoader):
                 logger.info(f"Mapped {len(mapped_ids)} to human GeneIDs")
 
             # Make mapping DataFrame
-            map_df = pd.DataFrame.from_dict(mapped_ids, orient='index', columns=['human_gid'])
-            map_df.index.name = 'original_gid'
+            map_df = pd.DataFrame.from_dict(
+                mapped_ids, orient="index", columns=["human_gid"]
+            )
+            map_df.index.name = "original_gid"
             map_df = map_df.reset_index()
 
             # Query your self.df using human_gid values
             df_human = self.df[self.df.GeneID.isin(map_df.human_gid)]
 
             # Merge annotations with original IDs
-            merged = map_df.merge(df_human, left_on='human_gid', right_on='GeneID', how='left')
+            merged = map_df.merge(
+                df_human, left_on="human_gid", right_on="GeneID", how="left"
+            )
 
             # Final formatting: set index to original_gid
-            merged = merged.drop(["GeneID", "human_gid"], axis=1).rename(columns={"original_gid": "GeneID"})
+            merged = merged.drop(["GeneID", "human_gid"], axis=1).rename(
+                columns={"original_gid": "GeneID"}
+            )
 
             # Drop/rename/reorder if needed
-            cols = [c for c in merged.columns if c != "GeneSymbol" and c != "MitoCarta_Pathways"]
+            cols = [
+                c
+                for c in merged.columns
+                if c != "GeneSymbol" and c != "MitoCarta_Pathways"
+            ]
             merged = merged[["GeneSymbol"] + cols]
 
             # Append to the existing result
-            result = pd.concat([result, merged])
+            result = pd.concat([result, merged]).drop_duplicates("GeneID")
 
         elif fallback_to_human and taxon == "9606" and verbose:
             logger.info("Fallback to homologene skipped: taxon is human")
@@ -272,12 +288,18 @@ class Annotations(LazyLoader):
         return result
 
 
-class HistoneInfo(LazyLoader):
-    read_kws = dict(dtype="string")
+class HistoneInfo:
+    # read_kws = dict(dtype="string")
 
     def __init__(self):
-        file_path = os.path.join(PWD, "data", "histones.tsv")
-        super().__init__(file_path)
+        file_paths = glob.glob(os.path.join(PWD, "data", "histone*tsv"))
+        self.infos = [LazyLoader(file_path) for file_path in file_paths]
+        # file_path = os.path.join(PWD, "data", "histones.tsv")
+        # super().__init__(file_path)
+
+    def __iter__(self):
+        for info in self.infos:
+            yield info
 
 
 class HGeneMapper:
@@ -800,6 +822,7 @@ class Data:
     @lru_cache()
     def get_e2g(recno, runno, searchno, data_dir, only_local=False):
         from bcmproteomics_ext import ispec
+
         e2g = ispec.E2G(
             recno, runno, searchno, data_dir=data_dir, only_local=only_local
         )
@@ -1148,24 +1171,24 @@ class Data:
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
 
-        histone_info = HistoneInfo()
+        histone_info_object = HistoneInfo()
 
-        histone_values = self.data[self.data.GeneID.isin(histone_info.df.GeneID)].query(
-            "Metric=='iBAQ_dstrAdj'"
-        )
-
-        _value_cols = [x for x in self.data.columns if x != "GeneID" and x != "Metric"]
-        histone_values["geneid_sortable"] = [
-            int(x) if x.isnumeric() else x for x in histone_values.GeneID
-        ]
-
-        histone_values = histone_values.sort_values(
-            by=[_value_cols[0], "geneid_sortable"]
-        )
-        histone_vals_nodups = histone_values.drop_duplicates(_value_cols)
-        _to_remove = set(histone_values.GeneID) - set(histone_vals_nodups.GeneID)
-
-        self.data = self.data[~self.data.GeneID.isin(_to_remove)]
+        for histone_info in histone_info_object:
+            histone_values = self.data[
+                self.data.GeneID.isin(histone_info.df.GeneID)
+            ].query("Metric=='AreaSum_dstrAdj'")
+            _value_cols = [
+                x for x in self.data.columns if x != "GeneID" and x != "Metric"
+            ]
+            histone_values["geneid_sortable"] = [
+                int(x) if x.isnumeric() else x for x in histone_values.GeneID
+            ]
+            histone_values = histone_values.sort_values(
+                by=[_value_cols[0], "geneid_sortable"]
+            )
+            histone_vals_nodups = histone_values.drop_duplicates(_value_cols)
+            _to_remove = set(histone_values.GeneID) - set(histone_vals_nodups.GeneID)
+            self.data = self.data[~self.data.GeneID.isin(_to_remove)]
 
         print("done", flush=True)
 
@@ -1332,7 +1355,8 @@ class Data:
         logger.info(f"min nonzero val: {self.minval:.4g}")
 
         # if self.impute_missing_values or 1:
-        logger.info(f"Impute missing values : {self.impute_missing_values}")
+        # logger.info(f"Impute missing values : {self.impute_missing_values}")
+        # this is for if batch correction follows
         if self.impute_missing_values:
             # downshift=2.
             # scale = .5
@@ -1371,9 +1395,10 @@ class Data:
                 )
             elif not self.fill_na_zero:
                 self._areas_log = (
-                    self._areas.astype(float).divide(self.minval).pipe(np.log10)
+                    self._areas.astype(float)
+                    .divide(self.minval)
+                    .pipe(np.log10)
                     .replace([np.inf, -np.inf], np.nan)
-
                 )
 
         self._areas_log.index.name = "GeneID"
@@ -1555,7 +1580,10 @@ class Data:
         for item, grp in pheno.groupby(batch):
             cols = grp.index
             data.loc[:, cols] = impute_missing(
-                    data.loc[:, cols].replace(0, pd.NA), downshift=0, scale=0.1, make_plot=False
+                data.loc[:, cols].replace(0, pd.NA),
+                downshift=0,
+                scale=0.1,
+                make_plot=False,
             ).astype(float)
         # print(data.shape)
 
@@ -1697,9 +1725,14 @@ class Data:
         {comparison: DataFrame of results}
         """
         from rpy2.robjects import pandas2ri
-        from rpy2 import robjects 
+        from rpy2 import robjects
+        from rpy2.robjects import r
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.packages import importr
+        from rpy2.robjects.conversion import localconverter
+
         r = robjects.r
-        pandas2ri.activate()
+        # pandas2ri.activate()
 
         r_source = robjects.r["source"]
         r_file = os.path.join(
@@ -1710,11 +1743,13 @@ class Data:
         mat = self.areas_log
         if not fill_na_zero:
             mat[self.mask] = np.nan
+            mat[mat == 0] = np.nan
 
         if fill_na_zero:
             mat[self.mask] = 0
             mat[mat == 0] = 0
 
+        logger.info(f"Impute missing values for stat mod: {self.impute_missing_values}")
         if impute_missing_values:
             downshift, scale = 1.8, 0.8
 
@@ -1742,9 +1777,13 @@ class Data:
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 
-        pandas2ri.activate()
+        # pandas2ri.activate()
 
-        robjects.r.assign("edata", mat)
+        with localconverter(
+            robjects.default_converter + pandas2ri.converter
+        ):  # no tuples
+            robjects.r.assign("edata", mat)
+
         variables = robjects.r("colnames(edata)")
         # fix each individual column of `mod`
         fixed_vars = [
@@ -1755,7 +1794,10 @@ class Data:
             .replace("?", "qmk")
             for x in variables
         ]
-        robjects.r.assign("fixed_vars", fixed_vars)
+        with localconverter(
+            robjects.default_converter + pandas2ri.converter
+        ):  # no tuples
+            robjects.r.assign("fixed_vars", fixed_vars)
         robjects.r("colnames(edata) <- fixed_vars")
 
         # pheno = self.col_metadata.T
@@ -1769,7 +1811,10 @@ class Data:
         )
         for col in ("recno", "runno", "searchno"):
             pheno[col] = pheno[col].astype(str)
-        robjects.r.assign("pheno", pheno)
+        with localconverter(
+            robjects.default_converter + pandas2ri.converter
+        ):  # no tuples
+            robjects.r.assign("pheno", pheno)
 
         # maybe but need error checking:
         # robjects.r("pheno$treat <- factor(pheno$treat)")
@@ -1789,7 +1834,10 @@ class Data:
 
         if self.covariate is not None:
             ncov = pheno[self.covariate].nunique()
-            r.assign("ncov", pheno[self.covariate].nunique())
+            with localconverter(
+                robjects.default_converter + pandas2ri.converter
+            ):  # no tuples
+                r.assign("ncov", pheno[self.covariate].nunique())
         else:
             r.assign("ncov", 0)
             ncov = 0
@@ -1798,6 +1846,7 @@ class Data:
             pvalues = r("pvalue.batch(as.matrix(edata), mod, mod0, ncov)")
         elif not self.pairs and self.limma:
             from rpy2.robjects.packages import importr
+
             importr("limma")
             # r('suppressMessages(library(dplyr))')
 
@@ -1818,11 +1867,14 @@ class Data:
                 .replace("-", "_")
                 .replace("+", "_")
                 .replace(r"/", "_")
-                #.replace(r"\\", "_")
+                # .replace(r"\\", "_")
                 .replace("?", "qmk")
                 for x in variables
             ]
-            robjects.r.assign("fixed_vars", fixed_vars)
+            with localconverter(
+                robjects.default_converter + pandas2ri.converter
+            ):  # no tuples
+                robjects.r.assign("fixed_vars", fixed_vars)
             robjects.r("colnames(mod) <- fixed_vars")
 
             fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
@@ -1845,7 +1897,10 @@ class Data:
             robjects.r("print(mod)")
             # robjects.r('print(fit)')
 
-            robjects.r.assign("contrasts_array", contrasts_array)
+            with localconverter(
+                robjects.default_converter + pandas2ri.converter
+            ):  # no tuples
+                robjects.r.assign("contrasts_array", contrasts_array)
 
             robjects.r(
                 """contrasts_matrix <- makeContrasts(contrasts = contrasts_array,
@@ -2384,6 +2439,7 @@ class Data:
 
             if level == "gct":
                 from rpy2.robjects.packages import importr
+
                 outname = outname.strip(".tsv")  # gct will be added automatically
                 cmapR = importr("cmapR")
                 # data_obj = ctx.obj["data_obj"]
@@ -2420,8 +2476,9 @@ class Data:
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
-                from rpy2 import robjects 
+                from rpy2 import robjects
                 from rpy2.robjects import pandas2ri
+
                 pandas2ri.activate()
                 r = robjects.r
                 r.assign("m", _m)
