@@ -136,6 +136,7 @@ def fix_name(x):
     return (
         x.replace(":", "_")
         .replace(" ", "_")
+        .replace(".", "")
         .replace("/", "dv")
         .replace("+", "")
         .replace("(", "")
@@ -725,6 +726,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
         "Symbol": str,
         "junk": str,
         "GeneID": str,
+        "entrez_gene": str,
     }
     if gids.endswith(".csv"):
         _df = pd.read_csv(gids, dtype=_dtype, comment="#")
@@ -735,7 +737,25 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     else:  # maybe no extension, and is text
         _df = pd.read_table(gids, dtype=_dtype, comment="#")
 
+    _df = _df.rename(columns={x:x.lower() for x in _dtype.keys()})
+    #_df = _df.rename(columns={x:"geneid" for x in _dtype.keys()})
     _df.columns = _df.columns.str.lower()
+
+
+    # If the file has only one column, and its name isn't in the expected set
+    if _df.shape[1] == 1 and _df.columns[0].lower() not in [x.lower() for x in _dtype.keys()]:
+    # Re-read the file with no header, treat first row as data
+        if gids.endswith(".csv"):
+            _df = pd.read_csv(gids, dtype=str, header=None, comment="#")
+        elif gids.endswith(".tsv") or gids.endswith(".txt"):
+            _df = pd.read_table(gids, dtype=str, header=None, comment="#")
+        elif gids.endswith(".xlsx"):
+            _df = pd.read_excel(gids, dtype=str, sheet_name=sheet, header=None)
+        else:
+            _df = pd.read_table(gids, dtype=str, header=None, comment="#")
+
+        # Assign column name explicitly
+        _df.columns = ["geneid"]
 
     #
 
@@ -759,7 +779,6 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
 
     #
     #
-    # import ipdb; ipdb.set_trace()
     if _df is not None and "geneid" in _df:
         return _df.geneid.tolist()
     if _df is not None and "genesymbol" in _df.columns:
@@ -1267,7 +1286,7 @@ def get_outname(
         outpath = os.path.join(outpath, taxon)
 
     # "{}".format(kwargs)
-    fname = "{}more_nonzero_{}".format(
+    fname = "{}more_{}".format(
         # name,
         # plottype,
         non_zeros,
@@ -1281,6 +1300,7 @@ def get_outname(
         .replace("median", "med")
         .replace("__", "_")
     )
+    fname = fname.lstrip(r".")
 
     # here is where we could split the path further
     # this might not be necessary here anymore
