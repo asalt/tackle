@@ -11,6 +11,7 @@ from tackle.grdevice_helper import grdevice
 # from pyupset.visualisation import DataExtractor
 
 from .utils import get_outname, save_multiple, genefilter, filter_sra, filter_taxon, filter_observations
+from tackle.containers import get_annotation_mapper, add_annotations
 #from .upset import make_plot as make_upset
 
 idx = pd.IndexSlice
@@ -43,6 +44,8 @@ def extract_gene_lists(data_obj, group, non_zeros):
 def extract_named_overlaps(cmat):
     # Get set names and combo codes
     from rpy2.robjects import r, pandas2ri, ListVector
+
+
     set_names = list(r("set_name(cmat)"))         # ['SLG20', 'Z2A19']
     combo_codes = list(r("comb_name(cmat)"))      # ['11', '10', '01']
 
@@ -75,8 +78,14 @@ def overlaps_to_long_df(overlaps):
     return pd.DataFrame(records)
 
 
+def make_overlap(*args, **kwargs):
+    import rpy2.robjects as robjects
+    from rpy2.robjects.conversion import localconverter
+    from rpy2.robjects import pandas2ri
+    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+        _make_overlap(*args, **kwargs)
 
-def make_overlap(
+def _make_overlap(
     data_obj,
     group=None,
     file_fmts=('.pdf',),
@@ -97,13 +106,9 @@ def make_overlap(
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
     from rpy2.robjects import r, pandas2ri, ListVector
-    pandas2ri.activate()
+    from rpy2.robjects.conversion import localconverter
+    #pandas2ri.activate()
 
-
-    if figsize is None and plot_type == "venn":
-        figsize=(6,4)
-
-    width, height = figsize
     overlap_dict = extract_gene_lists(data_obj, group, non_zeros)
     if not overlap_dict:
         return
@@ -126,7 +131,11 @@ def make_overlap(
     r("cmat <- make_comb_mat(listing)") # for full overlap lists
     cmat = robjects.r['cmat']
 
+
     if plot_style == 'venn' and n_groups <= max_venn_groups:
+        if figsize is None:
+            figsize=(6,4)
+        width, height = figsize
         r("library(VennDiagram)")
         r.assign("venn_input", ListVector(overlap_dict))
         r("""
@@ -163,8 +172,12 @@ def make_overlap(
         cmat = robjects.r['cmat']
         width, height = cmat.shape
         max_row_name = len(sorted(overlap_dict.keys(), key = lambda x: len(x))[-1])
-        figwidth = 2 + max(width, 2)*.4 + (max_row_name*.08)
-        figheight = 3.4 + height*.24
+        if figsize is None:
+            figwidth = 2 + max(width, 2)*.4 + (max_row_name*.08)
+            figheight = 3.4 + height*.24
+        else:
+            figwidth, figheight = figsize
+
         print(f"widthxheight: {figwidth}x{figheight}")
 
         for ext in file_fmts:
@@ -175,11 +188,13 @@ def make_overlap(
     overlaps = extract_named_overlaps(cmat)
     overlap_df = overlaps_to_long_df(overlaps)
 
-    from tackle.containers import get_annotation_mapper
     aa = get_annotation_mapper()
     annotations = aa.map_gene_ids(overlap_df.GeneID)
-    overlap_df = overlap_df.merge(annotations, left_on='GeneID', right_index=True)
+    overlap_df = overlap_df.merge(annotations, on='GeneID')
+    # overlap_df = add_annotations(overlap_df)
+    # import ipdb; ipdb.set_trace()
 
+    # with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
     overlap_df.to_csv(str(Path(f"{outname_base}_overlaps.tsv")), sep='\t', index=False, encoding="utf-16")
 
 

@@ -23,7 +23,7 @@ def get_gr_devices():
     grdevices = importr("grDevices")
     gr_devices = {
        "png": grdevices.png,
-       "pdf": grdevices.pdf,
+       "pdf": grdevices.cairo_pdf,
        "svg": grdevices.svg,
     }
     return gr_devices

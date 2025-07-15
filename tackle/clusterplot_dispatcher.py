@@ -422,21 +422,13 @@ def run(
             for c in cut_by:
                 if c not in col_meta.columns:
                     print(f"{c} not in column metadata")
-                    cut_by = None
+                    cut_by = robjects.NULL
                     break
-        outname_kws["cut"] = "_".join(cut_by)  # Join list to string
-    else:
-        cut_by = robjects.NULL
-        for c in cut_by:
-            if col_meta is not None and c not in col_meta.columns:
-                print("{} not in column metadata".format(cut_by))
-                cut_by = None
-                break
-    if cut_by is not None:
         if hasattr(cut_by, "__iter__"):
             outname_kws["cut"] = str.join("_", cut_by)
         else:
             outname_kws["cut"] = cut_by
+        cut_by = robjects.vectors.StrVector(cut_by)
     elif cut_by is None:
         cut_by = robjects.NULL
     ## ============================================================
@@ -702,7 +694,7 @@ def run(
             color_low=color_low,
             color_mid=color_mid,
             color_high=color_high,
-            cut_by=robjects.vectors.StrVector(cut_by) or robjects.NULL,
+            cut_by=cut_by,
             annot_mat=annot_mat,
             the_annotation=annotate or robjects.NULL,
             z_score=(

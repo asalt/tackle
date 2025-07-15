@@ -1561,9 +1561,11 @@ class Data:
         from rpy2.robjects.packages import importr
 
         sva = importr("sva")
+        from rpy2 import robjects
         from rpy2.robjects import pandas2ri, r
+        from rpy2.robjects.conversion import localconverter
 
-        pandas2ri.activate()
+        # pandas2ri.activate()
         grdevices = importr("grDevices")
 
         # pheno = self.col_metadata.T
@@ -1619,14 +1621,18 @@ class Data:
             plot_prior = False
 
         try:
-            res = sva.ComBat(
-                dat=data.values,
-                batch=batch,
-                mod=mod,
-                par_prior=not self.batch_nonparametric,
-                mean_only=False,
-                prior_plots=plot_prior,
-            )
+
+            with localconverter(
+                robjects.default_converter + pandas2ri.converter
+            ):  # no tuples
+                res = sva.ComBat(
+                    dat=data.values,
+                    batch=batch,
+                    mod=mod,
+                    par_prior=not self.batch_nonparametric,
+                    mean_only=False,
+                    prior_plots=plot_prior,
+                )
 
         except RRuntimeError:
             res = None
@@ -1704,7 +1710,6 @@ class Data:
         df.index = [maybe_int(x) for x in df.index]
         df.index.name = "GeneID"
 
-        pandas2ri.deactivate()  # this is important, otherwise rpy2 will try to convert all dataframes to r dataframes?
         # true?
         return df
 
@@ -2049,6 +2054,13 @@ class Data:
         return False
 
     def perform_data_export(self, level="all", genesymbols=False, linear=False):
+        from rpy2 import robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.conversion import localconverter
+        with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+            self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear)
+
+    def _perform_data_export(self, level="all", genesymbols=False, linear=False):
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
         #                                               self.non_zeros)
@@ -2479,7 +2491,7 @@ class Data:
                 from rpy2 import robjects
                 from rpy2.robjects import pandas2ri
 
-                pandas2ri.activate()
+                # pandas2ri.activate()
                 r = robjects.r
                 r.assign("m", _m)
                 r.assign("rid", _m.index)
@@ -2497,7 +2509,6 @@ class Data:
                 r.assign("cdesc", cdesc)
                 r.assign("cid", self.col_metadata.index)
                 r.assign("outname", outname)
-                pandas2ri.deactivate()
 
                 # my_new_ds <- new("GCT", mat=m)
                 r(

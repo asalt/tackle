@@ -150,14 +150,19 @@ def make_metrics(
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
+    from rpy2.robjects.conversion import localconverter
+    # with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
 
-    pandas2ri.activate()
+
+
+    #pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "metrics.R")
     r_source(r_file)
     Rmetrics = robjects.r["metrics"]
 
-    Rmetrics(to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts])
+    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+        Rmetrics(to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts])
     # ==================================================================
 
     ggridges = importr("ggridges")
@@ -168,13 +173,15 @@ def make_metrics(
 
     area_df["Name"] = pd.Categorical(area_df["Name"], ordered=True)
 
-    plot = (
-        gg.ggplot(area_df)
-        + gg.aes_string(y="Name", x=area_name)
-        + ggridges.stat_density_ridges(quantile_lines=True, alpha=0.8)
-        + gg.theme_classic(base_size=12)
-    )
-    plot.plot()
+    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+
+        plot = (
+            gg.ggplot(area_df)
+            + gg.aes_string(y="Name", x=area_name)
+            + ggridges.stat_density_ridges(quantile_lines=True, alpha=0.8)
+            + gg.theme_classic(base_size=12)
+        )
+        plot.plot()
 
     # outname = get_outname(
     #    "metrics_dist",
@@ -269,6 +276,7 @@ def make_metrics(
 
     # fig.subplots_adjust(hspace=.15, top=.95, left=.1, right=.9)
     # save_multiple(fig, outname, *file_fmts)
+    # with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
 
     if full:  # also plot info from PSMs
         raise NotImplementedError("Not yet")
