@@ -88,7 +88,7 @@ def sort_and_select_topn(
     # If direction is "both", we pick topn//2 from up and topn//2 from down
     # Otherwise we pick topn from just up or down.
     if direction == "both":
-        n_each = int(topn // 2)
+        n_each = int(int(topn) // 2)
     else:
         n_each = topn
     
