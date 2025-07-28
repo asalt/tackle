@@ -15,6 +15,8 @@ import seaborn as sb
 
 
 from .utils import get_outname, save_multiple, genefilter, filter_sra, filter_taxon
+from . import grdevice_helper
+
 
 from .containers import TAXON_MAPPER
 
@@ -151,37 +153,80 @@ def make_metrics(
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.packages import importr
     from rpy2.robjects.conversion import localconverter
+
     # with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
 
-
-
-    #pandas2ri.activate()
+    # pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "metrics.R")
     r_source(r_file)
     Rmetrics = robjects.r["metrics"]
 
-    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
-        Rmetrics(to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts])
+    with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
+        Rmetrics(
+            to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts]
+        )
     # ==================================================================
 
-    ggridges = importr("ggridges")
-    rboxplot = r["boxplot"]
-    rboxplot
+    # ggridges = importr("ggridges")
+    # rboxplot = r["boxplot"]
+    # rboxplot
 
     import rpy2.robjects.lib.ggplot2 as gg
 
     area_df["Name"] = pd.Categorical(area_df["Name"], ordered=True)
 
-    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+    # with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
+    # this is not working with new rpy2
+    # plot = (
+    #     gg.ggplot(area_df)
+    #     + gg.aes_string(y="Name", x=area_name)
+    #     + ggridges.stat_density_ridges(quantile_lines=True, alpha=0.8)
+    #     + gg.theme_classic(base_size=12)
+    # )
+    # plot.plot()
 
-        plot = (
-            gg.ggplot(area_df)
-            + gg.aes_string(y="Name", x=area_name)
-            + ggridges.stat_density_ridges(quantile_lines=True, alpha=0.8)
-            + gg.theme_classic(base_size=12)
-        )
-        plot.plot()
+    outname = namegen("metrics_dist", **kws)
+
+    grdevices = importr("grDevices")
+
+    _code = f"""
+      library(rlang)
+      ycol="{area_name}"
+      p <- ggplot2::ggplot(df, aes(x=Name, y=!!sym(ycol))) +
+        geom_violin() +
+        geom_boxplot(width=.12) +
+        labs(y = ycol) +
+        theme_classic() + 
+        theme(axis.text.x = element_text(angle = 90, hjust = 1.0, vjust=0.5,  size = 10))
+
+        #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+      print(p)
+    
+    """
+    figheight = 7
+    figwidth = 2 + (0.75 * area_df.Name.nunique())
+    with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
+
+        robjects.r.assign("df", area_df)
+        robjects.r(_code)
+
+        for file_fmt in file_fmts:
+            out = outname + file_fmt
+            grdevice = grdevice_helper.get_device(
+                filetype=file_fmt, width=figwidth, height=figheight
+            )  # returns a partial grdevice func
+            grdevice(file=out)  # open file for saving
+            robjects.r(_code)
+            # print(ret[0])
+            grdevices.dev_off()  # close file
+            print(".done", flush=True)
+
+    # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
+
+    green = "darkgreen"
+    yellow = "gold"
+    red = "firebrick"
 
     # outname = get_outname(
     #    "metrics_dist",
@@ -196,15 +241,6 @@ def make_metrics(
     #    outpath=os.path.join(data_obj.outpath, "metrics"),
     #    **kws,
     # )
-    outname = namegen("metrics_dist", **kws)
-    for ffmt in file_fmts:
-        plot.save(outname + ffmt)
-
-    # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
-
-    green = "darkgreen"
-    yellow = "gold"
-    red = "firebrick"
 
     # fig, axs = plt.subplots(nrows=2, ncols=2, figsize=(12,8), sharex=True, sharey=False)
     # fig = plt.figure(figsize=(18,10))
