@@ -1,10 +1,13 @@
 """
 
 """
+import rich.traceback 
+rich.traceback.install()
 
 from dis import show_code
 import sys
 import os
+import time
 from pathlib import Path
 import itertools
 
@@ -44,6 +47,7 @@ import matplotlib
 
 #  from seaborn.distributions import _freedman_diaconis_bins
 import click
+
 
 # try:
 #     from quick import gui_option
@@ -205,10 +209,10 @@ class Path_or_Geneset(click.Path):
         if len(matches) == 0:
             logger.warning("No matches found")
             # print("No matches found")
-            return
+            return value
         if len(matches) > 1:
             logger.warning("more than 1 match, just returning one at a time")
-            return
+            return matches
             # todo more than one at the same time
         # return {m, gs['m'] for m in matches}
         ##
@@ -1801,6 +1805,7 @@ def pca2(
 
     X = data_obj.areas_log_shifted
     X.index = X.index.astype(str)
+    X[data_obj.mask] = np.nan  # replace with nan, let pca2 subfunc handle nans
     col_meta = data_obj.col_metadata.copy()
 
     genes = None
@@ -1888,7 +1893,7 @@ def pca2(
         color = "recno"
 
     if color:
-        color_values = col_meta[color].unique()
+        color_values = col_meta[color].dropna().unique()
         color_values.sort()
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
             mapping = data_obj.metadata_colors[color]
@@ -1903,6 +1908,7 @@ def pca2(
             themapping = {x: c for x, c in zip(color_values, color_iter)}
             # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
             color_list = robjects.vectors.ListVector(themapping)
+        dfm[color] = dfm[color].fillna("NA")
 
     # if marker:
     #     if data_obj.metadata_colors is not None and marker in data_obj.metadata_colors:
