@@ -58,12 +58,11 @@ def get_default_color_mapping(s: pd.Series) -> dict:
         return
     palette = "bright"
     s_as_numeric = pd.to_numeric(s, errors="coerce")
-    if (
-        s_as_numeric.sum()
-        > 0 & s_as_numeric.nunique()
-        < 11 & s_as_numeric.isna().sum()
-        == 0
-    ):  # integer
+    has_positive_sum = s_as_numeric.sum() > 0
+    limited_unique_values = s_as_numeric.nunique() < 11
+    has_no_missing = s_as_numeric.isna().sum() == 0
+
+    if has_positive_sum and limited_unique_values and has_no_missing:  # integer
         s = s_as_numeric
         palette = "light:#4133"
 
