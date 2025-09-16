@@ -199,11 +199,15 @@ def maybe_int(x):
 
 def plot_imputed(edata_impute, observed, missing, downshift, scale):
     fig, ax = plt.subplots()
-    sb.distplot(edata_impute.stack(), label="All Data", ax=ax, kde=False)
-    sb.distplot(observed, label="Observed Values", ax=ax, kde=False)
-    sb.distplot(edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False)
+    sb.histplot(edata_impute.stack(), label="All Data", ax=ax, kde=False)
+    sb.histplot(observed, label="Observed Values", ax=ax, kde=False)
+    sb.histplot(
+        edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False
+    )
 
-    # sb.distplot(edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False)
+    # sb.histplot(
+    #     edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False
+    # )
 
     ax.legend(fontsize=10, loc="upper right", markerscale=0.4)
     # ax.set_xlim(0, 10)
