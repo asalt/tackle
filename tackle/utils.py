@@ -31,14 +31,13 @@ import click
 
 def clean_categorical(col_data):
     for col in col_data:
-        if isinstance(col_data[col], pd.CategoricalDtype):
+        series = col_data[col]
+        if isinstance(series.dtype, pd.CategoricalDtype):
             # check to make sure categories are strings
-            cats = col_data[col].cat.categories
+            cats = series.cat.categories
             if not (all(isinstance(x, str) for x in cats)):
-                newcats = [str(x) for x in cats]  # do not need?
-                newvalues = [str(x) for x in col_data[col]]
-                col_data[col] = pd.CategoricalDtype(newvalues)
-        return col_data
+                col_data[col] = series.cat.rename_categories(lambda x: str(x))
+    return col_data
 
 
 RESERVED_COLORS = {
