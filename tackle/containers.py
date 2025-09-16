@@ -40,10 +40,10 @@ try:
     ModuleNotFoundError
 except:
     ModuleNotFoundError = type("ModuleNotFoundError", (Exception,), {})
-# try:
-#     from rpy2.rinterface import RRuntimeError
-# except Exception as e:
-#     RRuntimeError = type("RRuntimeError", (Exception,), {})
+try:
+    from rpy2.rinterface import RRuntimeError
+except Exception as e:
+    RRuntimeError = type("RRuntimeError", (Exception,), {})
 # try:
 #     from rpy2 import robjects
 #     # from rpy2.robjects import r
@@ -1564,6 +1564,8 @@ class Data:
         from rpy2 import robjects
         from rpy2.robjects import pandas2ri, r
         from rpy2.robjects.conversion import localconverter
+        import rpy2.robjects.numpy2ri as numpy2ri
+
 
         # pandas2ri.activate()
         grdevices = importr("grDevices")
@@ -1576,7 +1578,6 @@ class Data:
             pd.NA
         except AttributeError:
             pd.NA = "NA"  # bugfix for pandas < 1.0
-        r.assign("pheno", pheno)
         batch = pheno[self.batch]
 
         for item, grp in pheno.groupby(batch):
@@ -1589,42 +1590,46 @@ class Data:
             ).astype(float)
         # print(data.shape)
 
-        if self.covariate is not None:
-            r("mod  <- model.matrix(~as.factor({}), pheno)".format(self.covariate))
-            mod = r["mod"]
-            self.batch_applied = self.batch + "_Cov_{}".format(self.covariate)
-        else:
-            r("mod <- model.matrix(~1, pheno)")
-            mod = r["mod"]
-            self.batch_applied = self.batch + "_noCov"
-        # r.assign('batch', 'pheno${}'.format(self.batch))
-        # res = sva.ComBat(dat=self._areas_log.fillna(0), batch=batch,
-        #                  mod=mod, par_prior=True, mean_only=False)
-        # prior_plot, plot_prior = False, False
-        if not self.batch_nonparametric and prior_plot:
-            plot_prior = True
-            outname = get_outname(
-                "Combat_prior_plots",
-                name=self.outpath_name,
-                taxon=self.taxon,
-                non_zeros=self.non_zeros,
-                colors_only=self.colors_only,
-                batch=self.batch_applied,
-                batch_method=(
-                    "parametric" if not self.batch_nonparametric else "nonparametric"
-                ),
-                normtype=self.normtype,
-                outpath=self.outpath,
-            )
-            grdevices.png(file=outname + ".png", width=5, height=5, units="in", res=300)
-        else:
-            plot_prior = False
+        with localconverter( # rpy2.robjects.conversion.localconverter
+            robjects.default_converter + pandas2ri.converter + numpy2ri.converter
+        ):  # no tuples
+            r.assign("pheno", pheno)
 
-        try:
 
-            with localconverter(
-                robjects.default_converter + pandas2ri.converter
-            ):  # no tuples
+            if self.covariate is not None:
+                r("mod  <- model.matrix(~as.factor({}), pheno)".format(self.covariate))
+                mod = r["mod"]
+                self.batch_applied = self.batch + "_Cov_{}".format(self.covariate)
+            else:
+                r("mod <- model.matrix(~1, pheno)")
+                mod = r["mod"]
+                self.batch_applied = self.batch + "_noCov"
+
+            # r.assign('batch', 'pheno${}'.format(self.batch))
+            # res = sva.ComBat(dat=self._areas_log.fillna(0), batch=batch,
+            #                  mod=mod, par_prior=True, mean_only=False)
+            # prior_plot, plot_prior = False, False
+            if not self.batch_nonparametric and prior_plot:
+                plot_prior = True
+                outname = get_outname(
+                    "Combat_prior_plots",
+                    name=self.outpath_name,
+                    taxon=self.taxon,
+                    non_zeros=self.non_zeros,
+                    colors_only=self.colors_only,
+                    batch=self.batch_applied,
+                    batch_method=(
+                        "parametric" if not self.batch_nonparametric else "nonparametric"
+                    ),
+                    normtype=self.normtype,
+                    outpath=self.outpath,
+                )
+                grdevices.png(file=outname + ".png", width=5, height=5, units="in", res=300)
+            else:
+                plot_prior = False
+
+            try:
+                # no tuples
                 res = sva.ComBat(
                     dat=data.values,
                     batch=batch,
@@ -1634,8 +1639,12 @@ class Data:
                     prior_plots=plot_prior,
                 )
 
-        except RRuntimeError:
-            res = None
+            except RRuntimeError:
+                raise RRuntimeError("Something went wrong")
+                res = None
+            except NotImplementedError:
+                raise NotImplementedError("Something went wrong")
+                res = None
 
         if plot_prior:
             grdevices.dev_off()
