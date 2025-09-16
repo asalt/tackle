@@ -13,7 +13,7 @@ from tackle.utils import (
 )
 
 
-def test_clean_categorical_preserves_mixed_categorical_columns():
+def test_clean_categorical_converts_non_string_categories_to_strings():
     numeric_categories = pd.Series([1, 2, 1], dtype="category")
     label_categories = pd.Series(["low", "high", "low"], dtype="category")
     df = pd.DataFrame(
@@ -24,12 +24,7 @@ def test_clean_categorical_preserves_mixed_categorical_columns():
         }
     )
 
-    original_numeric_categories = (
-        df["numeric_category"].cat.categories.tolist()
-    )
-    original_label_categories = df["label_category"].cat.categories.tolist()
-
-    cleaned = clean_categorical(df.copy())
+    cleaned = clean_categorical(df)
 
     assert list(cleaned.columns) == [
         "numeric_category",
@@ -38,14 +33,8 @@ def test_clean_categorical_preserves_mixed_categorical_columns():
     ]
     assert isinstance(cleaned["numeric_category"].dtype, pd.CategoricalDtype)
     assert isinstance(cleaned["label_category"].dtype, pd.CategoricalDtype)
-    assert (
-        cleaned["numeric_category"].cat.categories.tolist()
-        == original_numeric_categories
-    )
-    assert (
-        cleaned["label_category"].cat.categories.tolist()
-        == original_label_categories
-    )
+    assert cleaned["numeric_category"].cat.categories.tolist() == ["1", "2"]
+    assert cleaned["label_category"].cat.categories.tolist() == ["high", "low"]
     pdt.assert_series_equal(cleaned["value"], df["value"])
 
 

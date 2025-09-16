@@ -13,6 +13,10 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import (
+    is_float_dtype,
+    is_integer_dtype,
+)
 from scipy import stats
 
 import matplotlib as mpl
@@ -30,15 +34,23 @@ import click
 
 
 def clean_categorical(col_data):
-    for col in col_data:
-        if isinstance(col_data[col], pd.CategoricalDtype):
-            # check to make sure categories are strings
-            cats = col_data[col].cat.categories
-            if not (all(isinstance(x, str) for x in cats)):
-                newcats = [str(x) for x in cats]  # do not need?
-                newvalues = [str(x) for x in col_data[col]]
-                col_data[col] = pd.CategoricalDtype(newvalues)
-        return col_data
+    """Ensure categorical columns use string-based categories.
+
+    The historical implementation attempted to coerce mixed or numeric
+    categories to strings but never actually updated the column because it was
+    constructing a :class:`~pandas.CategoricalDtype` instead of a categorical
+    series.  We mirror the original intent by copying the input data frame and
+    normalising any categorical columns whose categories are not already
+    strings.
+    """
+
+    cleaned = col_data.copy()
+    for column, series in cleaned.items():
+        if isinstance(series.dtype, pd.CategoricalDtype):
+            categories = series.cat.categories
+            if not all(isinstance(cat, str) for cat in categories):
+                cleaned[column] = series.astype(str).astype("category")
+    return cleaned
 
 
 RESERVED_COLORS = {
@@ -53,34 +65,49 @@ RESERVED_COLORS = {
 
 
 def get_default_color_mapping(s: pd.Series) -> dict:
-    # specials = "label", "plex"
-    if s.dtype == "float":
-        return
+    """Return a deterministic colour mapping for categorical-like series.
+
+    Float series are treated as continuous data and return ``None`` so that the
+    caller can fall back to a continuous colormap.  Series that can be safely
+    treated as small sets of integers (e.g. ``0``/``1`` encodings) receive a
+    light palette to preserve the previous behaviour.
+    """
+
+    if s is None or len(s) == 0:
+        return None
+
+    if is_float_dtype(s.dtype) and not isinstance(s.dtype, pd.CategoricalDtype):
+        return None
+
     palette = "bright"
-    s_as_numeric = pd.to_numeric(s, errors="coerce")
-    if (
-        s_as_numeric.sum()
-        > 0 & s_as_numeric.nunique()
-        < 11 & s_as_numeric.isna().sum()
-        == 0
-    ):  # integer
-        s = s_as_numeric
+    values = s
+    numeric_values = pd.to_numeric(s, errors="coerce")
+    use_numeric_palette = (
+        not numeric_values.isna().any()
+        and is_integer_dtype(numeric_values.dtype)
+        and numeric_values.nunique() <= 10
+    )
+
+    if use_numeric_palette:
+        values = numeric_values.astype(int).astype(str)
         palette = "light:#4133"
+    elif isinstance(values.dtype, pd.CategoricalDtype):
+        values = values.astype(str)
+    else:
+        values = values.astype(str)
 
-    ncolors = s.nunique()
-    cmap = sb.color_palette(palette=palette, n_colors=ncolors)
+    unique_values = sorted({val for val in pd.unique(values) if val})
+    if not unique_values:
+        return None
+
+    cmap = sb.color_palette(palette=palette, n_colors=len(unique_values))
     color_iter = map(mpl.colors.rgb2hex, cmap)
-    themapping = {
-        str(x): c for x, c in zip(sorted(s.unique()), color_iter)
-    }  # have to make str?
-    themapping = {k: v for k, v in themapping.items() if k}
+    themapping = dict(zip(unique_values, color_iter))
 
-    # update for boolean
-    for k in RESERVED_COLORS.keys():
-        if k in themapping:
-            themapping[k] = RESERVED_COLORS[k]
+    for key, colour in RESERVED_COLORS.items():
+        if key in themapping:
+            themapping[key] = colour
 
-    # print(s.name, themapping)
     return themapping
 
 
@@ -101,35 +128,26 @@ STR_DTYPE_COERCION = {
 
 
 def set_pandas_datatypes(df: pd.DataFrame) -> pd.DataFrame:
-    PROTECTED = "plex", "label"
+    PROTECTED = {"plex", "label"}
 
-    def decide_dtype(s: pd.Series) -> pd.Series:
-        # if s.name == "metDose":
-        #     return int(s)
-        if isinstance(s, pd.CategoricalDtype):
-            cats = s.cat.categories
-            if not (all(isinstance(x, str) for x in cats)):
-                newcats = [str(x) for x in cats]  # do not need?
-                newvalues = [str(x) for x in s]
-                return pd.CategoricalDtype(newvalues)
-        if s.name in PROTECTED:
-            s = s.apply(str)
-        elif pd.to_numeric(s, errors="coerce").sum() == 0:
-            s = s.apply(str)
-            s = s.replace(STR_DTYPE_COERCION)
-        else:
-            s = pd.to_numeric(s, errors="coerce")
-        # if isinstance(s, str):
-        #     s = s.replace(old, new)
-        return s
+    def decide_dtype(series: pd.Series) -> pd.Series:
+        if isinstance(series.dtype, pd.CategoricalDtype):
+            categories = series.cat.categories
+            if not all(isinstance(cat, str) for cat in categories):
+                return series.astype(str).astype("category")
+            return series
 
-    # dfnew = df.copy()
-    dfnew = df.apply(decide_dtype)
-    # dfnew["aspirinRx"] = dfnew["aspirinRx"].replace(
-    #     to_replace={"TRUE": True, "FALSE": False, "NA": np.nan}
-    # )
+        if series.name in PROTECTED:
+            return series.astype(str)
 
-    return dfnew
+        numeric_values = pd.to_numeric(series, errors="coerce")
+        if numeric_values.notna().all():
+            return numeric_values
+
+        coerced = series.astype(str).map(STR_DTYPE_COERCION)
+        return coerced.fillna(series.astype(str))
+
+    return df.apply(decide_dtype)
 
 
 def fix_name(x):
