@@ -26,16 +26,22 @@ class _DummyContext:
 
 class _DummyGrDevices:
     def __init__(self):
-        self.open_calls = []
+        self.open_files = []
 
-    def png(self, **kwargs):
-        self.open_calls.append(("png", kwargs))
+    def _open(self, file: str, **kwargs):
+        path = Path(file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+        self.open_files.append(path)
 
-    def pdf(self, **kwargs):
-        self.open_calls.append(("pdf", kwargs))
+    def png(self, file, **kwargs):
+        self._open(file, **kwargs)
 
-    def svg(self, **kwargs):
-        self.open_calls.append(("svg", kwargs))
+    def pdf(self, file, **kwargs):
+        self._open(file, **kwargs)
+
+    def svg(self, file, **kwargs):
+        self._open(file, **kwargs)
 
     def dev_off(self):
         return None
@@ -117,9 +123,9 @@ class _StubDataObj:
         return {"g1 - g0": df}
 
 
-def test_volcanoplot_writes_safe_csv(tmp_path, stub_gene_mapper):
+def test_volcanoplot_writes_safe_csv(tmp_path, stub_gene_mapper, fake_rpy2):
     data_obj = _StubDataObj(tmp_path)
-    ctx = SimpleNamespace(obj={"data_obj": data_obj, "file_fmts": []})
+    ctx = SimpleNamespace(obj={"data_obj": data_obj, "file_fmts": [".png"]})
 
     volcanoplot.volcanoplot(
         ctx=ctx,
@@ -137,3 +143,13 @@ def test_volcanoplot_writes_safe_csv(tmp_path, stub_gene_mapper):
 
     limit = os.pathconf(str(csv_path.parent), "PC_NAME_MAX")
     assert len(csv_path.name.encode("utf-8")) <= limit
+
+    plot_files = fake_rpy2.open_files
+    assert plot_files, "Expected a plot file to be generated"
+
+    for plot_path in plot_files:
+        assert plot_path.exists()
+        assert plot_path.suffix == ".png"
+        assert not plot_path.name.endswith(".png.png")
+        plot_limit = os.pathconf(str(plot_path.parent), "PC_NAME_MAX")
+        assert len(plot_path.name.encode("utf-8")) <= plot_limit
