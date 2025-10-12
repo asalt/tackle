@@ -1,6 +1,4 @@
 import os
-import sys
-import types
 from pathlib import Path
 
 import pandas as pd
@@ -8,76 +6,10 @@ import pytest
 
 from types import SimpleNamespace
 
+pytest.importorskip("rpy2")
+from rpy2.rinterface_lib.embedded import RRuntimeError
+
 import tackle.volcanoplot as volcanoplot
-
-
-class _DummyConverter:
-    def __add__(self, other):
-        return self
-
-
-class _DummyContext:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class _DummyGrDevices:
-    def __init__(self):
-        self.open_files = []
-
-    def _open(self, file: str, **kwargs):
-        path = Path(file)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"")
-        self.open_files.append(path)
-
-    def png(self, file, **kwargs):
-        self._open(file, **kwargs)
-
-    def pdf(self, file, **kwargs):
-        self._open(file, **kwargs)
-
-    def svg(self, file, **kwargs):
-        self._open(file, **kwargs)
-
-    def dev_off(self):
-        return None
-
-
-class _DummyR(dict):
-    def __init__(self):
-        super().__init__()
-        self["source"] = lambda path: None
-        self["volcanoplot"] = lambda *args, **kwargs: None
-
-
-@pytest.fixture(autouse=True)
-def fake_rpy2(monkeypatch):
-    converter = _DummyConverter()
-    pandas2ri = SimpleNamespace(converter=converter)
-
-    robjects_mod = types.ModuleType("rpy2.robjects")
-    robjects_mod.r = _DummyR()
-    robjects_mod.NA_Real = float("nan")
-    robjects_mod.default_converter = converter
-    robjects_mod.pandas2ri = pandas2ri
-
-    packages_mod = types.ModuleType("rpy2.robjects.packages")
-    dummy_devices = _DummyGrDevices()
-    packages_mod.importr = lambda name: dummy_devices
-
-    conversion_mod = types.ModuleType("rpy2.robjects.conversion")
-    conversion_mod.localconverter = lambda _converter: _DummyContext()
-
-    monkeypatch.setitem(sys.modules, "rpy2", types.ModuleType("rpy2"))
-    monkeypatch.setitem(sys.modules, "rpy2.robjects", robjects_mod)
-    monkeypatch.setitem(sys.modules, "rpy2.robjects.packages", packages_mod)
-    monkeypatch.setitem(sys.modules, "rpy2.robjects.conversion", conversion_mod)
-
-    return dummy_devices
 
 
 @pytest.fixture
@@ -123,16 +55,19 @@ class _StubDataObj:
         return {"g1 - g0": df}
 
 
-def test_volcanoplot_writes_safe_csv(tmp_path, stub_gene_mapper, fake_rpy2):
+def test_volcanoplot_writes_safe_exports(tmp_path, stub_gene_mapper):
     data_obj = _StubDataObj(tmp_path)
     ctx = SimpleNamespace(obj={"data_obj": data_obj, "file_fmts": [".png"]})
 
-    volcanoplot.volcanoplot(
-        ctx=ctx,
-        foldchange=1.5,
-        expression_data=False,
-        number=10,
-    )
+    try:
+        volcanoplot.volcanoplot(
+            ctx=ctx,
+            foldchange=1.5,
+            expression_data=False,
+            number=10,
+        )
+    except RRuntimeError as err:
+        pytest.skip(f"R runtime prerequisites missing: {err}")
 
     csv_files = list((Path(data_obj.outpath) / "volcano").rglob("*.tsv"))
     assert csv_files, "Expected volcanoplot to write a TSV export"
@@ -144,10 +79,10 @@ def test_volcanoplot_writes_safe_csv(tmp_path, stub_gene_mapper, fake_rpy2):
     limit = os.pathconf(str(csv_path.parent), "PC_NAME_MAX")
     assert len(csv_path.name.encode("utf-8")) <= limit
 
-    plot_files = fake_rpy2.open_files
-    assert plot_files, "Expected a plot file to be generated"
+    png_files = list((Path(data_obj.outpath) / "volcano").rglob("*.png"))
+    assert png_files, "Expected a PNG volcano plot to be generated"
 
-    for plot_path in plot_files:
+    for plot_path in png_files:
         assert plot_path.exists()
         assert plot_path.suffix == ".png"
         assert not plot_path.name.endswith(".png.png")
