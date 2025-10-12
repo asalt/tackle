@@ -1,5 +1,7 @@
 import os
 import itertools
+from pathlib import Path
+import hashlib
 
 import numpy as np
 import pandas as pd
@@ -12,6 +14,69 @@ except AttributeError:
 from .utils import get_outname, parse_gid_file, fix_name
 
 # from .containers import GeneMapper
+
+
+
+# helper functions
+def _slice_utf8(s: str, n: int, from_right: bool = False) -> str:
+    b = s.encode("utf-8")
+    if len(b) <= n: return s
+    part = b[-n:] if from_right else b[:n]
+    while True:
+        try:
+            return part.decode("utf-8")
+        except UnicodeDecodeError:
+            part = part[1:] if from_right else part[:-1]
+
+def _shorten_filename_with_ext(base: str, ext: str, name_max: int) -> str:
+    # ext includes the dot or is ""
+    ext_b = ext.encode("utf-8")
+    orig = (base + ext).encode("utf-8")
+    if len(orig) <= name_max:
+        return base + ext
+
+    tag = hashlib.sha1(orig).hexdigest()[:10].encode("ascii")
+    sep = b"--"
+
+    budget = name_max - len(ext_b) - len(tag) - 2*len(sep)
+    if budget <= 0:
+        return tag.decode("ascii") + ext
+
+    # split budget between left/right of the base
+    left_budget = budget // 2
+    right_budget = budget - left_budget
+
+    left  = _slice_utf8(base, left_budget, from_right=False)
+    right = _slice_utf8(base, right_budget, from_right=True)
+
+    new_bytes = left.encode("utf-8") + sep + tag + sep + right.encode("utf-8") + ext_b
+    # safety trim if boundary math left us a byte over
+    if len(new_bytes) > name_max:
+        over = len(new_bytes) - name_max
+        left = _slice_utf8(left, len(left.encode("utf-8")) - over, from_right=True)
+        new_bytes = left.encode("utf-8") + sep + tag + sep + right.encode("utf-8") + ext_b
+
+    out = new_bytes.decode("utf-8")
+    assert len(out.encode("utf-8")) <= name_max
+    return out
+
+
+def shorten_path(path: str, max_component_bytes: int = 255) -> str:
+    """Shorten only the final path component to fit NAME_MAX-like limits."""
+    p = Path(path)
+    short_name = shorten_filename(p.name, max_component_bytes)
+    return str(p.with_name(short_name))
+
+def safe_path_with_ext(path: str, ext: str = ".tsv") -> str:
+    """Return path whose FINAL COMPONENT (incl. ext) fits the mount's PC_NAME_MAX."""
+    p = Path(path)
+    if ext and not ext.startswith("."): ext = "." + ext
+    name_max = os.pathconf(str(p.parent), "PC_NAME_MAX")  # typically 255
+    base, _old_ext = os.path.splitext(p.name)
+    # if you passed a path that already has an ext and you want to KEEP it, set ext=""
+    new_name = _shorten_filename_with_ext(base, ext, name_max)
+    return str(p.with_name(new_name))
+
 
 
 # try:
@@ -162,7 +227,6 @@ def volcanoplot(
         # Use min to find the smallest p-value, then take the -log10. Exclude non-positive p-values.
     elif global_ymax is False:
         global_ymax = robjects.NA_Real
-
     # TODO add check to ensure xmax and ymax  not smaller than all actual x and y values
     # now this
     for comparison, df in results.items():  # results contains dataf
@@ -190,12 +254,14 @@ def volcanoplot(
             # TODO handle this, maybe with user-config?
             # pass
             # group1, group0 = [x.strip() for x in comparison.split("-")]
-            group1, group0 = [x.strip() for x in _comparison.split(" - ")]
-            group0_fix, group1_fix = (
-                fix_group_name(group0, meta.columns),
-                fix_group_name(group1, meta.columns),
-            )
+            # import ipdb; ipdb.set_trace()
+            # group1, group0 = [x.strip() for x in _comparison.split(" - ")]
+            # group0_fix, group1_fix = (
+            #     fix_group_name(group0, meta.columns),
+            #     fix_group_name(group1, meta.columns),
+            # )
             group0_fix, group1_fix = "Down", "Up"
+            group0, group1 = group0_fix, group1_fix
 
         # if we do this here, the columns get added before the expression values
         df["GeneSymbol"] = df.index.map(
@@ -262,24 +328,31 @@ def volcanoplot(
             **_xtra,
         )
 
-        slicepoint = 170
-        space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
+        #slicepoint = 170
+        #space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
         if len(outname) > 255:
             outname = outname.replace("timepoint", "T")
             outname = outname.replace("time", "T")
             outname = outname.replace("genotype", "geno")
 
-        while len(outname) > 255:
-            # Ensure you're slicing within the bounds of the string
-            if slicepoint + space >= len(outname):
-                space = len(outname) - slicepoint - 1  # Avoid out-of-bounds slicing
+        if len(outname) > 255:
+            csv_out = safe_path_with_ext(outname, ".tsv")
+            p = Path(csv_out)
+            print("final component bytes:", len(p.name.encode("utf-8")))
+            print("PC_NAME_MAX here:", os.pathconf(str(p.parent), "PC_NAME_MAX"))
+            print("full path bytes:", len(str(p).encode("utf-8")))  # PATH_MAX is ~4096, rarely the issue
 
-            outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
-            slicepoint += 20
-            space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
+            # # Ensure you're slicing within the bounds of the string
+            # if slicepoint + space >= len(outname):
+            #     space = len(outname) - slicepoint - 1  # Avoid out-of-bounds slicing
 
-        out = outname + ".tsv"
-        print("Saving", out, "...", end="", flush=True)
+            # outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
+            # slicepoint += 20
+            # space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
+        else:
+            csv_out = outname + ".tsv"
+
+        print("Saving", csv_out, "...", end="", flush=True)
         export_data = df  # this is a "results" dataframe from the stat running method
         if only_sig:
             _log2_cutoff = np.sqrt(foldchange)
@@ -300,7 +373,7 @@ def volcanoplot(
                 export_data = export_data.join(data_obj.areas_log_shifted / np.log10(2))
 
         export_cols = [x for x in export_data.columns if x not in ("highlight",)]
-        export_data[export_cols].to_csv(out, sep="\t")
+        export_data[export_cols].to_csv(csv_out, sep="\t")
         print("done", flush=True)
 
         # pandas2ri.activate()
@@ -359,11 +432,13 @@ def volcanoplot(
             outpath=os.path.join(data_obj.outpath, "volcano"),
             **_xtra,
         )
+        if len(outname) > 255:
+            outname = safe_path_with_ext(outname, ".123")
         for file_fmt in file_fmts:
             with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
                 grdevice = gr_devices[file_fmt]
                 gr_kw = gr_kws[file_fmt]
-                out = outname + file_fmt
+                out = outname.rstrip('.123') + file_fmt
                 print("Saving", out, "...", end="", flush=True)
 
                 grdevice(file=out, **gr_kw)
