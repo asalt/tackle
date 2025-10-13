@@ -197,6 +197,7 @@ def _inject_gene_covariates_in_formula(
 
     # Precompute sanitized sample indices for robust alignment
     pheno_idx_sanitized = [_sanitize_name(str(x)) for x in new_pheno.index]
+    replaced: Dict[str, str] = {}
     for tok in sorted(tokens, key=len, reverse=True):
         # Skip if token already a pheno column
         if tok in new_pheno.columns:
@@ -236,8 +237,37 @@ def _inject_gene_covariates_in_formula(
         aligned = values.reindex(index=pheno_idx_sanitized)
         new_pheno[safe_var] = pd.to_numeric(aligned.values, errors="coerce")
         rewritten = replace_token(rewritten, tok, safe_var)
+        replaced[tok] = safe_var
         if logger:
             logger.info("Injected covariate %s from GeneID %s for formula", safe_var, gene_id_obj)
+
+    # Final sanity: ensure no unresolved numeric tokens remain
+    unresolved: List[str] = []
+    final_tokens = set(re.findall(r"`[^`]+`|[A-Za-z_.][A-Za-z0-9_.]*|[0-9]+", rewritten))
+    for tok in final_tokens:
+        if tok in new_pheno.columns:
+            continue
+        if tok.isdigit():
+            unresolved.append(tok)
+            continue
+        if symbol_lookup:
+            s_tok = _sanitize_name(tok)
+            # detect if token looks like a symbol we might have intended
+            for sym in symbol_lookup.keys():
+                if sym is None:
+                    continue
+                s_sym = _sanitize_name(str(sym))
+                if s_tok == s_sym:
+                    unresolved.append(tok)
+                    break
+
+    if unresolved:
+        raise ValueError(
+            "Could not resolve formula gene references in RHS: {}. "
+            "Ensure those GeneIDs exist in the expression matrix after filtering (non-zeros, taxon, etc.).".format(
+                ", ".join(sorted(unresolved))
+            )
+        )
 
     return rewritten, new_pheno
 
@@ -297,7 +327,11 @@ def run_limma_pipeline(
     importr("dplyr", on_conflict="warn")
 
     # Optionally inject covariates derived from gene expression referenced in formula
+    if logger:
+        logger.info("Limma: incoming formula: %s", formula)
     formula, pheno = _inject_gene_covariates_in_formula(formula, edata, pheno, symbol_lookup, logger)
+    if logger:
+        logger.info("Limma: rewritten formula: %s", formula)
 
     with localconverter(robjects.default_converter + pandas2ri.converter):
         robjects.r.assign("edata", edata)
@@ -353,6 +387,13 @@ def run_limma_pipeline(
     if not contrasts and len(non_intercept_terms) == 1:
         contrast_list = non_intercept_terms
         use_direct_coef = True
+    if logger:
+        logger.info(
+            "Limma: terms=%s, contrasts=%s, direct_coef=%s",
+            non_intercept_terms,
+            contrast_list,
+            use_direct_coef,
+        )
     if logger:
         logger.info("limma model matrix terms: %s", fixed_terms)
         logger.info("Contrasts: %s", contrast_list)

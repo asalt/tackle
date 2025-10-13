@@ -1797,12 +1797,33 @@ class Data:
         limma_targets = None
         symbol_lookup = {}
         if self.limma:
+            # Dataset symbol -> dataset GeneIDs
             for gid, symbol in self.gid_symbol.items():
                 if symbol:
                     symbol_lookup.setdefault(symbol, []).append(gid)
+            # Entrez GeneID (from GeneMapper) -> dataset GeneIDs via shared symbol
+            try:
+                gm = get_gene_mapper()
+                for entrez_id, sym in gm.symbol.items():
+                    if not sym:
+                        continue
+                    ds_ids = symbol_lookup.get(sym)
+                    if ds_ids:
+                        symbol_lookup.setdefault(str(entrez_id), ds_ids)
+            except Exception:
+                pass
+
             limma_formula, limma_targets = normalize_formula_targets(
                 formula, mat.index, symbol_lookup, logger
             )
+            try:
+                logger.info("Limma: effective formula: %s", limma_formula)
+                logger.info(
+                    "Limma: target GeneIDs from LHS: %s",
+                    None if limma_targets is None else list(limma_targets)[:5],
+                )
+            except Exception:
+                pass
 
         # pandas2ri.activate()
 
@@ -1850,28 +1871,35 @@ class Data:
         # robjects.r("pheno$geno <- relevel(pheno$geno, 'mix')")
 
         # robjects
-        r("mod0 <- model.matrix(~1, pheno)")
+        if not self.limma:
+            r("mod0 <- model.matrix(~1, pheno)")
 
-        if self.group and not limma_formula:
-            mod = r("mod  <- model.matrix(~0+{}, pheno)".format(self.group))
-        elif limma_formula:
-            mod = r("mod <- model.matrix({}, pheno)".format(limma_formula))
-        else:
-            raise ValueError("Must specify 1 of `group` or `formula`")
+            if self.group and not limma_formula:
+                mod = r("mod  <- model.matrix(~0+{}, pheno)".format(self.group))
+            elif limma_formula:
+                mod = r("mod <- model.matrix({}, pheno)".format(limma_formula))
+            else:
+                raise ValueError("Must specify 1 of `group` or `formula`")
 
-        if self.covariate is not None:
-            ncov = pheno[self.covariate].nunique()
-            with localconverter(
-                robjects.default_converter + pandas2ri.converter
-            ):  # no tuples
-                r.assign("ncov", pheno[self.covariate].nunique())
-        else:
-            r.assign("ncov", 0)
-            ncov = 0
+        if not self.limma:
+            if self.covariate is not None:
+                ncov = pheno[self.covariate].nunique()
+                with localconverter(
+                    robjects.default_converter + pandas2ri.converter
+                ):  # no tuples
+                    r.assign("ncov", pheno[self.covariate].nunique())
+            else:
+                r.assign("ncov", 0)
+                ncov = 0
 
         if not self.pairs and not self.limma:  # standard t test
             pvalues = r("pvalue.batch(as.matrix(edata), mod, mod0, ncov)")
         elif not self.pairs and self.limma:
+            logger.info(
+                "Limma: invoking pipeline with formula=%s, contrasts=%s",
+                limma_formula,
+                contrasts_str,
+            )
             results = run_limma_pipeline(
                 edata=mat,
                 pheno=pheno,
