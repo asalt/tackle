@@ -195,6 +195,8 @@ def _inject_gene_covariates_in_formula(
         pattern = re.compile(rf"(?<![A-Za-z0-9_`]){re.escape(old)}(?![A-Za-z0-9_`])")
         return pattern.sub(new, fml)
 
+    # Precompute sanitized sample indices for robust alignment
+    pheno_idx_sanitized = [_sanitize_name(str(x)) for x in new_pheno.index]
     for tok in sorted(tokens, key=len, reverse=True):
         # Skip if token already a pheno column
         if tok in new_pheno.columns:
@@ -229,9 +231,10 @@ def _inject_gene_covariates_in_formula(
         safe_var = _sanitize_name(f"GID_{gene_id_obj}")
         # Inject covariate values from edata row for each sample
         values = edata.loc[gene_id_obj]
-        # Align to pheno rows (samples)
-        values = values.reindex(index=new_pheno.index)
-        new_pheno[safe_var] = pd.to_numeric(values, errors="coerce")
+        # Align to pheno rows (samples) using sanitized names on both sides
+        values.index = [_sanitize_name(str(x)) for x in values.index]
+        aligned = values.reindex(index=pheno_idx_sanitized)
+        new_pheno[safe_var] = pd.to_numeric(aligned.values, errors="coerce")
         rewritten = replace_token(rewritten, tok, safe_var)
         if logger:
             logger.info("Injected covariate %s from GeneID %s for formula", safe_var, gene_id_obj)
