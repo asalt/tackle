@@ -3,6 +3,7 @@ from collections import OrderedDict
 import glob
 
 from .utils import *
+from .statmodels.limma_runner import run_limma_pipeline, normalize_formula_targets
 
 # from . import utils
 from .utils import read_config
@@ -1791,6 +1792,18 @@ class Data:
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 
+        # Prepare limma-specific helpers (formula sanitisation, target genes).
+        limma_formula = formula
+        limma_targets = None
+        symbol_lookup = {}
+        if self.limma:
+            for gid, symbol in self.gid_symbol.items():
+                if symbol:
+                    symbol_lookup.setdefault(symbol, []).append(gid)
+            limma_formula, limma_targets = normalize_formula_targets(
+                formula, mat.index, symbol_lookup, logger
+            )
+
         # pandas2ri.activate()
 
         with localconverter(
@@ -1839,10 +1852,10 @@ class Data:
         # robjects
         r("mod0 <- model.matrix(~1, pheno)")
 
-        if self.group and not formula:
+        if self.group and not limma_formula:
             mod = r("mod  <- model.matrix(~0+{}, pheno)".format(self.group))
-        elif formula:
-            mod = r("mod <- model.matrix({}, pheno)".format(formula))
+        elif limma_formula:
+            mod = r("mod <- model.matrix({}, pheno)".format(limma_formula))
         else:
             raise ValueError("Must specify 1 of `group` or `formula`")
 
@@ -1859,112 +1872,17 @@ class Data:
         if not self.pairs and not self.limma:  # standard t test
             pvalues = r("pvalue.batch(as.matrix(edata), mod, mod0, ncov)")
         elif not self.pairs and self.limma:
-            from rpy2.robjects.packages import importr
-
-            importr("limma")
-            # r('suppressMessages(library(dplyr))')
-
-            importr("dplyr", on_conflict="warn")
-            r("block <- NULL")
-            r("cor <- NULL")
-            if self.block:
-                r('block <- as.factor(pheno[["{}"]])'.format(self.block))
-                r("corfit <- duplicateCorrelation(edata, design = mod,  block = block)")
-                r("cor <- corfit$consensus")
-
-            # need to make valid R colnames
-            variables = robjects.r("colnames(mod)")
-            # fix each individual column of `mod`
-            fixed_vars = [
-                x.replace(":", "_")
-                .replace(" ", "_")
-                .replace("-", "_")
-                .replace("+", "_")
-                .replace(r"/", "_")
-                # .replace(r"\\", "_")
-                .replace("?", "qmk")
-                for x in variables
-            ]
-            with localconverter(
-                robjects.default_converter + pandas2ri.converter
-            ):  # no tuples
-                robjects.r.assign("fixed_vars", fixed_vars)
-            robjects.r("colnames(mod) <- fixed_vars")
-
-            fit = r("""fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)""")
-            if bool(contrasts_str) is False:
-                contrasts_array = list()
-                for group in itertools.combinations(
-                    (x for x in fixed_vars if "Intercept" not in x), 2
-                ):
-                    contrast = "{} - {}".format(*group)
-                    contrasts_array.append(contrast)
-
-            elif contrasts_str:
-                contrasts_array = [
-                    x.strip() for x in contrasts_str.split(",") if x.strip()
-                ]
-                contrasts_array = [x for x in contrasts_array if not x.startswith("#")]
-
-            logger.info("limma model matrix: {}".format(robjects.r["mod"]))
-            logger.info("Contrasts: {}".format(contrasts_array))
-            robjects.r("print(mod)")
-            # robjects.r('print(fit)')
-
-            with localconverter(
-                robjects.default_converter + pandas2ri.converter
-            ):  # no tuples
-                robjects.r.assign("contrasts_array", contrasts_array)
-
-            robjects.r(
-                """contrasts_matrix <- makeContrasts(contrasts = contrasts_array,
-                                                            levels = mod
-            )"""
+            results = run_limma_pipeline(
+                edata=mat,
+                pheno=pheno,
+                group=self.group,
+                formula=limma_formula,
+                block=self.block,
+                contrasts=contrasts_str,
+                logger=logger,
+                target_gene_ids=limma_targets,
+                symbol_lookup=symbol_lookup,
             )
-
-            robjects.r("""print(contrasts_matrix)""")
-
-            contrast_fit = robjects.r(
-                """
-            fit2 <- contrasts.fit(fit, contrasts_matrix) %>% eBayes(robust=TRUE, trend=TRUE)
-            """
-            )
-
-            results = dict()
-            for coef, name in enumerate(contrasts_array, 1):
-                result = r(
-                    """ topTable(fit2, n=Inf, sort.by='none', coef={}, confint=TRUE) """.format(
-                        coef
-                    )
-                )
-
-                try:
-                    result = pandas2ri.ri2py(result)
-                except (
-                    AttributeError
-                ):  # needed for name change rpy 3+ ? not sure exactly when change occurred
-                    result = pandas2ri.rpy2py(result)
-
-                result = result.rename(
-                    columns={
-                        "logFC": "log2_FC",
-                        "adj.P.Val": "pAdj",
-                        "P.Value": "pValue",
-                    }
-                )
-                result["log2_FC"] = result["log2_FC"].apply(lambda x: x / np.log10(2))
-                result["CI.L"] = result["CI.L"].apply(lambda x: x / np.log10(2))
-                result["CI.R"] = result["CI.R"].apply(lambda x: x / np.log10(2))
-
-                result = result.join(mat, how="left")
-
-                # DON'T NEED TO DO THIS ANYMORE
-                # we ensure the order of result is equal to order of areas_log_shifted
-                # to preserve GeneID order
-                # result.index = self.areas_log_shifted.index
-
-                results[name] = result
-
             return results
 
             # results = r(
