@@ -42,6 +42,8 @@ def _sanitize_name(value: str) -> str:
 def _sanitize_names(values: Iterable[str]) -> List[str]:
     return [_sanitize_name(v) for v in values]
 
+from ..formula_utils import extract_geneid_key as _extract_geneid_key, unquote_backticks as _unquote_backticks
+
 
 def normalize_formula_targets(
     formula: Optional[str],
@@ -108,6 +110,14 @@ def normalize_formula_targets(
 
     for token in tokens:
         token_str = str(token)
+        # Support explicit GeneID separators on LHS as well
+        gid_key = _extract_geneid_key(token_str)
+        if gid_key is not None:
+            if gid_key in index_map:
+                gene_ids.append(index_map[gid_key])
+                continue
+            else:
+                raise ValueError(f"Unknown GeneID reference '{token_str}' in formula left-hand side.")
         if token_str in index_map:
             gene_ids.append(index_map[token_str])
             continue
@@ -204,11 +214,40 @@ def _inject_gene_covariates_in_formula(
             continue
 
         gene_id_obj: Optional[Any] = None
-        # Numeric token interpreted as GeneID
-        if tok.isdigit() and tok in edata_index_map:
-            gene_id_obj = edata_index_map[tok]
+        # Support explicit GeneID separators (GeneID_<id>, GeneID:<id>, GeneID-<id>)
+        gid_key = _extract_geneid_key(tok)
+        if gid_key is not None:
+            if gid_key in edata_index_map:
+                gene_id_obj = edata_index_map[gid_key]
+            else:
+                if logger:
+                    logger.warning(
+                        "Explicit GeneID reference '%s' did not match any expression row; check filtering and IDs.",
+                        _unquote_backticks(tok),
+                    )
+                else:
+                    print(
+                        f"Warning: explicit GeneID reference '{_unquote_backticks(tok)}' not found in expression rows."
+                    )
+                # leave unresolved to be caught below
+        # Backward-compat: interpret bare numeric tokens (excluding intercept 0/1) as GeneIDs with warning
+        else:
+            tok_unquoted = _unquote_backticks(tok)
+            if tok_unquoted.isdigit() and tok_unquoted not in ("0", "1"):
+                if tok_unquoted in edata_index_map:
+                    gene_id_obj = edata_index_map[tok_unquoted]
+                    if logger:
+                        logger.warning(
+                            "Deprecated formula token '%s' interpreted as GeneID. Use 'GeneID_%s' instead.",
+                            tok_unquoted,
+                            tok_unquoted,
+                        )
+                    else:
+                        print(
+                            f"Warning: deprecated formula token '{tok_unquoted}' interpreted as GeneID. Use 'GeneID_{tok_unquoted}' instead."
+                        )
         # Symbol lookup (case-insensitive + sanitized)
-        elif symbol_lookup:
+        if gene_id_obj is None and symbol_lookup:
             cand_ids = []
             search = {tok, _sanitize_name(tok), tok.casefold(), _sanitize_name(tok).casefold()}
             for sym, ids in symbol_lookup.items():
@@ -241,25 +280,34 @@ def _inject_gene_covariates_in_formula(
         if logger:
             logger.info("Injected covariate %s from GeneID %s for formula", safe_var, gene_id_obj)
 
-    # Final sanity: ensure no unresolved numeric tokens remain
+    # Final sanity: only flag unresolved tokens that look like gene references
     unresolved: List[str] = []
     final_tokens = set(re.findall(r"`[^`]+`|[A-Za-z_.][A-Za-z0-9_.]*|[0-9]+", rewritten))
+    sym_keys_sanitized = set()
+    if symbol_lookup:
+        for sk in symbol_lookup.keys():
+            if sk is None:
+                continue
+            sym_keys_sanitized.add(_sanitize_name(str(sk)))
     for tok in final_tokens:
         if tok in new_pheno.columns:
             continue
+        # Candidate gene reference if (a) token matches edata index keys we considered, or
+        # (b) matches a known symbol key; otherwise leave numeric constants (e.g., df=3) alone.
+        # Ignore pure numeric constants and explicit GeneID_ references that failed lookup
         if tok.isdigit():
-            unresolved.append(tok)
             continue
-        if symbol_lookup:
-            s_tok = _sanitize_name(tok)
-            # detect if token looks like a symbol we might have intended
-            for sym in symbol_lookup.keys():
-                if sym is None:
-                    continue
-                s_sym = _sanitize_name(str(sym))
-                if s_tok == s_sym:
-                    unresolved.append(tok)
-                    break
+        gid_key = _extract_geneid_key(tok)
+        if gid_key is not None:
+            # Explicit GeneID reference that failed to resolve should raise
+            if gid_key not in edata_index_map:
+                unresolved.append(tok)
+            # Skip further checks for this token
+            continue
+        else:
+            candidate_gene = tok in edata_index_map or _sanitize_name(tok) in sym_keys_sanitized
+        if candidate_gene:
+            unresolved.append(tok)
 
     if unresolved:
         raise ValueError(
@@ -283,6 +331,7 @@ def run_limma_pipeline(
     logger: Optional[logging.Logger] = None,
     target_gene_ids: Optional[Sequence[str]] = None,
     symbol_lookup: Optional[Mapping[str, Sequence[str]]] = None,
+    joint_export_dir: Optional[str] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Execute a limma linear model using the supplied design specification.
@@ -330,6 +379,14 @@ def run_limma_pipeline(
     if logger:
         logger.info("Limma: incoming formula: %s", formula)
     formula, pheno = _inject_gene_covariates_in_formula(formula, edata, pheno, symbol_lookup, logger)
+    # Load splines if using ns() in the formula
+    try:
+        if formula and "ns(" in str(formula):
+            importr("splines")
+            if logger:
+                logger.info("Limma: loaded 'splines' for ns() in formula")
+    except Exception:
+        pass
     if logger:
         logger.info("Limma: rewritten formula: %s", formula)
 
@@ -368,8 +425,9 @@ def run_limma_pipeline(
         with localconverter(robjects.default_converter + pandas2ri.converter):
             robjects.r.assign("fixed_vars", fixed_terms)
         robjects.r("colnames(mod) <- fixed_vars")
-    else:
-        fixed_terms = design_terms  # already safe
+    # Ensure R-level syntactic validity (removes parentheses/commas etc.)
+    robjects.r("colnames(mod) <- make.names(colnames(mod))")
+    fixed_terms = list(robjects.r("colnames(mod)"))
 
     if block:
         robjects.r(f'block <- as.factor(pheno[["{block}"]])')
@@ -382,11 +440,23 @@ def run_limma_pipeline(
     # Resolve contrasts; if only a single non-intercept term and no contrasts supplied,
     # analyse the direct coefficient for that term instead of building a contrast.
     non_intercept_terms = [t for t in fixed_terms if "Intercept" not in t]
+    # Detect injected covariate variable name (e.g., GID_2064) used inside basis terms
+    cov_vars = re.findall(r"GID_[0-9]+", str(formula) if formula else "")
+    cov_var = cov_vars[0] if cov_vars else None
+    basis_terms = [t for t in non_intercept_terms if (cov_var and cov_var in t)]
+
     use_direct_coef = False
     contrast_list = _resolve_contrasts(fixed_terms, contrasts)
-    if not contrasts and len(non_intercept_terms) == 1:
-        contrast_list = non_intercept_terms
-        use_direct_coef = True
+    formula_only = (group is None) and bool(formula)
+    if formula_only:
+        if len(non_intercept_terms) == 1:
+            contrast_list = non_intercept_terms
+            use_direct_coef = True
+        elif len(basis_terms) >= 1:
+            # For multi-term basis (ns/poly/hinge), model without contrasts and
+            # expose per-basis coefficients; joint F-test handled separately below.
+            contrast_list = basis_terms
+            use_direct_coef = True
     if logger:
         logger.info(
             "Limma: terms=%s, contrasts=%s, direct_coef=%s",
@@ -401,6 +471,7 @@ def run_limma_pipeline(
     if not contrast_list:
         raise ValueError("No contrasts specified for limma analysis.")
 
+    robjects.r("print(mod)")
     if use_direct_coef:
         robjects.r("""
 fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)
@@ -419,9 +490,10 @@ fit2 <- eBayes(fit2, robust = TRUE, trend = TRUE)
         )
 
     results: Dict[str, pd.DataFrame] = {}
-    for idx, contrast_label in enumerate(contrast_list, start=1):
+    for contrast_label in contrast_list:
+        # Always select coefficient by name to avoid off-by-one errors with intercepts
         table = robjects.r(
-            f"topTable(fit2, n=Inf, sort.by='none', coef={idx}, confint=TRUE)"
+            f"topTable(fit2, n=Inf, sort.by='none', coef='{contrast_label}', confint=TRUE)"
         )
         try:
             result_df = pandas2ri.ri2py(table)
@@ -452,5 +524,34 @@ fit2 <- eBayes(fit2, robust = TRUE, trend = TRUE)
         # Join the expression values for downstream export compatibility.
         result_df = result_df.join(edata, how="left")
         results[contrast_label] = result_df
+
+    # Joint F-test export for multi-term basis
+    if formula_only and cov_var and len(basis_terms) > 1 and joint_export_dir:
+        try:
+            # Compute F-test across all basis terms
+            with localconverter(robjects.default_converter + pandas2ri.converter):
+                robjects.r.assign("joint_coef", basis_terms)
+            jtable = robjects.r(
+                "topTable(fit2, n=Inf, sort.by='F', coef=joint_coef)"
+            )
+            try:
+                jdf = pandas2ri.ri2py(jtable)
+            except AttributeError:
+                jdf = pandas2ri.rpy2py(jtable)
+            # Join expression for convenience
+            jdf = jdf.join(edata, how="left")
+            # Add a placeholder t for downstream filters if ever re-used
+            if 'F' in jdf.columns and 't' not in jdf.columns:
+                jdf['t'] = np.sqrt(jdf['F'])
+            # Persist to disk
+            import os
+            os.makedirs(joint_export_dir, exist_ok=True)
+            out_path = os.path.join(joint_export_dir, f"joint_F_{cov_var}.tsv")
+            jdf.to_csv(out_path, sep='\t')
+            if logger:
+                logger.info("Limma: wrote joint F-test to %s (terms=%s)", out_path, basis_terms)
+        except Exception as e:
+            if logger:
+                logger.warning("Limma: joint F-test export failed: %s", e)
 
     return results
