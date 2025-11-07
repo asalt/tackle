@@ -180,7 +180,11 @@ def run(
         X = X.loc[_tokeep]
         X = X[~X.index.duplicated(keep="first")]  # just in case there are duplicate ids
         if force_plot_genes:  # add these in and fill as NA
-            missing = set(genes) - set(X.index)
+            # Account for codepaths where GeneID column is not created yet
+            existing_gene_ids = X.index
+            if "GeneID" in X.columns:
+                existing_gene_ids = X["GeneID"].astype(str)
+            missing = set(genes) - set(existing_gene_ids)
             if missing:
                 Xmissing = pd.DataFrame(index=list(missing), columns=X.columns)
                 Xmissing.index.name = X.index.name
