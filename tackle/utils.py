@@ -645,7 +645,7 @@ def save_multiple(fig, filename, *exts, verbose=True, dpi=300, **save_kwargs):
             print("Saving", out, "...", end="", flush=True)
         fig.savefig(out, dpi=dpi, **save_kwargs)
         if verbose:
-            print("done.", flush=True)
+            print("done.\n\n", flush=True)
 
 
 def make_config(path="."):

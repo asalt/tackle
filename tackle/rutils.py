@@ -10,7 +10,7 @@ grdevices = importr("grDevices")
 r_source = robjects.r["source"]
 gr_devices = {
     ".png": grdevices.png,
-    ".pdf": grdevices.pdf,
+    ".pdf": grdevices.cairo_pdf,
     ".svg": grdevices.svg,
 }
 

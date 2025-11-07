@@ -4,6 +4,7 @@ import glob
 
 from .utils import *
 from .statmodels.limma_runner import run_limma_pipeline, normalize_formula_targets
+import hashlib, re
 
 # from . import utils
 from .utils import read_config
@@ -23,6 +24,7 @@ from collections.abc import Iterable
 from functools import lru_cache, partial, cached_property
 from datetime import datetime
 import operator as op
+import re
 
 # from collections import OrderedDict, Counter
 import itertools
@@ -1824,6 +1826,22 @@ class Data:
                 )
             except Exception:
                 pass
+            # compute joint export directory for this formula (matches volcano folder structure)
+            _volcano_subdir = ["volcano"]
+            joint_export_dir = None
+            if limma_formula:
+                try:
+                    _fhash = hashlib.sha1(str(limma_formula).encode("utf-8")).hexdigest()[:10]
+                except Exception:
+                    _fhash = "fhash"
+                _fstr = re.sub(r"\s+", "_", str(limma_formula).strip())
+                _fstr = re.sub(r"[^A-Za-z0-9._-]", "_", _fstr).strip("._")
+                if not _fstr:
+                    _fstr = "formula"
+                if len(_fstr) > 60:
+                    _fstr = _fstr[:60]
+                _volcano_subdir.extend(["limma", f"{_fstr}__{_fhash}"])
+                joint_export_dir = os.path.join(self.outpath, *_volcano_subdir)
 
         # pandas2ri.activate()
 
@@ -1910,6 +1928,7 @@ class Data:
                 logger=logger,
                 target_gene_ids=limma_targets,
                 symbol_lookup=symbol_lookup,
+                joint_export_dir=joint_export_dir,
             )
             return results
 
@@ -2008,14 +2027,14 @@ class Data:
             return True
         return False
 
-    def perform_data_export(self, level="all", genesymbols=False, linear=False):
+    def perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None):
         from rpy2 import robjects
         from rpy2.robjects import pandas2ri
         from rpy2.robjects.conversion import localconverter
         with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
-            self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear)
+            self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear, covariates=covariates)
 
-    def _perform_data_export(self, level="all", genesymbols=False, linear=False):
+    def _perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None):
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
         #                                               self.non_zeros)
@@ -2086,6 +2105,7 @@ class Data:
                 "TaxonID",
                 "GeneSymbol",
                 "GeneDescription",
+                "Description",
                 "FunCats",
                 # "median_isoform_mass",
                 # "GeneCapacity",
@@ -2113,6 +2133,7 @@ class Data:
                 "TaxonID",
                 "GeneSymbol",
                 "GeneDescription",
+                "Description",
                 "FunCats",
                 # "GeneCapacity",
             ]
@@ -2222,6 +2243,12 @@ class Data:
             for_export["GeneDescription"] = for_export.apply(
                 lambda x: gm.description.get(x["GeneID"], x["GeneDescription"]), axis=1
             )
+            if for_export.GeneDescription.apply(lambda x: x is None or x=='').all() and "Description" in for_export.columns:
+                for_export["GeneDescription"]  = for_export["Description"]
+            if "Description" in for_export.columns: # don't need it, redundant col
+                for_export = for_export.drop(columns=['Description'])
+
+
             for_export = pd.merge(
                 for_export,
                 gm.df[["median_isoform_mass"]],
@@ -2243,6 +2270,7 @@ class Data:
                 "TaxonID",
                 "GeneSymbol",
                 "GeneDescription",
+                "Description",
                 "FunCats",
                 # "GeneCapacity",
             ]
@@ -2460,6 +2488,46 @@ class Data:
                     # ),
                 )
                 cdesc = self.col_metadata.copy()
+                # Optionally embed continuous covariate(s) as cdesc columns
+                try:
+                    if covariates:
+                        def _resolve_to_geneids(token):
+                            token = str(token)
+                            geneids = []
+                            # prefer exact GeneID in export
+                            if token in export.index.astype(str):
+                                geneids.append(token)
+                            else:
+                                # map symbol -> GeneIDs present in export
+                                try:
+                                    gm = get_gene_mapper()
+                                    # invert data symbol mapping for dataset
+                                    ds_sym = {v: k for k, v in self.gid_symbol.items() if v}
+                                    # find gene mapper entry
+                                    for gid, sym in gm.symbol.items():
+                                        if sym and str(sym).lower() == token.lower():
+                                            ds_gid = ds_sym.get(sym)
+                                            if ds_gid is not None and str(ds_gid) in export.index.astype(str):
+                                                geneids.append(str(ds_gid))
+                                except Exception:
+                                    pass
+                            return list(dict.fromkeys(geneids))
+
+                        for cov in covariates:
+                            gids = _resolve_to_geneids(cov)
+                            if not gids:
+                                logger.info(f"GCT export covariate '{cov}' not found in export index; skipping")
+                                continue
+                            for gid in gids:
+                                series = export.loc[export.index.astype(str) == str(gid), self.col_metadata.index].iloc[0]
+                                # name column as cov_<symbol_or_gid>
+                                label = self.gid_symbol.get(gid, None)
+                                colname = f"cov_{label}" if label else f"cov_{gid}"
+                                # Make R-safe name (avoid spaces, punctuation)
+                                colname = re.sub(r"[^A-Za-z0-9_.]", "_", colname)
+                                cdesc[colname] = pd.to_numeric(series, errors='coerce').values
+                except Exception as e:
+                    logger.warning(f"GCT export: embedding covariates failed: {e}")
                 cdesc["id"] = cdesc.index
                 r.assign("cdesc", cdesc)
                 r.assign("cid", self.col_metadata.index)

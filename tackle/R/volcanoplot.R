@@ -51,6 +51,8 @@ volcanoplot <- function(X, max_labels = 35,
                         color_up = "red",
                         global_xmax = NULL,
                         global_ymax = NULL,
+                        x_label_override = NULL,
+                        y_label_override = NULL,
                         ...) {
   POINT_SIZE <- marker_cex
   # pch <- 21 # if we want a fillable shape
@@ -257,16 +259,22 @@ volcanoplot <- function(X, max_labels = 35,
 
   ## footnote <- ''
   ylabel_full <- eval(expression(substitute(paste("-log"[10], " ", ploty), list(ploty = ploty))))
+  if (!is.null(y_label_override)) {
+    ylabel_full <- y_label_override
+  }
+  x_label_default <- expression(paste("log"[2], " Fold Change"))
+  xlabel_full <- if (!is.null(x_label_override)) x_label_override else x_label_default
 
   annot_size <- 4.0
   max_nchar <- max(nchar(group0), nchar(group1))
-  add_newlines <- function(group) {
-    str_replace(group, "\\+", " \\+\n") %>%
-      str_replace(":", "\n") %>%
-      str_replace("\\-", " \\-\n")
+  add_newlines <- function(group) {  # 
+       str_replace_all(group, "(\\+|\\-|:)(?=\\S)", " \\1 ")
+       # str_replace(group, '\\+(?=\\S)', ' \\+ ') %>% 
+       # str_replace('\\-(?=\\S)', ' \\- ') %>%
+       # str_replace(':(?=\\S)', ' : ')
   }
-  group0 <- add_newlines(group0) %>% stringr::str_wrap(24)
-  group1 <- add_newlines(group1) %>% stringr::str_wrap(24)
+  group0 <- add_newlines(group0) %>% stringr::str_wrap(18, whitespace_only = TRUE)
+  group1 <- add_newlines(group1) %>% stringr::str_wrap(18, whitespace_only = TRUE)
   if ((max_nchar) > 15) annot_size <- annot_size - .5
   if ((max_nchar) > 25) annot_size <- annot_size - .75
   if ((max_nchar) > 35) annot_size <- annot_size - .5
@@ -336,14 +344,14 @@ volcanoplot <- function(X, max_labels = 35,
     #   hjust = c(0, 1), vjust = c(0, 0)
     # ) +
     annotate("text", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
-      label = c(str_replace_all(group0, "_", " ") %>% str_wrap(width=36), str_replace_all(group1, "_", " ") %>% str_wrap(width=36)),
+      label = c(group0, group1),
       color = "black", #border color
       fill = c(color_down, color_up), # default blue and red
       size = annot_size,
       hjust = c(0, 1), vjust = c(0, 0)
     ) +
     labs(
-      x = expression(paste("log"[2], " Fold Change")),
+      x = xlabel_full,
       y = ylabel_full,
       caption = footnote
     ) +

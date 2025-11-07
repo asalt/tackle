@@ -98,6 +98,7 @@ hclust_dendsort <- function(mat, method = "complete", dist_no_na_func=dist_no_na
     dendsort(isReverse = T, type = "min") %>%
     as.dendrogram()
 }
+#hclust_dendsort
 
 order_colmeta <- function(annot, the_order, name = "X") {
   ## see https://stackoverflow.com/a/26003971 for !!name:=something magic
@@ -148,6 +149,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      color_high = "red",
                      fixed_size = FALSE,
                      figwidth = NULL,
+                     use_dendsort=FALSE, # TODO add flag for this at toplevel
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
@@ -275,7 +277,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     for (thename in names(select(row_annot_df, -GeneID))) {
       row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", ncol = 1)
       row_data_args[["show_legend"]][thename] <- T
-      if (length(setdiff(unique(row_annot_df[[thename]]), c(""))) == 1) {
+      if (length(setdiff(unique(row_annot_df[[thename]]), c(""))) < 1) {
         row_data_args[["show_legend"]][thename] <- F
       }
       # row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal")
@@ -612,9 +614,12 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   }
   cluster_cols <- FALSE
   if (col_cluster == TRUE && is.null(column_split)) {
-    cluster_cols <- hclust_dendsort(t(toplot[col_data$name]), method = linkage,
-        ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg)
-    )
+    cluster_cols <- TRUE
+    if  (use_dendsort){
+      cluster_cols <- hclust_dendsort(t(toplot[col_data$name]), method = linkage,
+          ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg)
+      )
+  }
   } else if (col_cluster == TRUE && !is.null(column_split)) {
     cluster_cols <- TRUE
   }
@@ -631,6 +636,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     ht_height <- NULL
   }
 
+  print('preparing to render the plot')
   ht <- Heatmap(.mat,
     name = "mat",
     width = ht_width,
@@ -662,20 +668,24 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     row_labels = toplot$GeneSymbol,
     row_names_gp = gpar(fontsize = gene_symbol_fontsize, fontface = "bold"),
     column_names_gp = gpar(fontsize = 9),
-    column_title_rot = 45,
-    ## border = FALSE,
+    #column_title_rot = 0, # 45 used to work
+    column_title_rot = 40, # 45 used to work
     column_names_rot = 90,
+    ## border = FALSE,
     # column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 60) ,
     column_title_gp = gpar(fontsize = 9),
     column_title_side = "top",
     column_names_side = "top",
     show_parent_dend_line = TRUE,
-    row_dend_width = unit(2.8, "in"),
+    row_dend_width = unit(2.2, "in"),
     heatmap_legend_param = heatmap_legend_param,
     # right_annotation = gene_annot,
     right_annotation = if (row_annot_side == "right") row_annot else right_annotation,
     left_annotation = if (row_annot_side == "left") row_annot else NULL,
-    row_names_max_width = unit(80, "mm")
+    row_names_max_width = unit(800, "mm"),
+    use_raster=T,
+    # raster_quality=1,
+    # raster_by_magick=F
   )
 
 

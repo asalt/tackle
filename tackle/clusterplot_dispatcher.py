@@ -132,8 +132,8 @@ def run(
     # =================================================================
 
     data_obj = ctx.obj["data_obj"]
-    col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
-    col_meta = data_obj.col_metadata
+    # col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
+    col_meta = data_obj.col_metadata.fillna("") # compromise
 
     if order_by_abundance and row_cluster:
         raise NotImplementedError("Not Implemented !")
@@ -205,6 +205,9 @@ def run(
             sort_by=volcano_sortby,
             direction=volcano_direction,
             topn=volcano_topn,
+            fc=_fc,
+            pval_cutoff=_pval,
+            pval_type=_ptype
         )
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
@@ -466,13 +469,13 @@ def run(
         annot_mat.columns.name = annotate
         outname_kws["annot"] = annotate
 
-        missing = set(X.index) - set(annot_mat.index)
+        missing = set(X.GeneID) - set(annot_mat.index)
         if missing:
             _missing = pd.DataFrame(index=list(missing), columns=X.columns).fillna(0)
             _missing.index.name = X.index.name
             annot_mat = pd.concat([annot_mat, _missing])
 
-        annot_mat["GeneID"] = annot_mat.index
+        annot_mat["GeneID"] = annot_mat.index.astype(str)
         annot_mat = annot_mat[["GeneID"] + [x for x in annot_mat if x != "GeneID"]]
         # fill
 
@@ -625,7 +628,7 @@ def run(
 
     col_data = robjects.NULL
     if show_metadata and not col_meta is None:
-        col_data = col_meta
+        col_data = col_meta# .fillna("NA")
     #     # cannot convert Categorical column of Integers to Category in py2r
     #     col_data = col_meta.pipe(clean_categorical)  # does this fix the problem?
     # col_data = utils.set_pandas_datatypes(col_data)
@@ -659,55 +662,199 @@ def run(
         if main_title is None:
             main_title = robjects.NULL
 
-        min_figwidth = 5.4
+        # Centralized sizing logic for clarity and easier troubleshooting
+        def _base_dims(n_rows, n_cols, add_title):
+            """Return baseline height/width in inches for the heatmap area."""
+            # More generous scaling for large N
+            row_slope = 0.24 if n_rows <= 250 else 0.18
+            # Dial back width slope and baseline a bit further
+            col_slope = 0.24 if n_cols <= 35 else 0.18
+            base_h = 4.2 + (n_rows * row_slope)
+            if add_title:
+                base_h += 0.36
+            base_w = 7.6 + (n_cols * col_slope)
+            return base_h, base_w
 
-        # for the width
-        if figsize is not None and figsize[0] is None and figsize[1] is not None:
+        def _apply_extras(h, w, *, col_cluster_flag, row_annot_cols, add_desc,
+                          margins_overhead, row_annot_side, row_names_side,
+                          gene_symbols):
+            info = {"col_cluster": 0.0, "row_annot_w": 0.0, "row_annot_h": 0.0,
+                    "desc": 0.0, "margins": 0.0, "left_row_annot": 0.0,
+                    "left_row_names": 0.0}
+            if col_cluster_flag:
+                h += 3.6  # dendrogram/labels overhead when clustering columns
+                info["col_cluster"] = 3.6
+            if row_annot_cols is not None and row_annot_cols > 0:
+                # Allowance for legends/labels from row annotations
+                _w = 0.4 + (0.26 * row_annot_cols)
+                _h = 0.2 + (0.40 * row_annot_cols)
+                w += _w
+                h += _h
+                info["row_annot_w"] = _w
+                info["row_annot_h"] = _h
+            if add_desc:
+                w += 1.8
+                info["desc"] = 1.8
+            # Fixed overhead for left/right margins, dendrograms, etc.
+            w += margins_overhead
+            info["margins"] = margins_overhead
+            # If row annotations sit on the left, reserve extra space
+            if row_annot_side == 'left' and row_annot_cols and row_annot_cols > 0:
+                w += 1.0
+                info["left_row_annot"] = 1.0
+            # If row names are on the left and gene symbols are shown, add a bit more
+            if (row_names_side == 'left') and gene_symbols:
+                w += 0.8
+                info["left_row_names"] = 0.8
+            return h, w, info
+
+        def _ensure_min_w(w, min_w=5.4):
+            return max(w, min_w)
+
+        def _clamp_w(w, min_w=5.4, max_w=48.0):
+            return max(min(w, max_w), min_w)
+
+        # Determine figure size based on provided figsize tuple
+        n_rows = int(X.shape[0])
+        n_cols = int(len([c for c in X.columns if c not in ("GeneID", "GeneSymbol")]))
+        has_title = not (main_title == robjects.NULL)
+        annot_cols = None
+        if row_annot_df is not None and row_annot_df is not robjects.NULL:
+            try:
+                annot_cols = int(len(row_annot_df.columns))
+            except Exception:
+                annot_cols = None
+
+        # Configurable knobs via environment (for quick tuning without code changes)
+        try:
+            width_scale = float(os.getenv("TACKLE_WIDTH_SCALE", "1.0"))
+        except Exception:
+            width_scale = 1.0
+        try:
+            min_w_env = float(os.getenv("TACKLE_MIN_FIGWIDTH", "5.4"))
+        except Exception:
+            min_w_env = 5.4
+        try:
+            max_w_env = float(os.getenv("TACKLE_MAX_FIGWIDTH", "48.0"))
+        except Exception:
+            max_w_env = 48.0
+        try:
+            margins_overhead = float(os.getenv("TACKLE_WIDTH_MARGIN_OVERHEAD", "1.2"))
+        except Exception:
+            margins_overhead = 1.2
+
+        # Legend-aware width bump (bottom legends are horizontal)
+        legend_groups = 1  # include the heatmap legend itself
+        dense_units = 0
+        if 'col_meta' in locals() and (col_meta is not None):
+            meta_cols = [c for c in col_meta.columns if c != 'name']
+            legend_groups += len(meta_cols)
+            # penalize heavy cardinality
+            for c in meta_cols:
+                try:
+                    dense_units += max(int(col_meta[c].nunique()) - 6, 0)
+                except Exception:
+                    pass
+        if row_annot_df is not None and row_annot_df is not robjects.NULL:
+            try:
+                legend_groups += int(len(row_annot_df.columns))
+                for c in list(row_annot_df.columns):
+                    try:
+                        dense_units += max(int(pd.Series(row_annot_df[c]).nunique()) - 6, 0)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # Reserve width per legend column to avoid clipping (dialed back by default)
+        try:
+            LEGEND_COL_WIDTH_IN = float(os.getenv("TACKLE_LEGEND_COL_WIDTH", "0.1"))
+        except Exception:
+            LEGEND_COL_WIDTH_IN = 0.1
+        legend_width_extra = (legend_groups * LEGEND_COL_WIDTH_IN) + (0.08 * dense_units)
+
+        # Reserve some height for bottom legends (they sit below the plot)
+        try:
+            LEGEND_ROW_HEIGHT_IN = float(os.getenv("TACKLE_LEGEND_ROW_HEIGHT", "0.35"))
+        except Exception:
+            LEGEND_ROW_HEIGHT_IN = 0.35
+        legend_height_extra = (legend_groups * LEGEND_ROW_HEIGHT_IN) + (0.04 * dense_units)
+
+        # cut_by splits create extra headers/labels in R, give a small bump
+        has_cut_by = 'cut_by' in locals() and (cut_by is not None and cut_by is not robjects.NULL)
+        cut_by_extra = 0.4 if has_cut_by else 0.0
+
+        # Case A: figsize provided with one dimension missing
+        if figsize is not None and (figsize[0] is None) and (figsize[1] is not None):
+            # width missing, compute width only
             if optimal_figsize:
-                figwidth = max(min((len(X.columns) / 2) * 1.2, 18), min_figwidth)
+                base_h, base_w = _base_dims(n_rows, n_cols, has_title)
             else:
-                figwidth = 11
-            figsize = (figwidth, figsize[1])
-
-        # for the height
-        if figsize is not None and figsize[1] is None and figsize[0] is not None:
-            if optimal_figsize:
-                figheight = 4.0 + (X.shape[0] * 0.22)
-                if not main_title == robjects.NULL:
-                    figheight += 0.36
-            else:
-                figheight = 11
-            figsize = (figsize[0], figheight)
-
-        if figsize is None or (
-            figsize[0] is None and figsize[1] is None
-        ):  # either None or length 2 tuple
-            if optimal_figsize:
-                figheight = 4.0 + (X.shape[0] * 0.22)
-                if not main_title == robjects.NULL:
-                    figheight += 0.36
-                figwidth = 8.4 + (X.shape[1] * 0.26)
-                if col_cluster:
-                    figheight += 3.6
-            else:
-                figheight = 11
-                figwidth = max(min((len(X.columns) / 2) * 1.2, 18), min_figwidth)
-
-            if row_annot_df is not None and row_annot_df is not robjects.NULL:
-                figwidth += 0.4 + 0.26 * len(row_annot_df.columns)
-                figheight += 0.2 + (0.4 * len(row_annot_df.columns))
-
-            if add_description:
-                figwidth += 3.6
+                # Non-optimal: conservative defaults
+                base_h, base_w = 10.56, _ensure_min_w(min(n_cols / 2.0, 16.0), min_w_env)
+            h, w, extra_info = _apply_extras(base_h, base_w,
+                                             col_cluster_flag=col_cluster,
+                                             row_annot_cols=annot_cols,
+                                             add_desc=add_description,
+                                             margins_overhead=margins_overhead,
+                                             row_annot_side=row_annot_side,
+                                             row_names_side=row_names_side,
+                                             gene_symbols=gene_symbols)
+            w_pre = (w + legend_width_extra + cut_by_extra) * width_scale
+            figwidth = _clamp_w(w_pre, min_w_env, max_w_env)
+            figheight = float(figsize[1])
             figsize = (figwidth, figheight)
 
+        elif figsize is not None and (figsize[1] is None) and (figsize[0] is not None):
+            # height missing, compute height only
+            if optimal_figsize:
+                base_h, base_w = _base_dims(n_rows, n_cols, has_title)
+            else:
+                base_h, base_w = 10.56, _ensure_min_w(min(n_cols / 2.0, 16.0), min_w_env)
+            h, w, extra_info = _apply_extras(base_h, base_w,
+                                             col_cluster_flag=col_cluster,
+                                             row_annot_cols=annot_cols,
+                                             add_desc=add_description,
+                                             margins_overhead=margins_overhead,
+                                             row_annot_side=row_annot_side,
+                                             row_names_side=row_names_side,
+                                             gene_symbols=gene_symbols)
+            # add legend height here since we are computing height
+            h = h + legend_height_extra
+            w_pre = (w + legend_width_extra + cut_by_extra) * width_scale
+            figwidth = _clamp_w(float(figsize[0]), min_w_env, max_w_env)
+            figheight = h
+            figsize = (figwidth, figheight)
+
+        # Case B: figsize not provided or both set to None
+        elif (figsize is None) or (figsize[0] is None and figsize[1] is None):
+            if optimal_figsize:
+                base_h, base_w = _base_dims(n_rows, n_cols, has_title)
+            else:
+                # Historical defaults that tended to look balanced
+                base_h, base_w = 12.0, _ensure_min_w(min(n_cols / 2.0, 16.0), min_w_env)
+            h, w, extra_info = _apply_extras(base_h, base_w,
+                                             col_cluster_flag=col_cluster,
+                                             row_annot_cols=annot_cols,
+                                             add_desc=add_description,
+                                             margins_overhead=margins_overhead,
+                                             row_annot_side=row_annot_side,
+                                             row_names_side=row_names_side,
+                                             gene_symbols=gene_symbols)
+            # add legend height here since we are computing height
+            h = h + legend_height_extra
+            w_pre = (w + legend_width_extra + cut_by_extra) * width_scale
+            figwidth = _clamp_w(w_pre, min_w_env, max_w_env)
+            figheight = h
+            figsize = (figwidth, figheight)
+
+        # Case C: both width and height provided, respect them as-is
         figwidth, figheight = figsize
 
-        if (
-            gene_symbols and not optimal_figsize
-        ):  # make sure there is enough room for the symbols
-            figheight = max(((gene_symbol_fontsize + 2) / 72) * len(X), 12)
-            if figheight > 218:  # maximum figheight in inches
+        # Ensure room for gene symbols only when not using optimal sizing
+        if gene_symbols and not optimal_figsize:
+            figheight = max(((gene_symbol_fontsize + 2) / 72) * n_rows, 12)
+            if figheight > 218:  # cap figheight and scale font in R
                 FONTSIZE = max(218 / figheight, 6)
                 figheight = 218
 
@@ -779,7 +926,29 @@ def run(
             )
             out = os.path.join(out_path, out_name)
 
-        logger.info(f"figwidth: {figwidth}, figheight: {figheight}")
+        # Detailed breakdown to simplify troubleshooting
+        try:
+            logger.info(
+                "figsize: base_w=%.2f, legends_w=%.2f, margins=%.2f, row_annot_w=%.2f, desc=%.2f, cut_by=%.2f, left_row_annot=%.2f, left_row_names=%.2f, width_scale=%.2f, pre_clamp=%.2f, final_w=%.2f, base_h=%.2f, legends_h=%.2f, final_h=%.2f"
+                % (
+                    base_w if 'base_w' in locals() else -1,
+                    legend_width_extra,
+                    extra_info.get("margins", 0.0) if 'extra_info' in locals() else 0.0,
+                    extra_info.get("row_annot_w", 0.0) if 'extra_info' in locals() else 0.0,
+                    extra_info.get("desc", 0.0) if 'extra_info' in locals() else 0.0,
+                    cut_by_extra,
+                    extra_info.get("left_row_annot", 0.0) if 'extra_info' in locals() else 0.0,
+                    extra_info.get("left_row_names", 0.0) if 'extra_info' in locals() else 0.0,
+                    width_scale,
+                    w_pre if 'w_pre' in locals() else -1,
+                    figwidth,
+                    base_h if 'base_h' in locals() else -1,
+                    legend_height_extra,
+                    figheight,
+                )
+            )
+        except Exception:
+            pass
 
         with localconverter(
             robjects.default_converter + pandas2ri.converter

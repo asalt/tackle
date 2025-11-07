@@ -159,7 +159,7 @@ def plot(
     )
 
     nes_range = gsea_sig.NES.abs().max() * 2
-    figwidth = 8
+    figwidth = 9
     # figwidth = np.round(nes_range * 2.5, decimals=1)
     figheight = max(5, min(gsea_sig.pipe(len) // 1.25, 24))
     fig = plt.figure(figsize=(figwidth, figheight))

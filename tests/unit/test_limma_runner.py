@@ -144,7 +144,7 @@ def test_limma_pipeline_continuous_covariate_from_geneid():
             edata=edata,
             pheno=pheno,
             group=None,
-            formula="~ 2064",
+            formula="~ GeneID_2064",
             block=None,
             contrasts=None,
         )
@@ -158,3 +158,23 @@ def test_limma_pipeline_continuous_covariate_from_geneid():
     # geneX should tend to be the most significant
     top = df.sort_values("pAdj").index[0]
     assert top in ("geneX", "2064")
+
+
+def test_limma_pipeline_continuous_covariate_missing_gene_raises():
+    samples = ["s1", "s2", "s3", "s4"]
+    edata = pd.DataFrame(
+        [np.random.rand(4), np.random.rand(4)],
+        index=["1000", "2000"],
+        columns=samples,
+    )
+    pheno = pd.DataFrame(index=samples)
+
+    with pytest.raises(ValueError):
+        run_limma_pipeline(
+            edata=edata,
+            pheno=pheno,
+            group=None,
+            formula="~ GeneID_2064",
+            block=None,
+            contrasts=None,
+        )

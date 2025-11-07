@@ -58,7 +58,11 @@ def sort_and_select_topn(
     df: pd.DataFrame,
     sort_by: str = "pValue",
     direction: str = "both",   # 'both', 'up', or 'down'
-    topn: int = 50
+    topn: int = 50,
+    fc=2,
+    pval_cutoff=.05,
+    pval_type="pValue"
+
 ) -> pd.DataFrame:
     """
     Sort the DataFrame according to the selected 'sort_by' preset,
@@ -77,6 +81,9 @@ def sort_and_select_topn(
         sort_by = "pValue"
     
     preset = sort_presets[sort_by]
+
+    df = df[ abs(df["log2_FC"]) > fc ]
+    df = df[ df[pval_type] < pval_cutoff ]
     
     # Retrieve the sort key: can be a string (column name) or a callable
     sort_key = preset["sort_func"]
@@ -172,7 +179,10 @@ def process_file(
     volcano_file: str,
     sort_by: str,
     direction: str,
-    topn: int
+    topn: int,
+    fc=0,
+    pval_cutoff=1,
+    pval_type="pValue"
 ) -> pd.DataFrame:
     """
     Wrapper that:
@@ -181,7 +191,11 @@ def process_file(
       3) Returns the final DataFrame
     """
     df = parse_volcano_file(volcano_file)
-    df_filtered = sort_and_select_topn(df, sort_by=sort_by, direction=direction, topn=topn)
+    df_filtered = sort_and_select_topn(df, sort_by=sort_by, direction=direction, topn=topn,
+            fc=fc,
+            pval_cutoff=pval_cutoff,
+            pval_type=pval_type
+            )
     return df_filtered
 
 
@@ -190,7 +204,10 @@ def sort_files(
     X: pd.DataFrame,
     sort_by: str = "signedlogP",   # default
     direction: str = "both",       # default
-    topn: int = 50                 # default
+    topn: int = 50,                # default
+    fc=2,
+    pval_cutoff=.05,
+    pval_type="pValue"
 ) -> pd.DataFrame:
     """
     Example function:
@@ -209,7 +226,7 @@ def sort_files(
     dfs_combined = []
     
     for vf in volcano_files:
-        df_filtered = process_file(vf, sort_by=sort_by, direction=direction, topn=topn)
+        df_filtered = process_file(vf, sort_by=sort_by, direction=direction, topn=topn, fc=fc, pval_cutoff=pval_cutoff, pval_type=pval_type)
         if not df_filtered.empty:
             dfs_combined.append(df_filtered)
     

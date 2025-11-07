@@ -2,6 +2,7 @@ import os
 import itertools
 from pathlib import Path
 import hashlib
+import re
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ except AttributeError:
     pd.NA = "NA"  # not sure if using this, could be in main.py
 
 from .utils import get_outname, parse_gid_file, fix_name
+from .formula_utils import find_geneid_keys_in_string
 
 # from .containers import GeneMapper
 
@@ -121,6 +123,7 @@ def volcanoplot(
     color_up="red",
     global_xmax=None,
     global_ymax=None,
+    cluster_topn=None,
 ):
     data_obj = ctx.obj["data_obj"]
 
@@ -243,6 +246,7 @@ def volcanoplot(
         if len(groups) == 2:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
             group1, group0 = [_clean(x) for x in _comparison.split(" - ")]
+            # group0, group1 = [_clean(x) for x in _comparison.split(" - ")]
             # print(group0, group1)
             group0_fix, group1_fix = (
                 fix_group_name(group0, meta.columns),
@@ -307,12 +311,30 @@ def volcanoplot(
         # impute_missing_values = (impute_missing_values,)
         # fill_na_zero = (fill_na_zero,)
         if _comparison_name is None:
-            _groupname = "{}_vs_{}".format(group0_fix, group1_fix)
+            # _groupname = "{}_by_{}".format(group0_fix, group1_fix)
+            _groupname = "{}_by_{}".format(group1_fix, group0_fix)
         else:
             _groupname = _comparison_name
 
+        # Build a dedicated limma subfolder when a formula is provided
+        _volcano_subdir = ["volcano"]
+        _plottype = "volcano"
+        if formula:
+            try:
+                _fhash = hashlib.sha1(str(formula).encode("utf-8")).hexdigest()[:10]
+            except Exception:
+                _fhash = "fhash"
+            _fstr = re.sub(r"\s+", "_", str(formula).strip())
+            _fstr = re.sub(r"[^A-Za-z0-9._-]", "_", _fstr).strip("._")
+            if not _fstr:
+                _fstr = "formula"
+            if len(_fstr) > 60:
+                _fstr = _fstr[:60]
+            _volcano_subdir.extend(["limma", f"{_fstr}__{_fhash}"])
+            _plottype = ""  # prevent get_outname from appending another 'volcano'
+
         outname = get_outname(
-            "volcano",
+            _plottype,
             name=data_obj.outpath_name,
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
@@ -324,7 +346,7 @@ def volcanoplot(
             imv="T" if impute_missing_values else "F",
             fna="T" if fill_na_zero else "F",
             group=_groupname.replace(":", "_").replace(r"(", "").replace(")", "").replace("+", "_").replace(r"/", "dv"),
-            outpath=os.path.join(data_obj.outpath, "volcano"),
+            outpath=os.path.join(data_obj.outpath, *_volcano_subdir),
             **_xtra,
         )
 
@@ -376,6 +398,77 @@ def volcanoplot(
         export_data[export_cols].to_csv(csv_out, sep="\t")
         print("done", flush=True)
 
+        # Optionally dispatch clustermaps of top-N from this volcano
+        try:
+            if cluster_topn:
+                from . import clusterplot_dispatcher as cdisp
+                # Prepare sensible defaults
+                volcano_sortby = sig_metric if sig_metric in ("pAdj", "pValue") else "pValue"
+                volcano_filter_params = (foldchange, sig, volcano_sortby)
+                # Iterate requested top-Ns
+                for topn in cluster_topn:
+                    print(f"Dispatching clustermap for top {topn} genes from {csv_out}")
+                    cdisp.run(
+                        ctx=ctx,
+                        add_description=False,
+                        annotate=None,
+                        annotate_genes=None,
+                        cmap=None,
+                        cut_by=None,
+                        color_low=None,
+                        color_mid=None,
+                        color_high=None,
+                        col_cluster=True,
+                        row_cluster=True,
+                        cluster_row_slices=None,
+                        cluster_col_slices=None,
+                        figwidth=width,
+                        figheight=height,
+                        figsize=None,
+                        force_plot_genes=False,
+                        genefile=None,
+                        genefile_sheet=None,
+                        gene_symbols=True,
+                        genesymbols=True,
+                        gene_annot=None,
+                        gsea_input=None,
+                        highlight_geneids=(),
+                        highlight_geneids_table=None,
+                        linear=False,
+                        legend_include=(),
+                        legend_exclude=(),
+                        optimal_figsize=False,
+                        sample_reference=None,
+                        sample_include=None,
+                        sample_exclude=None,
+                        linkage="ward",
+                        max_autoclusters=30,
+                        nclusters=None,
+                        cluster_func=None,
+                        main_title=None,
+                        order_by_abundance=False,
+                        volcano_file=csv_out,
+                        volcano_filter_params=volcano_filter_params,
+                        volcano_direction=direction,
+                        volcano_sortby=volcano_sortby,
+                        cluster_file=(None, None),
+                        row_annot_side=None,
+                        row_dend_side="left",
+                        row_names_side="right",
+                        seed=1234,
+                        show_metadata=True,
+                        standard_scale="None",
+                        show_missing_values=True,
+                        cluster_fillna=None,
+                        z_score="0",
+                        z_score_by=None,
+                        z_score_fillna=False,
+                        add_human_ratios=False,
+                        volcano_topn=int(topn),
+                    )
+        except Exception as e:
+            print(f"Warning: failed to dispatch clustermap(s) for {csv_out}: {e}")
+
         # pandas2ri.activate()
         r_source = robjects.r["source"]
         r_file = os.path.join(
@@ -383,6 +476,8 @@ def volcanoplot(
         )
         r_source(r_file)
         Rvolcanoplot = robjects.r["volcanoplot"]
+
+        # Axis label overrides disabled due to rpy2 kwargs translation issues
 
         file_fmts = ctx.obj["file_fmts"]
         grdevices = importr("grDevices")
@@ -416,8 +511,25 @@ def volcanoplot(
         if extra_outname_info is not None:
             _xtra["n"] = extra_outname_info
 
+        # Use the same limma-aware subfolder for plot artifacts
+        _volcano_subdir = ["volcano"]
+        _plottype = "volcano"
+        if formula:
+            try:
+                _fhash = hashlib.sha1(str(formula).encode("utf-8")).hexdigest()[:10]
+            except Exception:
+                _fhash = "fhash"
+            _fstr = re.sub(r"\s+", "_", str(formula).strip())
+            _fstr = re.sub(r"[^A-Za-z0-9._-]", "_", _fstr).strip("._")
+            if not _fstr:
+                _fstr = "formula"
+            if len(_fstr) > 60:
+                _fstr = _fstr[:60]
+            _volcano_subdir.extend(["limma", f"{_fstr}__{_fhash}"])
+            _plottype = ""
+
         outname = get_outname(
-            "volcano",
+            _plottype,
             name=data_obj.outpath_name,
             taxon=data_obj.taxon,
             non_zeros=data_obj.non_zeros,
@@ -429,7 +541,7 @@ def volcanoplot(
             imv="T" if impute_missing_values else "F",
             fna="T" if fill_na_zero else "F",
             group=_groupname.replace(":", "_").replace(r"(", "").replace(")", "").replace("+", "_").replace(r"/", "dv"),
-            outpath=os.path.join(data_obj.outpath, "volcano"),
+            outpath=os.path.join(data_obj.outpath, *_volcano_subdir),
             **_xtra,
         )
         if len(outname) > 255:
@@ -470,10 +582,100 @@ def volcanoplot(
                     pch=pch,
                     global_xmax=global_xmax,
                     global_ymax=global_ymax,
+                    # x_label_override=x_label_override,
+                    # y_label_override=y_label_override,
                     # **kws,
                 )
                 grdevices.dev_off()
                 print("done.", flush=True)
+
+        # If formula contains a gene-based covariate, make an additional plot
+        # with that gene removed so it doesn't dominate the volcano visually.
+        def _extract_geneids_from_formula(_formula: str) -> list:
+            if not _formula:
+                return []
+            s = str(_formula)
+            # Explicit GeneID references
+            geneids = set(find_geneid_keys_in_string(s))
+            # Backward-compat: bare numeric tokens except 0/1 treated as GeneIDs with warning
+            numeric_tokens = re.findall(r"\b\d+\b", s)
+            warned_numeric = False
+            for t in numeric_tokens:
+                if t not in ("0", "1"):
+                    if not warned_numeric:
+                        print(
+                            "Warning: numeric token(s) in formula treated as GeneIDs for volcano exclusion; please use 'GeneID_<id>' instead.",
+                            flush=True,
+                        )
+                        warned_numeric = True
+                    geneids.add(t)
+            # Symbol-based: Build reverse symbol lookup from GeneID->symbol
+            rev = {}
+            try:
+                for gid, sym in gm.symbol.items():
+                    if sym:
+                        rev.setdefault(str(sym), []).append(str(gid))
+            except Exception:
+                pass
+            # Capture candidate symbol tokens and translate
+            sym_tokens = re.findall(r"\b[A-Za-z][A-Za-z0-9_.]*\b", s)
+            for t in sym_tokens:
+                if t in ("scale", "I", "C"):
+                    continue
+                if t in rev:
+                    for gid in rev[t]:
+                        geneids.add(gid)
+            return list(geneids)
+
+        target_geneids = _extract_geneids_from_formula(formula)
+        # Keep only gene IDs that actually exist in the results index
+        existing_geneids = [gid for gid in target_geneids if gid in df_all.index.astype(str)] if 'df_all' in locals() else [gid for gid in target_geneids if gid in export_data.index.astype(str)]
+
+        if existing_geneids:
+            # Construct a filtered dataframe for plotting only (no TSV export)
+            # We need the same processed frame as above: start from df before reset
+            df2 = df.copy()
+            # Remove any rows that match the target gene IDs
+            df2 = df2[~df2["GeneID"].isin(existing_geneids)]
+
+            # Save duplicate plots with a suffix indicating the exclusion
+            excl_tag = ".no-" + (existing_geneids[0] if len(existing_geneids) == 1 else "multi")
+            for file_fmt in file_fmts:
+                with localconverter(robjects.default_converter + pandas2ri.converter):
+                    grdevice = gr_devices[file_fmt]
+                    gr_kw = gr_kws[file_fmt]
+                    out = outname.rstrip('.123') + excl_tag + file_fmt
+                    print("Saving", out, "...", end="", flush=True)
+                    grdevice(file=out, **gr_kw)
+                    Rvolcanoplot(
+                        df2,
+                        max_labels=number,
+                        fc_cutoff=foldchange,
+                        number_by=number_by,
+                        direction=direction,
+                        force_highlight_geneids=force_highlight_geneids,
+                        bg_marker_color=bg_marker_color,
+                        color_down=color_down,
+                        color_up=color_up,
+                        sig=sig,
+                        sig_metric=sig_metric,
+                        yax=yaxis,
+                        label_cex=label_scale,
+                        annot_cex=annot_scale,
+                        marker_cex=marker_scale,
+                        max_fc=max_fc,
+                        point_size=1.4,
+                        group0=group0,
+                        group1=group1,
+                        alpha=alpha,
+                        pch=pch,
+                        global_xmax=robjects.NA_Real,
+                        global_ymax=robjects.NA_Real,
+                        # x_label_override=x_label_override,
+                        # y_label_override=y_label_override,
+                    )
+                    grdevices.dev_off()
+                    print("done.", flush=True)
         ## end for comparison, df in results.items():
 
     return

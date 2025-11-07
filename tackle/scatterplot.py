@@ -24,6 +24,8 @@ def scatterplot(
     shade_correlation=True,
     outname="name",
     file_fmts=None,
+    plt_size=None,
+    **kwargs
 ):
     try:
         from rpy2.robjects import r
@@ -49,9 +51,10 @@ def scatterplot(
         grdevices = importr("grDevices")
         Rscatterplot = robjects.r["scattermat"]
 
-        plt_size = ibaqs_log_shifted.shape[1] * 0.75
+        if plt_size is None:
+            plt_size = ibaqs_log_shifted.shape[1] * 0.75
         if file_fmts is None:
-            file_fmts = (".png",)
+            file_fmts = (".pdf",)
         # file_fmts = (".png",)
         gr_devices = {
             ".png": grdevices.png,
@@ -80,6 +83,7 @@ def scatterplot(
                 method=stat,
                 interactive=False,
                 colors_only=colors_only,
+                plt_size=plt_size or robjects.NULL
             )
             grdevices.dev_off()
             print("done.", flush=True)

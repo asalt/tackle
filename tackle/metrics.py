@@ -190,6 +190,22 @@ def make_metrics(
 
     grdevices = importr("grDevices")
 
+
+
+    num_samples = len(area_df)
+    num_rows = (num_samples // 6) + 1
+    num_rows = 1
+    # ncol = num_facets # ? needs to be number of samples ber column
+    # panel_width = 2.2
+    # panel_height = 3
+    # # figwidth = max(7, ncol * panel_width)
+    # # figheight = panel_height
+    figheight = 4 * num_rows
+    figwidth = 2 + (0.75 * area_df.Name.nunique()//num_rows)
+
+
+
+    print(area_df.head())
     _code = f"""
       library(rlang)
       ycol="{area_name}"
@@ -198,14 +214,13 @@ def make_metrics(
         geom_boxplot(width=.12) +
         labs(y = ycol) +
         theme_classic() + 
-        theme(axis.text.x = element_text(angle = 90, hjust = 1.0, vjust=0.5,  size = 10))
+        theme(axis.text.x = element_text(angle = 90, hjust = 1.0, vjust=0.5,  size = 10)) 
 
         #geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+        # facet_wrap(~Name, nrow={num_rows}) +
       print(p)
     
     """
-    figheight = 7
-    figwidth = 2 + (0.75 * area_df.Name.nunique())
     with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
 
         robjects.r.assign("df", area_df)

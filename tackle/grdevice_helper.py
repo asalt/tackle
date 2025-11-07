@@ -35,7 +35,7 @@ def get_grid_kws(filetype, width=7, height=7, units="in", res=300):
 
     grdevices = importr("grDevices")
     gr_devices = {
-       "png": grdevices.png,
+       "png": partial(grdevices.png, units='in'),
        "pdf": grdevices.pdf,
        "svg": grdevices.svg,
     }

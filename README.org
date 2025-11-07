@@ -213,3 +213,37 @@
   correlationplot --non-zeros 4 --name example ./example.config cluster --nclusters auto export --level area
   #+END_SRC
   Notice that the optional arguments are specified for each command and subcommand.
+* Limma formulas and gene covariates
+
+When using limma via the `--formula` option, you can reference a gene's
+expression as a continuous covariate on the right-hand side of the formula.
+
+- Preferred: use explicit GeneID references in the form `GeneID_<id>`. The
+  following separators are also supported: `GeneID:<id>`, `GeneID-<id>`.
+- Symbols still work: e.g., `HER2 ~ 0 + condition` restricts to HER2 on the LHS,
+  and `~ HER2 + condition` uses HER2 expression as a covariate on the RHS.
+- Bare numeric tokens on the RHS (e.g., `~ 2064`) are deprecated. They are
+  interpreted as GeneIDs for backward compatibility but will emit a warning.
+  Use `GeneID_2064` instead. The constants `0` and `1` always keep their usual
+  R formula meaning (no intercept / intercept).
+
+Examples:
+
+- `~ 1 + condition`  # intercept plus a factor (no gene injection)
+- `~ GeneID_2064`    # inject gene 2064 expression as covariate
+- `~ HER2 + batch`   # inject HER2 expression by symbol
+  - `HER2 ~ 0 + condition`  # restrict analysis to HER2, design from RHS
+
+* Export summary workbook
+
+You can collate common TSV outputs (export tables, volcano results) into a
+single Excel workbook:
+
+- `tackle make-xls`  # writes to `<outpath>/export/summary.xlsx`
+- Options:
+  - `--out PATH.xlsx` to choose a destination
+  - `--base-dir PATH` to run standalone without reloading data
+  - `--no-include-export` to skip `export/` tables
+  - `--no-include-volcano` to skip `volcano/` TSVs
+
+This requires either `openpyxl` or `xlsxwriter` to be installed.

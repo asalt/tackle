@@ -90,6 +90,7 @@ from . import utils
 from .utils import *
 from tackle import containers
 from . import clusterplot_dispatcher
+from .clusterplot_dispatcher import run as cluster_dispatch
 from .containers import (
     Data,
     GeneMapper,
@@ -244,7 +245,7 @@ class Path_or_Geneset(click.Path):
 
 
 class Path_or_Subcommand(click.Path):
-    EXCEPTIONS = ("make_config", "replot_gsea")  # this one we just run
+    EXCEPTIONS = ("make_config", "replot_gsea", "make-xls")  # run as standalone subcommands
 
     def __init__(self, *args, **kwargs):
         super(Path_or_Subcommand, self).__init__(*args, **kwargs)
@@ -775,16 +776,20 @@ def main(
         # then is it actually a subcommand (only make_config right now)
         # we wish to run on its own, without loading data
 
-        # hacky
-        if experiment_file == "make_config":
-            parser = make_config.make_parser(ctx)
-            _cmd = make_config
-        elif experiment_file == "replot_gsea":
-            parser = replot_gsea.make_parser(ctx)
-            _cmd = replot_gsea
-        the_kws = parser.parse_args(sys.argv[2:])[0]
-        ctx.invoke(_cmd, **the_kws)
-        ctx.exit(0)
+        # Use Click's own command machinery to parse/invoke the subcommand
+        subcmd_name = experiment_file
+        cmd = ctx.command.get_command(ctx, subcmd_name)
+        if cmd is None:
+            # Fallback: print help for unknown command-like token
+            help_txt = globals().get(subcmd_name)
+            if help_txt is not None:
+                click.echo(help_txt.get_help(ctx))
+            else:
+                click.echo(f"Unknown command: {subcmd_name}")
+            ctx.exit(1)
+        # Delegate to the subcommand's Click machinery directly
+        rv = cmd.main(args=sys.argv[2:], standalone_mode=False)
+        ctx.exit(rv or 0)
 
     if not limma:
         raise click.BadOptionUsage(
@@ -1239,8 +1244,14 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
     help="alias for --gene-symbols",
 )
 @click.option("--gene-symbols", default=False, is_flag=True, show_default=True)
+@click.option(
+    "--covariate",
+    multiple=True,
+    default=(),
+    help="Add continuous covariate(s) to GCT cdesc by specifying GeneID or symbol; can be repeated.",
+)
 @click.pass_context
-def export(ctx, level, genesymbols, gene_symbols, linear):
+def export(ctx, level, genesymbols, gene_symbols, linear, covariate):
     # =====
 
     # =====
@@ -1248,9 +1259,167 @@ def export(ctx, level, genesymbols, gene_symbols, linear):
     data_obj = ctx.obj["data_obj"]
     for l in level:
         data_obj.perform_data_export(
-            l, genesymbols=genesymbols or gene_symbols, linear=linear
+            l, genesymbols=genesymbols or gene_symbols, linear=linear, covariates=covariate
         )
 
+
+@main.command("make-xls")
+@click.option(
+    "--out",
+    type=str,
+    default=None,
+    help="Output .xlsx path. Default inherits naming via get_outname under the analysis 'export' folder.",
+)
+@click.option(
+    "--base-dir",
+    type=str,
+    default=None,
+    help="Optional analysis output directory to scan when not running after data load.",
+)
+@click.option(
+    "--include-export/--no-include-export",
+    default=True,
+    show_default=True,
+    help="Include TSV tables from the 'export/' subfolder as sheets.",
+)
+@click.option(
+    "--include-volcano/--no-include-volcano",
+    default=True,
+    show_default=True,
+    help="Include volcano result TSVs from the 'volcano/' subfolder as sheets.",
+)
+@click.option(
+    "--excel-engine",
+    type=click.Choice(["openpyxl", "xlsxwriter"]),
+    default=None,
+    show_default=True,
+    help="Force a specific Excel writer engine. Defaults to preferring 'xlsxwriter' if available.",
+)
+@click.option(
+    "--filter",
+    "filter_contains",
+    multiple=True,
+    default=(),
+    help="Optional substring(s) to filter which TSVs become sheets (match against relative paths).",
+)
+@click.option(
+    "--slim-volcano/--full-volcano",
+    default=True,
+    show_default=True,
+    help="For volcano sheets, keep only summary columns (GeneID, GeneSymbol, log2_FC, pAdj, pValue, t, signedlogP).",
+)
+@click.option(
+    "--volcano-topn",
+    type=int,
+    default=None,
+    show_default=True,
+    help="For volcano sheets, keep only the top-N rows (by pAdj or pValue).",
+)
+@click.option(
+    "--merge-volcano/--separate-volcano",
+    default=True,
+    show_default=True,
+    help="Merge all volcano TSVs into a single wide sheet (default) or keep as separate sheets.",
+)
+@click.pass_context
+def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano):
+    """
+    Build a summary Excel workbook by collecting common TSV exports
+    (export tables, volcano results) from the current analysis outpath.
+    """
+    from .exporter import build_export_xlsx
+
+    data_obj = None
+    if ctx.obj and "data_obj" in ctx.obj:
+        data_obj = ctx.obj["data_obj"]
+    # Determine base_dir from context or CLI
+    if data_obj is not None:
+        base_dir = data_obj.outpath  # honors config file name and --name overrides
+    else:
+        if not base_dir:
+            click.echo("make-xls needs an analysis directory. Either run after loading data (e.g., 'tackle ... CONFIG.conf make-xls') or pass --base-dir PATH.")
+            raise click.Abort()
+    if out is None:
+        if data_obj is not None:
+            # Reflect naming conventions via get_outname
+            src = (
+                "both"
+                if (include_export and include_volcano)
+                else ("export" if include_export else ("volcano" if include_volcano else "none"))
+            )
+            out = (
+                get_outname(
+                    "export",  # plottype; ensures results land under <outpath>/export/
+                    name=data_obj.outpath_name,
+                    taxon=data_obj.taxon,
+                    non_zeros=data_obj.non_zeros,
+                    colors_only=data_obj.colors_only,
+                    batch=data_obj.batch_applied,
+                    batch_method=(
+                        "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+                    ),
+                    outpath=data_obj.outpath,
+                    book="summary",
+                    src=src,
+                )
+                + ".xlsx"
+            )
+        else:
+            # Standalone fallback
+            suffix_parts = []
+            if not include_export:
+                suffix_parts.append("noexport")
+            if not include_volcano:
+                suffix_parts.append("novolcano")
+            suffix = ("." + ".".join(suffix_parts)) if suffix_parts else ""
+            out = os.path.join(base_dir, "export", f"summary{suffix}.xlsx")
+    try:
+        if data_obj is not None:
+            result = build_export_xlsx(
+                base_dir=base_dir,
+                out_path=out,
+                include_export=include_export,
+                include_volcano=include_volcano,
+                pheno_df=data_obj.col_metadata,
+                meta={
+                    "analysis_name": data_obj.outpath_name,
+                    "outpath": data_obj.outpath,
+                    "taxon": data_obj.taxon,
+                    "non_zeros": data_obj.non_zeros,
+                    "batch_applied": data_obj.batch_applied,
+                    "batch_nonparametric": data_obj.batch_nonparametric,
+                    "include_export": include_export,
+                    "include_volcano": include_volcano,
+                },
+                engine_preference=excel_engine,
+                filter_contains=filter_contains,
+                slim_volcano=slim_volcano,
+                volcano_topn=volcano_topn,
+                merge_volcano=merge_volcano,
+            )
+        else:
+            result = build_export_xlsx(
+                base_dir=base_dir,
+                out_path=out,
+                include_export=include_export,
+                include_volcano=include_volcano,
+                pheno_df=None,
+                meta={
+                    "outpath": base_dir,
+                    "include_export": include_export,
+                    "include_volcano": include_volcano,
+                },
+                engine_preference=excel_engine,
+                filter_contains=filter_contains,
+                slim_volcano=slim_volcano,
+                volcano_topn=volcano_topn,
+                merge_volcano=merge_volcano,
+            )
+    except RuntimeError as e:
+        click.echo(str(e))
+        click.echo("Install 'openpyxl' or 'xlsxwriter' to enable XLSX export.")
+        raise click.Abort()
+    click.echo(f"Wrote Excel summary: {result}")
 
 @main.command("cluster")
 @click.option(
@@ -2429,7 +2598,7 @@ def _xx():  # not called, old code
     if gsea_input is not None:
         raise NotImplementedError()
 
-    pandas2ri.activate()
+    # pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(
         os.path.split(os.path.abspath(__file__))[0], "R", "clusterplot.R"
@@ -2867,7 +3036,7 @@ def _xx():  # not called, old code
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
-    pandas2ri.activate()
+    # pandas2ri.activate()
 
     def plot_and_save(
         X,
@@ -3347,8 +3516,11 @@ class Float_or_Bool(click.ParamType):
     "--formula",
     default=None,
     show_default=True,
-    help="""more complex linear regression formula for use with limma.
-              Supersedes `group` option""",
+    help="""Limma formula. Supports gene covariates via GeneID references.
+              Use GeneID_<id> (also supports GeneID:<id> and GeneID-<id>) on the RHS to inject a
+              continuous covariate from that gene's expression. Symbols (e.g., HER2) also work.
+              Bare numeric tokens are deprecated and will be interpreted as GeneIDs with a warning;
+              '0' and '1' retain their usual intercept semantics. Supersedes `group`.""",
 )
 @click.option(
     "--impute-missing-values / --no-impute-missing-values",
@@ -3412,6 +3584,13 @@ class Float_or_Bool(click.ParamType):
     type=Float_or_Bool(),
     show_default=True,
 )
+@click.option(
+    "--cluster-topn",
+    type=int,
+    multiple=True,
+    default=(),
+    help="Optional: also generate clustermaps of top-N genes from the volcano (repeatable)",
+)
 @click.pass_context
 def volcano(
     ctx,
@@ -3444,6 +3623,7 @@ def volcano(
     fill_na_zero,
     global_xmax,
     global_ymax,
+    cluster_topn,
 ):
     """
     Draw volcanoplot and highlight significant (FDR corrected pvalue < .05 and > 2 fold change)
@@ -3504,7 +3684,166 @@ def volcano(
         color_up=color_up,
         global_xmax=global_xmax,
         global_ymax=global_ymax,
+        cluster_topn=cluster_topn,
     )
+
+
+@main.command("cluster-from-volcano")
+@click.option(
+    "--volcano-file",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Path to a volcano results TSV to seed top-N gene selection",
+)
+@click.option("--topn", type=int, multiple=True, default=(50,), show_default=True)
+@click.option(
+    "--direction",
+    type=click.Choice(("both", "up", "down")),
+    default="both",
+    show_default=True,
+)
+@click.option(
+    "--sortby",
+    type=click.Choice(("pAdj", "pValue", "log2_FC")),
+    default="pAdj",
+    show_default=True,
+)
+@click.option("--fc", type=float, default=2.0, show_default=True, help="Fold-change cutoff")
+@click.option(
+    "--pval-cutoff",
+    type=float,
+    default=0.05,
+    show_default=True,
+    help="Significance cutoff",
+)
+@click.option(
+    "--pval-type",
+    type=click.Choice(("pAdj", "pValue")),
+    default="pAdj",
+    show_default=True,
+    help="Column to use as p-value in volcano file",
+)
+@click.option(
+    "--row-cluster/--no-row-cluster",
+    default=True,
+    is_flag=True,
+    show_default=True,
+)
+@click.option(
+    "--col-cluster/--no-col-cluster",
+    default=True,
+    is_flag=True,
+    show_default=True,
+)
+@click.option(
+    "--nclusters",
+    default=None,
+    callback=validate_cluster_number,
+    show_default=True,
+)
+@click.option(
+    "--linkage",
+    type=click.Choice(["single", "complete", "average", "weighted", "centroid", "median", "ward"]),
+    default="ward",
+    show_default=True,
+)
+@click.option("--gene-symbols/--no-gene-symbols", default=True, show_default=True)
+@click.option(
+    "--figsize",
+    nargs=2,
+    type=float,
+    default=None,
+    show_default=True,
+    help="Optional fig (width, height) in inches",
+)
+@click.option("--cut-by", multiple=True, default=(), show_default=True, help="Split heatmap columns by metadata fields (repeatable)")
+@click.option("--cluster-row-slices", default=None)
+@click.option("--cluster-col-slices", default=None)
+@click.pass_context
+def cluster_from_volcano(
+    ctx,
+    volcano_file,
+    topn,
+    direction,
+    sortby,
+    fc,
+    pval_cutoff,
+    pval_type,
+    row_cluster,
+    col_cluster,
+    nclusters,
+    linkage,
+    gene_symbols,
+    figsize,
+    cut_by,
+    cluster_row_slices,
+    cluster_col_slices,
+):
+    """Generate clustermaps directly from a volcano TSV (top-N genes)."""
+    width = None
+    height = None
+    if figsize:
+        width, height = figsize
+
+    for n in (topn or ()):  # iterate requested Ns
+        cluster_dispatch(
+            ctx=ctx,
+            add_description=False,
+            annotate=None,
+            annotate_genes=None,
+            cmap=None,
+            cut_by=cut_by if cut_by else None,
+            color_low=None,
+            color_mid=None,
+            color_high=None,
+            col_cluster=col_cluster,
+            row_cluster=row_cluster,
+            cluster_row_slices=cluster_row_slices,
+            cluster_col_slices=cluster_col_slices,
+            figwidth=width,
+            figheight=height,
+            figsize=None,
+            force_plot_genes=False,
+            genefile=None,
+            genefile_sheet=None,
+            gene_symbols=gene_symbols,
+            genesymbols=gene_symbols,
+            gene_annot=None,
+            gsea_input=None,
+            highlight_geneids=(),
+            highlight_geneids_table=None,
+            linear=False,
+            legend_include=(),
+            legend_exclude=(),
+            optimal_figsize=False,
+            sample_reference=None,
+            sample_include=None,
+            sample_exclude=None,
+            linkage=linkage,
+            max_autoclusters=30,
+            nclusters=nclusters,
+            cluster_func=None,
+            main_title=None,
+            order_by_abundance=False,
+            volcano_file=volcano_file,
+            volcano_filter_params=(fc, pval_cutoff, pval_type),
+            volcano_direction=direction,
+            volcano_sortby=sortby,
+            cluster_file=(None, None),
+            row_annot_side=None,
+            row_dend_side="left",
+            row_names_side="right",
+            seed=1234,
+            show_metadata=True,
+            standard_scale="None",
+            show_missing_values=True,
+            cluster_fillna=None,
+            z_score="0",
+            z_score_by=None,
+            z_score_fillna=False,
+            add_human_ratios=False,
+            volcano_topn=int(n),
+        )
 
 
 @main.command("gsea")
@@ -4423,7 +4762,7 @@ def gsea(
                     r_source(r_file)
                     grdevices = importr("grDevices")
                     cluster2 = robjects.r["cluster2"]
-                    robjects.pandas2ri.activate()
+                    # robjects.pandas2ri.activate()
 
                     row_annot_df = None
 
@@ -4971,7 +5310,7 @@ def box(
         print("rpy2 needs to be installed")
         return
 
-    pandas2ri.activate()
+    # pandas2ri.activate()
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "boxplot.R")
 
