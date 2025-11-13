@@ -589,8 +589,16 @@ def volcanoplot(
             if not _formula:
                 return []
             s = str(_formula)
-            # Explicit GeneID references
+            # Explicit GeneID references (GeneID_*)
             geneids = set(find_geneid_keys_in_string(s))
+            # Also handle GID tokens; if numeric, treat as GeneID; if not, treat as a symbol candidate
+            gid_keys = re.findall(r"(?i)\bGID_?([A-Za-z0-9_.-]+)\b", s)
+            gid_symbol_candidates = []
+            for k in gid_keys:
+                if k.isdigit():
+                    geneids.add(k)
+                else:
+                    gid_symbol_candidates.append(k)
             # Symbol-based: Build reverse symbol lookup from GeneID->symbol
             rev = {}
             try:
@@ -601,6 +609,8 @@ def volcanoplot(
                 pass
             # Capture candidate symbol tokens and translate
             sym_tokens = re.findall(r"\b[A-Za-z][A-Za-z0-9_.]*\b", s)
+            # Include GID symbolic keys (e.g., GID_ERBB2 -> ERBB2) for mapping
+            sym_tokens.extend(gid_symbol_candidates)
             for t in sym_tokens:
                 if t in ("scale", "I", "C"):
                     continue

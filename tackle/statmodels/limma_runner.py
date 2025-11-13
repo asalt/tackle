@@ -42,7 +42,7 @@ def _sanitize_name(value: str) -> str:
 def _sanitize_names(values: Iterable[str]) -> List[str]:
     return [_sanitize_name(v) for v in values]
 
-from ..formula_utils import extract_geneid_key as _extract_geneid_key, unquote_backticks as _unquote_backticks
+from ..formula_utils import extract_gene_key_any as _extract_gene_key_any, unquote_backticks as _unquote_backticks
 
 
 def normalize_formula_targets(
@@ -110,23 +110,25 @@ def normalize_formula_targets(
 
     for token in tokens:
         token_str = str(token)
-        # Support explicit GeneID separators on LHS as well
-        gid_key = _extract_geneid_key(token_str)
-        if gid_key is not None:
-            if gid_key in index_map:
-                gene_ids.append(index_map[gid_key])
+        # Explicit GeneID/GID tokens on LHS (supports optional underscore)
+        key_any = _extract_gene_key_any(token_str)
+        if key_any is not None:
+            _, key = key_any
+            if key in index_map:
+                gene_ids.append(index_map[key])
                 continue
-            else:
-                raise ValueError(f"Unknown GeneID reference '{token_str}' in formula left-hand side.")
-        # Support GID tokens (GID_<id> or GID<id>) on LHS as explicit GeneIDs
-        m_gid = re.match(r"(?i)^GID_?([A-Za-z0-9_.-]+)$", token_str)
-        if m_gid:
-            gid_raw = m_gid.group(1)
-            if gid_raw in index_map:
-                gene_ids.append(index_map[gid_raw])
-                continue
-            else:
-                raise ValueError(f"Unknown GID reference '{token_str}' in formula left-hand side.")
+            # Fallback via symbol lookup when explicit key looks like a symbol
+            matches = list(dict.fromkeys(_lookup_symbol_matches(key)))
+            if not matches:
+                raise ValueError(
+                    f"Unknown GeneID/GID reference '{token_str}' in formula left-hand side."
+                )
+            if len(matches) > 1:
+                raise ValueError(
+                    f"Reference '{token_str}' maps to multiple GeneIDs: {list(matches)}; please disambiguate."
+                )
+            gene_ids.append(matches[0])
+            continue
         # Disallow bare numeric tokens on LHS (ambiguous; could be intercept/constant)
         if token_str.isdigit():
             raise ValueError(
@@ -231,33 +233,22 @@ def _inject_gene_covariates_in_formula(
             continue
 
         gene_id_obj: Optional[Any] = None
-        # Support explicit GeneID separators (GeneID_<id>, GeneID:<id>, GeneID-<id>)
         tok_unquoted = _unquote_backticks(tok)
-        gid_key = _extract_geneid_key(tok_unquoted)
-        if gid_key is not None:
-            if gid_key in edata_index_map:
-                gene_id_obj = edata_index_map[gid_key]
+        any_match = _extract_gene_key_any(tok_unquoted)
+        explicit_key: Optional[str] = None
+        if any_match is not None:
+            explicit_key = any_match[1]
+            if explicit_key in edata_index_map:
+                gene_id_obj = edata_index_map[explicit_key]
             else:
+                # not found as a direct GeneID row key; may be a symbol, fall back to symbol lookup below
                 if logger:
                     logger.warning(
-                        "Explicit GeneID reference '%s' did not match any expression row; check filtering and IDs.",
-                        _unquote_backticks(tok),
+                        "Explicit gene reference '%s' did not match any expression row; attempting symbol lookup.",
+                        tok_unquoted,
                     )
                 else:
-                    print(
-                        f"Warning: explicit GeneID reference '{_unquote_backticks(tok)}' not found in expression rows."
-                    )
-                # leave unresolved to be caught below
-        # Support already-sanitized variable tokens (GID_<id> or GID<id>) as shorthand
-        if gene_id_obj is None:
-            m_gid = re.match(r"(?i)^GID_?([A-Za-z0-9_.-]+)$", tok_unquoted)
-            if m_gid:
-                gid_raw = m_gid.group(1)
-                if gid_raw in edata_index_map:
-                    gene_id_obj = edata_index_map[gid_raw]
-                else:
-                    # Don't resolve; will be handled as unresolved below
-                    pass
+                    print(f"Warning: explicit gene reference '{tok_unquoted}' not found; attempting symbol lookup.")
         else:
             tok_unquoted = _unquote_backticks(tok)
             # Do not interpret bare numeric tokens as GeneIDs; only explicit GeneID_ or symbols are allowed.
@@ -268,7 +259,8 @@ def _inject_gene_covariates_in_formula(
             if tok_unquoted.isdigit():
                 continue
             cand_ids = []
-            search = {tok_unquoted, _sanitize_name(tok_unquoted), tok_unquoted.casefold(), _sanitize_name(tok_unquoted).casefold()}
+            seed = explicit_key if explicit_key is not None else tok_unquoted
+            search = {seed, _sanitize_name(seed), seed.casefold(), _sanitize_name(seed).casefold()}
             for sym, ids in symbol_lookup.items():
                 if sym is None:
                     continue
@@ -317,19 +309,13 @@ def _inject_gene_covariates_in_formula(
         # Ignore pure numeric constants and explicit GeneID_ references that failed lookup
         if tok.isdigit():
             continue
-        gid_key = _extract_geneid_key(tok)
-        if gid_key is not None:
+        any_key2 = _extract_gene_key_any(tok)
+        if any_key2 is not None:
+            gid_key = any_key2[1]
             # Explicit GeneID reference that failed to resolve should raise
             if gid_key not in edata_index_map:
                 unresolved.append(tok)
             # Skip further checks for this token
-            continue
-        # Also treat bare GID tokens (GID_<id> or GID<id>) as gene-like; if not injected, flag unresolved
-        if re.match(r"(?i)^GID_?[A-Za-z0-9_.-]+$", tok):
-            gid_raw = _unquote_backticks(tok)
-            gid_raw = re.sub(r"(?i)^GID_?", "", gid_raw)
-            if gid_raw not in edata_index_map:
-                unresolved.append(tok)
             continue
         else:
             candidate_gene = tok in edata_index_map or _sanitize_name(tok) in sym_keys_sanitized
