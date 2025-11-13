@@ -3516,10 +3516,11 @@ class Float_or_Bool(click.ParamType):
     "--formula",
     default=None,
     show_default=True,
-    help="""Limma formula. Supports gene covariates via GeneID references.
-              Use GeneID_<id> (also supports GeneID:<id> and GeneID-<id>) on the RHS to inject a
-              continuous covariate from that gene's expression. Symbols (e.g., HER2) also work.
-              Bare numeric tokens are deprecated and will be interpreted as GeneIDs with a warning;
+    help="""Limma formula. Supports gene covariates via GeneID/GID references.
+              Use GeneID_<id> or GID_<id> on the RHS to inject a continuous covariate from that
+              gene's expression. Symbols (e.g., HER2) also work. On the LHS, use GeneID_<id>,
+              GID_<id>, or a symbol to restrict the analysis to specific targets.
+              Bare numeric tokens are not interpreted as GeneIDs; use explicit GeneID_/GID_.
               '0' and '1' retain their usual intercept semantics. Supersedes `group`.""",
 )
 @click.option(

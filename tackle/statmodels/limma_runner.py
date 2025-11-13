@@ -118,9 +118,25 @@ def normalize_formula_targets(
                 continue
             else:
                 raise ValueError(f"Unknown GeneID reference '{token_str}' in formula left-hand side.")
+        # Support GID tokens (GID_<id> or GID<id>) on LHS as explicit GeneIDs
+        m_gid = re.match(r"(?i)^GID_?([A-Za-z0-9_.-]+)$", token_str)
+        if m_gid:
+            gid_raw = m_gid.group(1)
+            if gid_raw in index_map:
+                gene_ids.append(index_map[gid_raw])
+                continue
+            else:
+                raise ValueError(f"Unknown GID reference '{token_str}' in formula left-hand side.")
+        # Disallow bare numeric tokens on LHS (ambiguous; could be intercept/constant)
+        if token_str.isdigit():
+            raise ValueError(
+                f"Ambiguous numeric token '{token_str}' in formula left-hand side. "
+                f"Use explicit 'GeneID_{token_str}' or a gene symbol."
+            )
         if token_str in index_map:
             gene_ids.append(index_map[token_str])
             continue
+        # Avoid symbol lookup for purely numeric tokens
         matches = list(dict.fromkeys(_lookup_symbol_matches(token_str)))
         if not matches:
             raise ValueError(f"Unknown protein '{token}' in formula left-hand side.")
@@ -208,6 +224,7 @@ def _inject_gene_covariates_in_formula(
     # Precompute sanitized sample indices for robust alignment
     pheno_idx_sanitized = [_sanitize_name(str(x)) for x in new_pheno.index]
     replaced: Dict[str, str] = {}
+    safe_vars_injected: List[str] = []
     for tok in sorted(tokens, key=len, reverse=True):
         # Skip if token already a pheno column
         if tok in new_pheno.columns:
@@ -215,7 +232,8 @@ def _inject_gene_covariates_in_formula(
 
         gene_id_obj: Optional[Any] = None
         # Support explicit GeneID separators (GeneID_<id>, GeneID:<id>, GeneID-<id>)
-        gid_key = _extract_geneid_key(tok)
+        tok_unquoted = _unquote_backticks(tok)
+        gid_key = _extract_geneid_key(tok_unquoted)
         if gid_key is not None:
             if gid_key in edata_index_map:
                 gene_id_obj = edata_index_map[gid_key]
@@ -230,26 +248,27 @@ def _inject_gene_covariates_in_formula(
                         f"Warning: explicit GeneID reference '{_unquote_backticks(tok)}' not found in expression rows."
                     )
                 # leave unresolved to be caught below
-        # Backward-compat: interpret bare numeric tokens (excluding intercept 0/1) as GeneIDs with warning
+        # Support already-sanitized variable tokens (GID_<id> or GID<id>) as shorthand
+        if gene_id_obj is None:
+            m_gid = re.match(r"(?i)^GID_?([A-Za-z0-9_.-]+)$", tok_unquoted)
+            if m_gid:
+                gid_raw = m_gid.group(1)
+                if gid_raw in edata_index_map:
+                    gene_id_obj = edata_index_map[gid_raw]
+                else:
+                    # Don't resolve; will be handled as unresolved below
+                    pass
         else:
             tok_unquoted = _unquote_backticks(tok)
-            if tok_unquoted.isdigit() and tok_unquoted not in ("0", "1"):
-                if tok_unquoted in edata_index_map:
-                    gene_id_obj = edata_index_map[tok_unquoted]
-                    if logger:
-                        logger.warning(
-                            "Deprecated formula token '%s' interpreted as GeneID. Use 'GeneID_%s' instead.",
-                            tok_unquoted,
-                            tok_unquoted,
-                        )
-                    else:
-                        print(
-                            f"Warning: deprecated formula token '{tok_unquoted}' interpreted as GeneID. Use 'GeneID_{tok_unquoted}' instead."
-                        )
+            # Do not interpret bare numeric tokens as GeneIDs; only explicit GeneID_ or symbols are allowed.
+            # Historically this was allowed; removing to avoid accidental matches with intercepts or df constants.
         # Symbol lookup (case-insensitive + sanitized)
         if gene_id_obj is None and symbol_lookup:
+            # Skip symbol lookup for purely numeric tokens (e.g., 0/1/3 in ns(...))
+            if tok_unquoted.isdigit():
+                continue
             cand_ids = []
-            search = {tok, _sanitize_name(tok), tok.casefold(), _sanitize_name(tok).casefold()}
+            search = {tok_unquoted, _sanitize_name(tok_unquoted), tok_unquoted.casefold(), _sanitize_name(tok_unquoted).casefold()}
             for sym, ids in symbol_lookup.items():
                 if sym is None:
                     continue
@@ -277,6 +296,7 @@ def _inject_gene_covariates_in_formula(
         new_pheno[safe_var] = pd.to_numeric(aligned.values, errors="coerce")
         rewritten = replace_token(rewritten, tok, safe_var)
         replaced[tok] = safe_var
+        safe_vars_injected.append(safe_var)
         if logger:
             logger.info("Injected covariate %s from GeneID %s for formula", safe_var, gene_id_obj)
 
@@ -304,6 +324,13 @@ def _inject_gene_covariates_in_formula(
                 unresolved.append(tok)
             # Skip further checks for this token
             continue
+        # Also treat bare GID tokens (GID_<id> or GID<id>) as gene-like; if not injected, flag unresolved
+        if re.match(r"(?i)^GID_?[A-Za-z0-9_.-]+$", tok):
+            gid_raw = _unquote_backticks(tok)
+            gid_raw = re.sub(r"(?i)^GID_?", "", gid_raw)
+            if gid_raw not in edata_index_map:
+                unresolved.append(tok)
+            continue
         else:
             candidate_gene = tok in edata_index_map or _sanitize_name(tok) in sym_keys_sanitized
         if candidate_gene:
@@ -316,6 +343,61 @@ def _inject_gene_covariates_in_formula(
                 ", ".join(sorted(unresolved))
             )
         )
+
+    # If the formula contains explicit subtraction of injected gene covariates, rewrite those
+    # as additive and rely on implicit pairwise contrasts to generate A - B later.
+    # Example: '~ 1 + GID_2064 - GID_1956' -> '~ 1 + GID_2064 + GID_1956'
+    if safe_vars_injected:
+        # Replace only minus directly preceding a GID_ var
+        pattern = re.compile(r"-\s*(?=(?:" + "|".join(map(re.escape, set(safe_vars_injected))) + r")\b)")
+        new_rewritten = pattern.sub("+ ", rewritten)
+
+        # Also replace minus preceding a function call that contains a GID_ var, e.g. '- scale(GID_123)'
+        def _replace_func_negations(s: str) -> str:
+            out = []
+            i = 0
+            n = len(s)
+            safe_set = set(safe_vars_injected)
+            while i < n:
+                m = re.search(r"-\s*([A-Za-z_.][A-Za-z0-9_.]*)\(", s[i:])
+                if not m:
+                    out.append(s[i:])
+                    break
+                start = i + m.start()  # index of '-'
+                lp = i + m.end() - 1   # index of '('
+                # Find matching ')'
+                depth = 1
+                j = lp + 1
+                while j < n and depth > 0:
+                    c = s[j]
+                    if c == '(':
+                        depth += 1
+                    elif c == ')':
+                        depth -= 1
+                    j += 1
+                if depth != 0:
+                    # Unbalanced; give up and append rest
+                    out.append(s[i:])
+                    break
+                inner = s[lp + 1 : j - 1]
+                contains_gid = any(re.search(r"\b" + re.escape(g) + r"\b", inner) for g in safe_set)
+                # Prefix before '-'
+                out.append(s[i:start])
+                call = s[start:j]
+                if contains_gid:
+                    # flip leading '- ' to '+ '
+                    call = re.sub(r"^-\s*", "+ ", call)
+                out.append(call)
+                i = j
+            return ''.join(out)
+
+        newer = _replace_func_negations(new_rewritten)
+        if newer != rewritten and logger:
+            logger.info(
+                "Limma: rewritten formula to include subtracted gene covariates additively for contrasts: %s",
+                newer,
+            )
+        rewritten = newer
 
     return rewritten, new_pheno
 
@@ -437,69 +519,104 @@ def run_limma_pipeline(
         robjects.r("block <- NULL")
         robjects.r("cor <- NULL")
 
-    # Resolve contrasts; if only a single non-intercept term and no contrasts supplied,
-    # analyse the direct coefficient for that term instead of building a contrast.
+    # Resolve contrasts and direct coefs with mixed models (factors + gene covariates)
     non_intercept_terms = [t for t in fixed_terms if "Intercept" not in t]
-    # Detect injected covariate variable name (e.g., GID_2064) used inside basis terms
-    cov_vars = re.findall(r"GID_[0-9]+", str(formula) if formula else "")
-    cov_var = cov_vars[0] if cov_vars else None
-    basis_terms = [t for t in non_intercept_terms if (cov_var and cov_var in t)]
 
-    use_direct_coef = False
-    contrast_list = _resolve_contrasts(fixed_terms, contrasts)
-    formula_only = (group is None) and bool(formula)
-    if formula_only:
-        if len(non_intercept_terms) == 1:
-            contrast_list = non_intercept_terms
-            use_direct_coef = True
-        elif len(basis_terms) >= 1:
-            # For multi-term basis (ns/poly/hinge), model without contrasts and
-            # expose per-basis coefficients; joint F-test handled separately below.
-            contrast_list = basis_terms
-            use_direct_coef = True
+    # Identify gene covariate variables present in the formula (e.g., GID_2064)
+    gid_vars = sorted(set(re.findall(r"GID_[0-9]+", str(formula) if formula else "")))
+    gene_terms = [t for t in non_intercept_terms if any(gid in t for gid in gid_vars)]
+
+    # Tokenize the (rewritten) formula to find pheno variables referenced
+    token_candidates = set(re.findall(r"`[^`]+`|[A-Za-z_.][A-Za-z0-9_.]*", str(formula) if formula else ""))
+    token_candidates = {_sanitize_name(_unquote_backticks(tok)) for tok in token_candidates}
+    token_candidates -= {"ns", "poly", "hinge", "scale", "I", "C"}
+
+    # Map sanitized pheno columns (including injected GID_*)
+    pheno_cols_sani = {_sanitize_name(str(c)) for c in pheno.columns}
+    used_pheno_tokens = [tok for tok in token_candidates if tok in pheno_cols_sani]
+
+    # Build factor groups from design terms by token prefix; continuous -> single term
+    factor_groups: Dict[str, List[str]] = {}
+    continuous_terms: List[str] = []
+    for tok in used_pheno_tokens:
+        if tok.startswith("GID_"):
+            continue  # handled as gene_terms
+        # Terms that match this variable: exact or prefixed (for 0+factor)
+        matches = [t for t in non_intercept_terms if (t == tok or t.startswith(tok))]
+        if len(matches) >= 2:
+            factor_groups[tok] = matches
+        elif len(matches) == 1:
+            continuous_terms.append(matches[0])
+
+    # Direct coefficients gather: all gene terms and any single continuous pheno terms
+    direct_coef_list: List[str] = []
+    direct_coef_list.extend(gene_terms)
+    direct_coef_list.extend(continuous_terms)
+    # If only one non-intercept term total, prefer direct coef
+    if not used_pheno_tokens and len(non_intercept_terms) == 1:
+        direct_coef_list = list(non_intercept_terms)
+
+    # Contrasts: explicit or pairwise within each factor group
+    contrast_list: List[str] = []
+    if contrasts:
+        contrast_list = _resolve_contrasts(fixed_terms, contrasts)
+    else:
+        for _, terms in factor_groups.items():
+            for a, b in itertools.combinations([t for t in terms if t in fixed_terms], 2):
+                contrast_list.append(f"{a} - {b}")
+
+    # Deduplicate while preserving order
+    def _uniq(seq: Iterable[str]) -> List[str]:
+        out, seen = [], set()
+        for x in seq:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+    direct_coef_list = _uniq(direct_coef_list)
+    contrast_list = _uniq(contrast_list)
+
     if logger:
         logger.info(
             "Limma: terms=%s, contrasts=%s, direct_coef=%s",
             non_intercept_terms,
             contrast_list,
-            use_direct_coef,
+            direct_coef_list,
         )
-    if logger:
         logger.info("limma model matrix terms: %s", fixed_terms)
         logger.info("Contrasts: %s", contrast_list)
 
-    if not contrast_list:
-        raise ValueError("No contrasts specified for limma analysis.")
+    if not contrast_list and not direct_coef_list:
+        raise ValueError("No contrasts or coefficients selected for limma analysis.")
 
     robjects.r("print(mod)")
-    if use_direct_coef:
-        robjects.r("""
+    # Fit once; reuse for direct coefs. Compute separate fit2 for contrasts if any.
+    robjects.r(
+        """
 fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)
-fit2 <- eBayes(fit, robust = TRUE, trend = TRUE)
-""")
-    else:
+fit2_base <- eBayes(fit, robust = TRUE, trend = TRUE)
+"""
+    )
+    has_contrasts = bool(contrast_list)
+    if has_contrasts:
         with localconverter(robjects.default_converter + pandas2ri.converter):
             robjects.r.assign("contrasts_array", contrast_list)
         robjects.r(
             """
 contrasts_matrix <- makeContrasts(contrasts = contrasts_array, levels = mod)
-fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)
-fit2 <- contrasts.fit(fit, contrasts_matrix)
-fit2 <- eBayes(fit2, robust = TRUE, trend = TRUE)
+fit2_con <- contrasts.fit(fit, contrasts_matrix)
+fit2_con <- eBayes(fit2_con, robust = TRUE, trend = TRUE)
 """
         )
 
     results: Dict[str, pd.DataFrame] = {}
-    for contrast_label in contrast_list:
-        # Always select coefficient by name to avoid off-by-one errors with intercepts
-        table = robjects.r(
-            f"topTable(fit2, n=Inf, sort.by='none', coef='{contrast_label}', confint=TRUE)"
-        )
-        try:
-            result_df = pandas2ri.ri2py(table)
-        except AttributeError:
-            result_df = pandas2ri.rpy2py(table)
 
+    # Helper to convert an R topTable to our pandas df and join edata
+    def _collect_result(table_obj) -> pd.DataFrame:
+        try:
+            result_df = pandas2ri.ri2py(table_obj)
+        except AttributeError:
+            result_df = pandas2ri.rpy2py(table_obj)
         result_df = result_df.rename(
             columns={
                 "logFC": "log2_FC",
@@ -507,12 +624,9 @@ fit2 <- eBayes(fit2, robust = TRUE, trend = TRUE)
                 "P.Value": "pValue",
             }
         )
-
         for col in ("log2_FC", "CI.L", "CI.R"):
             if col in result_df.columns:
                 result_df[col] = result_df[col].apply(lambda x: x / np.log10(2))
-
-        # Preserve the original order of the expression matrix.
         if len(result_df.index) == len(edata.index):
             result_df.index = pd.Index(edata.index)
         else:
@@ -520,36 +634,49 @@ fit2 <- eBayes(fit2, robust = TRUE, trend = TRUE)
                 result_df.index = result_df.index.astype(edata.index.dtype, copy=False)
             except (TypeError, ValueError):
                 pass
+        return result_df.join(edata, how="left")
 
-        # Join the expression values for downstream export compatibility.
-        result_df = result_df.join(edata, how="left")
-        results[contrast_label] = result_df
+    # Add direct coefficient results (label as 'coef_<term>=<term>' so volcano names improve)
+    for coef_label in direct_coef_list:
+        table = robjects.r(
+            f"topTable(fit2_base, n=Inf, sort.by='none', coef='{coef_label}', confint=TRUE)"
+        )
+        results[f"coef_{coef_label}={coef_label}"] = _collect_result(table)
 
-    # Joint F-test export for multi-term basis
-    if formula_only and cov_var and len(basis_terms) > 1 and joint_export_dir:
+    # Add contrast results (label as '<expr>=<expr>' so volcano names include expr and parsing works)
+    for contrast_label in contrast_list:
+        if not has_contrasts:
+            continue
+        table = robjects.r(
+            f"topTable(fit2_con, n=Inf, sort.by='none', coef='{contrast_label}', confint=TRUE)"
+        )
+        results[f"{contrast_label}={contrast_label}"] = _collect_result(table)
+
+    # Joint F-tests for any GID variable that produced multiple basis terms
+    if bool(formula) and gid_vars and joint_export_dir:
         try:
-            # Compute F-test across all basis terms
-            with localconverter(robjects.default_converter + pandas2ri.converter):
-                robjects.r.assign("joint_coef", basis_terms)
-            jtable = robjects.r(
-                "topTable(fit2, n=Inf, sort.by='F', coef=joint_coef)"
-            )
-            try:
-                jdf = pandas2ri.ri2py(jtable)
-            except AttributeError:
-                jdf = pandas2ri.rpy2py(jtable)
-            # Join expression for convenience
-            jdf = jdf.join(edata, how="left")
-            # Add a placeholder t for downstream filters if ever re-used
-            if 'F' in jdf.columns and 't' not in jdf.columns:
-                jdf['t'] = np.sqrt(jdf['F'])
-            # Persist to disk
             import os
             os.makedirs(joint_export_dir, exist_ok=True)
-            out_path = os.path.join(joint_export_dir, f"joint_F_{cov_var}.tsv")
-            jdf.to_csv(out_path, sep='\t')
-            if logger:
-                logger.info("Limma: wrote joint F-test to %s (terms=%s)", out_path, basis_terms)
+            for cov in gid_vars:
+                basis_terms = [t for t in non_intercept_terms if cov in t]
+                if len(basis_terms) <= 1:
+                    continue
+                with localconverter(robjects.default_converter + pandas2ri.converter):
+                    robjects.r.assign("joint_coef", basis_terms)
+                jtable = robjects.r(
+                    "topTable(fit2_base, n=Inf, sort.by='F', coef=joint_coef)"
+                )
+                try:
+                    jdf = pandas2ri.ri2py(jtable)
+                except AttributeError:
+                    jdf = pandas2ri.rpy2py(jtable)
+                jdf = jdf.join(edata, how="left")
+                if 'F' in jdf.columns and 't' not in jdf.columns:
+                    jdf['t'] = np.sqrt(jdf['F'])
+                out_path = os.path.join(joint_export_dir, f"joint_F_{cov}.tsv")
+                jdf.to_csv(out_path, sep='\t')
+                if logger:
+                    logger.info("Limma: wrote joint F-test to %s (terms=%s)", out_path, basis_terms)
         except Exception as e:
             if logger:
                 logger.warning("Limma: joint F-test export failed: %s", e)

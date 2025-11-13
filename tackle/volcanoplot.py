@@ -254,17 +254,11 @@ def volcanoplot(
             )
             # print(group0, group1)
         else:
-            # more complex formula
-            # TODO handle this, maybe with user-config?
-            # pass
-            # group1, group0 = [x.strip() for x in comparison.split("-")]
-            # import ipdb; ipdb.set_trace()
-            # group1, group0 = [x.strip() for x in _comparison.split(" - ")]
-            # group0_fix, group1_fix = (
-            #     fix_group_name(group0, meta.columns),
-            #     fix_group_name(group1, meta.columns),
-            # )
-            group0_fix, group1_fix = "Down", "Up"
+            # More complex model: treat as a single-coefficient view.
+            # Use meaningful coefficient-signed labels rather than generic Up/Down.
+            base = re.sub(r"\s+", "_", _comparison.strip()) or "coef"
+            base = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "coef"
+            group0_fix, group1_fix = f"neg_{base}", f"pos_{base}"
             group0, group1 = group0_fix, group1_fix
 
         # if we do this here, the columns get added before the expression values
@@ -597,18 +591,6 @@ def volcanoplot(
             s = str(_formula)
             # Explicit GeneID references
             geneids = set(find_geneid_keys_in_string(s))
-            # Backward-compat: bare numeric tokens except 0/1 treated as GeneIDs with warning
-            numeric_tokens = re.findall(r"\b\d+\b", s)
-            warned_numeric = False
-            for t in numeric_tokens:
-                if t not in ("0", "1"):
-                    if not warned_numeric:
-                        print(
-                            "Warning: numeric token(s) in formula treated as GeneIDs for volcano exclusion; please use 'GeneID_<id>' instead.",
-                            flush=True,
-                        )
-                        warned_numeric = True
-                    geneids.add(t)
             # Symbol-based: Build reverse symbol lookup from GeneID->symbol
             rev = {}
             try:
@@ -637,6 +619,14 @@ def volcanoplot(
             df2 = df.copy()
             # Remove any rows that match the target gene IDs
             df2 = df2[~df2["GeneID"].isin(existing_geneids)]
+
+            if df2.shape[0] == 0:
+                # Nothing left to plot; skip generating the exclusion plot to avoid R errors
+                print(
+                    f"Skipping exclusion volcano (no rows after removing {existing_geneids}).",
+                    flush=True,
+                )
+                return
 
             # Save duplicate plots with a suffix indicating the exclusion
             excl_tag = ".no-" + (existing_geneids[0] if len(existing_geneids) == 1 else "multi")
