@@ -93,38 +93,38 @@ def safe_path_with_ext(path: str, ext: str = ".tsv") -> str:
 
 
 def volcanoplot(
-    ctx,
-    foldchange,
-    expression_data,
-    number,
-    only_sig=False,
-    sig=0.05,
-    genes=None,
-    direction="both",
-    sig_metric="pAdj",
-    number_by="log2_FC",
-    yaxis="pAdj",
-    label_scale=1.4,
-    marker_scale=1.2,
-    highlight_geneids=None,
-    force_highlight_geneids=False,
-    formula=None,
-    contrasts=None,
-    impute_missing_values=False,
-    width=5,
-    height=5,
-    annot_scale=1.0,
-    bg_marker_color="#22222288",
-    pch=16,
-    alpha=1.0,
-    fill_na_zero=False,
-    extra_outname_info=None,
-    color_down="blue",
-    color_up="red",
-    global_xmax=None,
-    global_ymax=None,
-    cluster_topn=None,
-):
+        ctx,
+        foldchange,
+        expression_data,
+        number,
+        only_sig=False,
+        sig=0.05,
+        genes=None,
+        direction="both",
+        sig_metric="pAdj",
+        number_by="log2_FC",
+        yaxis="pAdj",
+        label_scale=1.4,
+        marker_scale=1.2,
+        highlight_geneids=None,
+        force_highlight_geneids=False,
+        formula=None,
+        contrasts=None,
+        impute_missing_values=False,
+        width=5,
+        height=5,
+        annot_scale=1.0,
+        bg_marker_color="#22222288",
+        pch=16,
+        alpha=1.0,
+        fill_na_zero=False,
+        extra_outname_info=None,
+        color_down="blue",
+        color_up="red",
+        global_xmax=None,
+        global_ymax=None,
+        cluster_topn=None,
+        ):
     data_obj = ctx.obj["data_obj"]
 
 
@@ -160,17 +160,17 @@ def volcanoplot(
         groups = dict()
         for grp in data_obj.col_metadata[group].unique():
             samples = (
-                (data_obj.col_metadata[group] == grp).where(lambda x: x).dropna().index
-            )
+                    (data_obj.col_metadata[group] == grp).where(lambda x: x).dropna().index
+                    )
             groups[grp] = samples
 
     # this is where the missing value imputation results will come from
     results = data_obj.stat_model(
-        formula=formula,
-        contrasts_str=contrasts,
-        impute_missing_values=impute_missing_values,
-        fill_na_zero=fill_na_zero,
-    )
+            formula=formula,
+            contrasts_str=contrasts,
+            impute_missing_values=impute_missing_values,
+            fill_na_zero=fill_na_zero,
+            )
 
     meta = data_obj.col_metadata
 
@@ -183,10 +183,10 @@ def volcanoplot(
             groupres = list()
             for g in group:
                 if (
-                    g.startswith(entry)
-                    and not any(g.startswith(e) for e in entries[ix + 1 :])
-                    and False
-                ):  # ignore this
+                        g.startswith(entry)
+                        and not any(g.startswith(e) for e in entries[ix + 1 :])
+                        and False
+                        ):  # ignore this
                     i = g.find(entry)
                     if i != 0:
                         continue
@@ -200,7 +200,7 @@ def volcanoplot(
             # print(entry, group)
         return ":".join(group)
 
-        # start = group.find(entry)
+    # start = group.find(entry)
         # end = len(entry) + start
         # if start == -1:
         #     continue
@@ -224,8 +224,8 @@ def volcanoplot(
         global_xmax = robjects.NA_Real
     if global_ymax is None or global_ymax is True:
         global_ymax = -np.log10(
-            min(x["pValue"][x["pValue"] > 0].min() for x in results.values())
-        )
+                min(x["pValue"][x["pValue"] > 0].min() for x in results.values())
+                )
         global_ymax = float(global_ymax)
         # Use min to find the smallest p-value, then take the -log10. Exclude non-positive p-values.
     elif global_ymax is False:
@@ -304,9 +304,9 @@ def volcanoplot(
 
         # impute_missing_values = (impute_missing_values,)
         # fill_na_zero = (fill_na_zero,)
-        if _comparison_name is None:
+        if _comparison_name is None or (_comparison_name == _comparison): # if name identical rename nicely
             # _groupname = "{}_by_{}".format(group0_fix, group1_fix)
-            _groupname = "{}_by_{}".format(group1_fix, group0_fix)
+            _groupname = "{}_minus_{}".format(group1_fix, group0_fix)
         else:
             _groupname = _comparison_name
 
