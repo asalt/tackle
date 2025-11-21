@@ -1,9 +1,9 @@
 # constants.py
 
 TAXON_MAPPER = {
-    "human": 9606,
-    "mouse": 10090,
-    "celegans": 6239,
+    "human": "9606",
+    "mouse": "10090",
+    "celegans": "6239",
 }
 
 

@@ -831,6 +831,8 @@ class Data:
         )
         # import ipdb; ipdb.set_trace()
         e2g.df["GeneID"] = e2g.df["GeneID"].apply(maybe_int)
+        if "TaxonID" in e2g.df.columns:
+            e2g.df["TaxonID"] = e2g.df["TaxonID"].apply(maybe_int).astype(str)
         e2g.df.index = e2g.df.GeneID
         standardize_meta(e2g.df)
         return e2g
