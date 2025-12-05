@@ -98,7 +98,7 @@ def test_normalize_formula_targets_symbol_case_insensitive():
 
 
 def test_normalize_formula_targets_geneid_lookup_with_int_index():
-    formula = "5678 ~ 0 + condition"
+    formula = "GENEID_5678 ~ 0 + condition"
     index = pd.Index([1234, 5678])
     symbol_lookup = {}
 

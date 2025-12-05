@@ -7,6 +7,9 @@ import re
 import configparser
 import glob
 import operator as op
+import tempfile
+import shutil
+from pathlib import Path
 from collections import OrderedDict, defaultdict, Counter
 from functools import lru_cache
 from warnings import warn
@@ -217,19 +220,21 @@ def plot_imputed(edata_impute, observed, missing, downshift, scale):
 
 # def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
 def impute_missing_old(
-    frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True
+    frame, downshift=2.0, scale=1.0, random_state=1234, n_draws=8,
+    make_plot=True
 ):
     """
     frame: is a rectangular expression matrix
+    effective_width = scale / sqrt(n_draws)
+
     """
     # _norm_notna = frame.replace(0, np.NAN).stack()
-    # import ipdb;
-    # ipdb.set_trace()
 
     observed = frame.replace(0, np.nan).stack().dropna()
-    missing = frame.isna()
+    #missing = frame.isna()
+    missing = observed.isna()
 
-    _norm_notna = frame.stack()
+    _norm_notna = observed.stack()
     # _norm_notna += np.abs(_norm_notna.min())
     _mean = _norm_notna.mean()
     _sd = _norm_notna.std()
@@ -238,7 +243,7 @@ def impute_missing_old(
 
     # print(frame.replace(0, np.nan).isna().sum())
     random_value_list = list()
-    for i in range(8):
+    for i in range(n_draws):
         random_values = _norm.rvs(size=_number_na, random_state=random_state + i)
         random_value_list.append(random_values)
 
@@ -265,22 +270,190 @@ def impute_missing_old(
     return areas_log
 
 
-def impute_missing_mice(
-    frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True
+
+
+def impute_missing_mqish(
+    frame,
+    downshift: float = 1.8,     # MQ-ish
+    effective_width: float = 0.3,
+    n_draws: int = 1,
+    random_state: int = 1234,
+    make_plot: bool = True,
 ):
-    from rpy2.rinterface import RRuntimeError
+    """
+    MaxQuant-style MNAR imputation on a rectangular expression matrix (log-intensities).
 
-    from rpy2 import robjects
-    from rpy2.robjects import r
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects import pandas2ri
+    effective_width is the final SD as a fraction of the global SD.
+    If n_draws > 1, we set scale so that scale / sqrt(n_draws) = effective_width.
+    """
 
-    pandas2ri.activate()
+    # treat 0 as missing consistently
+    frame_na = frame.replace(0, np.nan)
 
-    mice = importr("mice")
+    observed = frame_na.stack().dropna()
+
+    # global mean / sd from observed values only
+    _mean = observed.mean()
+    _sd = observed.std()
+
+    # choose scale so that the *effective* width after averaging is what we want
+    scale = effective_width * np.sqrt(n_draws)
+
+    # downshifted, narrow Gaussian
+    norm_dist = stats.norm(loc=_mean - (_sd * downshift), scale=_sd * scale)
+
+    # how many values to impute (Na or 0 originally)
+    n_na = frame_na.isna().sum().sum()
+
+    # possibly do multiple draws then average -> same mean, SD / sqrt(n_draws)
+    draws = []
+    for i in range(n_draws):
+        draws.append(norm_dist.rvs(size=n_na, random_state=random_state + i))
+    random_values = np.mean(draws, axis=0)
+
+    areas_imputed = frame_na.copy()
+
+    # fill column-by-column
+    start_ix = 0
+    for col in areas_imputed:
+        n_missing_col = areas_imputed[col].isna().sum()
+        if n_missing_col == 0:
+            continue
+        areas_imputed.loc[areas_imputed[col].isna(), col] = random_values[
+            start_ix : start_ix + n_missing_col
+        ]
+        start_ix += n_missing_col
+
+    if make_plot:
+        plot_imputed(
+            areas_imputed,
+            observed,
+            frame_na.isna(),  # mask of missing values
+            downshift=downshift,
+            scale=effective_width,  # report effective width
+        )
+
+    return areas_imputed
 
 
-impute_missing = impute_missing_old
+def impute_missing_lupine(
+    frame,
+    n_models=None,
+    device=None,
+    biased=True,
+    mode="local",
+):
+    """
+    Impute missing values using the Lupine deep learning model.
+
+    Parameters
+    ----------
+    frame : pandas.DataFrame
+        Rectangular matrix of quantifications with NaN for missing entries.
+        Values are expected to be on the same (log) scale as the rest of
+        the analysis pipeline (i.e. the same scale used for Gaussian MNAR).
+    n_models : int, optional
+        Number of ensemble models to fit. If None, uses the value from the
+        LUPINE_N_MODELS environment variable, or falls back to 5.
+    device : str, optional
+        Torch device string, e.g. \"cpu\" or \"cuda\". If None, uses the
+        LUPINE_DEVICE environment variable, or \"cpu\".
+    biased : bool, optional
+        Whether to use Lupine's MNAR-biased batch selection.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Imputed matrix with the same index/columns as the input frame.
+    """
+    try:
+        from lupine.lupine import Lupine
+    except ImportError as e:
+        raise RuntimeError(
+            "Lupine backend selected but the `lupine` package is not importable."
+        ) from e
+
+    if mode != "local":
+        logger.warning(
+            "Lupine joint mode requested but not configured; falling back to local ensemble."
+        )
+
+    if n_models is None:
+        try:
+            n_models = int(os.environ.get("LUPINE_N_MODELS", "5"))
+        except ValueError:
+            n_models = 5
+    if n_models <= 0:
+        raise ValueError("n_models must be a positive integer")
+
+    if device is None:
+        env_device = os.environ.get("LUPINE_DEVICE")
+        if env_device:
+            device = env_device
+        else:
+            # Prefer GPU if available, otherwise fall back to CPU.
+            try:
+                import torch
+
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            except Exception:
+                device = "cpu"
+
+    rows = list(frame.index)
+    cols = list(frame.columns)
+    mat = frame.values.astype(float)
+
+    gen = np.random.default_rng(seed=18)
+    n_layers_hparam_space = [1, 2]
+    n_factors_hparam_space = [32, 64, 128, 256]
+    n_nodes_hparam_space = [256, 512, 1024, 2048]
+
+    # Create a temporary outpath for Lupine's internal checkpointing.
+    out_root = tempfile.mkdtemp(prefix="lupine_", dir=os.getcwd())
+    # Ensure trailing separator for the string-concatenation used in LupineBase
+    outpath = os.path.join(out_root, "")
+    Path(outpath).mkdir(parents=True, exist_ok=True)
+    Path(os.path.join(outpath, "tmp")).mkdir(parents=True, exist_ok=True)
+
+    qmats = []
+    try:
+        for _ in range(n_models):
+            n_layers_curr = int(gen.choice(n_layers_hparam_space))
+            prot_factors_curr = int(gen.choice(n_factors_hparam_space))
+            run_factors_curr = int(gen.choice(n_factors_hparam_space))
+            n_nodes_curr = int(gen.choice(n_nodes_hparam_space))
+            curr_seed = int(gen.integers(low=1, high=10_000))
+
+            model = Lupine(
+                n_prots=mat.shape[0],
+                n_runs=mat.shape[1],
+                n_prot_factors=prot_factors_curr,
+                n_run_factors=run_factors_curr,
+                n_layers=n_layers_curr,
+                n_nodes=n_nodes_curr,
+                rand_seed=curr_seed,
+                testing=False,
+                biased=biased,
+                device=device,
+                outpath=outpath,
+            )
+            model_recon = model.fit_transform(mat)
+            qmats.append(model_recon)
+
+        qmats_mean = np.mean(qmats, axis=0)
+    finally:
+        try:
+            shutil.rmtree(out_root)
+        except Exception as e:
+            logger.warning(f"...{e}")
+            # Best-effort cleanup; ignore failures.
+            pass
+
+    return pd.DataFrame(qmats_mean, index=rows, columns=cols)
+
+
+impute_missing = impute_missing_mqish # impute_missing_old
+
 # def filter_observations(panel, column, threshold):
 #     """
 #     Filter by less than or equal to threshold of 0 observations
