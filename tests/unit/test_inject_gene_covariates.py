@@ -54,7 +54,7 @@ def test_inject_gene_covariates_warns_for_numeric_gene_tokens():
     logger = _DummyLogger()
 
     rewritten, new_pheno = _inject_gene_covariates_in_formula(
-        formula="~ 101",
+        formula="~ GENEID_101",
         edata=edata,
         pheno=pheno,
         symbol_lookup={},
