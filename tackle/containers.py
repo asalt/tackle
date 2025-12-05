@@ -509,6 +509,8 @@ class Data:
         metrics_unnormed_area=True,
         cluster_annotate_cols=None,
         impute_missing_values=False,
+        lupine_mode="local",
+        imputation_backend="gaussian",
         only_local=False,
         norm_info=None,
     ):
@@ -577,8 +579,10 @@ class Data:
         )
         self.gid_funcat_mapping = None  # loaded with data
 
-        # use gaussian distribution 2 sd down from mean of data
         self.impute_missing_values = impute_missing_values
+        self.lupine_mode = lupine_mode
+        # use gaussian distribution 2 sd down from mean of data by default
+        self.imputation_backend = imputation_backend
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -1383,9 +1387,18 @@ class Data:
             to_impute = (
                 self._areas.replace(0, np.NAN).divide(self.minval).applymap(np.log10)
             )
-            imputed = impute_missing(
-                to_impute, downshift=downshift, scale=scale, make_plot=True
-            )
+            observed = to_impute.replace(0, np.nan).stack().dropna()
+            missing = to_impute.isna()
+            if self.imputation_backend == "lupine":
+                logger.info("Imputing missing values with Lupine backend")
+                imputed = impute_missing_lupine(to_impute, mode=self.lupine_mode)
+            else:
+                logger.info("Imputing missing values with Gaussian backend")
+                imputed = impute_missing(
+                    to_impute, downshift=downshift, scale=scale, make_plot=False
+                )
+            # Plot imputed vs observed distributions for both backends
+            plot_imputed(imputed, observed, missing, downshift=downshift, scale=scale)
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
             self._areas_log = imputed
@@ -1785,14 +1798,19 @@ class Data:
                 outpath=self.outpath,
             )
 
-            # mask_values = mat[self.mask].copy()
-
             mat[self.mask] = np.nan
             mat[mat == 0] = np.nan
-            mat = impute_missing(mat, downshift=downshift, scale=scale, make_plot=True)
-            # now add back the mask values?
-            # - this might be important when batch correction is performed, otherwise should have no effect?
-            # mat = mat + mask_values.fillna(0)
+            observed = mat.replace(0, np.nan).stack().dropna()
+            missing = mat.isna()
+            if self.imputation_backend == "lupine":
+                logger.info("Imputing missing values in stat model with Lupine backend")
+                mat = impute_missing_lupine(mat, mode=self.lupine_mode)
+            else:
+                logger.info("Imputing missing values in stat model with Gaussian backend")
+                mat = impute_missing(
+                    mat, downshift=downshift, scale=scale, make_plot=False
+                )
+            plot_imputed(mat, observed, missing, downshift=downshift, scale=scale)
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 

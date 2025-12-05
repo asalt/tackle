@@ -673,6 +673,20 @@ ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
     is_flag=True,
 )
 @click.option(
+    "--imputation-backend",
+    type=click.Choice(("gaussian", "lupine")),
+    default="gaussian",
+    show_default=True,
+    help="Imputation method to use when --impute-missing-values is enabled.",
+)
+@click.option(
+    "--lupine-mode",
+    type=click.Choice(("local", "joint")),
+    default="local",
+    show_default=True,
+    help="Lupine training mode when using --imputation-backend lupine.",
+)
+@click.option(
     "-n",
     "--name",
     type=str,
@@ -740,6 +754,8 @@ def main(
     geneids,
     group,
     impute_missing_values,
+    imputation_backend,
+    lupine_mode,
     limma,
     block,
     pairs,
@@ -936,6 +952,8 @@ def main(
         unique_pepts=unique_pepts,
         taxon=taxon,
         impute_missing_values=impute_missing_values,
+        imputation_backend=imputation_backend,
+        lupine_mode=lupine_mode,
         normalize_across_species=normalize_across_species,
         experiment_file=experiment_file,
         metrics=metrics,
@@ -1015,7 +1033,7 @@ def main(
     params = dict(ctx.params)
     params["file_format"] = " | ".join(params["file_format"])
     params["annotations"] = " | ".join(params["annotations"])
-    param_df = pd.DataFrame.from_dict(params, orient='index', columns=[analysis_name])
+    param_df = pd.Series(params, name=analysis_name).to_frame()
     param_df.to_csv(outname, sep="\t")
 
     ctx.obj["data_obj"] = data_obj
