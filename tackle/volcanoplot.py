@@ -74,9 +74,15 @@ def safe_path_with_ext(path: str, ext: str = ".tsv") -> str:
     p = Path(path)
     if ext and not ext.startswith("."): ext = "." + ext
     name_max = os.pathconf(str(p.parent), "PC_NAME_MAX")  # typically 255
-    base, _old_ext = os.path.splitext(p.name)
-    # if you passed a path that already has an ext and you want to KEEP it, set ext=""
-    new_name = _shorten_filename_with_ext(base, ext, name_max)
+    # Treat dots inside the base name literally; only strip an existing suffix if it
+    # matches the requested extension (avoids turning "sig_0.123" into "sig_0").
+    name = p.name
+    if ext:
+        base = name[:-len(ext)] if name.endswith(ext) else name
+        new_name = _shorten_filename_with_ext(base, ext, name_max)
+    else:
+        # No requested extension; shorten the full name as-is.
+        new_name = _shorten_filename_with_ext(name, "", name_max)
     return str(p.with_name(new_name))
 
 
@@ -211,7 +217,7 @@ def volcanoplot(
     max_fc = float(max(x.log2_FC.abs().max() for x in results.values()))
 
     def _clean(x):
-        return x.strip("\( ").strip(" \)").strip()
+        return x.strip().strip("()").strip()
 
     # prepare table for volcanoplot and export
     if genes is not None:  # only plot these select genes
@@ -351,22 +357,7 @@ def volcanoplot(
             outname = outname.replace("time", "T")
             outname = outname.replace("genotype", "geno")
 
-        if len(outname) > 255:
-            csv_out = safe_path_with_ext(outname, ".tsv")
-            p = Path(csv_out)
-            print("final component bytes:", len(p.name.encode("utf-8")))
-            print("PC_NAME_MAX here:", os.pathconf(str(p.parent), "PC_NAME_MAX"))
-            print("full path bytes:", len(str(p).encode("utf-8")))  # PATH_MAX is ~4096, rarely the issue
-
-            # # Ensure you're slicing within the bounds of the string
-            # if slicepoint + space >= len(outname):
-            #     space = len(outname) - slicepoint - 1  # Avoid out-of-bounds slicing
-
-            # outname = outname[:slicepoint] + ".." + outname[slicepoint + space :]
-            # slicepoint += 20
-            # space = min(10, 255 - slicepoint)  # Adjust space to fit within max length
-        else:
-            csv_out = outname + ".tsv"
+        csv_out = safe_path_with_ext(outname, ".tsv")
 
         print("Saving", csv_out, "...", end="", flush=True)
         export_data = df  # this is a "results" dataframe from the stat running method
@@ -538,13 +529,11 @@ def volcanoplot(
             outpath=os.path.join(data_obj.outpath, *_volcano_subdir),
             **_xtra,
         )
-        if len(outname) > 255:
-            outname = safe_path_with_ext(outname, ".123")
         for file_fmt in file_fmts:
             with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
                 grdevice = gr_devices[file_fmt]
                 gr_kw = gr_kws[file_fmt]
-                out = outname.rstrip('.123') + file_fmt
+                out = safe_path_with_ext(outname, file_fmt)
                 print("Saving", out, "...", end="", flush=True)
 
                 grdevice(file=out, **gr_kw)
@@ -644,7 +633,7 @@ def volcanoplot(
                 with localconverter(robjects.default_converter + pandas2ri.converter):
                     grdevice = gr_devices[file_fmt]
                     gr_kw = gr_kws[file_fmt]
-                    out = outname.rstrip('.123') + excl_tag + file_fmt
+                    out = safe_path_with_ext(outname + excl_tag, file_fmt)
                     print("Saving", out, "...", end="", flush=True)
                     grdevice(file=out, **gr_kw)
                     Rvolcanoplot(
