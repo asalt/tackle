@@ -35,3 +35,11 @@ def test_safe_path_truncates_long_component(tmp_path):
 
     assert final_component.endswith(".tsv")
     assert len(final_component.encode("utf-8")) <= limit
+
+
+def test_safe_path_preserves_dots_in_base_name(tmp_path):
+    path = tmp_path / "sig_0.123"
+
+    result = safe_path_with_ext(str(path), ".tsv")
+
+    assert Path(result).suffixes == [".123", ".tsv"]
