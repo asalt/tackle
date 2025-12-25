@@ -59,7 +59,8 @@ except Exception as e:
 #     print("sva is not installed", e, sep="\n")
 
 from .constants import *
-from .logger import get_logger
+from .logger import get_logger, set_log_dir
+from .cache import DataSnapshotCache
 
 try:
     pd.NA
@@ -592,6 +593,9 @@ class Data:
             self.outpath = outpath
             self.outpath_name = outpath_name
 
+        if self.outpath:
+            set_log_dir(self.outpath)
+
         # self.geneid_subset = None
         self.geneid_subset = self.set_geneid_subset(geneids)
         self.ignore_geneid_subset = self.set_geneid_subset(ignore_geneids)
@@ -607,18 +611,23 @@ class Data:
             self.labeled_meta = read_config(additional_info, enforce=False)
 
         self.panel = None
-        self.load_data(only_local=only_local)
-
         self._gid_symbol = None
-
         self.panel_filtered = None
-
-        self.filter_data()
-
-        # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
-        self._areas, self._areas_log, self._areas_log = (None,) * 3
-
         self._padj = None
+        self._mask = None
+        self._zeros = None
+
+        self._cache = DataSnapshotCache.from_env(
+            self.base_dir, only_local=only_local, logger=logger
+        )
+        if not self._cache.try_restore(self):
+            self.load_data(only_local=only_local)
+
+            self.filter_data()
+
+            # self.ibaqs, self.ibaqs_log, self.ibaqs_log_shifted = (None, ) * 3
+            self._areas, self._areas_log, self._areas_log = (None,) * 3
+
         # self.perform_data_export()
 
         if cmap_file:
@@ -1520,6 +1529,7 @@ class Data:
 
             # new_cols.append(frame_log.set_index(['GeneID', 'Metric']))
             # self.data
+        self._cache.maybe_save(self)
 
         # if self.group is not None:
         #     self.calc_qvals()
