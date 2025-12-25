@@ -356,9 +356,19 @@ class HGeneMapper:
         return results
 
 
-get_gene_mapper = lambda: SingletonManager.get_instance(GeneMapper)
-get_annotation_mapper = lambda: SingletonManager.get_instance(Annotations)
-get_hgene_mapper = lambda: SingletonManager.get_instance(HGeneMapper)
+@lru_cache(maxsize=1)
+def get_gene_mapper() -> GeneMapper:
+    return GeneMapper()
+
+
+@lru_cache(maxsize=1)
+def get_annotation_mapper() -> Annotations:
+    return Annotations()
+
+
+@lru_cache(maxsize=1)
+def get_hgene_mapper() -> HGeneMapper:
+    return HGeneMapper()
 # _genemapper = None
 
 
