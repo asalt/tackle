@@ -230,7 +230,7 @@ def impute_missing_old(
     """
     # _norm_notna = frame.replace(0, np.NAN).stack()
 
-    observed = frame.replace(0, np.nan).stack().dropna()
+    observed = frame.replace(0, np.nan).stack().dropna().to_frame()
     #missing = frame.isna()
     missing = observed.isna()
 
@@ -279,6 +279,7 @@ def impute_missing_mqish(
     n_draws: int = 1,
     random_state: int = 1234,
     make_plot: bool = True,
+    scale = 0.8
 ):
     """
     MaxQuant-style MNAR imputation on a rectangular expression matrix (log-intensities).
@@ -453,6 +454,7 @@ def impute_missing_lupine(
 
 
 impute_missing = impute_missing_mqish # impute_missing_old
+impute_missing = impute_missing_old # impute_missing_old
 
 # def filter_observations(panel, column, threshold):
 #     """
@@ -959,10 +961,11 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
         return _res
 
     # ===================================================================================
-    # import ipdb; ipdb.set_trace()
+
+    rgx_digit = re.compile(r"\W?(\d+)\W?")
+    rgx_word = re.compile(r"([A-Za-z]+\d*)(?=\W)")
 
     def regex_symbol_xtract(line):
-        rgx_word = re.compile("([A-Za-z]+\d*)(?=\W)")
         genesymbol = rgx_word.search(line)
         if genesymbol is None:
             warn("Could not parse GeneID from line {}".format(line))
@@ -985,8 +988,7 @@ def parse_gid_file(gids, symbol_gid_mapping=None, sheet=0) -> set:
     # rgx = re.compile(r'(?<![A-Za-z])(\d+)(?![A-Za-z])')
     # rgx = re.compile(r'(?<=[\w])(\d+)(?![A-Za-z])')
     # rgx_digit = re.compile(r'(?<=\W)(\d+)(?=\W)')
-    rgx_digit = re.compile(r"\W?(\d+)\W?")
-    rgx_word = re.compile("([A-Za-z]+\d*)(?=\W)")
+    # rgx_word = re.compile(r"([A-Za-z]+\d*)(?=\W)")
     with open(gids, "r") as iterator:  # try to parse file
         # SPLITCHAR = None
         # if ',' in f:
