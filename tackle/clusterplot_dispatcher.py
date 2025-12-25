@@ -31,6 +31,36 @@ from .containers import (
 logger = _get_logger(__name__)
 
 
+def _series_matches_includes(series: pd.Series, include_values) -> pd.Series:
+    """Return boolean mask matching include_values against a metadata series.
+
+    Supports numeric metadata columns even when include_values are provided as strings
+    (e.g. "1" will match 1.0).
+    """
+    if include_values is None:
+        raise ValueError("include_values cannot be None")
+    include_list = list(include_values)
+    if not include_list:
+        return pd.Series(False, index=series.index)
+
+    as_str = [str(v) for v in include_list]
+    numeric_includes = []
+    string_includes = []
+    for v in as_str:
+        try:
+            numeric_includes.append(float(v))
+        except ValueError:
+            string_includes.append(v)
+
+    mask = pd.Series(False, index=series.index)
+    if numeric_includes:
+        numeric_series = pd.to_numeric(series, errors="coerce")
+        mask |= numeric_series.isin(numeric_includes)
+    if string_includes:
+        mask |= series.astype(str).isin(string_includes)
+    return mask
+
+
 def run(
     ctx,
     add_description,
@@ -152,8 +182,17 @@ def run(
 
     # filter if sample include is mentioned
     if sample_reference is not None:
+        if not sample_include:
+            raise ValueError(
+                "`--sample-reference` requires at least one `--sample-include` value"
+            )
+        if sample_reference not in col_meta.columns:
+            raise ValueError(
+                f"Unknown `--sample-reference` {sample_reference!r}; available: {list(col_meta.columns)}"
+            )
         # we take a subset of the data
-        col_meta = col_meta.loc[col_meta[sample_reference].isin(sample_include)]
+        mask = _series_matches_includes(col_meta[sample_reference], sample_include)
+        col_meta = col_meta.loc[mask]
         X = X[col_meta.index]
 
     if sample_exclude is not None:
