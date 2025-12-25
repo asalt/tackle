@@ -34,14 +34,13 @@ import click
 
 def clean_categorical(col_data):
     for col in col_data:
-        if isinstance(col_data[col], pd.CategoricalDtype):
+        series = col_data[col]
+        if isinstance(series.dtype, pd.CategoricalDtype):
             # check to make sure categories are strings
-            cats = col_data[col].cat.categories
+            cats = series.cat.categories
             if not (all(isinstance(x, str) for x in cats)):
-                newcats = [str(x) for x in cats]  # do not need?
-                newvalues = [str(x) for x in col_data[col]]
-                col_data[col] = pd.CategoricalDtype(newvalues)
-        return col_data
+                col_data[col] = series.cat.rename_categories(lambda x: str(x))
+    return col_data
 
 
 RESERVED_COLORS = {
@@ -61,12 +60,11 @@ def get_default_color_mapping(s: pd.Series) -> dict:
         return
     palette = "bright"
     s_as_numeric = pd.to_numeric(s, errors="coerce")
-    if (
-        s_as_numeric.sum()
-        > 0 & s_as_numeric.nunique()
-        < 11 & s_as_numeric.isna().sum()
-        == 0
-    ):  # integer
+    has_positive_sum = s_as_numeric.sum() > 0
+    limited_unique_values = s_as_numeric.nunique() < 11
+    has_no_missing = s_as_numeric.isna().sum() == 0
+
+    if has_positive_sum and limited_unique_values and has_no_missing:  # integer
         s = s_as_numeric
         palette = "light:#4133"
 
@@ -182,11 +180,15 @@ def maybe_int(x):
 
 def plot_imputed(edata_impute, observed, missing, downshift, scale):
     fig, ax = plt.subplots()
-    sb.distplot(edata_impute.stack(), label="All Data", ax=ax, kde=False)
-    sb.distplot(observed, label="Observed Values", ax=ax, kde=False)
-    sb.distplot(edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False)
+    sb.histplot(edata_impute.stack(), label="All Data", ax=ax, kde=False)
+    sb.histplot(observed, label="Observed Values", ax=ax, kde=False)
+    sb.histplot(
+        edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False
+    )
 
-    # sb.distplot(edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False)
+    # sb.histplot(
+    #     edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False
+    # )
 
     ax.legend(fontsize=10, loc="upper right", markerscale=0.4)
     # ax.set_xlim(0, 10)
