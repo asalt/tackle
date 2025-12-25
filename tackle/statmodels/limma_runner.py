@@ -238,6 +238,11 @@ def _inject_gene_covariates_in_formula(
         explicit_key: Optional[str] = None
         if any_match is not None:
             explicit_key = any_match[1]
+            if explicit_key and explicit_key.isdigit() and logger:
+                logger.warning(
+                    "Deprecated numeric GeneID token 'GeneID_%s' on RHS; use explicit GeneID_<id> or gene symbols instead.",
+                    explicit_key,
+                )
             if explicit_key in edata_index_map:
                 gene_id_obj = edata_index_map[explicit_key]
             else:
@@ -520,6 +525,9 @@ def run_limma_pipeline(
     # Map sanitized pheno columns (including injected GID_*)
     pheno_cols_sani = {_sanitize_name(str(c)) for c in pheno.columns}
     used_pheno_tokens = [tok for tok in token_candidates if tok in pheno_cols_sani]
+    # Fallback: group-based designs (~0+group) won't list tokens when formula=None.
+    if not used_pheno_tokens and group and not formula:
+        used_pheno_tokens.append(_sanitize_name(str(group)))
 
     # Build factor groups from design terms by token prefix; continuous -> single term
     factor_groups: Dict[str, List[str]] = {}

@@ -3,6 +3,7 @@ import itertools
 from pathlib import Path
 import hashlib
 import re
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -61,6 +62,38 @@ def _shorten_filename_with_ext(base: str, ext: str, name_max: int) -> str:
     out = new_bytes.decode("utf-8")
     assert len(out.encode("utf-8")) <= name_max
     return out
+
+
+def _dedupe_comparison_label(comparison: str) -> str:
+    """Collapse '<label>=<label>' keys back to '<label>' if repeated."""
+    if "=" not in comparison:
+        return comparison
+    parts = comparison.split("=")
+    for i in range(1, len(parts)):
+        left = "=".join(parts[:i]).strip()
+        right = "=".join(parts[i:]).strip()
+        if left == right:
+            return left
+    return comparison
+
+
+def _clean_group_label(value: str) -> str:
+    s = value.strip()
+    if s.startswith("(") and s.endswith(")"):
+        s = s[1:-1].strip()
+    return s
+
+
+def _split_comparison_groups(comparison: str) -> Optional[Tuple[str, str]]:
+    spaced_delims = comparison.count(" - ")
+    if spaced_delims == 1:
+        # Prefer the single spaced delimiter, even if terms include inner hyphens like "B-C".
+        left, right = comparison.split(" - ", 1)
+        return left.strip(), right.strip()
+    if spaced_delims == 0 and comparison.count("-") == 1:
+        # Special-case "A-B" (no spaces); avoid splitting expressions like "A-B-C".
+        return tuple(g.strip() for g in comparison.split("-", 1))
+    return None
 
 
 def shorten_path(path: str, max_component_bytes: int = 255) -> str:
@@ -216,9 +249,6 @@ def volcanoplot(
 
     max_fc = float(max(x.log2_FC.abs().max() for x in results.values()))
 
-    def _clean(x):
-        return x.strip().strip("()").strip()
-
     # prepare table for volcanoplot and export
     if genes is not None:  # only plot these select genes
         _genes = set(genes) & set(df.index)
@@ -239,6 +269,7 @@ def volcanoplot(
     # TODO add check to ensure xmax and ymax  not smaller than all actual x and y values
     # now this
     for comparison, df in results.items():  # results contains dataf
+        comparison = _dedupe_comparison_label(comparison)
         # df already contains the expression data by default now, as returned by the data_obj stat running method
 
         _comparison_name = None
@@ -248,10 +279,10 @@ def volcanoplot(
 
         # too nested
         # group0, group1 establish
-        groups = _comparison.split(" - ")
-        if len(groups) == 2:
+        groups = _split_comparison_groups(_comparison)
+        if groups is not None:
             # group0, group1 = [x.strip() for x in comparison.split('-')]
-            group1, group0 = [_clean(x) for x in _comparison.split(" - ")]
+            group1, group0 = [_clean_group_label(x) for x in groups]
             # group0, group1 = [_clean(x) for x in _comparison.split(" - ")]
             # print(group0, group1)
             group0_fix, group1_fix = (
@@ -260,7 +291,7 @@ def volcanoplot(
             )
             # print(group0, group1)
         else:
-            # More complex model: treat as a single-coefficient view.
+            # More complex/ambiguous model: treat as a single-coefficient view.
             # Use meaningful coefficient-signed labels rather than generic Up/Down.
             base = re.sub(r"\s+", "_", _comparison.strip()) or "coef"
             base = re.sub(r"[^A-Za-z0-9._-]", "_", base).strip("._") or "coef"
