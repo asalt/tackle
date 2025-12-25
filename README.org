@@ -213,6 +213,25 @@
   correlationplot --non-zeros 4 --name example ./example.config cluster --nclusters auto export --level area
   #+END_SRC
   Notice that the optional arguments are specified for each command and subcommand.
+
+* Caching (optional)
+  The data loading and normalization stages can be cached to speed up reruns with
+  small variations. This cache is disabled by default and can be enabled via
+  environment variables. Cache files are stored alongside the results directory
+  (e.g., if your results dir is =./results=, the cache dir is =./.tackle_cache=).
+
+  Environment variables:
+  - =TACKLE_CACHE=: Set to =1= to enable caching. Default: disabled.
+  - =TACKLE_CACHE_DIR=: Override cache directory location.
+  - =TACKLE_CACHE_MAX_ENTRIES=: Maximum number of cache entries. Default: 5.
+  - =TACKLE_CACHE_MAX_BYTES=: Maximum total cache size in bytes. Default: 2147483648 (2 GB).
+  - =TACKLE_CACHE_BUST=: Optional string to force a cache miss when changed.
+
+  Example:
+  #+BEGIN_SRC sh
+  TACKLE_CACHE=1 TACKLE_CACHE_MAX_ENTRIES=5 TACKLE_CACHE_MAX_BYTES=2147483648 \
+    correlationplot ./example.config cluster
+  #+END_SRC
 * Limma formulas and gene covariates
 
 When using limma via the `--formula` option, you can reference a gene's

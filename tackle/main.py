@@ -245,7 +245,7 @@ class Path_or_Geneset(click.Path):
 
 
 class Path_or_Subcommand(click.Path):
-    EXCEPTIONS = ("make_config", "replot_gsea", "make-xls")  # run as standalone subcommands
+    EXCEPTIONS = ("make_config", "replot_gsea", "make-xls", "make-run")  # run as standalone subcommands
 
     def __init__(self, *args, **kwargs):
         super(Path_or_Subcommand, self).__init__(*args, **kwargs)
@@ -477,8 +477,25 @@ def validate_configfile(experiment_file, **kwargs):
 #     "_all",
 # )
 
-ANNOTATION_CHOICES = get_annotation_mapper().categories or tuple()
-ANNOTATION_CHOICES = [*ANNOTATION_CHOICES, "_all"]
+def _annotation_choices():
+    """
+    Load annotation column choices without forcing a full annotation table read.
+
+    `get_annotation_mapper().categories` can trigger pandas I/O (and logging) at import
+    time, which is undesirable for standalone subcommands like `make-run`.
+    """
+    path = os.path.join(os.path.dirname(__file__), "data", "combined_annotations_new.tsv")
+    try:
+        with open(path, "r") as handle:
+            header = handle.readline().rstrip("\n").split("\t")
+    except OSError:
+        return ["_all"]
+
+    cols = [c for c in header if c and c not in ("GeneID", "GeneSymbol")]
+    return [*cols, "_all"]
+
+
+ANNOTATION_CHOICES = _annotation_choices()
 # ANNOTATION_CHOICES = ["_all"]
 
 
@@ -1140,6 +1157,84 @@ def make_config(
     print("Writing {}".format(out), end=" ...", flush=True)
     c.export(out)
     print("done")
+
+
+@main.command("make-run")
+@click.option(
+    "--conf",
+    "conf_path",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Path to a tackle .conf file to base the script skeleton on.",
+)
+@click.option(
+    "--out",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Output .sh path (use '-' to print to stdout). Default: tacklerun_<confstem>.sh in CWD.",
+)
+@click.option(
+    "--name",
+    type=str,
+    default=None,
+    help="Optional run name to prefill in the generated script.",
+)
+@click.option(
+    "--result-dir",
+    type=str,
+    default="./results",
+    show_default=True,
+    help="Default result dir to prefill in the generated script.",
+)
+@click.option(
+    "--data-dir",
+    type=str,
+    default="./data/e2g/",
+    show_default=True,
+    help="Default data dir to prefill in the generated script.",
+)
+@click.option(
+    "--only-load-local/--no-only-load-local",
+    default=False,
+    show_default=True,
+    help="Prefill --only-load-local in the generated HEADMAIN array.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Overwrite --out if it already exists.",
+)
+@click.pass_context
+def make_run(ctx, conf_path, out, name, result_dir, data_dir, only_load_local, force):
+    """
+    Generate a bash tacklerun skeleton script (non-interactive) with TODO placeholders.
+    """
+    from .scriptgen import render_tacklerun_skeleton, write_script
+
+    content = render_tacklerun_skeleton(
+        conf_path=conf_path,
+        name=name,
+        result_dir=result_dir,
+        data_dir=data_dir,
+        only_load_local=only_load_local,
+    )
+
+    if out in (None, ""):
+        out = f"tacklerun_{Path(conf_path).stem}.sh"
+
+    if out == "-":
+        click.echo(content, nl=False)
+        return
+
+    try:
+        written = write_script(out, content, force=force)
+    except FileExistsError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Wrote {written}")
 
 
 @main.command("scatter")
