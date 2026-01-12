@@ -119,6 +119,9 @@ def run(
     z_score_fillna,
     add_human_ratios,
     volcano_topn=50,
+    cluster_db=False,
+    cluster_db_path=None,
+    export_sweep_tsvs=False,
 ):
 
     from . import grdevice_helper
@@ -143,6 +146,8 @@ def run(
         gene_symbols = True
     if z_score == "None":
         z_score = None
+    if standard_scale == "None":
+        standard_scale = None
     if cluster_func == "none":
         cluster_func = None
 
@@ -162,6 +167,22 @@ def run(
     # =================================================================
 
     data_obj = ctx.obj["data_obj"]
+    cluster_db_writer = None
+    try:
+        from .cluster2.db import ClusterDb, ClusterDbConfig
+
+        enabled_override = cluster_db
+        db_config = ClusterDbConfig.from_env(
+            data_obj.outpath,
+            enabled_override=enabled_override,
+            path_override=cluster_db_path,
+        )
+        cluster_db_writer = ClusterDb(db_config, logger=logger)
+        if not cluster_db_writer.config.enabled:
+            cluster_db_writer = None
+    except Exception as e:
+        cluster_db_writer = None
+        logger.warning("Cluster DB disabled: %s", e)
     # col_meta = data_obj.col_metadata.copy().astype(str).fillna("")
     col_meta = data_obj.col_metadata.fillna("") # compromise
 
@@ -336,9 +357,11 @@ def run(
         _thecluster = cluster_file[1]
         if "cluster" not in _df:
             raise ValueError("improper cluster file, does not have column `cluster`")
-        if _thecluster not in _df["cluster"]:
+        _df["cluster"] = pd.to_numeric(_df["cluster"], errors="coerce").astype("Int64")
+        cluster_values = _df["cluster"].dropna()
+        if int(_thecluster) not in set(cluster_values.astype(int)):
             raise ValueError(f"cluster {_thecluster} not in {cluster_file[0]}")
-        _genes = _df[_df["cluster"] == _thecluster]["GeneID"].astype(str)
+        _genes = _df[_df["cluster"] == int(_thecluster)]["GeneID"].astype(str)
         _tokeep = [x for x in _genes if x in X.index]
         X = X.loc[_tokeep]
         outname_kws["subcluster"] = _thecluster
@@ -527,6 +550,9 @@ def run(
     if z_score_by is not None:
         outname_kws["zby"] = z_score_by
 
+    if cluster_fillna and cluster_fillna != "min":
+        outname_kws["fillna"] = cluster_fillna
+
     if linear:
         outname_kws["linear"] = "linear"
     if standard_scale is not None:
@@ -663,6 +689,8 @@ def run(
 
     if X.empty:
         print("No data!")
+        if cluster_db_writer is not None:
+            cluster_db_writer.close()
         return
 
     col_data = robjects.NULL
@@ -677,6 +705,84 @@ def run(
         row_annot_df = robjects.NULL
 
     # pandas2ri.activate()
+
+    def _extract_silhouette_and_row_order(ret):
+        sil_df = None
+        row_orders = None
+
+        if isinstance(ret, dict):
+            sil_df = ret.get("sil_df")
+            if sil_df is None:
+                sil_df = ret.get("")
+            row_orders = ret.get("ht_row_order")
+            return sil_df, row_orders
+
+        try:
+            sil_r = ret.rx2("sil_df")
+        except Exception:
+            sil_r = ret[1]
+        try:
+            sil_df = rpy2.robjects.pandas2ri.rpy2py_dataframe(sil_r)
+        except Exception:
+            sil_df = None
+
+        try:
+            row_orders = ret.rx2("ht_row_order")
+        except Exception:
+            try:
+                row_orders = ret[2]
+            except Exception:
+                row_orders = None
+
+        return sil_df, row_orders
+
+    def _extract_wss(ret):
+        wss = None
+        if isinstance(ret, dict):
+            wss = ret.get("wss")
+        else:
+            try:
+                wss = ret.rx2("wss")
+            except Exception:
+                wss = None
+
+        if wss is None:
+            return None
+
+        try:
+            if isinstance(wss, (list, tuple, np.ndarray)) and len(wss) > 0:
+                wss = wss[0]
+            wss = float(wss)
+        except Exception:
+            return None
+        return wss if np.isfinite(wss) else None
+
+    def _flatten_row_orders(row_orders):
+        if row_orders is None:
+            return []
+
+        if isinstance(row_orders, dict):
+            keys = list(row_orders.keys())
+            try:
+                keys = sorted(keys, key=lambda x: int(str(x)))
+            except Exception:
+                pass
+
+            out = []
+            for key in keys:
+                values = row_orders.get(key)
+                if values is None:
+                    continue
+                out.extend([int(v) - 1 for v in list(values)])
+            return out
+
+        try:
+            out = []
+            for n in row_orders.names:
+                out.extend([int(x) - 1 for x in row_orders.rx2(int(str(n)))])
+            return out
+        except Exception:
+            return []
 
     def plot_and_save(
         X,
@@ -701,201 +807,46 @@ def run(
         if main_title is None:
             main_title = robjects.NULL
 
-        # Centralized sizing logic for clarity and easier troubleshooting
-        def _base_dims(n_rows, n_cols, add_title):
-            """Return baseline height/width in inches for the heatmap area."""
-            # More generous scaling for large N
-            row_slope = 0.24 if n_rows <= 250 else 0.18
-            # Dial back width slope and baseline a bit further
-            col_slope = 0.24 if n_cols <= 35 else 0.18
-            base_h = 4.2 + (n_rows * row_slope)
-            if add_title:
-                base_h += 0.36
-            base_w = 7.6 + (n_cols * col_slope)
-            return base_h, base_w
+        from .cluster2.plotting import compute_cluster2_figsize
 
-        def _apply_extras(h, w, *, col_cluster_flag, row_annot_cols, add_desc,
-                          margins_overhead, row_annot_side, row_names_side,
-                          gene_symbols):
-            info = {"col_cluster": 0.0, "row_annot_w": 0.0, "row_annot_h": 0.0,
-                    "desc": 0.0, "margins": 0.0, "left_row_annot": 0.0,
-                    "left_row_names": 0.0}
-            if col_cluster_flag:
-                h += 3.6  # dendrogram/labels overhead when clustering columns
-                info["col_cluster"] = 3.6
-            if row_annot_cols is not None and row_annot_cols > 0:
-                # Allowance for legends/labels from row annotations
-                _w = 0.4 + (0.26 * row_annot_cols)
-                _h = 0.2 + (0.40 * row_annot_cols)
-                w += _w
-                h += _h
-                info["row_annot_w"] = _w
-                info["row_annot_h"] = _h
-            if add_desc:
-                w += 1.8
-                info["desc"] = 1.8
-            # Fixed overhead for left/right margins, dendrograms, etc.
-            w += margins_overhead
-            info["margins"] = margins_overhead
-            # If row annotations sit on the left, reserve extra space
-            if row_annot_side == 'left' and row_annot_cols and row_annot_cols > 0:
-                w += 1.0
-                info["left_row_annot"] = 1.0
-            # If row names are on the left and gene symbols are shown, add a bit more
-            if (row_names_side == 'left') and gene_symbols:
-                w += 0.8
-                info["left_row_names"] = 0.8
-            return h, w, info
-
-        def _ensure_min_w(w, min_w=5.4):
-            return max(w, min_w)
-
-        def _clamp_w(w, min_w=5.4, max_w=48.0):
-            return max(min(w, max_w), min_w)
-
-        # Determine figure size based on provided figsize tuple
         n_rows = int(X.shape[0])
         n_cols = int(len([c for c in X.columns if c not in ("GeneID", "GeneSymbol")]))
         has_title = not (main_title == robjects.NULL)
-        annot_cols = None
-        if row_annot_df is not None and row_annot_df is not robjects.NULL:
-            try:
-                annot_cols = int(len(row_annot_df.columns))
-            except Exception:
-                annot_cols = None
 
-        # Configurable knobs via environment (for quick tuning without code changes)
+        row_annot_df_pd = row_annot_df if isinstance(row_annot_df, pd.DataFrame) else None
+        show_gene_symbols = kws.get("show_gene_symbols", gene_symbols)
         try:
-            width_scale = float(os.getenv("TACKLE_WIDTH_SCALE", "1.0"))
+            show_gene_symbols = bool(show_gene_symbols)
         except Exception:
-            width_scale = 1.0
+            show_gene_symbols = bool(gene_symbols)
+
+        col_cluster_for_plot = kws.get("col_cluster", col_cluster)
         try:
-            min_w_env = float(os.getenv("TACKLE_MIN_FIGWIDTH", "5.4"))
+            col_cluster_for_plot = bool(col_cluster_for_plot)
         except Exception:
-            min_w_env = 5.4
-        try:
-            max_w_env = float(os.getenv("TACKLE_MAX_FIGWIDTH", "48.0"))
-        except Exception:
-            max_w_env = 48.0
-        try:
-            margins_overhead = float(os.getenv("TACKLE_WIDTH_MARGIN_OVERHEAD", "1.2"))
-        except Exception:
-            margins_overhead = 1.2
+            col_cluster_for_plot = bool(col_cluster)
 
-        # Legend-aware width bump (bottom legends are horizontal)
-        legend_groups = 1  # include the heatmap legend itself
-        dense_units = 0
-        if 'col_meta' in locals() and (col_meta is not None):
-            meta_cols = [c for c in col_meta.columns if c != 'name']
-            legend_groups += len(meta_cols)
-            # penalize heavy cardinality
-            for c in meta_cols:
-                try:
-                    dense_units += max(int(col_meta[c].nunique()) - 6, 0)
-                except Exception:
-                    pass
-        if row_annot_df is not None and row_annot_df is not robjects.NULL:
-            try:
-                legend_groups += int(len(row_annot_df.columns))
-                for c in list(row_annot_df.columns):
-                    try:
-                        dense_units += max(int(pd.Series(row_annot_df[c]).nunique()) - 6, 0)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        cut_by_for_plot = kws.get("cut_by", cut_by)
+        has_cut_by = cut_by_for_plot is not None and cut_by_for_plot is not robjects.NULL
 
-        # Reserve width per legend column to avoid clipping (dialed back by default)
-        try:
-            LEGEND_COL_WIDTH_IN = float(os.getenv("TACKLE_LEGEND_COL_WIDTH", "0.1"))
-        except Exception:
-            LEGEND_COL_WIDTH_IN = 0.1
-        legend_width_extra = (legend_groups * LEGEND_COL_WIDTH_IN) + (0.08 * dense_units)
-
-        # Reserve some height for bottom legends (they sit below the plot)
-        try:
-            LEGEND_ROW_HEIGHT_IN = float(os.getenv("TACKLE_LEGEND_ROW_HEIGHT", "0.35"))
-        except Exception:
-            LEGEND_ROW_HEIGHT_IN = 0.35
-        legend_height_extra = (legend_groups * LEGEND_ROW_HEIGHT_IN) + (0.04 * dense_units)
-
-        # cut_by splits create extra headers/labels in R, give a small bump
-        has_cut_by = 'cut_by' in locals() and (cut_by is not None and cut_by is not robjects.NULL)
-        cut_by_extra = 0.4 if has_cut_by else 0.0
-
-        # Case A: figsize provided with one dimension missing
-        if figsize is not None and (figsize[0] is None) and (figsize[1] is not None):
-            # width missing, compute width only
-            if optimal_figsize:
-                base_h, base_w = _base_dims(n_rows, n_cols, has_title)
-            else:
-                # Non-optimal: conservative defaults
-                base_h, base_w = 10.56, _ensure_min_w(min(n_cols / 2.0, 16.0), min_w_env)
-            h, w, extra_info = _apply_extras(base_h, base_w,
-                                             col_cluster_flag=col_cluster,
-                                             row_annot_cols=annot_cols,
-                                             add_desc=add_description,
-                                             margins_overhead=margins_overhead,
-                                             row_annot_side=row_annot_side,
-                                             row_names_side=row_names_side,
-                                             gene_symbols=gene_symbols)
-            w_pre = (w + legend_width_extra + cut_by_extra) * width_scale
-            figwidth = _clamp_w(w_pre, min_w_env, max_w_env)
-            figheight = float(figsize[1])
-            figsize = (figwidth, figheight)
-
-        elif figsize is not None and (figsize[1] is None) and (figsize[0] is not None):
-            # height missing, compute height only
-            if optimal_figsize:
-                base_h, base_w = _base_dims(n_rows, n_cols, has_title)
-            else:
-                base_h, base_w = 10.56, _ensure_min_w(min(n_cols / 2.0, 16.0), min_w_env)
-            h, w, extra_info = _apply_extras(base_h, base_w,
-                                             col_cluster_flag=col_cluster,
-                                             row_annot_cols=annot_cols,
-                                             add_desc=add_description,
-                                             margins_overhead=margins_overhead,
-                                             row_annot_side=row_annot_side,
-                                             row_names_side=row_names_side,
-                                             gene_symbols=gene_symbols)
-            # add legend height here since we are computing height
-            h = h + legend_height_extra
-            w_pre = (w + legend_width_extra + cut_by_extra) * width_scale
-            figwidth = _clamp_w(float(figsize[0]), min_w_env, max_w_env)
-            figheight = h
-            figsize = (figwidth, figheight)
-
-        # Case B: figsize not provided or both set to None
-        elif (figsize is None) or (figsize[0] is None and figsize[1] is None):
-            if optimal_figsize:
-                base_h, base_w = _base_dims(n_rows, n_cols, has_title)
-            else:
-                # Historical defaults that tended to look balanced
-                base_h, base_w = 12.0, _ensure_min_w(min(n_cols / 2.0, 16.0), min_w_env)
-            h, w, extra_info = _apply_extras(base_h, base_w,
-                                             col_cluster_flag=col_cluster,
-                                             row_annot_cols=annot_cols,
-                                             add_desc=add_description,
-                                             margins_overhead=margins_overhead,
-                                             row_annot_side=row_annot_side,
-                                             row_names_side=row_names_side,
-                                             gene_symbols=gene_symbols)
-            # add legend height here since we are computing height
-            h = h + legend_height_extra
-            w_pre = (w + legend_width_extra + cut_by_extra) * width_scale
-            figwidth = _clamp_w(w_pre, min_w_env, max_w_env)
-            figheight = h
-            figsize = (figwidth, figheight)
-
-        # Case C: both width and height provided, respect them as-is
-        figwidth, figheight = figsize
-
-        # Ensure room for gene symbols only when not using optimal sizing
-        if gene_symbols and not optimal_figsize:
-            figheight = max(((gene_symbol_fontsize + 2) / 72) * n_rows, 12)
-            if figheight > 218:  # cap figheight and scale font in R
-                FONTSIZE = max(218 / figheight, 6)
-                figheight = 218
+        fig = compute_cluster2_figsize(
+            n_rows=n_rows,
+            n_cols=n_cols,
+            figsize=figsize,
+            optimal_figsize=optimal_figsize,
+            has_title=has_title,
+            col_cluster=col_cluster_for_plot,
+            row_annot_df=row_annot_df_pd,
+            col_meta=col_meta if isinstance(col_meta, pd.DataFrame) else None,
+            add_description=add_description,
+            row_annot_side=row_annot_side,
+            row_names_side=row_names_side,
+            show_gene_symbols=show_gene_symbols,
+            gene_symbol_fontsize=gene_symbol_fontsize,
+            has_cut_by=has_cut_by,
+        )
+        figwidth, figheight = fig.figwidth, fig.figheight
+        fig_debug = fig.debug
 
         if X.shape[0] < 2:
             row_cluster, col_cluster = False, False
@@ -904,7 +855,7 @@ def run(
             color_low=color_low,
             color_mid=color_mid,
             color_high=color_high,
-            annot_mat=annot_mat,
+            annot_mat=annot_mat if annot_mat is not None else robjects.NULL,
             the_annotation=annotate or robjects.NULL,
             z_score=(
                 z_score if z_score != "None" and z_score is not None else robjects.NULL
@@ -970,19 +921,19 @@ def run(
             logger.info(
                 "figsize: base_w=%.2f, legends_w=%.2f, margins=%.2f, row_annot_w=%.2f, desc=%.2f, cut_by=%.2f, left_row_annot=%.2f, left_row_names=%.2f, width_scale=%.2f, pre_clamp=%.2f, final_w=%.2f, base_h=%.2f, legends_h=%.2f, final_h=%.2f"
                 % (
-                    base_w if 'base_w' in locals() else -1,
-                    legend_width_extra,
-                    extra_info.get("margins", 0.0) if 'extra_info' in locals() else 0.0,
-                    extra_info.get("row_annot_w", 0.0) if 'extra_info' in locals() else 0.0,
-                    extra_info.get("desc", 0.0) if 'extra_info' in locals() else 0.0,
-                    cut_by_extra,
-                    extra_info.get("left_row_annot", 0.0) if 'extra_info' in locals() else 0.0,
-                    extra_info.get("left_row_names", 0.0) if 'extra_info' in locals() else 0.0,
-                    width_scale,
-                    w_pre if 'w_pre' in locals() else -1,
+                    fig_debug.get("base_w", -1.0),
+                    fig_debug.get("legend_width_extra", 0.0),
+                    fig_debug.get("margins", 0.0),
+                    fig_debug.get("row_annot_w", 0.0),
+                    fig_debug.get("desc", 0.0),
+                    fig_debug.get("cut_by_extra", 0.0),
+                    fig_debug.get("left_row_annot", 0.0),
+                    fig_debug.get("left_row_names", 0.0),
+                    fig_debug.get("width_scale", 1.0),
+                    fig_debug.get("pre_clamp_width", -1.0),
                     figwidth,
-                    base_h if 'base_h' in locals() else -1,
-                    legend_height_extra,
+                    fig_debug.get("base_h", -1.0),
+                    fig_debug.get("legend_height_extra", 0.0),
                     figheight,
                 )
             )
@@ -1001,32 +952,224 @@ def run(
             grdevices.dev_off()  # close file
             print(".done", flush=True)
 
-        sil_df = None
-        try:
-            sil_df = rpy2.robjects.pandas2ri.rpy2py_dataframe(ret[1])
-        except Exception as e:
-            pass
+        sil_df, row_orders = _extract_silhouette_and_row_order(ret)
 
-        if sil_df is not None:
-            row_orders = ret[2]
-            the_orders = [
-                [x - 1 for x in row_orders.rx2(int(str(n)))] for n in row_orders.names
-            ]
-            the_orders = [x for y in the_orders for x in y]
-
-            # [0]
-
-            # the_orders = [
-            #     row_orders.rx2(int(str(n))) - 1 for n in row_orders.names
-            # ]  # subtract 1  for zero indexing
-
-            cluster_metrics = sil_df.iloc[the_orders]
+        if sil_df is not None and not getattr(sil_df, "empty", True):
+            the_orders = _flatten_row_orders(row_orders)
+            cluster_metrics = (
+                sil_df.iloc[the_orders]
+                if the_orders and len(the_orders) == len(sil_df)
+                else sil_df
+            )
 
             out = outname_func("clustermap", **outname_kws) + ".tsv"
             print("saving", out)
             cluster_metrics.to_csv(out, index=False, sep="\t")
 
+            if cluster_db_writer is not None:
+                try:
+                    cluster_db_writer.ingest_cluster2_metrics(
+                        cluster_metrics,
+                        analysis_outpath=data_obj.outpath,
+                        tsv_path=out,
+                        cluster_func=cluster_func,
+                        nclusters=nclusters,
+                        seed=seed,
+                        linkage=linkage,
+                        cluster_fillna=cluster_fillna,
+                        z_score=z_score,
+                        z_score_by=z_score_by,
+                        standard_scale=standard_scale,
+                        extra_params={
+                            "autosweep": True,
+                            "wss": autosweep_selected_wss,
+                        }
+                        if autosweep_mode
+                        else None,
+                    )
+                except Exception as e:
+                    logger.warning("Cluster DB ingest failed for %s: %s", out, e)
+
     # ==============================================================================================
+
+    autosweep_mode = nclusters == "auto"
+    autosweep_selected_wss = None
+    if nclusters == "auto":
+        if cluster_func is None:
+            raise ValueError("`--nclusters auto` requires `--cluster-func`")
+
+        from .cluster2.auto import select_best_k, summarize_silhouette_df
+
+        n_genes_total = int(X.shape[0])
+        if n_genes_total < 2:
+            raise ValueError(
+                f"`--nclusters auto` requires at least 2 genes (found {n_genes_total})"
+            )
+        max_k = int(min(max_autoclusters, n_genes_total))
+        if max_k < 2:
+            raise ValueError(
+                f"`--nclusters auto` resolved to an empty sweep (max_k={max_k})"
+            )
+
+        k_start = 3 if max_k >= 3 else 2
+        sweep_rows = []
+        for k in range(k_start, max_k + 1):
+            sweep_outname_kws = outname_kws.copy()
+            sweep_outname_kws[cluster_func] = k
+            tsv_out = outname_func("clustermap", **sweep_outname_kws) + ".tsv"
+
+            try:
+                annot_mat_r = annot_mat if annot_mat is not None else robjects.NULL
+                call_kws = dict(
+                    data=X,
+                    annot_mat=annot_mat_r,
+                    the_annotation=annotate or robjects.NULL,
+                    z_score=(
+                        z_score
+                        if z_score != "None" and z_score is not None
+                        else robjects.NULL
+                    ),
+                    z_score_by=z_score_by or robjects.NULL,
+                    z_score_fillna=z_score_fillna,
+                    row_annot_df=row_annot_df,
+                    col_data=col_data,
+                    gids_to_annotate=gids_to_annotate or robjects.NULL,
+                    force_plot_genes=force_plot_genes,
+                    show_gene_symbols=gene_symbols,
+                    standard_scale=standard_scale or robjects.NULL,
+                    row_cluster=row_cluster,
+                    col_cluster=col_cluster,
+                    cluster_fillna=cluster_fillna,
+                    nclusters=k,
+                    cluster_func=cluster_func,
+                    max_autoclusters=max_autoclusters,
+                    show_missing_values=show_missing_values,
+                    main_title=main_title or column_title or robjects.NULL,
+                    linear=linear,
+                    normed=data_obj.normed,
+                    linkage=linkage,
+                    gene_symbol_fontsize=gene_symbol_fontsize,
+                    row_dend_side=row_dend_side,
+                    row_names_side=row_names_side,
+                    cluster_row_slices=cluster_row_slices,
+                    cluster_col_slices=cluster_col_slices,
+                    order_by_abundance=order_by_abundance,
+                    seed=seed or robjects.NULL,
+                    metadata_colors=metadata_colorsR or robjects.NULL,
+                    savedir=os.path.abspath(os.path.join(data_obj.outpath, "cluster2")),
+                    metrics_only=True,
+                )
+                if cut_by is not None and cut_by is not robjects.NULL:
+                    call_kws["cut_by"] = cut_by
+
+                with localconverter(robjects.default_converter + pandas2ri.converter):
+                    ret = cluster2(**call_kws)
+
+                sil_df, _ = _extract_silhouette_and_row_order(ret)
+                wss = _extract_wss(ret)
+            except Exception as e:
+                logger.warning(
+                    "cluster2 auto sweep failed for k=%s: %s: %r",
+                    k,
+                    type(e).__name__,
+                    e,
+                )
+                continue
+
+            if sil_df is None or not isinstance(sil_df, pd.DataFrame) or sil_df.empty:
+                logger.warning("cluster2 auto sweep produced empty silhouette for k=%s", k)
+                continue
+
+            try:
+                sort_cols = [c for c in ("cluster", "sil_width") if c in sil_df.columns]
+                if sort_cols:
+                    sil_df = sil_df.sort_values(
+                        by=sort_cols,
+                        ascending=[True, False][: len(sort_cols)],
+                        kind="stable",
+                    )
+            except Exception:
+                pass
+
+            if export_sweep_tsvs:
+                sil_df.to_csv(tsv_out, index=False, sep="\t")
+
+            if cluster_db_writer is not None:
+                try:
+                    cluster_db_writer.ingest_cluster2_metrics(
+                        sil_df,
+                        analysis_outpath=data_obj.outpath,
+                        tsv_path=tsv_out,
+                        cluster_func=cluster_func,
+                        nclusters=k,
+                        seed=seed,
+                        linkage=linkage,
+                        cluster_fillna=cluster_fillna,
+                        z_score=z_score,
+                        z_score_by=z_score_by,
+                        standard_scale=standard_scale,
+                        extra_params={"autosweep": True, "wss": wss},
+                    )
+                except Exception as e:
+                    logger.warning("Cluster DB ingest failed for %s: %s", tsv_out, e)
+
+            summary = summarize_silhouette_df(sil_df)
+            summary["wss"] = wss
+            summary["tsv_written"] = bool(export_sweep_tsvs)
+            summary.update({"nclusters": int(k), "tsv_path": tsv_out})
+            sweep_rows.append(summary)
+
+        if not sweep_rows:
+            raise RuntimeError("cluster2 auto sweep produced no valid k results")
+
+        df_sweep = pd.DataFrame(sweep_rows).sort_values(by="nclusters", kind="stable")
+        sweep_path = os.path.join(data_obj.outpath, "cluster2", "cluster2_sweep.tsv")
+        os.makedirs(os.path.dirname(sweep_path), exist_ok=True)
+        df_sweep.to_csv(sweep_path, sep="\t", index=False)
+
+        valid = df_sweep[df_sweep["n_clusters"] >= 2]
+        candidates = valid.to_dict(orient="records") if not valid.empty else sweep_rows
+        best_k = select_best_k(candidates)
+        best_row = df_sweep[df_sweep["nclusters"] == best_k].iloc[0].to_dict()
+        autosweep_selected_wss = (
+            float(best_row.get("wss"))
+            if best_row.get("wss") is not None and np.isfinite(best_row.get("wss"))
+            else None
+        )
+        logger.info(
+            "cluster2 auto selected k=%s (sil_mean=%s, sil_q10=%s, sil_neg_frac=%s); sweep summary: %s",
+            best_k,
+            best_row.get("sil_mean"),
+            best_row.get("sil_q10"),
+            best_row.get("sil_neg_frac"),
+            sweep_path,
+        )
+
+        try:
+            plot_sweep = robjects.r["plot_cluster2_sweep_metrics"]
+            sweep_title = main_title or column_title or f"cluster2 auto sweep ({cluster_func})"
+            for file_fmt in ctx.obj["file_fmts"]:
+                out_plot = os.path.join(
+                    data_obj.outpath,
+                    "cluster2",
+                    f"cluster2_sweep_metrics_{cluster_func}{file_fmt}",
+                )
+                grdevice = grdevice_helper.get_device(
+                    filetype=file_fmt, width=10, height=8
+                )
+                grdevice(file=out_plot)
+                try:
+                    with localconverter(
+                        robjects.default_converter + pandas2ri.converter
+                    ):
+                        plot_sweep(df_sweep, selected_k=int(best_k), main_title=sweep_title)
+                finally:
+                    grdevices.dev_off()
+        except Exception as e:
+            logger.warning(
+                "cluster2 auto sweep plot failed: %s: %r", type(e).__name__, e
+            )
+        nclusters = int(best_k)
 
     if cluster_func is not None:
         outname_kws[cluster_func] = nclusters
@@ -1083,8 +1226,12 @@ def run(
 
         for annotation in data_obj.annotations:
             annotator = get_annotation_mapper()
-            # annot_df = annotator.get_annot(annotation)
-            annot_df = annotator.df
+            if annotation in (None, "", "_all"):
+                continue
+            try:
+                annot_df = annotator.get_annot(annotation)
+            except Exception:
+                annot_df = annotator.df
 
             subX = X[X.GeneID.isin(annot_df.GeneID)]
             if subX.empty:  # try mapping to homologene
@@ -1114,13 +1261,23 @@ def run(
             if gene_symbols is True:  # force override
                 _show_gene_symbols = True
 
-            nrow_col = "_{0}x{1}".format(*subX.shape)
+            _sub_ncol = len([x for x in subX.columns if x not in ("GeneID", "GeneSymbol")])
+            _sub_nrow = subX.shape[0]
+            sub_nrow_ncol = "_{0}x{1}".format(_sub_nrow, _sub_ncol)
             out = (
                 outname_func("clustermap", geneset=fix_name(annotation), **outname_kws)
-                + nrow_ncol
+                + sub_nrow_ncol
                 + file_fmt
             )
-            out = fix_name(out)  # make it shorter
+            if len(out) > 299:  # quick fix
+                out_path, out_name = os.path.split(out)
+                out_name = (
+                    out_name.replace("treatment", "treat")
+                    .replace("clustermap", "cmap")
+                    .replace("normtype", "norm")
+                    .replace("genotype", "geno")
+                )
+                out = os.path.join(out_path, out_name)
             plot_and_save(
                 subX,
                 out,
@@ -1146,3 +1303,6 @@ def run(
 
     # name = outname_func('{}_{}'.format(cluster_func, nclusters)) + '.tsv'
     # X[['GeneID', 'GeneSymbol', 'Cluster']].sort_values(by='Cluster').to_csv(name, sep='\t', index=False)
+
+    if cluster_db_writer is not None:
+        cluster_db_writer.close()

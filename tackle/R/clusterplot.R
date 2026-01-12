@@ -76,7 +76,11 @@ dist_no_na <- function(mat) {
   if (.min == Inf) {
     .min <- 0
   }
-  mat[is.na(mat)] <- .min - (.min * .1)
+  .offset <- abs(.min) * 0.1
+  if (!is.finite(.offset) || .offset == 0) {
+    .offset <- 0.1
+  }
+  mat[is.na(mat)] <- .min - .offset
   #mat[is.na(mat)] <- 0
   edist <- dist(mat)
   return(edist)
@@ -150,6 +154,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      fixed_size = FALSE,
                      figwidth = NULL,
                      use_dendsort=FALSE, # TODO add flag for this at toplevel
+                     metrics_only = FALSE,
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
@@ -197,16 +202,20 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # do nothing
   } else if (is.null(z_score_by) & z_score == "0") {
     exprs_long <- exprs_long %>%
-      mutate(value = na_if(value, 0)) %>%
+      mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
       group_by(GeneID) %>%
       mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
-      ungroup()
+      ungroup() %>%
+      mutate(zscore_impute = ifelse(.missing & cluster_fillna == "avg", 0, zscore_impute)) %>%
+      select(-.missing)
   } else if (!is.null(z_score_by) & z_score == "0") {
     exprs_long <- exprs_long %>%
-      mutate(value = na_if(value, 0)) %>%
+      mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
       group_by(GeneID, !!as.name(z_score_by)) %>%
       mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
-      ungroup()
+      ungroup() %>%
+      mutate(zscore_impute = ifelse(.missing & cluster_fillna == "avg", 0, zscore_impute)) %>%
+      select(-.missing)
   }
   ## else if (is.null(z_score)) {
   ## }
@@ -505,30 +514,90 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   ## now do kmeans / pam clustering if specified
   discrete_clusters <- NULL
   sil_df <- NULL
+  wss <- NA
   if (!is.null(cluster_func)) {
-    set.seed(1234)
+    if (is.null(seed) || is.na(seed)) {
+      set.seed(1234)
+    } else {
+      set.seed(as.integer(seed))
+    }
     ## X <- dplyr::select(tocluster, -GeneID, -GeneSymbol) %>% as.matrix
     X <- tocluster[, 3:length(tocluster)]
     clusters <- cluster_func(X, nclusters)
-    discrete_clusters <- cbind(clusters$cluster)
+    cluster_labels <- clusters$cluster
+    if (is.null(cluster_labels) && !is.null(clusters$clustering)) {
+      cluster_labels <- clusters$clustering
+    }
+    discrete_clusters <- cbind(cluster_labels)
+
+    wss <- tryCatch({
+      X_wss <- as.matrix(X)
+      if (any(is.na(X_wss))) {
+        if (cluster_fillna == "avg") {
+          X_wss[is.na(X_wss)] <- 0
+        } else {
+          .min <- min(X_wss, na.rm = TRUE)
+          if (.min == Inf) {
+            .min <- 0
+          }
+          .offset <- abs(.min) * 0.1
+          if (!is.finite(.offset) || .offset == 0) {
+            .offset <- 0.1
+          }
+          X_wss[is.na(X_wss)] <- .min - .offset
+        }
+      }
+
+      labs <- as.integer(cluster_labels)
+      .wss <- 0
+      for (cl in sort(unique(labs))) {
+        idx <- which(labs == cl)
+        if (length(idx) == 0) next
+        cent <- colMeans(X_wss[idx, , drop = FALSE])
+        diffs <- sweep(X_wss[idx, , drop = FALSE], 2, cent, "-")
+        .wss <- .wss + sum(diffs^2)
+      }
+      .wss
+    }, error = function(e) {
+      message("WSS calculation failed: ", conditionMessage(e))
+      NA_real_
+    })
+
     ## discrete_clusters <- cluster_func(tocluster %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
     ## TODO fix this!
     ## this is fixed??
     ## row_cluster <- FALSE
-    dis <- dist_no_na(X)^2
-    # dis <- dist_no_na(X)
-    sil <- cluster::silhouette(clusters$cluster, dis)
+    dis_func <- ifelse(cluster_fillna == "avg", dist_no_na_avg, dist_no_na)
+
+    if (length(unique(cluster_labels)) < 2) {
+      sil_df <- data.frame(
+        GeneID = toplot$GeneID,
+        GeneSymbol = toplot$GeneSymbol,
+        cluster = cluster_labels,
+        neighbor = NA,
+        sil_width = NA
+      )
+    } else {
+      dis <- dis_func(X)^2
+      # dis <- dist_no_na(X)
+      sil <- cluster::silhouette(cluster_labels, dis)
     # .file <- file.path(savedir, paste0("silhouette_n", nclusters, ".pdf"))
     # # dev.new()
     # pdf(.file, width = 10, height = 20)
     # print(plot(sil, col = "grey"))
     # dev.off()
-    sil_df <- cbind(toplot$GeneID, toplot$GeneSymbol, sil) %>%
-      as.data.frame() %>%
-      rename(GeneID = V1, GeneSymbol = V2)
+      sil_df <- cbind(toplot$GeneID, toplot$GeneSymbol, sil) %>%
+        as.data.frame() %>%
+        rename(GeneID = V1, GeneSymbol = V2)
+    }
     # arrange(c(cluster, sil_width))
   }
 
+
+  if (!is.null(metrics_only) && metrics_only == TRUE) {
+    ret <- list(heatmap = NULL, sil_df = sil_df, ht_row_order = NULL, wss = wss)
+    return(ret)
+  }
 
 
   column_split <- NULL
@@ -739,8 +808,95 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   }
 
 
-  ret <- list(heatmap = ht, sil_df, ht_row_order)
+  ret <- list(heatmap = ht, sil_df = sil_df, ht_row_order = ht_row_order, wss = wss)
   ret
+}
+
+
+plot_cluster2_sweep_metrics <- function(df, selected_k = NULL, main_title = "cluster2 auto sweep") {
+  if (is.null(df) || nrow(df) == 0) {
+    plot.new()
+    title(main_title)
+    text(0.5, 0.5, "No sweep results")
+    return(invisible(NULL))
+  }
+
+  if (!("nclusters" %in% colnames(df))) {
+    stop("sweep df missing column: nclusters")
+  }
+
+  df <- df %>%
+    mutate(
+      nclusters = as.integer(nclusters),
+      sil_mean = as.numeric(sil_mean),
+      sil_q10 = as.numeric(sil_q10),
+      sil_neg_frac = as.numeric(sil_neg_frac),
+      n_clusters = as.integer(n_clusters)
+    ) %>%
+    arrange(nclusters)
+
+  has_wss <- "wss" %in% colnames(df)
+  if (has_wss) {
+    df <- df %>% mutate(wss = as.numeric(wss))
+  }
+
+  if (!is.null(selected_k)) {
+    selected_k <- as.integer(selected_k)
+  }
+
+  .plot_metric <- function(y, ylab, ylim = NULL) {
+    plot(df$nclusters, y,
+      type = "b",
+      pch = 16,
+      xlab = "k (nclusters)",
+      ylab = ylab,
+      ylim = ylim
+    )
+    if (!is.null(selected_k) && is.finite(selected_k)) {
+      abline(v = selected_k, col = "red", lty = 2)
+      ix <- which(df$nclusters == selected_k)
+      if (length(ix) == 1) {
+        yk <- y[ix]
+        if (length(yk) == 1 && is.finite(yk)) {
+          points(df$nclusters[ix], yk, pch = 16, col = "red", cex = 1.2)
+        }
+      }
+    }
+    grid(col = "grey85")
+  }
+
+  op <- par(no.readonly = TRUE)
+  on.exit(par(op), add = TRUE)
+
+  if (has_wss) {
+    par(mfrow = c(3, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
+  } else {
+    par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
+  }
+  .plot_metric(df$sil_mean, "sil_mean", ylim = c(-1, 1))
+  .plot_metric(df$sil_q10, "sil_q10", ylim = c(-1, 1))
+  .plot_metric(df$sil_neg_frac, "sil_neg_frac", ylim = c(0, 1))
+  .plot_metric(df$n_clusters, "n_clusters", ylim = c(0, max(df$nclusters, na.rm = TRUE)))
+  if (has_wss) {
+    wss_vals <- df$wss
+    wss_pos <- wss_vals[is.finite(wss_vals) & wss_vals > 0]
+    use_log <- length(wss_pos) > 1 && (max(wss_pos) / min(wss_pos) > 100)
+    plot(df$nclusters, wss_vals,
+      type = "b",
+      pch = 16,
+      xlab = "k (nclusters)",
+      ylab = "WSS (within-cluster sum of squares)",
+      log = ifelse(use_log, "y", "")
+    )
+    if (!is.null(selected_k) && is.finite(selected_k)) {
+      abline(v = selected_k, col = "red", lty = 2)
+    }
+    grid(col = "grey85")
+    plot.new()
+  }
+
+  mtext(main_title, outer = TRUE, cex = 1.1, font = 2)
+  invisible(NULL)
 }
 
 
