@@ -245,7 +245,15 @@ class Path_or_Geneset(click.Path):
 
 
 class Path_or_Subcommand(click.Path):
-    EXCEPTIONS = ("make_config", "replot_gsea", "make-xls", "make-run")  # run as standalone subcommands
+    EXCEPTIONS = (
+        "make_config",
+        "replot_gsea",
+        "make-xls",
+        "make-run",
+        "make-cluster",
+        "make-report",
+        "cluster-summary",
+    )  # run as standalone subcommands
 
     def __init__(self, *args, **kwargs):
         super(Path_or_Subcommand, self).__init__(*args, **kwargs)
@@ -569,6 +577,13 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Only try to load data locally, skip calls to iSPEC",
 )
 @click.option(
+    "--cache",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Enable data caching for this run (equivalent to setting TACKLE_CACHE=1).",
+)
+@click.option(
     "--file-format",
     type=click.Choice((".png", ".pdf", ".svg")),
     default=(".png",),
@@ -764,6 +779,7 @@ def main(
     cmap_file,
     data_dir,
     only_load_local,
+    cache,
     file_format,
     fill_na_zero,
     funcats,
@@ -939,6 +955,9 @@ def main(
     now = datetime.now()
     # context = click.get_current_context() # same thing as ctx
     params = ctx.params
+
+    if cache:
+        os.environ["TACKLE_CACHE"] = "1"
 
     data_obj = Data(
         additional_info=additional_info,
@@ -1235,6 +1254,290 @@ def make_run(ctx, conf_path, out, name, result_dir, data_dir, only_load_local, f
         raise click.ClickException(str(e))
 
     click.echo(f"Wrote {written}")
+
+
+@main.command("make-cluster")
+@click.option(
+    "--conf",
+    "conf_path",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Path to a tackle .conf file to base the cluster2 sweep script on.",
+)
+@click.option(
+    "--out",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Output .sh path (use '-' to print to stdout). Default: tacklecluster_<confstem>.sh in CWD.",
+)
+@click.option(
+    "--name",
+    type=str,
+    default=None,
+    help="Optional run name to prefill in the generated script.",
+)
+@click.option(
+    "--result-dir",
+    type=str,
+    default="./results",
+    show_default=True,
+    help="Default result dir to prefill in the generated script.",
+)
+@click.option(
+    "--data-dir",
+    type=str,
+    default="./data/e2g/",
+    show_default=True,
+    help="Default data dir to prefill in the generated script.",
+)
+@click.option(
+    "--k-start",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Start k for the cluster2 sweep.",
+)
+@click.option(
+    "--k-end",
+    type=int,
+    default=30,
+    show_default=True,
+    help="End k for the cluster2 sweep.",
+)
+@click.option(
+    "--only-load-local/--no-only-load-local",
+    default=False,
+    show_default=True,
+    help="Prefill --only-load-local in the generated HEADMAIN array.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Overwrite --out if it already exists.",
+)
+@click.pass_context
+def make_cluster(ctx, conf_path, out, name, result_dir, data_dir, k_start, k_end, only_load_local, force):
+    """
+    Generate a bash script skeleton for sweeping cluster2 clustering parameters.
+    """
+    from .scriptgen import render_cluster2_sweep_skeleton, write_script
+
+    if k_start < 1:
+        raise click.BadParameter("--k-start must be >= 1")
+    if k_end < k_start:
+        raise click.BadParameter("--k-end must be >= --k-start")
+
+    content = render_cluster2_sweep_skeleton(
+        conf_path=conf_path,
+        name=name,
+        result_dir=result_dir,
+        data_dir=data_dir,
+        only_load_local=only_load_local,
+        k_start=k_start,
+        k_end=k_end,
+    )
+
+    if out in (None, ""):
+        out = f"tacklecluster_{Path(conf_path).stem}.sh"
+
+    if out == "-":
+        click.echo(content, nl=False)
+        return
+
+    try:
+        written = write_script(out, content, force=force)
+    except FileExistsError as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Wrote {written}")
+
+
+@main.command("cluster-summary")
+@click.argument(
+    "cluster_files",
+    nargs=-1,
+    type=click.Path(exists=True, dir_okay=False),
+)
+@click.option(
+    "--out",
+    type=str,
+    default="-",
+    show_default=True,
+    help="Run-level summary TSV path (use '-' for stdout).",
+)
+@click.option(
+    "--per-cluster-out",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Optional per-cluster summary TSV path (use '-' for stdout).",
+)
+@click.option(
+    "--sort-by",
+    type=click.Choice(
+        [
+            "sil_mean",
+            "sil_q10",
+            "sil_neg_frac",
+            "sil_median",
+            "n_clusters",
+            "n_genes",
+        ]
+    ),
+    default="sil_mean",
+    show_default=True,
+)
+@click.option(
+    "--descending/--ascending",
+    default=True,
+    show_default=True,
+)
+@click.pass_context
+def cluster_summary(ctx, cluster_files, out, per_cluster_out, sort_by, descending):
+    """
+    Summarize cluster2 silhouette TSV outputs (per run and per cluster).
+    """
+    from pathlib import Path
+
+    from .cluster2.summary import summarize_cluster_files
+
+    if not cluster_files:
+        raise click.UsageError("Provide at least one CLUSTER_FILE")
+
+    if out == "-" and per_cluster_out == "-":
+        raise click.ClickException(
+            "Cannot write both summaries to stdout; use --per-cluster-out <path> or run twice."
+        )
+
+    tables = summarize_cluster_files(cluster_files)
+    runs = tables.runs.copy()
+    clusters = tables.clusters.copy()
+
+    if not runs.empty and sort_by in runs.columns:
+        runs = runs.sort_values(by=sort_by, ascending=not descending, kind="stable")
+    if not clusters.empty:
+        clusters = clusters.sort_values(by=["run_id", "cluster"], kind="stable")
+
+    if out == "-":
+        click.echo(runs.to_csv(sep="\t", index=False), nl=False)
+    else:
+        out_path = Path(out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        runs.to_csv(out_path, sep="\t", index=False)
+        click.echo(f"Wrote {out_path}")
+
+    if per_cluster_out is None:
+        return
+
+    if per_cluster_out == "-":
+        click.echo(clusters.to_csv(sep="\t", index=False), nl=False)
+        return
+
+    out_path = Path(per_cluster_out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    clusters.to_csv(out_path, sep="\t", index=False)
+    click.echo(f"Wrote {out_path}")
+
+
+@main.command("make-report")
+@click.option(
+    "--gct",
+    "gct_path",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    show_default=True,
+    help="Path to an existing normalized .gct file. Required when running standalone; optional when run after data load.",
+)
+@click.option(
+    "--conf",
+    "conf_path",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    show_default=True,
+    help="Optional tackle .conf file path to embed metadata hints in the report.",
+)
+@click.option(
+    "--outdir",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Report bundle directory. Default: <analysis outpath>/report/ (after data load) or ./tackle_report_<gctstem>/ (standalone).",
+)
+@click.option(
+    "--title",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Optional report title (defaults to the GCT stem).",
+)
+@click.option(
+    "--copy/--symlink",
+    "copy_gct",
+    default=True,
+    show_default=True,
+    help="Copy the GCT into the report bundle (default) or create a symlink.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Overwrite existing report bundle files in --outdir.",
+)
+@click.pass_context
+def make_report(ctx, gct_path, conf_path, outdir, title, copy_gct, force):
+    """
+    Create a self-contained RMarkdown starter bundle for quick PCA/limma exploration.
+    """
+    import shlex
+
+    from .reportgen import write_report_bundle
+
+    data_obj = None
+    if ctx.obj and "data_obj" in ctx.obj:
+        data_obj = ctx.obj["data_obj"]
+
+    if conf_path is None and data_obj is not None:
+        conf_path = getattr(data_obj, "experiment_file", None)
+
+    if gct_path is None:
+        if data_obj is None:
+            raise click.ClickException("--gct is required when running standalone.")
+        try:
+            gct_path = data_obj.perform_data_export("gct")
+        except Exception as e:
+            raise click.ClickException(f"Failed to export GCT: {e}")
+
+    if outdir is None:
+        if data_obj is not None and getattr(data_obj, "outpath", None):
+            outdir = str(Path(data_obj.outpath) / "report")
+        else:
+            outdir = f"tackle_report_{Path(gct_path).stem}"
+
+    if title is None:
+        title = f"Tackle report: {Path(gct_path).stem}"
+
+    tackle_command = " ".join(shlex.quote(arg) for arg in sys.argv)
+    try:
+        bundle = write_report_bundle(
+            report_dir=outdir,
+            gct_path=gct_path,
+            title=title,
+            conf_path=conf_path,
+            tackle_command=tackle_command,
+            copy_gct=copy_gct,
+            force=force,
+        )
+    except (FileExistsError, NotADirectoryError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Wrote report bundle: {bundle.report_dir}")
+    click.echo(f"- GCT: {bundle.gct_path}")
+    click.echo(f"- Rmd: {bundle.rmd_path}")
+    click.echo(f"- Render: {bundle.render_sh}")
 
 
 @main.command("scatter")
@@ -2490,7 +2793,8 @@ when `auto` is set for `--nclusters`""",
     callback=validate_cluster_number,
     show_default=True,
     help="""If specified by an integer, use that number of clusters via k-means clustering.
-             NOT_IMPLEMENTED: If specified as `auto`, will try to find the optimal number of clusters""",
+             If specified as `auto`, will sweep k=3..`--max-autoclusters`, store silhouette metrics,
+             select the best k, and plot only that heatmap.""",
 )
 @click.option(
     "--cluster-func",
@@ -2571,6 +2875,25 @@ when `auto` is set for `--nclusters`""",
     show_default=True,
     default=True,
 )
+@click.option(
+    "--cluster-db/--no-cluster-db",
+    default=True,
+    show_default=True,
+    help="Write cluster2 clustering metrics to a per-analysis SQLite DB (<outpath>/cluster2/cluster2.sqlite).",
+)
+@click.option(
+    "--cluster-db-path",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Override the cluster2 SQLite DB path (default: <outpath>/cluster2/cluster2.sqlite).",
+)
+@click.option(
+    "--export-sweep-tsvs/--no-export-sweep-tsvs",
+    default=False,
+    show_default=True,
+    help="When `--nclusters auto` is used, write per-k cluster membership TSVs (default: store sweep in SQLite and only write the selected-k TSV).",
+)
 def cluster2(
     ctx,
     add_description,
@@ -2630,8 +2953,13 @@ def cluster2(
     z_score_by,
     z_score_fillna,
     add_human_ratios,  # does not work
+    cluster_db,
+    cluster_db_path,
+    export_sweep_tsvs,
 ):
     volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
+    if nclusters == "auto" and cluster_func == "none":
+        raise click.BadParameter("`--nclusters auto` requires `--cluster-func`")
     clusterplot_dispatcher.run(
         ctx,
         add_description,
@@ -2690,6 +3018,9 @@ def cluster2(
         z_score_fillna,
         add_human_ratios,
         volcano_topn=volcano_topn,
+        cluster_db=cluster_db,
+        cluster_db_path=cluster_db_path,
+        export_sweep_tsvs=export_sweep_tsvs,
     )
 
 
