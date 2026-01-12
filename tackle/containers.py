@@ -219,6 +219,28 @@ class Annotations(LazyLoader):
         self._categories = [x for x in df if x not in ("GeneID", "GeneSymbol")]
         return self._categories
 
+    def get_annot(self, annotation: str) -> pd.DataFrame:
+        """Return rows belonging to a given annotation category.
+
+        The annotations file encodes membership by per-category columns containing
+        an empty string for non-membership. Treat any non-empty, non-false, non-zero
+        value as a hit.
+        """
+        df = self.df
+        if annotation in (None, "", "_all"):
+            return df
+        if annotation not in df.columns:
+            raise KeyError(f"Unknown annotation column: {annotation}")
+
+        values = df[annotation]
+        if values.dtype == bool:
+            mask = values
+        else:
+            norm = values.fillna("").astype(str).str.strip()
+            norm_l = norm.str.lower()
+            mask = (norm != "") & (~norm_l.isin(("0", "false", "na", "nan", "none")))
+        return df.loc[mask]
+
     def map_gene_ids(
         self, gids, field="GeneID", taxon="9606", fallback_to_human=True, verbose=True
     ):
@@ -725,6 +747,8 @@ class Data:
             return None
             # self.geneid_subset = None
             # return
+        if isinstance(geneids, (str, os.PathLike)):
+            geneids = (os.fspath(geneids),)
         # self.geneid_subset = parse_gid_file(geneids)
         geneid_subset = set()
         for f in geneids:
@@ -2072,7 +2096,7 @@ class Data:
         from rpy2.robjects import pandas2ri
         from rpy2.robjects.conversion import localconverter
         with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
-            self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear, covariates=covariates)
+            return self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear, covariates=covariates)
 
     def _perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None):
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
@@ -2475,7 +2499,14 @@ class Data:
             if level == "gct":
                 from rpy2.robjects.packages import importr
 
-                outname = outname.strip(".tsv")  # gct will be added automatically
+                # NOTE: `.strip(".tsv")` will also strip leading '.' (e.g. "./results.tsv" -> "/results")
+                # which can break relative paths. Only remove the *suffix* (case-insensitive).
+                outname = str(outname)
+                outname_lower = outname.lower()
+                for _suffix in (".tsv.gz", ".gct.gz", ".tsv", ".gct"):
+                    if outname_lower.endswith(_suffix):
+                        outname = outname[: -len(_suffix)]
+                        break
                 cmapR = importr("cmapR")
                 # data_obj = ctx.obj["data_obj"]
                 _export = export.reset_index().merge(
@@ -2582,6 +2613,9 @@ class Data:
                     'write_gct(my_ds, file.path(".", outname), precision=4)'
                 )  # r doesn't keep the path relative for some reason
                 # r('print(paste("Wrote", outname))')
+                gct_path = outname + ".gct"
+                if os.path.exists(gct_path):
+                    outname = gct_path
 
         # elif level == 'SRA':
         #     export = self.data.loc[ self.data.Metric=='SRA' ]
