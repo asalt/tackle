@@ -2781,6 +2781,13 @@ def pca2(
 )
 @click.option("--main-title", default="", show_default=True)
 @click.option(
+    "--min-autoclusters",
+    default=3,
+    show_default=True,
+    help="""Min number of clusters to allow when selecting k
+for `--nclusters auto`.""",
+)
+@click.option(
     "--max-autoclusters",
     default=30,
     show_default=True,
@@ -2793,14 +2800,14 @@ when `auto` is set for `--nclusters`""",
     callback=validate_cluster_number,
     show_default=True,
     help="""If specified by an integer, use that number of clusters via k-means clustering.
-             If specified as `auto`, will sweep k=3..`--max-autoclusters`, store silhouette metrics,
+             If specified as `auto`, will sweep k=`--min-autoclusters`..`--max-autoclusters`, store silhouette metrics,
              select the best k, and plot only that heatmap.""",
 )
 @click.option(
     "--cluster-func",
     default="none",
     show_default=True,
-    type=click.Choice(["none", "Kmeans", "kmeans", "PAM"]),
+    type=click.Choice(["none", "Kmeans", "kmeans", "PAM", "cuttree", "cutree"]),
     help="""Function used to break data into k distinct clusters,
               k is specified by `n-clusters`
               """,
@@ -2817,6 +2824,12 @@ when `auto` is set for `--nclusters`""",
     is_flag=True,
     show_default=True,
     help="Cluster rows via hierarchical clustering",
+)
+@click.option(
+    "--row-dendsort/--no-row-dendsort",
+    default=True,
+    show_default=True,
+    help="Sort the row dendrogram with dendsort (disable to preserve hclust leaf order).",
 )
 @click.option(
     "--row-dend-side",
@@ -2906,6 +2919,7 @@ def cluster2(
     color_high,
     col_cluster,
     row_cluster,
+    row_dendsort,
     cluster_row_slices,
     cluster_col_slices,
     figwidth,
@@ -2929,6 +2943,7 @@ def cluster2(
     sample_include,
     sample_exclude,
     linkage,
+    min_autoclusters,
     max_autoclusters,
     nclusters,
     cluster_func,
@@ -2960,6 +2975,11 @@ def cluster2(
     volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
     if nclusters == "auto" and cluster_func == "none":
         raise click.BadParameter("`--nclusters auto` requires `--cluster-func`")
+    if min_autoclusters is not None and max_autoclusters is not None:
+        if int(min_autoclusters) > int(max_autoclusters):
+            raise click.BadParameter(
+                "`--min-autoclusters` must be <= `--max-autoclusters`"
+            )
     clusterplot_dispatcher.run(
         ctx,
         add_description,
@@ -2972,6 +2992,7 @@ def cluster2(
         color_high,
         col_cluster,
         row_cluster,
+        row_dendsort,
         cluster_row_slices,
         cluster_col_slices,
         figwidth,
@@ -2995,6 +3016,7 @@ def cluster2(
         sample_include,
         sample_exclude,
         linkage,
+        min_autoclusters,
         max_autoclusters,
         nclusters,
         cluster_func,

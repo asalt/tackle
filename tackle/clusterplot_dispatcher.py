@@ -73,6 +73,7 @@ def run(
     color_high,
     col_cluster,
     row_cluster,
+    row_dendsort,
     cluster_row_slices,
     cluster_col_slices,
     figwidth,
@@ -96,6 +97,7 @@ def run(
     sample_include,
     sample_exclude,  # list
     linkage,
+    min_autoclusters,
     max_autoclusters,
     nclusters,
     cluster_func,
@@ -150,6 +152,8 @@ def run(
         standard_scale = None
     if cluster_func == "none":
         cluster_func = None
+    if cluster_func is not None and str(cluster_func).lower() in ("cutree", "cuttree"):
+        cluster_func = "cuttree"
 
     # =================================================================
     if gsea_input is not None:
@@ -704,6 +708,17 @@ def run(
     if row_annot_df is None:
         row_annot_df = robjects.NULL
 
+    cluster_input_hash = None
+    try:
+        from .cluster2.hashing import hash_cluster2_input_matrix
+
+        cluster_input_hash = hash_cluster2_input_matrix(X)
+        if cluster_input_hash is not None:
+            logger.info("cluster2 input hash: %s", cluster_input_hash)
+    except Exception as e:
+        cluster_input_hash = None
+        logger.warning("cluster2 input hash failed: %s", e)
+
     # pandas2ri.activate()
 
     def _extract_silhouette_and_row_order(ret):
@@ -872,6 +887,7 @@ def run(
             show_gene_symbols=gene_symbols,
             standard_scale=standard_scale or robjects.NULL,
             row_cluster=row_cluster,
+            row_dendsort=row_dendsort,
             col_cluster=col_cluster,
             cluster_fillna=cluster_fillna,
             # metadata=data_obj.config if show_metadata else None,
@@ -968,6 +984,19 @@ def run(
 
             if cluster_db_writer is not None:
                 try:
+                    extra_params = {}
+                    if cluster_input_hash is not None:
+                        extra_params["input_hash"] = cluster_input_hash
+                    if autosweep_mode:
+                        extra_params.update(
+                            {
+                                "autosweep": True,
+                                "wss": autosweep_selected_wss,
+                            }
+                        )
+                    if not extra_params:
+                        extra_params = None
+
                     cluster_db_writer.ingest_cluster2_metrics(
                         cluster_metrics,
                         analysis_outpath=data_obj.outpath,
@@ -980,12 +1009,7 @@ def run(
                         z_score=z_score,
                         z_score_by=z_score_by,
                         standard_scale=standard_scale,
-                        extra_params={
-                            "autosweep": True,
-                            "wss": autosweep_selected_wss,
-                        }
-                        if autosweep_mode
-                        else None,
+                        extra_params=extra_params,
                     )
                 except Exception as e:
                     logger.warning("Cluster DB ingest failed for %s: %s", out, e)
@@ -1005,15 +1029,160 @@ def run(
             raise ValueError(
                 f"`--nclusters auto` requires at least 2 genes (found {n_genes_total})"
             )
+
+        try:
+            min_autoclusters_int = (
+                int(min_autoclusters) if min_autoclusters is not None else 3
+            )
+        except Exception:
+            min_autoclusters_int = 3
+        if min_autoclusters_int < 1:
+            min_autoclusters_int = 1
         max_k = int(min(max_autoclusters, n_genes_total))
         if max_k < 2:
             raise ValueError(
                 f"`--nclusters auto` resolved to an empty sweep (max_k={max_k})"
             )
 
-        k_start = 3 if max_k >= 3 else 2
+        sweep_k_min = 2
+        df_sweep = None
+        sweep_dir = os.path.join(data_obj.outpath, "cluster2")
+        sweep_path = os.path.join(
+            sweep_dir, f"cluster2_sweep_{cluster_func}_linkage-{linkage}.tsv"
+        )
+        legacy_sweep_path = os.path.join(sweep_dir, "cluster2_sweep.tsv")
+
+        sweep_cache = None
+        if cluster_input_hash is not None:
+            from .cluster2.hashing import Cluster2AutosweepCacheKey, is_autosweep_cache_hit
+
+            sweep_cache = Cluster2AutosweepCacheKey.build(
+                cache_version=2,
+                input_hash=cluster_input_hash,
+                cluster_func=cluster_func,
+                seed=seed,
+                linkage=linkage,
+                cluster_fillna=cluster_fillna,
+                z_score=z_score,
+                z_score_by=z_score_by,
+                z_score_fillna=z_score_fillna,
+                standard_scale=standard_scale,
+            )
+
+            cache_paths = [sweep_path]
+            if legacy_sweep_path != sweep_path:
+                cache_paths.append(legacy_sweep_path)
+
+            for cache_path in cache_paths:
+                if not os.path.exists(cache_path):
+                    continue
+                try:
+                    cached = pd.read_table(cache_path)
+                    if cached is not None and isinstance(cached, pd.DataFrame):
+                        compatible = False
+                        if is_autosweep_cache_hit(cached, cache_key=sweep_cache.key):
+                            compatible = True
+                        else:
+                            cached_hash = None
+                            if "input_hash" in cached.columns:
+                                hashes = (
+                                    cached["input_hash"]
+                                    .dropna()
+                                    .astype(str)
+                                    .unique()
+                                    .tolist()
+                                )
+                                if len(hashes) == 1:
+                                    cached_hash = hashes[0]
+
+                            if cached_hash == str(cluster_input_hash):
+                                expected = {
+                                    "sweep_cluster_func": cluster_func,
+                                    "sweep_linkage": linkage,
+                                    "sweep_cluster_fillna": cluster_fillna,
+                                    "sweep_seed": seed,
+                                    "sweep_z_score": z_score,
+                                    "sweep_z_score_by": z_score_by,
+                                    "sweep_z_score_fillna": z_score_fillna,
+                                    "sweep_standard_scale": standard_scale,
+                                }
+                                mismatch = False
+                                for col, exp in expected.items():
+                                    if col not in cached.columns:
+                                        continue
+                                    vals = (
+                                        cached[col]
+                                        .dropna()
+                                        .astype(str)
+                                        .unique()
+                                        .tolist()
+                                    )
+                                    if not vals:
+                                        continue
+                                    if len(vals) != 1:
+                                        mismatch = True
+                                        break
+                                    val = vals[0]
+                                    if exp is None and val.lower() in (
+                                        "none",
+                                        "nan",
+                                        "na",
+                                    ):
+                                        continue
+                                    if str(exp) != val:
+                                        mismatch = True
+                                        break
+
+                                if not mismatch and "sweep_cluster_func" not in cached.columns:
+                                    token = str(cluster_func).lower()
+                                    paths = (
+                                        cached.get("tsv_path", pd.Series(dtype=str))
+                                        .dropna()
+                                        .astype(str)
+                                        .str.lower()
+                                    )
+                                    if not paths.empty and paths.str.contains(token).any():
+                                        compatible = True
+                                elif not mismatch:
+                                    compatible = True
+
+                        if compatible:
+                            df_sweep = cached.sort_values(by="nclusters", kind="stable")
+                            logger.info(
+                                "cluster2 auto sweep cache loaded: %s", cache_path
+                            )
+                            break
+                except Exception as e:
+                    logger.warning(
+                        "cluster2 auto sweep cache read failed: %s: %r",
+                        type(e).__name__,
+                        e,
+                    )
+
+        desired_ks = list(range(sweep_k_min, max_k + 1))
+        existing_ks = set()
+        if df_sweep is not None and isinstance(df_sweep, pd.DataFrame) and not df_sweep.empty:
+            try:
+                existing_ks = set(
+                    pd.to_numeric(df_sweep.get("nclusters"), errors="coerce")
+                    .dropna()
+                    .astype(int)
+                    .tolist()
+                )
+            except Exception:
+                existing_ks = set()
+
+        missing_ks = [k for k in desired_ks if k not in existing_ks]
+        if missing_ks:
+            logger.info(
+                "cluster2 auto sweep computing %s missing k values (%s..%s)",
+                len(missing_ks),
+                min(missing_ks),
+                max(missing_ks),
+            )
+
         sweep_rows = []
-        for k in range(k_start, max_k + 1):
+        for k in missing_ks:
             sweep_outname_kws = outname_kws.copy()
             sweep_outname_kws[cluster_func] = k
             tsv_out = outname_func("clustermap", **sweep_outname_kws) + ".tsv"
@@ -1038,6 +1207,7 @@ def run(
                     show_gene_symbols=gene_symbols,
                     standard_scale=standard_scale or robjects.NULL,
                     row_cluster=row_cluster,
+                    row_dendsort=row_dendsort,
                     col_cluster=col_cluster,
                     cluster_fillna=cluster_fillna,
                     nclusters=k,
@@ -1056,7 +1226,9 @@ def run(
                     order_by_abundance=order_by_abundance,
                     seed=seed or robjects.NULL,
                     metadata_colors=metadata_colorsR or robjects.NULL,
-                    savedir=os.path.abspath(os.path.join(data_obj.outpath, "cluster2")),
+                    savedir=os.path.abspath(
+                        os.path.join(data_obj.outpath, "cluster2")
+                    ),
                     metrics_only=True,
                 )
                 if cut_by is not None and cut_by is not robjects.NULL:
@@ -1077,7 +1249,9 @@ def run(
                 continue
 
             if sil_df is None or not isinstance(sil_df, pd.DataFrame) or sil_df.empty:
-                logger.warning("cluster2 auto sweep produced empty silhouette for k=%s", k)
+                logger.warning(
+                    "cluster2 auto sweep produced empty silhouette for k=%s", k
+                )
                 continue
 
             try:
@@ -1096,6 +1270,12 @@ def run(
 
             if cluster_db_writer is not None:
                 try:
+                    extra_params = {
+                        "autosweep": True,
+                        "wss": wss,
+                    }
+                    if cluster_input_hash is not None:
+                        extra_params["input_hash"] = cluster_input_hash
                     cluster_db_writer.ingest_cluster2_metrics(
                         sil_df,
                         analysis_outpath=data_obj.outpath,
@@ -1108,7 +1288,7 @@ def run(
                         z_score=z_score,
                         z_score_by=z_score_by,
                         standard_scale=standard_scale,
-                        extra_params={"autosweep": True, "wss": wss},
+                        extra_params=extra_params,
                     )
                 except Exception as e:
                     logger.warning("Cluster DB ingest failed for %s: %s", tsv_out, e)
@@ -1119,18 +1299,68 @@ def run(
             summary.update({"nclusters": int(k), "tsv_path": tsv_out})
             sweep_rows.append(summary)
 
-        if not sweep_rows:
+        if df_sweep is None or not isinstance(df_sweep, pd.DataFrame):
+            df_sweep = pd.DataFrame()
+
+        if sweep_rows:
+            df_new = pd.DataFrame(sweep_rows)
+            df_sweep = pd.concat([df_sweep, df_new], ignore_index=True, sort=False)
+
+        if df_sweep.empty:
             raise RuntimeError("cluster2 auto sweep produced no valid k results")
 
-        df_sweep = pd.DataFrame(sweep_rows).sort_values(by="nclusters", kind="stable")
-        sweep_path = os.path.join(data_obj.outpath, "cluster2", "cluster2_sweep.tsv")
+        if cluster_input_hash is not None:
+            df_sweep["input_hash"] = cluster_input_hash
+        if sweep_cache is not None:
+            df_sweep["sweep_key"] = sweep_cache.key
+            df_sweep["sweep_cluster_func"] = cluster_func
+            df_sweep["sweep_linkage"] = linkage
+            df_sweep["sweep_cluster_fillna"] = cluster_fillna
+            df_sweep["sweep_seed"] = seed
+            df_sweep["sweep_z_score"] = z_score
+            df_sweep["sweep_z_score_by"] = z_score_by
+            df_sweep["sweep_z_score_fillna"] = z_score_fillna
+            df_sweep["sweep_standard_scale"] = standard_scale
+
+        if "nclusters" not in df_sweep.columns:
+            raise RuntimeError("cluster2 auto sweep results missing column: nclusters")
+
+        df_sweep["nclusters"] = pd.to_numeric(df_sweep["nclusters"], errors="coerce")
+        df_sweep = df_sweep.dropna(subset=["nclusters"])
+        df_sweep["nclusters"] = df_sweep["nclusters"].astype(int)
+        if "n_clusters" in df_sweep.columns:
+            df_sweep["n_clusters"] = pd.to_numeric(
+                df_sweep["n_clusters"], errors="coerce"
+            )
+
+        try:
+            df_sweep = df_sweep.sort_values(by="nclusters", kind="stable")
+        except Exception:
+            pass
+
+        try:
+            if "nclusters" in df_sweep.columns:
+                df_sweep = df_sweep.drop_duplicates(subset=["nclusters"], keep="last")
+        except Exception:
+            pass
+
         os.makedirs(os.path.dirname(sweep_path), exist_ok=True)
         df_sweep.to_csv(sweep_path, sep="\t", index=False)
 
-        valid = df_sweep[df_sweep["n_clusters"] >= 2]
-        candidates = valid.to_dict(orient="records") if not valid.empty else sweep_rows
+        sel_min_k = int(max(sweep_k_min, min_autoclusters_int))
+        window = df_sweep[
+            (df_sweep["nclusters"] >= sweep_k_min) & (df_sweep["nclusters"] <= max_k)
+        ]
+        valid = window[
+            (window["n_clusters"] >= 2) & (window["nclusters"] >= sel_min_k)
+        ]
+        candidates = (
+            valid.to_dict(orient="records")
+            if not valid.empty
+            else window.to_dict(orient="records")
+        )
         best_k = select_best_k(candidates)
-        best_row = df_sweep[df_sweep["nclusters"] == best_k].iloc[0].to_dict()
+        best_row = window[window["nclusters"] == best_k].iloc[0].to_dict()
         autosweep_selected_wss = (
             float(best_row.get("wss"))
             if best_row.get("wss") is not None and np.isfinite(best_row.get("wss"))
@@ -1147,12 +1377,17 @@ def run(
 
         try:
             plot_sweep = robjects.r["plot_cluster2_sweep_metrics"]
-            sweep_title = main_title or column_title or f"cluster2 auto sweep ({cluster_func})"
+            base_sweep_title = (
+                main_title or column_title or f"cluster2 auto sweep ({cluster_func})"
+            )
+            sweep_title = (
+                f"{base_sweep_title} (k={sel_min_k}..{max_k}, linkage={linkage})"
+            )
             for file_fmt in ctx.obj["file_fmts"]:
                 out_plot = os.path.join(
                     data_obj.outpath,
                     "cluster2",
-                    f"cluster2_sweep_metrics_{cluster_func}{file_fmt}",
+                    f"cluster2_sweep_k{sel_min_k}_{max_k}_linkage-{linkage}_metrics_{cluster_func}{file_fmt}",
                 )
                 grdevice = grdevice_helper.get_device(
                     filetype=file_fmt, width=10, height=8
@@ -1162,7 +1397,9 @@ def run(
                     with localconverter(
                         robjects.default_converter + pandas2ri.converter
                     ):
-                        plot_sweep(df_sweep, selected_k=int(best_k), main_title=sweep_title)
+                        plot_sweep(
+                            window, selected_k=int(best_k), main_title=sweep_title
+                        )
                 finally:
                     grdevices.dev_off()
         except Exception as e:

@@ -77,6 +77,7 @@ dist_no_na <- function(mat) {
     .min <- 0
   }
   .offset <- abs(.min) * 0.1
+  # .offset <- .min * 0.1
   if (!is.finite(.offset) || .offset == 0) {
     .offset <- 0.1
   }
@@ -96,11 +97,14 @@ dist_no_na_avg <- function(mat) {
   edist <- dist(mat)  # Compute Euclidean distance
   return(edist)
 }
-hclust_dendsort <- function(mat, method = "complete", dist_no_na_func=dist_no_na, ...) {
-  dist_no_na_func(mat) %>%
-    hclust(method = method, ...) %>%
-    dendsort(isReverse = T, type = "min") %>%
-    as.dendrogram()
+hclust_dendsort <- function(mat, method = "complete", dist_no_na_func=dist_no_na, do_dendsort = TRUE, ...) {
+  if (is.character(method) && method == "weighted") method <- "mcquitty"
+  if (is.character(method) && method == "ward") method <- "ward.D2"
+  hc <- dist_no_na_func(mat) %>% hclust(method = method, ...)
+  if (!is.null(do_dendsort) && do_dendsort == TRUE) {
+    hc <- hc %>% dendsort(isReverse = T, type = "min")
+  }
+  hc %>% as.dendrogram()
 }
 #hclust_dendsort
 
@@ -153,17 +157,22 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      color_high = "red",
                      fixed_size = FALSE,
                      figwidth = NULL,
+                     row_dendsort = TRUE,
                      use_dendsort=FALSE, # TODO add flag for this at toplevel
                      metrics_only = FALSE,
                      ...) {
   ht_opt$message <- FALSE
   # preserve column order if col_cluster is disabled
 
+  use_cuttree <- FALSE
   if (!is.null(cluster_func)) {
-    if (cluster_func == "PAM") {
+    if (is.character(cluster_func) && (tolower(cluster_func) %in% c("cuttree", "cutree"))) {
+      use_cuttree <- TRUE
+    } else if (is.character(cluster_func) && cluster_func == "PAM") {
       cluster_func <- cluster::pam
-    } else if (tolower(cluster_func) == "kmeans") cluster_func <- kmeans
-    ## ?
+    } else if (is.character(cluster_func) && (tolower(cluster_func) == "kmeans")) {
+      cluster_func <- kmeans
+    }
   }
 
   if (!is.null(genes)) {
@@ -513,22 +522,99 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   ## now do kmeans / pam clustering if specified
   discrete_clusters <- NULL
+  hc_rows <- NULL
   sil_df <- NULL
   wss <- NA
   if (!is.null(cluster_func)) {
-    if (is.null(seed) || is.na(seed)) {
-      set.seed(1234)
-    } else {
-      set.seed(as.integer(seed))
-    }
     ## X <- dplyr::select(tocluster, -GeneID, -GeneSymbol) %>% as.matrix
-    X <- tocluster[, 3:length(tocluster)]
-    clusters <- cluster_func(X, nclusters)
-    cluster_labels <- clusters$cluster
-    if (is.null(cluster_labels) && !is.null(clusters$clustering)) {
-      cluster_labels <- clusters$clustering
+    X <- as.matrix(tocluster[, 3:ncol(tocluster)])
+    rownames(X) <- toplot$GeneID
+
+    dis_func <- ifelse(cluster_fillna == "avg", dist_no_na_avg, dist_no_na)
+
+    linkage_hclust <- linkage
+    if (is.character(linkage_hclust) && linkage_hclust == "weighted") linkage_hclust <- "mcquitty"
+    if (is.character(linkage_hclust) && linkage_hclust == "ward") linkage_hclust <- "ward.D2"
+
+    if (use_cuttree) {
+      dis_hc <- dis_func(X)
+      hc <- hclust(dis_hc, method = linkage_hclust)
+      if (!is.null(row_dendsort) && row_dendsort == TRUE) {
+        hc <- dendsort(hc, isReverse = T, type = "min")
+      }
+      hc_rows <- hc
+      cluster_labels <- cutree(hc, k = nclusters)
+    } else {
+      if (is.null(seed) || is.na(seed)) {
+        set.seed(1234)
+      } else {
+        set.seed(as.integer(seed))
+      }
+      clusters <- cluster_func(X, nclusters)
+      cluster_labels <- clusters$cluster
+      if (is.null(cluster_labels) && !is.null(clusters$clustering)) {
+        cluster_labels <- clusters$clustering
+      }
     }
-    discrete_clusters <- cbind(cluster_labels)
+    if (!use_cuttree) {
+      discrete_clusters <- cbind(cluster_labels)
+    } else if (is.null(metrics_only) || metrics_only != TRUE) {
+
+      ord <- hc_rows$order
+      labels_ord <- as.integer(cluster_labels)[ord]
+
+
+      # cluster_levels <- sort(unique(as.integer(cluster_labels)))
+      # cluster_levels <- unique(as.integer(cluster_labels))
+      cluster_levels <- unique(labels_ord)
+      # i think this is safe but good to check
+      # cluster_levels <- seq_len(max(cl_fixed))
+      cluster_factor <- factor(as.integer(cluster_labels), levels = cluster_levels, ordered = TRUE)
+
+
+      text_labels <- rep("", length(cluster_factor))
+      if (!is.null(ord) && length(ord) == length(cluster_factor)) {
+        labels_ord <- as.integer(cluster_labels)[ord]
+        for (cl in cluster_levels) {
+          pos <- which(labels_ord == cl)
+          if (length(pos) == 0) next
+          mid_pos <- pos[ceiling(length(pos) / 2)]
+          text_labels[ord[mid_pos]] <- as.character(cl)
+        }
+      }
+
+      cluster_colors <- grDevices::rainbow(length(cluster_levels))
+      if ("hcl.colors" %in% getNamespaceExports("grDevices")) {
+        cluster_colorss <- grDevices::hcl.colors(length(cluster_levels), palette = "Dark 3")
+      }
+      cluster_colors <- setNames(cluster_colors, as.character(cluster_levels))
+
+      cluster_annot <- ComplexHeatmap::HeatmapAnnotation(
+        cluster = cluster_factor,
+        cluster_id = ComplexHeatmap::anno_text(
+          text_labels,
+          which = "row",
+          gp = gpar(fontsize = 7, fontface = "bold"),
+          location = 0.5,
+          just = "center",
+          show_name = FALSE
+        ),
+        col = list(cluster = cluster_colors),
+        which = "row",
+        annotation_name_side = "bottom",
+        annotation_legend_param = list(cluster = list(direction = "horizontal", ncol = 8)),  # by_row = TRUE?
+        show_legend = c(cluster = TRUE, cluster_id = FALSE),
+        annotation_width = unit.c(unit(.05, "in"), unit(.18, "in"))
+      )
+
+      if (is.null(row_annot)) {
+        row_annot <- cluster_annot
+      } else if (row_annot_side == "left") {
+        row_annot <- c(row_annot, cluster_annot)
+      } else {
+        row_annot <- c(cluster_annot, row_annot)
+      }
+    }
 
     wss <- tryCatch({
       X_wss <- as.matrix(X)
@@ -564,10 +650,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     })
 
     ## discrete_clusters <- cluster_func(tocluster %>% dplyr::select(-GeneID, -GeneSymbol), nclusters)
-    ## TODO fix this!
-    ## this is fixed??
-    ## row_cluster <- FALSE
-    dis_func <- ifelse(cluster_fillna == "avg", dist_no_na_avg, dist_no_na)
 
     if (length(unique(cluster_labels)) < 2) {
       sil_df <- data.frame(
@@ -673,13 +755,17 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
   cluster_rows <- FALSE
-  if (row_cluster == TRUE && is.null(discrete_clusters)) {
-    cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage,
-        ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg)
-    )
-  }
-  if (row_cluster == TRUE && !is.null(discrete_clusters)) {
-    cluster_rows <- TRUE
+  if (row_cluster == TRUE) {
+    if (!is.null(hc_rows)) { # hc_rows might be be calculated earlier
+      cluster_rows <- as.dendrogram(hc_rows)
+    } else if (is.null(discrete_clusters)) {
+      cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage,
+          ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
+          do_dendsort = row_dendsort
+      )
+    } else {
+      cluster_rows <- TRUE
+    }
   }
   cluster_cols <- FALSE
   if (col_cluster == TRUE && is.null(column_split)) {
@@ -696,6 +782,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   .mat <- toplot
   # print(head(.mat))
   if (!is.null(col_data)) .mat <- toplot[col_data$name]
+  .mat <- as.matrix(.mat)
+  rownames(.mat) <- toplot$GeneID
+  # browser()
 
   if (!is.null(fixed_size) && fixed_size == TRUE) {
     ht_width <- unit(ncol(.mat) * .20, "in")
@@ -734,6 +823,8 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     clustering_distance_rows = ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
     clustering_distance_columns = ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
     # column_dend_reorder = TRUE,
+    column_dend_reorder = FALSE, #? need this??
+    row_dend_reorder = FALSE, #? need this??
     row_labels = toplot$GeneSymbol,
     row_names_gp = gpar(fontsize = gene_symbol_fontsize, fontface = "bold"),
     column_names_gp = gpar(fontsize = 9),
@@ -791,6 +882,14 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     })
   }
 
+
+  # for debugging
+  #   saveRDS(list(
+  #     dim = dim(X),
+  #     rownames_hash = digest::digest(rownames(X)),
+  #     colnames_hash = digest::digest(colnames(X)),
+  #     data_hash = digest::digest(X[1:min(200,nrow(X)), , drop=FALSE])
+  #   ), "X_fingerprint.rds")
 
   # new not well tested
   # not ready yet
@@ -869,14 +968,13 @@ plot_cluster2_sweep_metrics <- function(df, selected_k = NULL, main_title = "clu
   on.exit(par(op), add = TRUE)
 
   if (has_wss) {
-    par(mfrow = c(3, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
+    par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
   } else {
     par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
   }
   .plot_metric(df$sil_mean, "sil_mean", ylim = c(-1, 1))
   .plot_metric(df$sil_q10, "sil_q10", ylim = c(-1, 1))
   .plot_metric(df$sil_neg_frac, "sil_neg_frac", ylim = c(0, 1))
-  .plot_metric(df$n_clusters, "n_clusters", ylim = c(0, max(df$nclusters, na.rm = TRUE)))
   if (has_wss) {
     wss_vals <- df$wss
     wss_pos <- wss_vals[is.finite(wss_vals) & wss_vals > 0]
@@ -892,6 +990,7 @@ plot_cluster2_sweep_metrics <- function(df, selected_k = NULL, main_title = "clu
       abline(v = selected_k, col = "red", lty = 2)
     }
     grid(col = "grey85")
+  } else {
     plot.new()
   }
 
