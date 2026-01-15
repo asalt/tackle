@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 import itertools
+import uuid
 
 # import gseapy as gp
 
@@ -584,6 +585,22 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Enable data caching for this run (equivalent to setting TACKLE_CACHE=1).",
 )
 @click.option(
+    "--agent-api",
+    type=str,
+    default=None,
+    envvar="TACKLE_AGENT_API",
+    show_default=True,
+    help="Optional iSPEC agent API base URL to ingest telemetry events (e.g. http://10.16.1.11:3001).",
+)
+@click.option(
+    "--agent-id",
+    type=str,
+    default=None,
+    envvar="TACKLE_AGENT_ID",
+    show_default=True,
+    help="Optional agent identifier to attach to telemetry events (default: user@host).",
+)
+@click.option(
     "--file-format",
     type=click.Choice((".png", ".pdf", ".svg")),
     default=(".png",),
@@ -780,6 +797,8 @@ def main(
     data_dir,
     only_load_local,
     cache,
+    agent_api,
+    agent_id,
     file_format,
     fill_na_zero,
     funcats,
@@ -1005,6 +1024,35 @@ def main(
         only_local=only_load_local,
         norm_info=norm_info,
     )
+
+    if agent_api:
+        try:
+            from .telemetry import AgentTelemetry, AgentTelemetryConfig, make_local_events_path
+
+            telemetry = AgentTelemetry(
+                AgentTelemetryConfig.from_env(
+                    agent_api=agent_api,
+                    agent_id=agent_id,
+                    local_events_path=make_local_events_path(data_obj.outpath),
+                ),
+                logger=logger,
+            )
+            correlation_id = uuid.uuid4().hex
+            ctx.obj["telemetry"] = telemetry
+            ctx.obj["telemetry_correlation_id"] = correlation_id
+            telemetry.emit_event(
+                type="tackle.analysis.start",
+                name=analysis_name,
+                severity="info",
+                correlation_id=correlation_id,
+                dimensions={
+                    "analysis_name": analysis_name,
+                    "analysis_outpath": str(data_obj.outpath),
+                    "taxon": str(data_obj.taxon),
+                },
+            )
+        except Exception as e:
+            logger.warning("Telemetry init failed: %r", e)
 
     outname = (
         get_outname(
@@ -2511,6 +2559,7 @@ def pca2(
     # metadata_colorframe = pd.DataFrame(metadata_color_list)
 
     file_fmts = ctx.obj["file_fmts"]
+    pca2_outname = outname_func("pca2")
     with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
         pca2(
             dfm,
@@ -2518,7 +2567,7 @@ def pca2(
             shape=marker or robjects.NULL,
             #outfiletypes=np.array(file_fmts),
             outfiletypes=list(file_fmts),
-            outname=outname_func("pca2"),
+            outname=pca2_outname,
             center=center,
             scale=scale,
             normalize_by=normalize_by or robjects.NULL,
@@ -2533,6 +2582,40 @@ def pca2(
             fig_width=figsize[0],
             fig_height=figsize[1],
         )
+
+    telemetry = ctx.obj.get("telemetry") if ctx.obj else None
+    if telemetry is not None:
+        try:
+            correlation_id = None
+            if ctx.obj:
+                correlation_id = ctx.obj.get("telemetry_correlation_id")
+
+            scores_tsv = pca2_outname + "_scores.tsv"
+            variance_tsv = pca2_outname + "_variance.tsv"
+            telemetry.emit_event(
+                type="tackle.pca2.export",
+                name="pca2",
+                severity="info",
+                correlation_id=correlation_id,
+                dimensions={
+                    "analysis_name": str(data_obj.outpath_name),
+                    "analysis_outpath": str(data_obj.outpath),
+                    "taxon": str(data_obj.taxon),
+                },
+                value={
+                    "scores_tsv": scores_tsv,
+                    "variance_tsv": variance_tsv,
+                    "color": color,
+                    "marker": marker,
+                    "max_pc": max_pc,
+                    "fillna": fillna,
+                    "center": center,
+                    "scale": scale,
+                    "normalize_by": normalize_by,
+                },
+            )
+        except Exception as e:
+            logger.debug("Telemetry emit failed for pca2: %r", e)
 
 
 @main.command("cluster2")

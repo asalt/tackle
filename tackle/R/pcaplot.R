@@ -23,6 +23,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  annot_str = NULL,
                  fig_width = 9,
                  fig_height = 8,
+                 export_tables = TRUE,
                  ...) {
   fillna <- match.arg(fillna)
 
@@ -114,10 +115,48 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   # .forpca <- forpca %>% mutate(!!color := factor(.data[[color]], levels = sort(unique(.data[[color]])), ordered = TRUE))
 
   # browser()
-  pca_res <- prcomp(.forpca %>% select(-variable, -!!color, -!!shape),
-    scale. = F, center = F
-  )
+  drop_cols <- c("variable")
+  if (!is.null(color) && is.character(color) && color != "") drop_cols <- c(drop_cols, color)
+  if (!is.null(shape) && is.character(shape) && shape != "") drop_cols <- c(drop_cols, shape)
+  drop_cols <- unique(drop_cols)
+
+  pca_mat <- .forpca %>% select(-any_of(drop_cols)) %>% as.matrix()
+  rownames(pca_mat) <- as.character(.forpca$variable)
+
+  pca_res <- prcomp(pca_mat, scale. = FALSE, center = FALSE)
   print("SVD done")
+
+  if (!is.null(export_tables) && export_tables == TRUE &&
+      !is.null(outname) && !is.na(outname) && outname != "") {
+    meta_cols <- c("variable")
+    if (!is.null(color) && is.character(color) && color != "") meta_cols <- c(meta_cols, color)
+    if (!is.null(shape) && is.character(shape) && shape != "") meta_cols <- c(meta_cols, shape)
+    if (!is.null(normalize_by) && is.character(normalize_by) && normalize_by != "") meta_cols <- c(meta_cols, normalize_by)
+    meta_cols <- unique(meta_cols)
+
+    meta_df <- forpca %>% select(any_of(meta_cols)) %>% distinct()
+
+    scores_df <- as.data.frame(pca_res$x) %>%
+      tibble::rownames_to_column("variable") %>%
+      left_join(meta_df, by = "variable") %>%
+      select(any_of(meta_cols), everything())
+
+    variance <- pca_res$sdev^2
+    variance_ratio <- variance / sum(variance)
+    variance_df <- data.frame(
+      pc = seq_along(variance),
+      stdev = pca_res$sdev,
+      variance = variance,
+      variance_ratio = variance_ratio,
+      variance_ratio_cum = cumsum(variance_ratio)
+    )
+
+    scores_out <- paste0(outname, "_scores.tsv")
+    variance_out <- paste0(outname, "_variance.tsv")
+
+    readr::write_tsv(scores_df, scores_out)
+    readr::write_tsv(variance_df, variance_out)
+  }
 
   #   .x <- forpca %>%
   # 	  group_by(!!normalize_by) %>%
