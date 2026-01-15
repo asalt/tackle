@@ -58,6 +58,18 @@ class Cluster2AutosweepCacheKey:
         return cls(key=key, params=payload)
 
 
+@dataclass(frozen=True)
+class Cluster2RowHclustCacheKey:
+    key: str
+    params: dict[str, Any]
+
+    @classmethod
+    def build(cls, *, input_hash: str, **params: Any) -> "Cluster2RowHclustCacheKey":
+        payload = {"input_hash": str(input_hash), **params}
+        key = hashlib.sha1(_stable_json_dumps(payload).encode("utf-8")).hexdigest()
+        return cls(key=key, params=payload)
+
+
 def is_autosweep_cache_hit(df_sweep: pd.DataFrame, *, cache_key: str) -> bool:
     if df_sweep is None or not isinstance(df_sweep, pd.DataFrame) or df_sweep.empty:
         return False

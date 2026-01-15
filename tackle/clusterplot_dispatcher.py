@@ -719,6 +719,34 @@ def run(
         cluster_input_hash = None
         logger.warning("cluster2 input hash failed: %s", e)
 
+    row_hclust_rds = None
+    if cluster_input_hash is not None:
+        try:
+            from .cluster2.hashing import Cluster2RowHclustCacheKey
+
+            row_hclust_cache = Cluster2RowHclustCacheKey.build(
+                cache_version=1,
+                input_hash=cluster_input_hash,
+                linkage=linkage,
+                cluster_fillna=cluster_fillna,
+                z_score=z_score,
+                z_score_by=z_score_by,
+                z_score_fillna=z_score_fillna,
+                standard_scale=standard_scale,
+                row_dendsort=row_dendsort,
+            )
+            row_hclust_rds = os.path.abspath(
+                os.path.join(
+                    data_obj.outpath,
+                    "cluster2",
+                    f"cluster2_row_hclust_{row_hclust_cache.key}.rds",
+                )
+            )
+            logger.info("cluster2 row hclust cache: %s", row_hclust_rds)
+        except Exception as e:
+            row_hclust_rds = None
+            logger.warning("cluster2 row hclust cache init failed: %s", e)
+
     # pandas2ri.activate()
 
     def _extract_silhouette_and_row_order(ret):
@@ -888,6 +916,7 @@ def run(
             standard_scale=standard_scale or robjects.NULL,
             row_cluster=row_cluster,
             row_dendsort=row_dendsort,
+            row_hclust_rds=row_hclust_rds if row_hclust_rds is not None else robjects.NULL,
             col_cluster=col_cluster,
             cluster_fillna=cluster_fillna,
             # metadata=data_obj.config if show_metadata else None,
@@ -1208,6 +1237,7 @@ def run(
                     standard_scale=standard_scale or robjects.NULL,
                     row_cluster=row_cluster,
                     row_dendsort=row_dendsort,
+                    row_hclust_rds=row_hclust_rds if row_hclust_rds is not None else robjects.NULL,
                     col_cluster=col_cluster,
                     cluster_fillna=cluster_fillna,
                     nclusters=k,

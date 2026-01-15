@@ -97,13 +97,19 @@ dist_no_na_avg <- function(mat) {
   edist <- dist(mat)  # Compute Euclidean distance
   return(edist)
 }
-hclust_dendsort <- function(mat, method = "complete", dist_no_na_func=dist_no_na, do_dendsort = TRUE, ...) {
+
+hclust_compute <- function(mat, method = "complete", dist_no_na_func=dist_no_na, do_dendsort = TRUE, ...) {
   if (is.character(method) && method == "weighted") method <- "mcquitty"
   if (is.character(method) && method == "ward") method <- "ward.D2"
   hc <- dist_no_na_func(mat) %>% hclust(method = method, ...)
   if (!is.null(do_dendsort) && do_dendsort == TRUE) {
     hc <- hc %>% dendsort(isReverse = T, type = "min")
   }
+  hc
+}
+
+hclust_dendsort <- function(mat, method = "complete", dist_no_na_func=dist_no_na, do_dendsort = TRUE, ...) {
+  hc <- hclust_compute(mat, method = method, dist_no_na_func = dist_no_na_func, do_dendsort = do_dendsort, ...)
   hc %>% as.dendrogram()
 }
 #hclust_dendsort
@@ -158,6 +164,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      fixed_size = FALSE,
                      figwidth = NULL,
                      row_dendsort = TRUE,
+                     row_hclust_rds = NULL,
                      use_dendsort=FALSE, # TODO add flag for this at toplevel
                      metrics_only = FALSE,
                      ...) {
@@ -244,6 +251,30 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       id_cols = c(GeneID, GeneSymbol),
       values_from = zscore_impute, names_from = name
     )
+  }
+
+  .row_hclust_path <- NULL
+  hc_rows <- NULL
+  if (!is.null(row_hclust_rds)) {
+    .row_hclust_path <- as.character(row_hclust_rds)[1]
+    if (!is.na(.row_hclust_path) && .row_hclust_path != "" && file.exists(.row_hclust_path)) {
+      hc_rows <- tryCatch(readRDS(.row_hclust_path), error = function(e) {
+        message("Failed to read cached row hclust: ", .row_hclust_path, ": ", conditionMessage(e))
+        NULL
+      })
+      if (!is.null(hc_rows) && !inherits(hc_rows, "hclust")) {
+        message("Cached row hclust is not an hclust object: ", .row_hclust_path)
+        hc_rows <- NULL
+      }
+      if (!is.null(hc_rows)) {
+        expected_labels <- as.character(toplot$GeneID)
+        cached_labels <- as.character(hc_rows$labels)
+        if (length(cached_labels) != length(expected_labels) || !setequal(cached_labels, expected_labels)) {
+          message("Cached row hclust labels do not match current data; recomputing: ", .row_hclust_path)
+          hc_rows <- NULL
+        }
+      }
+    }
   }
 
   # print(head(toplot))
@@ -522,34 +553,44 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   ## now do kmeans / pam clustering if specified
   discrete_clusters <- NULL
-  hc_rows <- NULL
   sil_df <- NULL
   wss <- NA
   if (!is.null(cluster_func)) {
-    ## X <- dplyr::select(tocluster, -GeneID, -GeneSymbol) %>% as.matrix
-    X <- as.matrix(tocluster[, 3:ncol(tocluster)])
-    rownames(X) <- toplot$GeneID
+    X_cluster <- as.matrix(tocluster[, 3:ncol(tocluster)])
+    rownames(X_cluster) <- toplot$GeneID
+
+    X_hc <- as.matrix(toplot[col_data$name])
+    rownames(X_hc) <- toplot$GeneID
 
     dis_func <- ifelse(cluster_fillna == "avg", dist_no_na_avg, dist_no_na)
 
-    linkage_hclust <- linkage
-    if (is.character(linkage_hclust) && linkage_hclust == "weighted") linkage_hclust <- "mcquitty"
-    if (is.character(linkage_hclust) && linkage_hclust == "ward") linkage_hclust <- "ward.D2"
-
     if (use_cuttree) {
-      dis_hc <- dis_func(X)
-      hc <- hclust(dis_hc, method = linkage_hclust)
-      if (!is.null(row_dendsort) && row_dendsort == TRUE) {
-        hc <- dendsort(hc, isReverse = T, type = "min")
+      if (is.null(hc_rows)) {
+        hc_rows <- hclust_compute(X_hc, method = linkage, dist_no_na_func = dis_func, do_dendsort = row_dendsort)
+        if (!is.null(.row_hclust_path) && .row_hclust_path != "") {
+          tryCatch({
+            dir.create(dirname(.row_hclust_path), recursive = TRUE, showWarnings = FALSE)
+            saveRDS(hc_rows, .row_hclust_path)
+          }, error = function(e) {
+            message("Failed to save row hclust: ", .row_hclust_path, ": ", conditionMessage(e))
+          })
+        }
       }
-      hc_rows <- hc
-      cluster_labels <- cutree(hc, k = nclusters)
+      cluster_labels_raw <- cutree(hc_rows, k = nclusters)
+      ord <- hc_rows$order
+      labels_ord <- as.integer(cluster_labels_raw)[ord]
+      cluster_levels_raw <- unique(labels_ord)
+      label_map <- setNames(seq_along(cluster_levels_raw), as.character(cluster_levels_raw))
+      cluster_labels <- as.integer(label_map[as.character(cluster_labels_raw)])
+      names(cluster_labels) <- names(cluster_labels_raw)
+      X <- X_hc
     } else {
       if (is.null(seed) || is.na(seed)) {
         set.seed(1234)
       } else {
         set.seed(as.integer(seed))
       }
+      X <- X_cluster
       clusters <- cluster_func(X, nclusters)
       cluster_labels <- clusters$cluster
       if (is.null(cluster_labels) && !is.null(clusters$clustering)) {
@@ -756,13 +797,29 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
   cluster_rows <- FALSE
   if (row_cluster == TRUE) {
-    if (!is.null(hc_rows)) { # hc_rows might be be calculated earlier
+    if (!is.null(discrete_clusters)) {
+      cluster_rows <- TRUE
+    } else if (!is.null(hc_rows)) { # hc_rows might be be calculated earlier
       cluster_rows <- as.dendrogram(hc_rows)
     } else if (is.null(discrete_clusters)) {
-      cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage,
-          ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
-          do_dendsort = row_dendsort
-      )
+      if (!is.null(.row_hclust_path) && .row_hclust_path != "") {
+        hc_rows <- hclust_compute(toplot[col_data$name], method = linkage,
+            ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
+            do_dendsort = row_dendsort
+        )
+        tryCatch({
+          dir.create(dirname(.row_hclust_path), recursive = TRUE, showWarnings = FALSE)
+          saveRDS(hc_rows, .row_hclust_path)
+        }, error = function(e) {
+          message("Failed to save row hclust: ", .row_hclust_path, ": ", conditionMessage(e))
+        })
+        cluster_rows <- as.dendrogram(hc_rows)
+      } else {
+        cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage,
+            ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
+            do_dendsort = row_dendsort
+        )
+      }
     } else {
       cluster_rows <- TRUE
     }
