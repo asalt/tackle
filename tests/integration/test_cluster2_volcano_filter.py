@@ -40,6 +40,7 @@ def test_cluster2_with_volcano_filter(ctx):
             color_high="red",
             col_cluster=True,
             row_cluster=True,
+            row_dendsort=True,
             cluster_row_slices=True,
             cluster_col_slices=True,
             figwidth=6.0,
@@ -63,6 +64,7 @@ def test_cluster2_with_volcano_filter(ctx):
             sample_include=None,
             sample_exclude=None,
             linkage="ward",
+            min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
             cluster_func="Kmeans",
@@ -96,4 +98,3 @@ def test_cluster2_with_volcano_filter(ctx):
     # Check that naming encodes sortby and direction (dir_b for both)
     assert any("log2_FC" in p.name for p in images)
     assert any("dir_b" in p.name for p in images)
-

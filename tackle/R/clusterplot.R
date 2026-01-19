@@ -795,35 +795,39 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # toplot %>% mutate(across(where(is.matrix), as.vector)) %>% readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   #  readr::write_tsv("proj769_mednorm_batch_1.0_zscore_by_sampletype_toplot.tsv")
   # pdf('test.pdf'); print(Heatmap(toplot[col_data$name] %>% head(3000), show_row_names=F)); dev.off()
-  cluster_rows <- FALSE
-  if (row_cluster == TRUE) {
-    if (!is.null(discrete_clusters)) {
-      cluster_rows <- TRUE
-    } else if (!is.null(hc_rows)) { # hc_rows might be be calculated earlier
-      cluster_rows <- as.dendrogram(hc_rows)
-    } else if (is.null(discrete_clusters)) {
-      if (!is.null(.row_hclust_path) && .row_hclust_path != "") {
-        hc_rows <- hclust_compute(toplot[col_data$name], method = linkage,
-            ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
-            do_dendsort = row_dendsort
-        )
-        tryCatch({
-          dir.create(dirname(.row_hclust_path), recursive = TRUE, showWarnings = FALSE)
-          saveRDS(hc_rows, .row_hclust_path)
-        }, error = function(e) {
-          message("Failed to save row hclust: ", .row_hclust_path, ": ", conditionMessage(e))
-        })
-        cluster_rows <- as.dendrogram(hc_rows)
-      } else {
-        cluster_rows <- hclust_dendsort(toplot[col_data$name], method = linkage,
-            ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
-            do_dendsort = row_dendsort
-        )
-      }
-    } else {
-      cluster_rows <- TRUE
-    }
-  }
+	  cluster_rows <- FALSE
+	  if (row_cluster == TRUE) {
+	    if (!is.null(discrete_clusters)) {
+	      cluster_rows <- TRUE
+	    } else if (!is.null(hc_rows)) { # hc_rows might be be calculated earlier
+	      cluster_rows <- as.dendrogram(hc_rows)
+	    } else if (is.null(discrete_clusters)) {
+	      if (!is.null(.row_hclust_path) && .row_hclust_path != "") {
+	        X_hc <- as.matrix(toplot[col_data$name])
+	        rownames(X_hc) <- toplot$GeneID
+	        hc_rows <- hclust_compute(X_hc, method = linkage,
+	            ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
+	            do_dendsort = row_dendsort
+	        )
+	        tryCatch({
+	          dir.create(dirname(.row_hclust_path), recursive = TRUE, showWarnings = FALSE)
+	          saveRDS(hc_rows, .row_hclust_path)
+	        }, error = function(e) {
+	          message("Failed to save row hclust: ", .row_hclust_path, ": ", conditionMessage(e))
+	        })
+	        cluster_rows <- as.dendrogram(hc_rows)
+	      } else {
+	        X_hc <- as.matrix(toplot[col_data$name])
+	        rownames(X_hc) <- toplot$GeneID
+	        cluster_rows <- hclust_dendsort(X_hc, method = linkage,
+	            ifelse(cluster_fillna=='min', dist_no_na, dist_no_na_avg),
+	            do_dendsort = row_dendsort
+	        )
+	      }
+	    } else {
+	      cluster_rows <- TRUE
+	    }
+	  }
   cluster_cols <- FALSE
   if (col_cluster == TRUE && is.null(column_split)) {
     cluster_cols <- TRUE

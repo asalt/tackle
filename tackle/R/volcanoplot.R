@@ -2,7 +2,6 @@
 suppressMessages(library(dplyr))
 suppressMessages(library(stringr))
 suppressMessages(library(ggplot2))
-suppressMessages(library(stringr))
 suppressMessages(library(ggthemes))
 suppressMessages(library(graphics))
 # Install ggrepel package if needed
@@ -36,6 +35,7 @@ volcanoplot <- function(X, max_labels = 35,
                         global_ymax = NULL,
                         x_label_override = NULL,
                         y_label_override = NULL,
+                        verbose = TRUE,
                         ...) {
   POINT_SIZE <- marker_cex
   # pch <- 21 # if we want a fillable shape
@@ -98,20 +98,14 @@ volcanoplot <- function(X, max_labels = 35,
   # X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < sig), "usd"] <- "red"
   # X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < sig), "usd"] <- "blue"
 
-  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < sig), "usd"] <- "purple"
-  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < sig), "usd"] <- "purple"
-
-
-  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] > sig), "usd"] <- "purple"
-  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] > sig), "usd"] <- "purple"
+  highlight_mask <- X$highlight == TRUE
+  X[highlight_mask, "usd"] <- "purple"
   X[, "usd"] <- as.factor(X[, "usd"])
 
   # print(X[X$GeneID=="659985970",])
   # wait we don't need this here?
   # do we?
-  X[(X$highlight == TRUE & X$log2_FC > 0 & X[, sig_metric] < sig), "alpha"] <- alpha
-  X[(X$highlight == TRUE & X$log2_FC < 0 & X[, sig_metric] < sig), "alpha"] <- alpha
-  X[(X$highlight == TRUE & X[, sig_metric] > sig), "alpha"] <- alpha # force highlight set alpha to 1
+  X[highlight_mask, "alpha"] <- alpha # force highlight set alpha to 1
 
   X$outline_width <- 0.8
   X$outline <- "#444444"
@@ -176,7 +170,7 @@ volcanoplot <- function(X, max_labels = 35,
   # X[(X$highlight == TRUE & X[, sig_metric] < .sig), "outline_width"] <- .7
   # X[(X$highlight == TRUE & X[, sig_metric] < .sig), ] %>% print()
 
-  if (force_highlight_geneids == TRUE) {
+  if (isTRUE(force_highlight_geneids)) {
     X[X$highlight == TRUE, "label"] <- TRUE # label these specifically requested genes to be highlighted
   }
 
@@ -208,7 +202,9 @@ volcanoplot <- function(X, max_labels = 35,
   if (!is.null(global_ymax)) {
     ymax <- global_ymax
   }
-  print(paste0("ymax: ", ymax))
+  if (isTRUE(verbose)) {
+    print(paste0("ymax: ", ymax))
+  }
   # xmax <- X[, "log2_FC"] %>%
   #   abs() %>%
   #   max()

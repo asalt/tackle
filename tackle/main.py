@@ -1555,7 +1555,7 @@ def make_report(ctx, gct_path, conf_path, outdir, title, copy_gct, force):
         if data_obj is None:
             raise click.ClickException("--gct is required when running standalone.")
         try:
-            gct_path = data_obj.perform_data_export("gct")
+            gct_path = data_obj.perform_data_export("gct_pca")
         except Exception as e:
             raise click.ClickException(f"Failed to export GCT: {e}")
 
@@ -1670,28 +1670,43 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
 @click.option(
     "--level",
     type=click.Choice(
-        [
-            "all",
-            "align",
-            "area",
-            "MSPC",
-            "SRA",
-            "PeptideCount",
-            "PeptideCount_u2g",
-            "AreaSum_dstrAdj",
-            "AreaSum_u2g_0",
-            "AreaSum_u2g_max",
-            "zscore",
-            "gct",
-        ]
-    ),
-    default=("area",),
+	        [
+	            "all",
+	            "align",
+	            "area",
+	            "MSPC",
+	            "SRA",
+	            "PSMs",
+	            "PeptideCount",
+	            "PeptideCount_u2g",
+	            "AreaSum_dstrAdj",
+	            "AreaSum_u2g_0",
+	            "AreaSum_u2g_max",
+	            "zscore",
+	            "gct",
+	            "gct_pca",
+	        ]
+	    ),
+    default=(),
     multiple=True,
     help="""Export data table of the filtered list of gene products used for plotting
+              If no `--level` is provided, exports the default matrices: area + gct + MSPC.
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
               """,
+)
+@click.option(
+    "--base-matrices/--no-base-matrices",
+    default=True,
+    show_default=True,
+    help="Export the default matrices (area + gct + MSPC) in addition to any `--level` targets.",
+)
+@click.option(
+    "--force/--no-force",
+    default=False,
+    show_default=True,
+    help="Overwrite existing export files (default: skip existing).",
 )
 @click.option(
     "--linear",
@@ -1715,16 +1730,36 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
     help="Add continuous covariate(s) to GCT cdesc by specifying GeneID or symbol; can be repeated.",
 )
 @click.pass_context
-def export(ctx, level, genesymbols, gene_symbols, linear, covariate):
+def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, covariate):
     # =====
 
     # =====
 
     data_obj = ctx.obj["data_obj"]
-    for l in level:
-        data_obj.perform_data_export(
-            l, genesymbols=genesymbols or gene_symbols, linear=linear, covariates=covariate
+
+    levels = list(level)
+    if base_matrices:
+        levels = ["area", "gct", "MSPC", *levels]
+    # De-duplicate while preserving order.
+    seen = set()
+    levels = [x for x in levels if not (x in seen or seen.add(x))]
+    if not levels:
+        raise click.BadParameter("No export targets requested (use `--level` or enable `--base-matrices`).")
+
+    exported = []
+    for l in levels:
+        out = data_obj.perform_data_export(
+            l,
+            genesymbols=genesymbols or gene_symbols,
+            linear=linear,
+            covariates=covariate,
+            force=force,
         )
+        exported.append((l, out))
+
+    click.echo("Exported:")
+    for level_name, outpath in exported:
+        click.echo(f"- {level_name}: {outpath}")
 
 
 @main.command("make-xls")
@@ -2490,6 +2525,9 @@ def pca2(
     import rpy2.robjects as robjects
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.conversion import localconverter
+    from rpy2.robjects.packages import importr
+
+    from . import grdevice_helper
 
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "pcaplot.R")
@@ -2561,7 +2599,7 @@ def pca2(
     file_fmts = ctx.obj["file_fmts"]
     pca2_outname = outname_func("pca2")
     with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
-        pca2(
+        pca2_plots = pca2(
             dfm,
             color=color or robjects.NULL,
             shape=marker or robjects.NULL,
@@ -2581,7 +2619,30 @@ def pca2(
             annot_str=outname_kws.get("genefile") or robjects.NULL,
             fig_width=figsize[0],
             fig_height=figsize[1],
+            return_plots=True,
         )
+
+    r_print = robjects.r["print"]
+    grdevices = importr("grDevices")
+    if hasattr(pca2_plots, "rx2"):
+        plot_items = (
+            (str(plot_name), pca2_plots.rx2(str(plot_name)))
+            for plot_name in pca2_plots.names
+        )
+    else:
+        plot_items = ((str(k), v) for k, v in pca2_plots.items())
+
+    for plot_name, plot_obj in plot_items:
+        for file_fmt in file_fmts:
+            out = f"{pca2_outname}{plot_name}{file_fmt}"
+            grdevice = grdevice_helper.get_device(
+                filetype=file_fmt, width=figsize[0], height=figsize[1]
+            )
+            grdevice(file=out)
+            try:
+                r_print(plot_obj)
+            finally:
+                grdevices.dev_off()
 
     telemetry = ctx.obj.get("telemetry") if ctx.obj else None
     if telemetry is not None:

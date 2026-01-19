@@ -163,16 +163,31 @@ def make_metrics(
     Rmetrics = robjects.r["metrics"]
 
     with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
-        Rmetrics(
-            to_export, savename=export_name, exts=[x.lstrip(".") for x in file_fmts]
-        )
+        metrics_plots = Rmetrics(to_export, return_plots=True)
+
+    r_print = robjects.r["print"]
+    grdevices = importr("grDevices")
+    num_samples = to_export.shape[0]
+    plot_width = min(24, max(9, num_samples // 2))
+    plot_height = 9
+
+    for plot_name in metrics_plots.names:
+        plot_obj = metrics_plots.rx2(plot_name)
+        for file_fmt in file_fmts:
+            out = f"{export_name}_{plot_name}{file_fmt}"
+            grdevice = grdevice_helper.get_device(
+                filetype=file_fmt, width=plot_width, height=plot_height
+            )
+            grdevice(file=out)
+            try:
+                r_print(plot_obj)
+            finally:
+                grdevices.dev_off()
     # ==================================================================
 
     # ggridges = importr("ggridges")
     # rboxplot = r["boxplot"]
     # rboxplot
-
-    import rpy2.robjects.lib.ggplot2 as gg
 
     area_df["Name"] = pd.Categorical(area_df["Name"], ordered=True)
 

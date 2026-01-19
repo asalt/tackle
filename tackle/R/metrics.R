@@ -6,7 +6,7 @@ suppressPackageStartupMessages(library(tidyr))
 
 
 
-metrics <- function(df, savename = NULL, exts = NULL, ...) {
+metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...) {
   options(bitmapType = "cairo")
   df[["Sample"]] <- factor(rownames(df))
 
@@ -129,6 +129,17 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
 
   # pfinal <- ggarrange(p0, p1, p2, p3, nrow=2, ncol=2, common.legend=FALSE, align='v', heights=c(1,1.40))
 
+  plots <- list(
+    SRA = p0,
+    GPGroups = p1,
+    PSMs = p2,
+    Peptides = p3
+  )
+
+  if (isTRUE(return_plots)) {
+    return(plots)
+  }
+
   if (!is.null(savename)) {
     if (is.null(exts)) {
       exts <- c("png")
@@ -160,4 +171,6 @@ metrics <- function(df, savename = NULL, exts = NULL, ...) {
       # ggsave(outname, height=9, width=thewidth, units='in', limitsize = FALSE, dpi = 300)
     }
   }
+
+  invisible(NULL)
 }

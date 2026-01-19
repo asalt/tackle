@@ -23,6 +23,7 @@ def test_cluster2_with_scaling_and_zscore(ctx):
             color_high="red",
             col_cluster=True,
             row_cluster=True,
+            row_dendsort=True,
             cluster_row_slices=True,
             cluster_col_slices=True,
             figwidth=6.0,
@@ -46,6 +47,7 @@ def test_cluster2_with_scaling_and_zscore(ctx):
             sample_include=None,
             sample_exclude=None,
             linkage="ward",
+            min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
             cluster_func="Kmeans",
@@ -92,6 +94,7 @@ def test_cluster2_sample_include_reduces_columns(ctx):
             color_high="red",
             col_cluster=True,
             row_cluster=True,
+            row_dendsort=True,
             cluster_row_slices=True,
             cluster_col_slices=True,
             figwidth=6.0,
@@ -115,6 +118,7 @@ def test_cluster2_sample_include_reduces_columns(ctx):
             sample_include=["A"],
             sample_exclude=None,
             linkage="ward",
+            min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
             cluster_func="Kmeans",
@@ -147,4 +151,3 @@ def test_cluster2_sample_include_reduces_columns(ctx):
     assert imgs, "Expected at least one clustermap image"
     # Assert filename hints reduced columns (look for 'x4' ending since 8 samples -> 4 after include)
     assert any(img.name.endswith("x4.png") for img in imgs), "Expected column count suffix x4 in output name"
-

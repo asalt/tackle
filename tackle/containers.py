@@ -1204,7 +1204,9 @@ class Data:
                 "iBAQ_dstrAdj",
                 "FunCats",
                 "SRA",
+                "PSMs",
                 "area",
+                "PeptideCount",
                 "PeptideCount_u2g",
             ]
             if self.cluster_annotate_cols:
@@ -2091,14 +2093,14 @@ class Data:
             return True
         return False
 
-    def perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None):
+    def perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None, force=False):
         from rpy2 import robjects
         from rpy2.robjects import pandas2ri
         from rpy2.robjects.conversion import localconverter
         with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
-            return self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear, covariates=covariates)
+            return self._perform_data_export(level=level, genesymbols=genesymbols, linear=linear, covariates=covariates, force=force)
 
-    def _perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None):
+    def _perform_data_export(self, level="all", genesymbols=False, linear=False, covariates=None, force=False):
         # fname = '{}_data_{}_{}_more_zeros.tab'.format(level,
         #                                               self.outpath_name,
         #                                               self.non_zeros)
@@ -2120,7 +2122,7 @@ class Data:
         self.areas_log  # make sure it's created
 
         level_formatter = level
-        if level in ("area", "gct") and linear:
+        if level in ("area", "gct", "gct_pca") and linear:
             level_formatter = level + "_linear"
         # not the best having this redundant code
         if level == "MSPC":  # just export 1 column and name it
@@ -2156,8 +2158,33 @@ class Data:
             + ".tsv"
         )
 
+        # Default behavior: don't overwrite export artifacts unless explicitly requested.
+        if not force:
+            if level in ("gct", "gct_pca"):
+                base = str(outname)
+                base_lower = base.lower()
+                for _suffix in (".tsv.gz", ".gct.gz", ".tsv", ".gct"):
+                    if base_lower.endswith(_suffix):
+                        base = base[: -len(_suffix)]
+                        break
+                candidates = []
+                gct_path = base + ".gct"
+                if os.path.exists(gct_path):
+                    candidates.append(gct_path)
+                candidates.extend(glob.glob(base + "*.gct"))
+                candidates = [p for p in candidates if os.path.exists(p)]
+                if candidates:
+                    newest = max(candidates, key=os.path.getmtime)
+                    logger.info(f"Export exists; skipping: {newest}")
+                    return newest
+            elif os.path.exists(outname):
+                logger.info(f"Export exists; skipping: {outname}")
+                return outname
+
         if level == "all":
             self.df_filtered.sort_index(level=[0, 1]).to_csv(outname, sep="\t")
+            logger.info(f"Wrote {outname}")
+            return outname
 
         elif level == "MSPC":
             # TODO: export ALL data, not just filtered
@@ -2276,7 +2303,7 @@ class Data:
                     subdf = subdf.drop("GeneID", 1)
                 subdf.columns = subdf.columns.droplevel(0)
                 subdf.index = subdf.index.map(maybe_int).astype(str)
-                subdf["GeneID"] = subdf["GeneID"].apply(maybe_int).astype(str)
+                subdf["GeneID"] = subdf.index
 
                 # this makes sure we don't crash if any columns are missing
                 _cols = [x for x in cols if x in subdf]
@@ -2304,11 +2331,18 @@ class Data:
                 for_export = add_annotations(for_export, self.annotations)
 
             gm = get_gene_mapper()
-            for_export["GeneDescription"] = for_export.apply(
-                lambda x: gm.description.get(x["GeneID"], x["GeneDescription"]), axis=1
-            )
-            if for_export.GeneDescription.apply(lambda x: x is None or x=='').all() and "Description" in for_export.columns:
-                for_export["GeneDescription"]  = for_export["Description"]
+            if "GeneDescription" in for_export:
+                _fallback_desc = for_export["GeneDescription"]
+            elif "Description" in for_export:
+                _fallback_desc = for_export["Description"]
+            else:
+                _fallback_desc = ""
+
+            mapped_desc = for_export["GeneID"].astype(str).map(gm.description)
+            for_export["GeneDescription"] = mapped_desc.fillna(_fallback_desc)
+
+            if "Description" in for_export.columns and for_export["GeneDescription"].fillna("").eq("").all():
+                for_export["GeneDescription"] = for_export["Description"]
             if "Description" in for_export.columns: # don't need it, redundant col
                 for_export = for_export.drop(columns=['Description'])
 
@@ -2418,6 +2452,9 @@ class Data:
                 if "GeneID" in subdf:
                     subdf = subdf.drop("GeneID", 1)
                 subdf.columns = subdf.columns.droplevel(0)
+
+                if _area_col not in subdf and "area" in subdf:
+                    subdf = subdf.rename(columns={"area": _area_col})
                 subdf.index = subdf.index.map(maybe_int).astype(str)
                 subdf["GeneID"] = subdf["GeneID"].apply(maybe_int).astype(str)
                 # subdf['GeneID'] = subdf.index #hack
@@ -2464,15 +2501,17 @@ class Data:
             )
             logger.info(f"Writing {_outname}")
             meta_df.to_csv(_outname, sep="\t")
+            logger.info(f"Wrote {outname}")
+            return outname
 
-        elif level == "area" or level == "gct":
+        elif level in ("area", "gct", "gct_pca"):
             if not linear:
                 export = self.areas_log.copy()
             elif linear:
                 export = self.areas.copy()
             # if linear:
             #     export = export.apply(lambda x: 10**x)
-            if not self.impute_missing_values:  # not necessary here
+            if level in ("area", "gct") and not self.impute_missing_values:  # not necessary here
                 export[self.areas == 0] = 0  # fill the zeros back
                 export[self.mask] = np.nan
             order = export.columns
@@ -2495,8 +2534,10 @@ class Data:
 
             if level == "area":
                 export[order].to_csv(outname, sep="\t")
+                logger.info(f"Wrote {outname}")
+                return outname
 
-            if level == "gct":
+            if level in ("gct", "gct_pca"):
                 from rpy2.robjects.packages import importr
 
                 # NOTE: `.strip(".tsv")` will also strip leading '.' (e.g. "./results.tsv" -> "/results")
@@ -2602,6 +2643,8 @@ class Data:
                 cdesc["id"] = cdesc.index
                 r.assign("cdesc", cdesc)
                 r.assign("cid", self.col_metadata.index)
+                outname = os.path.normpath(os.path.abspath(outname))
+                os.makedirs(os.path.dirname(outname), exist_ok=True)
                 r.assign("outname", outname)
 
                 # my_new_ds <- new("GCT", mat=m)
@@ -2610,12 +2653,19 @@ class Data:
                 )
                 # import ipdb; ipdb.set_trace()
                 r(
-                    'write_gct(my_ds, file.path(".", outname), precision=4)'
-                )  # r doesn't keep the path relative for some reason
+                    "write_gct(my_ds, outname, precision=4)"
+                )
                 # r('print(paste("Wrote", outname))')
+                candidates = []
                 gct_path = outname + ".gct"
                 if os.path.exists(gct_path):
-                    outname = gct_path
+                    candidates.append(gct_path)
+                candidates.extend(glob.glob(outname + "*.gct"))
+                candidates = [p for p in candidates if os.path.exists(p)]
+                if candidates:
+                    outname = max(candidates, key=os.path.getmtime)
+                logger.info(f"Wrote {outname}")
+                return outname
 
         # elif level == 'SRA':
         #     export = self.data.loc[ self.data.Metric=='SRA' ]
@@ -2626,6 +2676,9 @@ class Data:
                 .apply(my_zscore, axis=1)
                 .reset_index()
             )
+            export.to_csv(outname, sep="\t", index=False)
+            logger.info(f"Wrote {outname}")
+            return outname
 
             #     .apply(z_score, axis=1)
             #     .reset_index()
@@ -2650,6 +2703,7 @@ class Data:
             # print("Exported", outname)
 
         logger.info(f"Wrote {outname}")
+        return outname
 
 
 # ========================================================================================================= #
