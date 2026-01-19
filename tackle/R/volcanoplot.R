@@ -4,29 +4,12 @@ suppressMessages(library(stringr))
 suppressMessages(library(ggplot2))
 suppressMessages(library(stringr))
 suppressMessages(library(ggthemes))
-suppressMessages(library(ggrepel))
-
-## library(ggplot2)
-library(graphics)
-
+suppressMessages(library(graphics))
 # Install ggrepel package if needed
 # install.packages("ggrepel")
+suppressMessages(library(ggrepel))
 
-makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
-                         size = 1.0, color = grey(.5)) {
-  suppressMessages(
-    require(grid)
-  )
-  pushViewport(viewport())
-  grid.text(
-    label = footnoteText,
-    x = unit(1, "npc") - unit(2, "mm"),
-    y = unit(2, "mm"),
-    just = c("right", "bottom"),
-    gp = gpar(cex = size, col = color)
-  )
-  popViewport()
-}
+
 yaxis.choices <- c("pValue", "pAdj")
 number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue")
 direction.choices <- c("both", "up", "down")
@@ -335,14 +318,6 @@ volcanoplot <- function(X, max_labels = 35,
       seed = 1234,
       show_legend = FALSE,
     ) +
-    # annotate("text",  c(-xmax, xmax), c(ymax*.98, ymax*.98), label = c(group0, group1),
-    # geom_label(
-    #   data = data.frame(x = c(-xmax - .annot_space, xmax + .annot_space), y = c(0, 0), label = c(group0, group1)),
-    #   aes(x = x, y = y, label = label, fill = c(color_down, color_up)),
-    #   color = "black", # Border color
-    #   size = annot_size,
-    #   hjust = c(0, 1), vjust = c(0, 0)
-    # ) +
     annotate("text", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
       label = c(group0, group1),
       color = "black", #border color
@@ -371,3 +346,21 @@ volcanoplot <- function(X, max_labels = 35,
 }
 
 ## geom_text_repel(data = filter( X, label == TRUE ),
+
+
+
+# makeFootnote <- function(footnoteText = format(Sys.time(), "%d %b %Y"),
+#                          size = 1.0, color = grey(.5)) {
+#   suppressMessages(
+#     require(grid)
+#   )
+#   pushViewport(viewport())
+#   grid.text(
+#     label = footnoteText,
+#     x = unit(1, "npc") - unit(2, "mm"),
+#     y = unit(2, "mm"),
+#     just = c("right", "bottom"),
+#     gp = gpar(cex = size, col = color)
+#   )
+#   popViewport()
+# }
