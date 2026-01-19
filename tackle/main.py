@@ -664,6 +664,13 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="""Optional list of geneids to ignore. Should have 1 geneid per line. """,
 )
 @click.option(
+    "--contaminant-prefix",
+    type=str,
+    default="Cont",
+    show_default=True,
+    help="Drop rows whose GeneID starts with this prefix (case-insensitive). Use '' or 'none' to disable.",
+)
+@click.option(
     "--iFOT",
     default=False,
     show_default=True,
@@ -812,6 +819,7 @@ def main(
     block,
     pairs,
     ignore_geneids,
+    contaminant_prefix,
     ifot,
     ifot_ki,
     ifot_tf,
@@ -1019,6 +1027,7 @@ def main(
         metrics_after_filter=metrics_after_filter,
         metrics_unnormed_area=metrics_unnormed_area,
         ignore_geneids=ignore_geneids,
+        contaminant_prefix=contaminant_prefix,
         export_all=export_all,
         cluster_annotate_cols=cluster_annotate_cols,
         only_local=only_load_local,
@@ -2564,22 +2573,20 @@ def pca2(
         color = "recno"
 
     if color:
-        color_values = col_meta[color].dropna().unique()
-        color_values.sort()
+        if color not in col_meta:
+            raise ValueError(f"Color column {color!r} not found in metadata")
+
+        color_series = utils.normalize_metadata_str_values(col_meta[color])
+        user_mapping = None
         if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
-            mapping = data_obj.metadata_colors[color]
-            # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(mapping)})
-            keys = color_values
-            mapping = {k: mapping[k] for k in keys}
-            color_list = robjects.vectors.ListVector(mapping)
-        else:
-            ncolors = col_meta[color].nunique()
-            cmap = sb.color_palette(palette="bright", n_colors=ncolors)
-            color_iter = map(mpl.colors.rgb2hex, cmap)
-            themapping = {x: c for x, c in zip(color_values, color_iter)}
-            # entry = robjects.vectors.ListVector({metacat: robjects.vectors.ListVector(themapping)})
-            color_list = robjects.vectors.ListVector(themapping)
-        dfm[color] = dfm[color].fillna("NA")
+            user_mapping = data_obj.metadata_colors.get(color)
+        themapping = utils.get_color_mapping_with_defaults(
+            color_series, user_mapping if isinstance(user_mapping, dict) else None
+        )
+        color_list = robjects.vectors.ListVector(themapping) if themapping else robjects.NULL
+
+        # Ensure the melted data uses the same normalized values.
+        dfm[color] = utils.normalize_metadata_str_values(dfm[color])
 
     # if marker:
     #     if data_obj.metadata_colors is not None and marker in data_obj.metadata_colors:

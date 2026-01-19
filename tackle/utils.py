@@ -85,6 +85,39 @@ def get_default_color_mapping(s: pd.Series) -> dict:
     return themapping
 
 
+def normalize_metadata_str_values(s: pd.Series, na_value: str = "NA") -> pd.Series:
+    """Normalize metadata values to stable strings for plotting.
+
+    - Ensures missing/blank/None-like values become `na_value`
+    - Applies STR_DTYPE_COERCION (e.g. TRUE/FALSE/nan/<NA> -> True/False/NA)
+    """
+    s = s.fillna(na_value).astype(str)
+    s = s.replace(STR_DTYPE_COERCION).replace(
+        {
+            "None": na_value,
+            "none": na_value,
+            "NULL": na_value,
+            "null": na_value,
+            "": na_value,
+        }
+    )
+    return s
+
+
+def get_color_mapping_with_defaults(s: pd.Series, overrides=None) -> dict:
+    """Return a discrete color mapping for the unique values in `s`.
+
+    Uses tackle's default color palette, optionally overridden by `overrides`.
+    Keys are treated as strings to match JSON mappings.
+    """
+    s = normalize_metadata_str_values(s)
+    values = sorted(s.unique())
+    mapping = get_default_color_mapping(s) or {}
+    if isinstance(overrides, dict):
+        mapping.update({str(k): str(v) for k, v in overrides.items() if v is not None})
+    return {k: mapping.get(k, RESERVED_COLORS.get("NA", "grey")) for k in values}
+
+
 STR_DTYPE_COERCION = {
     "TRUE": "True",
     "True": "True",

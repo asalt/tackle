@@ -444,6 +444,7 @@ class DataSnapshotCache:
             "geneid_subset_count": geneid_count,
             "ignore_geneid_subset_hash": ignore_hash,
             "ignore_geneid_subset_count": ignore_count,
+            "contaminant_prefix": getattr(data_obj, "contaminant_prefix", None),
             "unique_pepts": getattr(data_obj, "unique_pepts"),
             "non_zeros": getattr(data_obj, "non_zeros"),
             "nonzero_subgroup": SnapshotCache.normalize_value(

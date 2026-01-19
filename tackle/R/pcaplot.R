@@ -199,6 +199,15 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     x1 <- pc_combos[[1, i]]
     x2 <- pc_combos[[2, i]]
 
+    # Ensure a non-empty color palette is available for manual scales.
+    # `color_list` may arrive as a (named) list via rpy2; unlist to an atomic vector.
+    .color_list <- color_list
+    if (!is.null(.color_list) && length(.color_list) > 0) {
+      .color_list <- unlist(.color_list)
+    } else {
+      .color_list <- NULL
+    }
+
     # .....
     # TODO redo
     # .color <- expr(color)
@@ -214,7 +223,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       ## frame.colour = color,
       ## frame.type = 'convex',
       frame.alpha = .5,
-      scale_color_manual = color_list,
+      scale_color_manual = .color_list,
       label.size = 2.5,
       size = 4,
       x = x1, y = x2,
@@ -222,8 +231,6 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       title = title, # why doesn't this work?
     ) +
       labs(title = title) +
-      ggplot2::scale_color_manual(values = color_list) +
-      ggplot2::scale_fill_manual(values = color_list) +
       ggplot2::theme_classic(base_size = 20) +
       coord_fixed(ratio = 1) +
       guides(color = guide_legend(override.aes = list(shape = 15, linetype = "solid"))) +
@@ -238,6 +245,11 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       scale_shape_manual(values = c(16, 17, 15, 7, 9, 12, 13, 14)) +
       geom_hline(yintercept = 0, color = "grey50", show.legend = NA) +
       geom_vline(xintercept = 0, color = "grey50")
+    if (!is.null(.color_list)) {
+      p <- p +
+        ggplot2::scale_color_manual(values = .color_list) +
+        ggplot2::scale_fill_manual(values = .color_list)
+    }
     if (!is.null(annot_str)) {
       p <- p + annotate("text",
         x = -Inf, y = -Inf, hjust = 0, vjust = 0,

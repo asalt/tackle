@@ -14,7 +14,7 @@ from seaborn import despine
 from seaborn import heatmap
 import seaborn as sb
 from six import string_types
-from typing import Dict, Type, Any
+from typing import Dict, Type, Any, Optional
 
 # import sys
 import os
@@ -90,6 +90,35 @@ np.NAN = np.nan
 
 
 idx = pd.IndexSlice
+
+
+def drop_geneid_prefix(
+    df: pd.DataFrame,
+    prefix: Optional[str],
+    geneid_col: str = "GeneID",
+    *,
+    inplace: bool = False,
+) -> pd.DataFrame:
+    """Drop rows whose GeneID starts with the given prefix (case-insensitive).
+
+    Primarily used to remove contaminant pseudo-IDs (e.g. "Cont*") from E2G tables.
+    """
+    if df is None or len(df) == 0:
+        return df
+    if prefix is None:
+        return df
+    prefix = str(prefix).strip()
+    if not prefix:
+        return df
+
+    geneids = df[geneid_col] if geneid_col in df.columns else df.index
+    mask = geneids.astype(str).str.lower().str.startswith(prefix.lower(), na=False)
+    if hasattr(mask, "any") and mask.any():
+        if inplace:
+            df.drop(index=df.index[mask], inplace=True)
+            return df
+        return df.loc[~mask].copy()
+    return df
 
 
 def join_and_create_path(*strings, verbose=True):
@@ -511,6 +540,7 @@ class Data:
         block=None,
         highlight_geneids=None,
         ignore_geneids=None,
+        contaminant_prefix="Cont",
         name=None,
         non_zeros=0,
         nonzero_subgroup=None,
@@ -568,6 +598,17 @@ class Data:
         self.gene_symbols = gene_symbols
         self.geneids = geneids
         self.ignore_geneids = ignore_geneids
+        contaminant_prefix = (
+            str(contaminant_prefix).strip() if contaminant_prefix is not None else None
+        )
+        if contaminant_prefix and contaminant_prefix.lower() in (
+            "none",
+            "null",
+            "false",
+            "0",
+        ):
+            contaminant_prefix = None
+        self.contaminant_prefix = contaminant_prefix or None
         self.group = group
         self.pairs = pairs
         self.limma = limma
@@ -870,7 +911,7 @@ class Data:
 
     @staticmethod
     @lru_cache()
-    def get_e2g(recno, runno, searchno, data_dir, only_local=False):
+    def get_e2g(recno, runno, searchno, data_dir, only_local=False, contaminant_prefix="Cont"):
         from bcmproteomics_ext import ispec
 
         e2g = ispec.E2G(
@@ -878,6 +919,10 @@ class Data:
         )
         # import ipdb; ipdb.set_trace()
         e2g.df["GeneID"] = e2g.df["GeneID"].apply(maybe_int)
+        # Drop contaminant pseudo-IDs (typically prefixed with "Cont")
+        drop_geneid_prefix(
+            e2g.df, contaminant_prefix, geneid_col="GeneID", inplace=True
+        )
         if "TaxonID" in e2g.df.columns:
             e2g.df["TaxonID"] = e2g.df["TaxonID"].apply(maybe_int).astype(str)
         e2g.df.index = e2g.df.GeneID
@@ -930,7 +975,12 @@ class Data:
 
             print("Getting", recno, runno, searchno, label, "to/from", self.data_dir)
             exp = self.get_e2g(
-                recno, runno, searchno, data_dir=self.data_dir, only_local=only_local
+                recno,
+                runno,
+                searchno,
+                data_dir=self.data_dir,
+                only_local=only_local,
+                contaminant_prefix=self.contaminant_prefix,
             )
 
             if "EXPLabelFLAG" not in exp.df and "LabelFLAG" in exp.df:
