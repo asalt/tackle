@@ -1,5 +1,6 @@
 import os
 from collections import OrderedDict
+from warnings import warn
 
 from functools import partial
 import matplotlib
@@ -14,7 +15,14 @@ import pandas as pd
 import seaborn as sb
 
 
-from .utils import get_outname, save_multiple, genefilter, filter_sra, filter_taxon
+from .utils import (
+    get_outname,
+    save_multiple,
+    genefilter,
+    filter_sra,
+    filter_taxon,
+    iter_named_items,
+)
 from . import grdevice_helper
 
 
@@ -25,6 +33,81 @@ idx = pd.IndexSlice
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
 plt.rcParams["svg.fonttype"] = "none"
+
+
+def _build_metrics_from_filtered(df_filtered: pd.DataFrame, *, before_norm: bool):
+    if df_filtered is None or df_filtered.empty:
+        return OrderedDict()
+
+    df_long = df_filtered.reset_index()
+    sample_cols = [c for c in df_long.columns if c not in ("GeneID", "Metric")]
+    if not sample_cols:
+        return OrderedDict()
+
+    available = set(df_long["Metric"].unique())
+
+    def _metric_frame(metric, numeric=True):
+        if metric not in available:
+            return None
+        frame = df_long.loc[df_long["Metric"] == metric, sample_cols]
+        if numeric:
+            frame = frame.apply(pd.to_numeric, errors="coerce")
+        return frame
+
+    def _sum_series(series):
+        return pd.to_numeric(series, errors="coerce").fillna(0).sum()
+
+    sra_frame = _metric_frame("SRA", numeric=False)
+    gpg_frame = _metric_frame("GPGroup", numeric=False)
+    psms_frame = _metric_frame("PSMs")
+    psms_u2g_frame = _metric_frame("PSMs_u2g")
+    pept_frame = _metric_frame("PeptideCount")
+    pept_u2g_frame = _metric_frame("PeptideCount_u2g")
+    pept_s_frame = _metric_frame("PeptideCount_S")
+    pept_s_u2g_frame = _metric_frame("PeptideCount_S_u2g")
+    area_metric = "iBAQ_dstrAdj" if before_norm else "area"
+    area_frame = _metric_frame(area_metric)
+
+    data = OrderedDict()
+    for sample in sample_cols:
+        entry = dict()
+        entry["SRA"] = (
+            sra_frame[sample].value_counts(dropna=True).to_dict()
+            if sra_frame is not None
+            else {}
+        )
+        entry["GPGroups"] = (
+            gpg_frame[sample].dropna().nunique() if gpg_frame is not None else 0
+        )
+        entry["PSMs"] = {
+            "Total": _sum_series(psms_frame[sample]) if psms_frame is not None else 0,
+            "u2g": _sum_series(psms_u2g_frame[sample])
+            if psms_u2g_frame is not None
+            else 0,
+        }
+        entry["Peptides"] = {
+            "Total": _sum_series(pept_frame[sample]) if pept_frame is not None else 0,
+            "u2g": _sum_series(pept_u2g_frame[sample])
+            if pept_u2g_frame is not None
+            else 0,
+            "Strict": _sum_series(pept_s_frame[sample])
+            if pept_s_frame is not None
+            else 0,
+            "Strict_u2g": _sum_series(pept_s_u2g_frame[sample])
+            if pept_s_u2g_frame is not None
+            else 0,
+        }
+        entry["Area"] = (
+            area_frame[sample]
+            .where(lambda x: x > 0)
+            .dropna()
+            .values
+            if area_frame is not None
+            else np.array([])
+        )
+        data[sample] = entry
+
+    return data
 
 
 def make_metrics(
@@ -48,7 +131,13 @@ def make_metrics(
     sb.set_color_codes()
     sb.set_style("white", rc)
 
-    data = data_obj.metric_values
+    if before_filter:
+        data = data_obj.metric_values
+    else:
+        data = _build_metrics_from_filtered(data_obj.df_filtered, before_norm=before_norm)
+        if not data:
+            warn("Filtered metrics unavailable; falling back to pre-filter metrics.")
+            data = data_obj.metric_values
 
     kws = dict()
     if before_filter:
@@ -96,29 +185,34 @@ def make_metrics(
 
     # ========================================================================
 
-    trypsin = OrderedDict((n, data[n]["Trypsin"]) for n in data.keys())
-    trypsin = pd.DataFrame(trypsin)
-    trypsin_df = trypsin.apply(lambda x: x / sum(x))
+    trypsin_ready = bool(data) and all("Trypsin" in data[n] for n in data.keys())
+    trypsinp_ready = bool(data) and all("Trypsin/P" in data[n] for n in data.keys())
+    if trypsin_ready and trypsinp_ready:
+        trypsin = OrderedDict((n, data[n]["Trypsin"]) for n in data.keys())
+        trypsin = pd.DataFrame(trypsin)
+        trypsin_df = trypsin.apply(lambda x: x / sum(x))
 
-    trypsinP = OrderedDict((n, data[n]["Trypsin/P"]) for n in data.keys())
-    trypsinP = pd.DataFrame(trypsinP).fillna(0)
-    trypsinP_df = trypsinP.apply(lambda x: x / sum(x))
-    # trypsinP_df.index.name = 'miscuts'
-    # trypsinP_df = trypsin_df.reset_index()
+        trypsinP = OrderedDict((n, data[n]["Trypsin/P"]) for n in data.keys())
+        trypsinP = pd.DataFrame(trypsinP).fillna(0)
+        trypsinP_df = trypsinP.apply(lambda x: x / sum(x))
+        # trypsinP_df.index.name = 'miscuts'
+        # trypsinP_df = trypsin_df.reset_index()
 
-    trypsin_dfr = trypsin_df.melt(var_name="name", value_name="Trypsin")
-    trypsin_dfr.index.name = "miscuts"
-    trypsin_dfr = trypsin_dfr.reset_index()
-    trypsinP_dfr = trypsinP_df.melt(var_name="name", value_name="Trypsin/P")
-    trypsinP_dfr.index.name = "miscuts"
-    trypsinP_dfr = trypsinP_dfr.reset_index()
+        trypsin_dfr = trypsin_df.melt(var_name="name", value_name="Trypsin")
+        trypsin_dfr.index.name = "miscuts"
+        trypsin_dfr = trypsin_dfr.reset_index()
+        trypsinP_dfr = trypsinP_df.melt(var_name="name", value_name="Trypsin/P")
+        trypsinP_dfr.index.name = "miscuts"
+        trypsinP_dfr = trypsinP_dfr.reset_index()
 
-    miscut_frame = pd.DataFrame.merge(
-        trypsin_dfr, trypsinP_dfr, on=["miscuts", "name"], how="outer"
-    ).sort_values(by=["miscuts", "name"])
+        miscut_frame = pd.DataFrame.merge(
+            trypsin_dfr, trypsinP_dfr, on=["miscuts", "name"], how="outer"
+        ).sort_values(by=["miscuts", "name"])
 
-    export_name = namegen("miscut_ratio")
-    miscut_frame.to_csv(export_name + ".tsv", sep="\t", index=False)
+        export_name = namegen("miscut_ratio")
+        miscut_frame.to_csv(export_name + ".tsv", sep="\t", index=False)
+    else:
+        warn("Skipping miscut_ratio: Trypsin metrics unavailable.")
 
     # ========================================================================
 
@@ -150,7 +244,7 @@ def make_metrics(
     # ==================================================================
     from rpy2.robjects import r
     import rpy2.robjects as robjects
-    from rpy2.robjects import pandas2ri
+    from rpy2.robjects import pandas2ri, conversion
     from rpy2.robjects.packages import importr
     from rpy2.robjects.conversion import localconverter
 
@@ -163,7 +257,9 @@ def make_metrics(
     Rmetrics = robjects.r["metrics"]
 
     with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
-        metrics_plots = Rmetrics(to_export, return_plots=True)
+        to_export_r = conversion.py2rpy(to_export)
+
+    metrics_plots = Rmetrics(to_export_r, return_plots=True)
 
     r_print = robjects.r["print"]
     grdevices = importr("grDevices")
@@ -171,8 +267,7 @@ def make_metrics(
     plot_width = min(24, max(9, num_samples // 2))
     plot_height = 9
 
-    for plot_name in metrics_plots.names:
-        plot_obj = metrics_plots.rx2(plot_name)
+    for plot_name, plot_obj in iter_named_items(metrics_plots):
         for file_fmt in file_fmts:
             out = f"{export_name}_{plot_name}{file_fmt}"
             grdevice = grdevice_helper.get_device(

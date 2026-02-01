@@ -100,18 +100,22 @@ from .containers import (
     get_hgene_mapper,
 )
 from .barplot import barplot
+from .constants import TAXON_MAPPER
 
 # from cluster_to_plotly import cluster_to_plotly
 
+# this is only necessary when doing python based hier clustering:
 sys.setrecursionlimit(10000)
 
-TAXON_MAPPER = {
-    "human": 9606,
-    "mouse": 10090,
-    "celegans": 6239,
-    "chick": 9031,
-    "chicken": 9031,
-}
+# TAXON_MAPPER = {
+#     "human": 9606,
+#     "mouse": 10090,
+#     "celegans": 6239,
+#     "chick": 9031,
+#     "chicken": 9031,
+#     #"strep": "NZ_CP077423",
+#     "strep": 53354
+# }
 
 
 import logging
@@ -786,8 +790,25 @@ ANNOTATION_CHOICES = _annotation_choices()
     type=int,
     help="number of unique peptides required per gene. Also must satisfy the nonzero argument.",
 )
-@click.option("--ref-group-name", default=None)
-@click.option("--ref-control-channel", default=None)
+@click.option(
+    "--ref-group-name",
+    default=None,
+    show_default=True,
+    help="Metadata column(s) used to match a control sample within each group. Comma-separated values are treated as multiple grouping columns (e.g. rep,plex).",
+)
+@click.option(
+    "--ref-label-col",
+    default="label",
+    show_default=True,
+    help="Metadata column used to identify the control sample within each group (default: label). For pairwise normalization, this can be a field like treatment/condition.",
+)
+@click.option(
+    "--ref-control-channel",
+    "--ref-control-value",
+    default=None,
+    show_default=True,
+    help="Value in --ref-label-col to treat as the denominator/control within each group.",
+)
 @click.option("--nonzero-subgroup", type=str, default=None, help="")
 # @click.argument('experiment_file', type=click.Path(exists=True, dir_okay=False))
 @click.argument("experiment_file", type=Path_or_Subcommand(exists=True, dir_okay=False))
@@ -838,14 +859,21 @@ def main(
     number_sra,
     experiment_file,
     ref_group_name,
+    ref_label_col,
     ref_control_channel,
 ):
     """"""
     # name, taxon, non_zeros, experiment_file):
     norm_info = None
     if ref_control_channel and ref_group_name:
+        group = ref_group_name
+        if isinstance(group, str) and "," in group:
+            parts = [x.strip() for x in group.split(",") if x.strip()]
+            group = parts if len(parts) > 1 else (parts[0] if parts else ref_group_name)
         norm_info = dict(
-            control=ref_control_channel, group=ref_group_name, label="label"
+            control=ref_control_channel,
+            group=group,
+            label=ref_label_col or "label",
         )
 
     if experiment_file in Path_or_Subcommand.EXCEPTIONS:
@@ -2532,7 +2560,7 @@ def pca2(
     # ======================================
 
     import rpy2.robjects as robjects
-    from rpy2.robjects import pandas2ri
+    from rpy2.robjects import pandas2ri, conversion
     from rpy2.robjects.conversion import localconverter
     from rpy2.robjects.packages import importr
 
@@ -2605,39 +2633,35 @@ def pca2(
 
     file_fmts = ctx.obj["file_fmts"]
     pca2_outname = outname_func("pca2")
-    with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
-        pca2_plots = pca2(
-            dfm,
-            color=color or robjects.NULL,
-            shape=marker or robjects.NULL,
-            #outfiletypes=np.array(file_fmts),
-            outfiletypes=list(file_fmts),
-            outname=pca2_outname,
-            center=center,
-            scale=scale,
-            normalize_by=normalize_by or robjects.NULL,
-            label=annotate,
-            fillna=fillna or "min",
-            showframe=frame,
-            max_pc=max_pc,
-            color_list=color_list,
-            marker_list=robjects.NULL,
-            title=outname_kws.get("genefile") or robjects.NULL,
-            annot_str=outname_kws.get("genefile") or robjects.NULL,
-            fig_width=figsize[0],
-            fig_height=figsize[1],
-            return_plots=True,
-        )
+    with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
+        dfm_r = conversion.py2rpy(dfm)
+
+    pca2_plots = pca2(
+        dfm_r,
+        color=color or robjects.NULL,
+        shape=marker or robjects.NULL,
+        #outfiletypes=np.array(file_fmts),
+        outfiletypes=list(file_fmts),
+        outname=pca2_outname,
+        center=center,
+        scale=scale,
+        normalize_by=normalize_by or robjects.NULL,
+        label=annotate,
+        fillna=fillna or "min",
+        showframe=frame,
+        max_pc=max_pc,
+        color_list=color_list,
+        marker_list=robjects.NULL,
+        title=outname_kws.get("genefile") or robjects.NULL,
+        annot_str=outname_kws.get("genefile") or robjects.NULL,
+        fig_width=figsize[0],
+        fig_height=figsize[1],
+        return_plots=True,
+    )
 
     r_print = robjects.r["print"]
     grdevices = importr("grDevices")
-    if hasattr(pca2_plots, "rx2"):
-        plot_items = (
-            (str(plot_name), pca2_plots.rx2(str(plot_name)))
-            for plot_name in pca2_plots.names
-        )
-    else:
-        plot_items = ((str(k), v) for k, v in pca2_plots.items())
+    plot_items = iter_named_items(pca2_plots)
 
     for plot_name, plot_obj in plot_items:
         for file_fmt in file_fmts:
@@ -4077,7 +4101,7 @@ class Float_or_Bool(click.ParamType):
     "-s",
     "--label-scale",
     type=float,
-    default=1.5,
+    default=1.8,
     show_default=True,
     help="To what extent to scale the labels",
 )
@@ -4089,7 +4113,7 @@ class Float_or_Bool(click.ParamType):
 )
 @click.option(
     "--marker-scale",
-    default=1.4,
+    default=1.8,
     show_default=True,
 )
 @click.option(
