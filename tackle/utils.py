@@ -188,6 +188,40 @@ def fix_name(x):
 
 idx = pd.IndexSlice
 
+
+def iter_named_items(obj):
+    """Yield (name, value) pairs from R list-like objects or mappings."""
+    if obj is None:
+        return iter(())
+
+    if hasattr(obj, "rx2") and hasattr(obj, "names"):
+        names = obj.names
+        try:
+            iter(names)
+        except TypeError:
+            names = None
+        if names is not None:
+            return ((str(name), obj.rx2(str(name))) for name in names)
+
+    if hasattr(obj, "items"):
+        def _iter_items():
+            for item in obj.items():
+                try:
+                    key, value = item
+                except Exception:
+                    if hasattr(item, "name") and hasattr(item, "value"):
+                        key, value = item.name, item.value
+                    else:
+                        raise
+                yield str(key), value
+
+        return _iter_items()
+
+    try:
+        return ((str(i), value) for i, value in enumerate(obj))
+    except TypeError as exc:
+        raise TypeError(f"Unsupported named item container: {type(obj)!r}") from exc
+
 N_COLORS = 100
 # r_colors = sb.color_palette("coolwarm", n_colors=N_COLORS+1)
 r_colors = sb.color_palette("RdBu_r", n_colors=N_COLORS + 1)
