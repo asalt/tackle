@@ -4,6 +4,7 @@ suppressPackageStartupMessages(library(purrr))
 suppressPackageStartupMessages(library(magrittr))
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(ggfortify))
+suppressPackageStartupMessages(library(ggrepel))
 # library(PCAtools)
 
 ## library(cluster)
@@ -11,7 +12,7 @@ suppressPackageStartupMessages(library(ggfortify))
 ## ; variable <color> <shape> gene1 gene2 gene3 ...
 pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  color = NULL, shape = NULL, label = FALSE,
-                 encircle = TRUE,
+                 encircle = FALSE,
                  showframe = TRUE, frame.type = "t",
                  max_pc = 2, color_list = NULL, marker_list = NULL,
                  names_from = "GeneID",
@@ -19,6 +20,8 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  scale = FALSE,
                  center = TRUE,
                  normalize_by = NULL,
+                 show_loadings = FALSE,
+                 ntop_loadings = 10,
                  title = NULL,
                  annot_str = NULL,
                  fig_width = 9,
@@ -68,13 +71,35 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   #   }
 
   fillna_func <- switch(fillna,
-    avg = function(x) mean(x, na.rm = TRUE),
-    min = function(x) min(x, na.rm = TRUE),
+    avg = function(x) {
+      vals <- x[is.finite(x)]
+      if (length(vals) == 0) return(0)
+      mean(vals)
+    },
+    min = function(x) {
+      vals <- x[is.finite(x)]
+      if (length(vals) == 0) return(0)
+      min(vals)
+    },
     stop("Unsupported fillna type")
   )
 
   safe_scale <- function(x, center = TRUE, scale = TRUE) {
-    as.numeric(scale(x, center = center, scale = scale))
+    x <- as.numeric(x)
+    if (length(x) == 0) return(x)
+    if (all(is.na(x))) return(rep(0, length(x)))
+
+    if (isTRUE(scale)) {
+      sdx <- stats::sd(x, na.rm = TRUE)
+      if (is.na(sdx) || sdx == 0) {
+        if (isTRUE(center)) {
+          return(x - mean(x, na.rm = TRUE))
+        }
+        return(x)
+      }
+    }
+
+    as.numeric(base::scale(x, center = center, scale = scale))
   }
 
   if (is.null(normalize_by)) {
@@ -84,8 +109,8 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       mutate(value = if_else(is.na(value), fill_value, value)) %>%
       # select(-fill_value) %>%
       mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
-      ungroup() # %>%
-    # mutate(value = if_else(is.na(value), 0, value))
+      ungroup() %>%
+      mutate(value = if_else(is.na(value), 0, value))
   } else {
     forpca <- data %>%
       group_by(GeneID, !!sym(normalize_by)) %>%
@@ -93,17 +118,22 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       mutate(value = if_else(is.na(value), fill_value, value)) %>%
       # select(-fill_value) %>%
       mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
-      ungroup() # %>%
-    # mutate(value = if_else(is.na(value), 0, value))
+      ungroup() %>%
+      mutate(value = if_else(is.na(value), 0, value))
   }
   print("Scaling done")
 
+  feature_map <- NULL
+  if ("GeneSymbol" %in% colnames(forpca)) {
+    feature_map <- forpca %>%
+      select(GeneID, GeneSymbol) %>%
+      distinct() %>%
+      mutate(
+        GeneID = as.character(.data$GeneID),
+        GeneSymbol = as.character(.data$GeneSymbol)
+      )
+  }
 
-
-  # extra guard for nas. shouldn't be necessary now that we fill nas with zeros or minval or avg val
-  nas <- forpca[is.na(forpca$value), ]
-  names_to_remove <- unique(nas$GeneID)
-  forpca <- forpca %>% filter(!GeneID %in% names_to_remove)
   .forpca <- forpca %>% pivot_wider(id_cols = c(variable, !!color, !!shape), names_from = !!names_from, values_from = value)
 
   # if (!is.null(color) && any(names(forpca) == color)) {
@@ -125,7 +155,12 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   rownames(pca_mat) <- as.character(.forpca$variable)
 
   pca_res <- prcomp(pca_mat, scale. = FALSE, center = FALSE)
+  variance <- pca_res$sdev^2
+  variance_ratio <- variance / sum(variance)
   print("SVD done")
+
+  loading_scores <- as.data.frame(pca_res$rotation)
+  loading_scores$feature <- rownames(loading_scores)
 
   if (!is.null(export_tables) && export_tables == TRUE &&
       !is.null(outname) && !is.na(outname) && outname != "") {
@@ -142,8 +177,6 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       left_join(meta_df, by = "variable") %>%
       select(any_of(meta_cols), everything())
 
-    variance <- pca_res$sdev^2
-    variance_ratio <- variance / sum(variance)
     variance_df <- data.frame(
       pc = seq_along(variance),
       stdev = pca_res$sdev,
@@ -194,6 +227,20 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   pc_combos <- combn(1:max_pc, 2)
   # browser()
 
+  do_encircle <- isTRUE(encircle) &&
+    !is.null(color) && is.character(color) && color != ""
+  if (isTRUE(encircle) && !do_encircle) {
+    warning("encircle=TRUE requested but `color` is NULL/empty; skipping encircle.")
+  }
+  if (do_encircle) {
+    suppressPackageStartupMessages(suppressMessages({
+      if (!requireNamespace("ggalt", quietly = TRUE)) {
+        stop("R package 'ggalt' is required for encircle. Install with install.packages('ggalt').")
+      }
+      library(ggalt)
+    }))
+  }
+
   plots <- list()
   for (i in 1:dim(pc_combos)[2]) {
     x1 <- pc_combos[[1, i]]
@@ -212,11 +259,11 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     # TODO redo
     # .color <- expr(color)
     # color <- "repeat"
-    p <- autoplot(pca_res,
-      data = .forpca,
-      colour = color,
-      shape = shape,
-      label = label,
+      p <- autoplot(pca_res,
+        data = .forpca,
+        colour = color,
+        shape = shape,
+        label = label,
       label.repel = label_repel,
       label.label = label_column,
       frame = showframe,
@@ -235,20 +282,114 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       coord_fixed(ratio = 1) +
       guides(color = guide_legend(override.aes = list(shape = 15, linetype = "solid"))) +
       theme(
-        axis.line.x = element_line(size = 1),
+        axis.line.x = element_line(linewidth = 1),
         ## axis.line.x.bottom = element_line(size=1),
-        axis.line.y = element_line(size = 1),
+        axis.line.y = element_line(linewidth = 1),
         ## axis.line.y.right = element_line(size=1),
       ) +
       scale_x_continuous(sec.axis = sec_axis(~.)) + # hack: https://stackoverflow.com/questions/63055640/how-to-keep-top-and-bottom-axes-in-ggplot-while-removing-the-panel-border
       scale_y_continuous(sec.axis = sec_axis(~.)) +
       scale_shape_manual(values = c(16, 17, 15, 7, 9, 12, 13, 14)) +
-      geom_hline(yintercept = 0, color = "grey50", show.legend = NA) +
-      geom_vline(xintercept = 0, color = "grey50")
+      geom_hline(yintercept = 0, color = "grey50", linewidth = 0.7, show.legend = NA) +
+      geom_vline(xintercept = 0, color = "grey50", linewidth = 0.7)
     if (!is.null(.color_list)) {
       p <- p +
         ggplot2::scale_color_manual(values = .color_list) +
         ggplot2::scale_fill_manual(values = .color_list)
+    }
+    if (do_encircle && !is.null(p$data) && is.data.frame(p$data) && color %in% colnames(p$data)) {
+      encircle_data <- p$data %>%
+        filter(!is.na(.data[[color]]))
+      encircle_layer <- ggalt::geom_encircle(
+        data = encircle_data,
+        aes(
+          group = .data[[color]],
+          fill = .data[[color]],
+          colour = .data[[color]]
+        ),
+        alpha = 0.25,
+        size = 0.25,
+        show.legend = FALSE,
+        na.rm = TRUE
+      )
+      # Put encircles behind points/labels.
+      p$layers <- c(list(encircle_layer), p$layers)
+    }
+    if (isTRUE(show_loadings) && is.numeric(ntop_loadings) && ntop_loadings > 0) {
+      pc_x <- paste0("PC", x1)
+      pc_y <- paste0("PC", x2)
+      if (all(c(pc_x, pc_y) %in% colnames(loading_scores))) {
+        loadings_df <- loading_scores %>%
+          transmute(
+            feature = .data$feature,
+            loading_x = .data[[pc_x]],
+            loading_y = .data[[pc_y]],
+            loading_score = abs(loading_x) + abs(loading_y)
+          ) %>%
+          arrange(desc(loading_score)) %>%
+          slice_head(n = as.integer(ntop_loadings))
+
+        if (!is.null(feature_map)) {
+          loadings_df <- loadings_df %>%
+            mutate(feature = as.character(.data$feature)) %>%
+            left_join(feature_map, by = c("feature" = "GeneID")) %>%
+            mutate(
+              feature_label = if_else(
+                !is.na(.data$GeneSymbol) & .data$GeneSymbol != "",
+                .data$GeneSymbol,
+                .data$feature
+              )
+            )
+        } else {
+          loadings_df <- loadings_df %>%
+            mutate(feature_label = as.character(.data$feature))
+        }
+
+        # Scale loading arrows to match ggfortify::autoplot.prcomp default (scale=1),
+        # which rescales scores by sdev*sqrt(n_samples). This keeps biplot vectors
+        # from distorting the score axis ranges.
+        n_samples <- nrow(pca_res$x)
+        lam <- pca_res$sdev[c(x1, x2)] * sqrt(n_samples)
+        score_x_scaled <- pca_res$x[, pc_x] / lam[1]
+        score_y_scaled <- pca_res$x[, pc_y] / lam[2]
+        max_score_x <- max(abs(score_x_scaled), na.rm = TRUE)
+        max_score_y <- max(abs(score_y_scaled), na.rm = TRUE)
+
+        max_loading_x <- max(abs(loading_scores[[pc_x]]), na.rm = TRUE)
+        max_loading_y <- max(abs(loading_scores[[pc_y]]), na.rm = TRUE)
+        scaler <- min(max_score_x / max_loading_x, max_score_y / max_loading_y)
+        if (!is.finite(scaler) || scaler <= 0) {
+          scaler <- 1
+        }
+
+        loadings_df <- loadings_df %>%
+          mutate(
+            xend = loading_x * scaler * 0.8,
+            yend = loading_y * scaler * 0.8
+          )
+
+        p <- p +
+          geom_segment(
+            data = loadings_df,
+            aes(x = 0, y = 0, xend = xend, yend = yend),
+            inherit.aes = FALSE,
+            linewidth = 0.4,
+            alpha = 0.7,
+            color = "#666666",
+            arrow = grid::arrow(length = grid::unit(0.012, "npc"))
+          ) +
+          ggrepel::geom_text_repel(
+            data = loadings_df,
+            aes(x = xend, y = yend, label = feature_label),
+            inherit.aes = FALSE,
+            size = 3.2,
+            color = "#4a4a4a",
+            max.overlaps = Inf,
+            box.padding = 0.25,
+            segment.color = "#9a9a9a",
+            segment.alpha = 0.55
+          )
+      }
     }
     if (!is.null(annot_str)) {
       p <- p + annotate("text",

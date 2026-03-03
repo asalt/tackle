@@ -12,7 +12,7 @@ number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue")
 direction.choices <- c("both", "up", "down")
 
 volcanoplot <- function(X, max_labels = 35,
-                        pch = 21, cex = 0.35,
+                        pch = 21, cex = 1.0,
                         alpha = 1.,
                         fc_cutoff = 4, sig = 0.05, label_cex = 1,
                         show_all = FALSE, yaxis = yaxis.choices,
@@ -24,7 +24,8 @@ volcanoplot <- function(X, max_labels = 35,
                         bg_marker_color = "#222222",
                         force_highlight_geneids = FALSE,
                         annot_cex = 1.,
-                        marker_cex = 1.4,
+                        marker_cex = 1.0,
+                        point_size = NULL,
                         color_down = "blue",
                         color_up = "red",
                         global_xmax = NULL,
@@ -33,6 +34,9 @@ volcanoplot <- function(X, max_labels = 35,
                         y_label_override = NULL,
                         verbose = TRUE,
                         ...) {
+  if (!is.null(point_size)) {
+    cex <- point_size
+  }
   POINT_SIZE <- marker_cex
 
   ploty <- match.arg(yaxis, yaxis.choices)
@@ -273,7 +277,9 @@ volcanoplot <- function(X, max_labels = 35,
       data = X[X$label == TRUE, ],
       aes(label = GeneSymbol, alpha = alpha), color = "black", min.segment.length = .15,
       point.padding = 1e-3,
-      box.padding = .1, cex = label_cex,
+      box.padding = .1,
+      size = 3.2 * label_cex,
+      fontface = "bold",
       segment.size = .35, segment.alpha = .4,
       max.overlaps = Inf,
       seed = 1234,

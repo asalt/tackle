@@ -121,6 +121,15 @@ sys.setrecursionlimit(10000)
 import logging
 logger = _get_logger(__name__)
 
+try:
+    # Convenience: load ~/.ispec/tackle-agent.conf (or $TACKLE_AGENT_CONF) into
+    # process env vars so Click's envvar options work without manual exports.
+    from .telemetry import apply_agent_conf_env_defaults
+
+    apply_agent_conf_env_defaults()
+except Exception:
+    pass
+
 def run(data_obj):
     # if 'scatter' in plots or 'all' in data_obj.plots:
     if data_obj.make_plot("scatter"):
@@ -254,9 +263,13 @@ class Path_or_Subcommand(click.Path):
         "make_config",
         "replot_gsea",
         "make-xls",
+        "make-deck",
+        "make-pptx",
         "make-run",
         "make-cluster",
-        "make-report",
+        "make-rmd",
+        "make-html",
+        "make-search-report",
         "cluster-summary",
     )  # run as standalone subcommands
 
@@ -521,12 +534,10 @@ ANNOTATION_CHOICES = _annotation_choices()
     help=".ini file with metadata for isobaric data used for scatter and PCA plots",
 )
 @click.option(
-    "-a",
-    "--annotations",
-    type=click.Choice(ANNOTATION_CHOICES),
-    multiple=True,
-    default=None,
-    help="analyses to be performed on subsets of genes",
+    "--annotations/--no-annotations",
+    default=True,
+    show_default=True,
+    help="Include annotation columns in export outputs (for example `export --level MSPC`).",
 )
 @click.option(
     "--batch",
@@ -594,7 +605,7 @@ ANNOTATION_CHOICES = _annotation_choices()
     default=None,
     envvar="TACKLE_AGENT_API",
     show_default=True,
-    help="Optional iSPEC agent API base URL to ingest telemetry events (e.g. http://10.16.1.11:3001).",
+    help="Optional iSPEC agent API base URL to ingest telemetry events (e.g. http://10.16.1.11:3001). Configure via env vars or ~/.ispec/tackle-agent.conf (INI-style; wrapping quotes stripped; override path with TACKLE_AGENT_CONF).",
 )
 @click.option(
     "--agent-id",
@@ -611,6 +622,13 @@ ANNOTATION_CHOICES = _annotation_choices()
     show_default=True,
     multiple=True,
     help="File format for any plots",
+)
+@click.option(
+    "--png-res",
+    type=int,
+    default=300,
+    show_default=True,
+    help="PNG resolution (DPI) for R plot devices (only affects PNG outputs).",
 )
 @click.option(
     "--funcats",
@@ -828,6 +846,7 @@ def main(
     agent_api,
     agent_id,
     file_format,
+    png_res,
     fill_na_zero,
     funcats,
     funcats_inverse,
@@ -979,9 +998,6 @@ def main(
     if cluster_annotate_cols is not None:
         cluster_annotate_cols = list(set(cluster_annotate_cols))
 
-    if annotations is not None and "_all" in annotations:
-        annotations = [x for x in ANNOTATION_CHOICES if x not in ("_all")]
-
     export_all = False
     if all(x in sys.argv for x in ("export", "--level")) and any(
         x in sys.argv
@@ -1001,6 +1017,7 @@ def main(
         ctx.obj = dict()
 
     ctx.obj["file_fmts"] = file_format
+    ctx.obj["png_res"] = png_res
 
     analysis_name = get_file_name(experiment_file)
     if analysis_name is None:
@@ -1152,8 +1169,10 @@ def main(
         + ".tab"
     )
     params = dict(ctx.params)
-    params["file_format"] = " | ".join(params["file_format"])
-    params["annotations"] = " | ".join(params["annotations"])
+    if isinstance(params.get("file_format"), (tuple, list)):
+        params["file_format"] = " | ".join(params["file_format"])
+    if isinstance(params.get("annotations"), (tuple, list)):
+        params["annotations"] = " | ".join(params["annotations"])
     param_df = pd.Series(params, name=analysis_name).to_frame()
     param_df.to_csv(outname, sep="\t")
 
@@ -1527,29 +1546,33 @@ def cluster_summary(ctx, cluster_files, out, per_cluster_out, sort_by, descendin
     click.echo(f"Wrote {out_path}")
 
 
-@main.command("make-report")
-@click.option(
-    "--gct",
-    "gct_path",
-    type=click.Path(exists=True, dir_okay=False),
-    default=None,
-    show_default=True,
-    help="Path to an existing normalized .gct file. Required when running standalone; optional when run after data load.",
-)
-@click.option(
-    "--conf",
-    "conf_path",
-    type=click.Path(exists=True, dir_okay=False),
-    default=None,
-    show_default=True,
-    help="Optional tackle .conf file path to embed metadata hints in the report.",
-)
+@main.command("make-rmd")
 @click.option(
     "--outdir",
     type=str,
     default=None,
     show_default=True,
-    help="Report bundle directory. Default: <analysis outpath>/report/ (after data load) or ./tackle_report_<gctstem>/ (standalone).",
+    help="Output bundle directory. Default: <analysis outpath>/report/rmd/ (after data load) or <base-dir>/report/rmd/ (standalone).",
+)
+@click.option(
+    "--base-dir",
+    type=str,
+    default=None,
+    help="Optional analysis output directory to scan when not running after data load.",
+)
+@click.option(
+    "--volcano-dir",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Optional volcano output directory to select a specific limma replay run (otherwise uses context pointer or auto-discovery).",
+)
+@click.option(
+    "--run-id",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Optional replay run_id to select when --volcano-dir contains multiple replay runs.",
 )
 @click.option(
     "--title",
@@ -1560,10 +1583,10 @@ def cluster_summary(ctx, cluster_files, out, per_cluster_out, sort_by, descendin
 )
 @click.option(
     "--copy/--symlink",
-    "copy_gct",
+    "copy_inputs",
     default=True,
     show_default=True,
-    help="Copy the GCT into the report bundle (default) or create a symlink.",
+    help="Copy replay inputs into the report bundle (default) or create symlinks.",
 )
 @click.option(
     "--force",
@@ -1572,57 +1595,331 @@ def cluster_summary(ctx, cluster_files, out, per_cluster_out, sort_by, descendin
     show_default=True,
     help="Overwrite existing report bundle files in --outdir.",
 )
+@click.option(
+    "--render/--no-render",
+    default=False,
+    show_default=True,
+    help="Render report.html immediately (requires R + rmarkdown).",
+)
 @click.pass_context
-def make_report(ctx, gct_path, conf_path, outdir, title, copy_gct, force):
+def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, force, render):
     """
-    Create a self-contained RMarkdown starter bundle for quick PCA/limma exploration.
+    Create a standalone limma replay RMarkdown bundle from an existing volcano run.
     """
-    import shlex
+    from pathlib import Path
 
-    from .reportgen import write_report_bundle
+    from .limma_replay import resolve_replay_dir
+    from .rmd_replay import write_limma_replay_bundle
 
     data_obj = None
     if ctx.obj and "data_obj" in ctx.obj:
         data_obj = ctx.obj["data_obj"]
 
-    if conf_path is None and data_obj is not None:
-        conf_path = getattr(data_obj, "experiment_file", None)
+    if data_obj is not None:
+        base_dir = data_obj.outpath
+    else:
+        if not base_dir:
+            click.echo(
+                "make-rmd needs an analysis directory. Either run after loading data (e.g., 'tackle ... CONFIG.conf make-rmd') or pass --base-dir PATH."
+            )
+            raise click.Abort()
 
-    if gct_path is None:
-        if data_obj is None:
-            raise click.ClickException("--gct is required when running standalone.")
-        try:
-            gct_path = data_obj.perform_data_export("gct_pca")
-        except Exception as e:
-            raise click.ClickException(f"Failed to export GCT: {e}")
-
+    base_dir_path = Path(base_dir).expanduser().resolve()
     if outdir is None:
-        if data_obj is not None and getattr(data_obj, "outpath", None):
-            outdir = str(Path(data_obj.outpath) / "report")
-        else:
-            outdir = f"tackle_report_{Path(gct_path).stem}"
+        outdir = str(base_dir_path / "report" / "rmd")
 
-    if title is None:
-        title = f"Tackle report: {Path(gct_path).stem}"
-
-    tackle_command = " ".join(shlex.quote(arg) for arg in sys.argv)
     try:
-        bundle = write_report_bundle(
-            report_dir=outdir,
-            gct_path=gct_path,
-            title=title,
-            conf_path=conf_path,
-            tackle_command=tackle_command,
-            copy_gct=copy_gct,
-            force=force,
+        replay_dir = resolve_replay_dir(
+            analysis_dir=base_dir_path,
+            volcano_dir=Path(volcano_dir) if volcano_dir else None,
+            run_id=run_id,
         )
-    except (FileExistsError, NotADirectoryError, FileNotFoundError) as e:
+    except (FileNotFoundError, RuntimeError) as e:
+        raise click.ClickException(str(e))
+
+    try:
+        bundle = write_limma_replay_bundle(
+            report_dir=outdir,
+            replay_dir=str(replay_dir),
+            title=title,
+            copy_inputs=copy_inputs,
+            force=force,
+            render=render,
+        )
+    except (FileExistsError, NotADirectoryError, FileNotFoundError, RuntimeError) as e:
         raise click.ClickException(str(e))
 
     click.echo(f"Wrote report bundle: {bundle.report_dir}")
-    click.echo(f"- GCT: {bundle.gct_path}")
+    click.echo(f"- Replay dir: {replay_dir}")
+    click.echo(f"- Inputs: {bundle.gct_path} , {bundle.context_path}")
     click.echo(f"- Rmd: {bundle.rmd_path}")
     click.echo(f"- Render: {bundle.render_sh}")
+    if bundle.html_path:
+        click.echo(f"- HTML: {bundle.html_path}")
+
+
+@main.command("make-html")
+@click.option(
+    "--outdir",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Output bundle directory. Default: <analysis outpath>/report/html/ (after data load) or <base-dir>/report/html/ (standalone).",
+)
+@click.option(
+    "--base-dir",
+    type=str,
+    default=None,
+    help="Optional analysis output directory to scan when not running after data load.",
+)
+@click.option(
+    "--title",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Optional report title (defaults to analysis name or base-dir stem).",
+)
+@click.option(
+    "--date/--no-date",
+    "show_date",
+    default=True,
+    show_default=True,
+    help="Show generated timestamp in the report header.",
+)
+@click.option(
+    "--copy/--symlink",
+    "copy_assets",
+    default=True,
+    show_default=True,
+    help="Copy plot/TSV assets into the bundle (default) or create symlinks.",
+)
+@click.option(
+    "--self-contained",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Embed plot PNGs directly in the HTML so it can be shared as a single file (no assets directory).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Overwrite existing report files in --outdir.",
+)
+@click.option(
+    "--filter",
+    "filter_contains",
+    multiple=True,
+    default=(),
+    help="Optional substring(s) to filter which assets are included (match against relative paths).",
+)
+@click.option(
+    "--plot-kind",
+    "plot_kinds",
+    multiple=True,
+    type=click.Choice(["metrics", "cluster", "pca", "umap", "volcano", "topdiff-cluster"]),
+    default=("metrics", "cluster", "pca", "umap", "volcano", "topdiff-cluster"),
+    show_default=True,
+    help="Plot categories to include in the overview.",
+)
+@click.option(
+    "--volcano-topn",
+    type=int,
+    default=25,
+    show_default=True,
+    help="Top-N hits per direction (up/down) to show for matched volcano TSV previews.",
+)
+@click.option(
+    "--direction",
+    "volcano_direction",
+    type=click.Choice(["both", "up", "down"]),
+    default="both",
+    show_default=True,
+    help="Which direction(s) to include in volcano TSV previews.",
+)
+@click.option(
+    "--p-cutoff",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="P-value cutoff (uses pValue when present, else pAdj) for volcano TSV previews. Set to 0 to disable filtering.",
+)
+@click.option(
+    "--fc-cutoff",
+    type=float,
+    default=None,
+    show_default=True,
+    help="Optional absolute log2_FC cutoff for volcano TSV preview filtering.",
+)
+@click.option(
+    "--max-table-rows",
+    type=int,
+    default=50,
+    show_default=True,
+    help="Maximum rows to show in each TSV preview table.",
+)
+@click.option(
+    "--tsv-engine",
+    type=click.Choice(["auto", "pandas", "pyarrow"]),
+    default="auto",
+    show_default=True,
+    help="TSV reader engine for volcano TSV previews (pyarrow can be much faster when available).",
+)
+@click.option(
+    "--pandas-low-memory/--pandas-no-low-memory",
+    default=False,
+    show_default=True,
+    help="Use pandas low_memory mode when reading TSVs (pandas engine only).",
+)
+@click.option(
+    "--ai-summary/--no-ai-summary",
+    default=False,
+    show_default=True,
+    help="Generate AI summaries via the agent API and embed them at the bottom of each HTML report section.",
+)
+@click.option(
+    "--ai-model-label",
+    type=str,
+    default=os.environ.get("TACKLE_AGENT_MODEL_LABEL") or "llama3.1 tulu",
+    show_default=True,
+    help="Label to display next to AI summaries (e.g. 'llama3.1 tulu').",
+)
+@click.pass_context
+def make_html(
+    ctx,
+    outdir,
+    base_dir,
+    title,
+    show_date,
+    copy_assets,
+    self_contained,
+    force,
+    filter_contains,
+    plot_kinds,
+    volcano_topn,
+    volcano_direction,
+    p_cutoff,
+    fc_cutoff,
+    max_table_rows,
+    tsv_engine,
+    pandas_low_memory,
+    ai_summary,
+    ai_model_label,
+):
+    """
+    Create a static HTML overview bundle (index.html + assets/) for quick browsing.
+    """
+    from pathlib import Path
+
+    from .html_overview import build_html_overview
+
+    data_obj = None
+    if ctx.obj and "data_obj" in ctx.obj:
+        data_obj = ctx.obj["data_obj"]
+
+    if data_obj is not None:
+        base_dir = data_obj.outpath
+    else:
+        if not base_dir:
+            click.echo(
+                "make-html needs an analysis directory. Either run after loading data (e.g., 'tackle ... CONFIG.conf make-html') or pass --base-dir PATH."
+            )
+            raise click.Abort()
+
+    base_dir_path = Path(base_dir)
+    if outdir is None:
+        outdir = str(base_dir_path / "report" / "html")
+
+    if title is None:
+        if data_obj is not None:
+            title = f"Tackle overview: {data_obj.outpath_name}"
+        else:
+            title = f"Tackle overview: {base_dir_path.name}"
+
+    p_cut = None if (p_cutoff is None or float(p_cutoff) <= 0) else float(p_cutoff)
+
+    try:
+        outputs = build_html_overview(
+            base_dir=str(base_dir_path),
+            out_dir=str(outdir),
+            title=title,
+            show_date=bool(show_date),
+            copy_assets=bool(copy_assets),
+            force=bool(force),
+            self_contained=bool(self_contained),
+            filter_contains=tuple(filter_contains),
+            include_kinds=tuple(plot_kinds),
+            volcano_topn=int(volcano_topn),
+            volcano_direction=str(volcano_direction),
+            volcano_p_cutoff=p_cut,
+            volcano_fc_cutoff=fc_cutoff,
+            max_table_rows=int(max_table_rows),
+            tsv_engine=str(tsv_engine),
+            pandas_low_memory=bool(pandas_low_memory),
+            ai_summary=bool(ai_summary),
+            ai_model_label=str(ai_model_label) if ai_model_label else None,
+        )
+    except (FileExistsError, NotADirectoryError, FileNotFoundError, RuntimeError) as e:
+        raise click.ClickException(str(e))
+
+    click.echo(f"Wrote HTML overview: {outputs.out_html}")
+    if outputs.assets_dir:
+        click.echo(f"- Assets: {outputs.assets_dir}")
+    else:
+        click.echo("- Assets: embedded (self-contained)")
+
+
+@main.command("make-search-report")
+@click.option(
+    "--run-dir",
+    "run_dirs",
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False),
+    help=(
+        "FragPipe output directory. Provide more than once for multi-run reports. "
+        "Defaults to data/processed/prof/fragpipe and data/processed/IMAC/fragpipe."
+    ),
+)
+@click.option(
+    "--out-html",
+    default="results/fragpipe_methods_report.html",
+    show_default=True,
+    type=str,
+    help="Output HTML report path.",
+)
+@click.option(
+    "--out-mzml-tsv",
+    default="results/fragpipe_mzml_tracking.tsv",
+    show_default=True,
+    type=str,
+    help="Output TSV path for manifest mzML tracking.",
+)
+@click.option(
+    "--workspace-root",
+    default=".",
+    show_default=True,
+    type=click.Path(exists=True, file_okay=False),
+    help="Workspace root used for relative run-dir resolution and path remapping checks.",
+)
+def make_search_report(run_dirs, out_html, out_mzml_tsv, workspace_root):
+    """
+    Create a methods/provenance report from FragPipe metadata files.
+    """
+    from .search_report import build_fragpipe_methods_report
+
+    result = build_fragpipe_methods_report(
+        run_dirs=list(run_dirs) if run_dirs else None,
+        out_html=out_html,
+        out_mzml_tsv=out_mzml_tsv,
+        workspace_root=workspace_root,
+    )
+    click.echo(f"Wrote HTML report: {result.out_html}")
+    click.echo(f"Wrote mzML tracking TSV: {result.out_mzml_tsv}")
+    click.echo(
+        "Manifest entries: "
+        f"{result.manifest_total}; missing mzML entries: {result.missing_total}"
+    )
 
 
 @main.command("scatter")
@@ -1857,8 +2154,45 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
     show_default=True,
     help="Merge all volcano TSVs into a single wide sheet (default) or keep as separate sheets.",
 )
+@click.option(
+    "--style/--no-style",
+    default=True,
+    show_default=True,
+    help="Apply minimal workbook styling (freeze header, filters, column widths).",
+)
+@click.option(
+    "--timing/--no-timing",
+    default=False,
+    show_default=True,
+    help="Log per-sheet read/write timings and memory usage during Excel export.",
+)
+@click.option(
+    "--tsv-engine",
+    type=click.Choice(["auto", "pandas", "pyarrow"]),
+    default="auto",
+    show_default=True,
+    help="TSV reader engine for make-xls (pyarrow can be much faster when available).",
+)
+@click.option(
+    "--pandas-low-memory/--pandas-no-low-memory",
+    default=False,
+    show_default=True,
+    help="Use pandas low_memory mode when reading TSVs (pandas engine only).",
+)
+@click.option(
+    "--stream-export/--no-stream-export",
+    default=False,
+    show_default=True,
+    help="Stream export TSVs directly into XLSX (xlsxwriter only) to avoid pandas parsing.",
+)
+@click.option(
+    "--staging-dir",
+    type=str,
+    default=None,
+    help="Optional temp directory to write the XLSX before moving to --out (useful on slow mounts).",
+)
 @click.pass_context
-def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano):
+def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano, style, timing, tsv_engine, pandas_low_memory, stream_export, staging_dir):
     """
     Build a summary Excel workbook by collecting common TSV exports
     (export tables, volcano results) from the current analysis outpath.
@@ -1932,6 +2266,12 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
                 slim_volcano=slim_volcano,
                 volcano_topn=volcano_topn,
                 merge_volcano=merge_volcano,
+                staging_dir=staging_dir,
+                timing=timing,
+                tsv_engine=tsv_engine,
+                pandas_low_memory=pandas_low_memory,
+                stream_export=stream_export,
+                style=style,
             )
         else:
             result = build_export_xlsx(
@@ -1950,12 +2290,269 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
                 slim_volcano=slim_volcano,
                 volcano_topn=volcano_topn,
                 merge_volcano=merge_volcano,
+                staging_dir=staging_dir,
+                timing=timing,
+                tsv_engine=tsv_engine,
+                pandas_low_memory=pandas_low_memory,
+                stream_export=stream_export,
+                style=style,
             )
     except RuntimeError as e:
         click.echo(str(e))
         click.echo("Install 'openpyxl' or 'xlsxwriter' to enable XLSX export.")
         raise click.Abort()
     click.echo(f"Wrote Excel summary: {result}")
+
+
+@main.command("make-deck")
+@click.option(
+    "--outdir",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Output bundle directory for slide assets. Default: <analysis outpath>/report/deck/ (after data load) or <base-dir>/report/deck/ (standalone).",
+)
+@click.option(
+    "--base-dir",
+    type=str,
+    default=None,
+    help="Optional analysis output directory to scan when not running after data load.",
+)
+@click.option(
+    "--formats",
+    multiple=True,
+    type=click.Choice(["png", "pdf"]),
+    default=("png", "pdf"),
+    show_default=True,
+    help="Table image formats to write for each volcano result.",
+)
+@click.option(
+    "--dpi",
+    type=int,
+    default=300,
+    show_default=True,
+    help="PNG DPI for table images.",
+)
+@click.option(
+    "--filter",
+    "filter_contains",
+    multiple=True,
+    default=(),
+    help="Optional substring(s) to filter which volcano TSVs become slides (match against relative paths).",
+)
+@click.option(
+    "--topn",
+    type=int,
+    default=15,
+    show_default=True,
+    help="Top-N hits per direction (up/down) to include in each volcano summary table.",
+)
+@click.option(
+    "--direction",
+    type=click.Choice(["both", "up", "down"]),
+    default="both",
+    show_default=True,
+    help="Which direction(s) to include in each volcano summary table.",
+)
+@click.option(
+    "--p-cutoff",
+    type=float,
+    default=0.05,
+    show_default=True,
+    help="P-value cutoff (uses pAdj when present, else pValue). Set to 0 to disable filtering.",
+)
+@click.option(
+    "--fc-cutoff",
+    type=float,
+    default=None,
+    show_default=True,
+    help="Optional absolute log2_FC cutoff for volcano table filtering.",
+)
+@click.option(
+    "--pptx/--no-pptx",
+    default=True,
+    show_default=True,
+    help="Generate a PowerPoint deck (.pptx) embedding the table images (requires python-pptx).",
+)
+@click.option(
+    "--pptx-out",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Output .pptx path. Default: <outdir>/deck.pptx",
+)
+@click.option(
+    "--require-pptx",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Fail if python-pptx is missing or deck generation fails (images are still written first).",
+)
+@click.option(
+    "--title",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Optional deck title (defaults to analysis name or base-dir stem).",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Overwrite existing images/deck outputs in --outdir.",
+)
+@click.option(
+    "--tsv-engine",
+    type=click.Choice(["auto", "pandas", "pyarrow"]),
+    default="auto",
+    show_default=True,
+    help="TSV reader engine for make-deck (pyarrow can be much faster when available).",
+)
+@click.option(
+    "--pandas-low-memory/--pandas-no-low-memory",
+    default=False,
+    show_default=True,
+    help="Use pandas low_memory mode when reading TSVs (pandas engine only).",
+)
+@click.option(
+    "--include-plot-images/--no-include-plot-images",
+    default=True,
+    show_default=True,
+    help="Also include existing PNG plots (volcano/pca/metrics/cluster/topdiff-cluster) as slides.",
+)
+@click.option(
+    "--plot-kind",
+    "plot_kinds",
+    multiple=True,
+    type=click.Choice(["volcano", "pca", "metrics", "cluster", "topdiff-cluster"]),
+    default=("volcano", "pca", "metrics", "cluster", "topdiff-cluster"),
+    show_default=True,
+    help="Plot categories to include when --include-plot-images is enabled.",
+)
+@click.pass_context
+def make_deck(
+    ctx,
+    outdir,
+    base_dir,
+    formats,
+    dpi,
+    filter_contains,
+    topn,
+    direction,
+    p_cutoff,
+    fc_cutoff,
+    pptx,
+    pptx_out,
+    require_pptx,
+    title,
+    force,
+    tsv_engine,
+    pandas_low_memory,
+    include_plot_images,
+    plot_kinds,
+):
+    """
+    Generate slide-ready table summaries (PNG/PDF) from volcano TSV outputs,
+    and optionally assemble a PowerPoint deck embedding the tables.
+    """
+    from pathlib import Path
+
+    from .deckgen import build_pptx_deck, build_volcano_table_assets, collect_plot_image_assets
+
+    data_obj = None
+    if ctx.obj and "data_obj" in ctx.obj:
+        data_obj = ctx.obj["data_obj"]
+
+    if data_obj is not None:
+        base_dir = data_obj.outpath
+    else:
+        if not base_dir:
+            click.echo(
+                "make-deck needs an analysis directory. Either run after loading data (e.g., 'tackle ... CONFIG.conf make-deck') or pass --base-dir PATH."
+            )
+            raise click.Abort()
+
+    base_dir_path = Path(base_dir)
+    if outdir is None:
+        outdir = str(base_dir_path / "report" / "deck")
+
+    out_root = Path(outdir)
+    tables_dir = out_root / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+
+    # Coerce formats to extensions expected by deckgen
+    fmts = tuple(f".{f}" for f in formats)
+
+    # If building a pptx, ensure we have PNGs to embed.
+    if pptx and ".png" not in fmts:
+        fmts = fmts + (".png",)
+
+    p_cut = None if (p_cutoff is None or float(p_cutoff) <= 0) else float(p_cutoff)
+
+    table_assets = build_volcano_table_assets(
+        base_dir=str(base_dir_path),
+        out_dir=str(tables_dir),
+        filter_contains=filter_contains,
+        topn=int(topn),
+        direction=direction,
+        p_cutoff=p_cut,
+        fc_cutoff=fc_cutoff,
+        formats=fmts,
+        dpi=int(dpi),
+        tsv_engine=tsv_engine,
+        pandas_low_memory=pandas_low_memory,
+        force=force,
+    )
+
+    click.echo(f"Wrote {len(table_assets)} table summaries under: {tables_dir}")
+
+    plot_assets = []
+    if include_plot_images:
+        plot_assets = collect_plot_image_assets(
+            base_dir=str(base_dir_path),
+            filter_contains=filter_contains,
+            include_kinds=plot_kinds,
+            exclude_dirs=(str(out_root),),
+        )
+        click.echo(
+            f"Discovered {len(plot_assets)} existing plot PNG assets "
+            f"({', '.join(plot_kinds)}) under: {base_dir_path}"
+        )
+
+    deck_assets = [*table_assets, *plot_assets]
+
+    if not pptx:
+        return
+
+    deck_out = pptx_out or str(out_root / "deck.pptx")
+    if title is None:
+        if data_obj is not None:
+            title = f"Tackle deck: {data_obj.outpath_name}"
+        else:
+            title = f"Tackle deck: {base_dir_path.name}"
+
+    try:
+        deck_path = build_pptx_deck(
+            out_path=deck_out,
+            title=title,
+            subtitle=str(base_dir_path),
+            assets=deck_assets,
+            widescreen=True,
+        )
+    except Exception as e:
+        click.echo(str(e))
+        click.echo("Install deck dependencies with: pip install 'tackle[slides]'")
+        if require_pptx:
+            raise click.Abort()
+        return
+
+    click.echo(f"Wrote slide deck: {deck_path}")
+
+
+# Convenience alias (same options/behavior as make-deck).
+main.add_command(make_deck, "make-pptx")
+
 
 @main.command("cluster")
 @click.option(
@@ -2430,6 +3027,13 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 )
 @click.option("--frame", is_flag=True, default=False, show_default=True)
 @click.option(
+    "--encircle/--no-encircle",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Draw group encircles around points (PCAtools-style). Requires --color.",
+)
+@click.option(
     "--normalize-by",
     default=None,
     show_default=True,
@@ -2465,6 +3069,20 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     show_default=True,
 )
 @click.option(
+    "--show-loadings/--no-show-loadings",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Overlay top PCA loading vectors/labels on score plots.",
+)
+@click.option(
+    "--ntop-loadings",
+    type=int,
+    default=10,
+    show_default=True,
+    help="Number of top loading vectors to display per PC pair.",
+)
+@click.option(
     "--figsize",
     nargs=2,
     type=float,
@@ -2489,6 +3107,7 @@ def pca2(
     ctx,
     annotate,
     frame,
+    encircle,
     normalize_by,
     center,
     scale,
@@ -2496,10 +3115,17 @@ def pca2(
     color,
     marker,
     fillna,
+    show_loadings,
+    ntop_loadings,
     figsize,
     genefile,
 ):
     outname_kws = dict()
+    if show_loadings:
+        # Only include in the name when enabled, so default output naming remains unchanged.
+        outname_kws["load"] = True
+    if encircle:
+        outname_kws["enc"] = True
 
     import seaborn as sb
     sb.set_palette("muted")
@@ -2507,6 +3133,9 @@ def pca2(
     sb.set_context("notebook", font_scale=1.4)
 
     data_obj = ctx.obj["data_obj"]
+
+    if encircle and not color:
+        raise click.BadParameter("--encircle requires --color")
 
     X = data_obj.areas_log_shifted
     X.index = X.index.astype(str)
@@ -2530,6 +3159,15 @@ def pca2(
         .melt(id_vars=["GeneID"])
         .merge(col_meta, left_on="variable", right_index=True)
     )
+    if show_loadings:
+        gid_symbol = data_obj.gid_symbol or {}
+        if gid_symbol:
+            gid_symbol_str = {
+                str(gid): sym
+                for gid, sym in gid_symbol.items()
+                if sym is not None and pd.notna(sym) and str(sym).strip() != ""
+            }
+            dfm["GeneSymbol"] = dfm["GeneID"].astype(str).map(gid_symbol_str)
     # dfm.to_csv(outname_func('pca_input')+'.tsv', sep='\t', index=False)
     if color in dfm:
         dfm[color] = dfm[color].astype(str)
@@ -2649,9 +3287,12 @@ def pca2(
         label=annotate,
         fillna=fillna or "min",
         showframe=frame,
+        encircle=encircle,
         max_pc=max_pc,
         color_list=color_list,
         marker_list=robjects.NULL,
+        show_loadings=show_loadings,
+        ntop_loadings=max(0, int(ntop_loadings)),
         title=outname_kws.get("genefile") or robjects.NULL,
         annot_str=outname_kws.get("genefile") or robjects.NULL,
         fig_width=figsize[0],
@@ -2667,7 +3308,10 @@ def pca2(
         for file_fmt in file_fmts:
             out = f"{pca2_outname}{plot_name}{file_fmt}"
             grdevice = grdevice_helper.get_device(
-                filetype=file_fmt, width=figsize[0], height=figsize[1]
+                filetype=file_fmt,
+                width=figsize[0],
+                height=figsize[1],
+                res=ctx.obj["png_res"],
             )
             grdevice(file=out)
             try:
@@ -2701,6 +3345,9 @@ def pca2(
                     "marker": marker,
                     "max_pc": max_pc,
                     "fillna": fillna,
+                    "show_loadings": bool(show_loadings),
+                    "ntop_loadings": int(ntop_loadings),
+                    "encircle": bool(encircle),
                     "center": center,
                     "scale": scale,
                     "normalize_by": normalize_by,
@@ -2708,6 +3355,345 @@ def pca2(
             )
         except Exception as e:
             logger.debug("Telemetry emit failed for pca2: %r", e)
+
+
+@main.command("umap")
+@click.option(
+    "--annotate",
+    default=False,
+    show_default=True,
+    is_flag=True,
+    help="Annotate points on UMAP plot",
+)
+@click.option("--frame/--no-frame", is_flag=True, default=False, show_default=True)
+@click.option(
+    "--normalize-by",
+    default=None,
+    show_default=True,
+    help="Metadata group to normalize by before UMAP",
+)
+@click.option("--center / --no-center", is_flag=True, default=True, show_default=True)
+@click.option("--scale / --no-scale", is_flag=True, default=False, show_default=True)
+@click.option(
+    "--color",
+    default=None,
+    show_default=True,
+    is_flag=False,
+    help="What metadata entry to color UMAP",
+)
+@click.option(
+    "--marker",
+    default=None,
+    show_default=True,
+    is_flag=False,
+    help="What metadata entry to mark UMAP",
+)
+@click.option(
+    "--fillna",
+    type=click.Choice(["min", "avg"]),
+    default="min",
+    show_default=True,
+)
+@click.option(
+    "--n-neighbors",
+    type=int,
+    default=15,
+    show_default=True,
+    help="UMAP local neighborhood size",
+)
+@click.option(
+    "--min-dist",
+    type=float,
+    default=0.1,
+    show_default=True,
+    help="UMAP minimum distance in low-dimensional embedding",
+)
+@click.option(
+    "--metric",
+    type=str,
+    default="euclidean",
+    show_default=True,
+    help="Distance metric used by UMAP",
+)
+@click.option(
+    "--spread",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="UMAP spread parameter",
+)
+@click.option(
+    "--n-components",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Number of UMAP embedding dimensions to compute",
+)
+@click.option(
+    "--max-components",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Plot all pairwise combinations up to this many UMAP dimensions",
+)
+@click.option(
+    "--n-epochs",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Number of UMAP optimization epochs (0 lets uwot choose)",
+)
+@click.option(
+    "--seed",
+    type=int,
+    default=1234,
+    show_default=True,
+    help="Random seed for UMAP initialization",
+)
+@click.option(
+    "--figsize",
+    nargs=2,
+    type=float,
+    default=(9, 8),
+    show_default=True,
+    help="""Optionally specify the figuresize (width, height) in inches
+              If not specified, tries to use a reasonable default depending on the number of
+              samples.
+              """,
+)
+@click.option(
+    "--genefile",
+    type=Path_or_Geneset(exists=True, dir_okay=False),
+    default=None,
+    show_default=True,
+    multiple=False,
+    help="""File of geneids to plot.
+              Should have 1 geneid per line. """,
+)
+@click.pass_context
+def umap(
+    ctx,
+    annotate,
+    frame,
+    normalize_by,
+    center,
+    scale,
+    color,
+    marker,
+    fillna,
+    n_neighbors,
+    min_dist,
+    metric,
+    spread,
+    n_components,
+    max_components,
+    n_epochs,
+    seed,
+    figsize,
+    genefile,
+):
+    outname_kws = dict()
+
+    if n_components < 2:
+        raise ValueError("n-components must be >= 2")
+    if max_components < 2:
+        raise ValueError("max-components must be >= 2")
+    if max_components > n_components:
+        max_components = n_components
+
+    import seaborn as sb
+
+    sb.set_palette("muted")
+    sb.set_color_codes()
+    sb.set_context("notebook", font_scale=1.4)
+
+    data_obj = ctx.obj["data_obj"]
+
+    X = data_obj.areas_log_shifted
+    X.index = X.index.astype(str)
+    X[data_obj.mask] = np.nan
+    col_meta = data_obj.col_metadata.copy()
+
+    genes = None
+    if genefile:
+        genes = parse_gid_file(genefile)
+        _tokeep = [x for x in genes if x in X.index]
+        X = X.loc[_tokeep]
+        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
+
+    dfm = (
+        X.reset_index()
+        .melt(id_vars=["GeneID"])
+        .merge(col_meta, left_on="variable", right_index=True)
+    )
+    if color in dfm:
+        dfm[color] = dfm[color].astype(str)
+    if marker in dfm:
+        dfm[marker] = dfm[marker].astype(str)
+
+    if not color:
+        fallback_color = "recno" if "recno" in col_meta.columns else None
+        if fallback_color is None and len(col_meta.columns) > 0:
+            fallback_color = col_meta.columns[0]
+        if fallback_color is None:
+            raise ValueError("No metadata columns available to color UMAP.")
+        logger.warning(
+            "Color not specified. Using %s as color variable.", fallback_color
+        )
+        color = fallback_color
+    if color and color not in col_meta:
+        raise ValueError(f"Color column {color!r} not found in metadata")
+    if marker and marker not in col_meta:
+        raise ValueError(f"Marker column {marker!r} not found in metadata")
+
+    outname_func = partial(
+        get_outname,
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        batch=data_obj.batch_applied,
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
+        normtype=data_obj.normtype,
+        center=center,
+        scale=scale,
+        norm_by=normalize_by,
+        fillna=fillna,
+        nn=n_neighbors,
+        min_dist=min_dist,
+        metric=metric,
+        spread=spread,
+        n_components=n_components,
+        max_components=max_components,
+        n_epochs=n_epochs if n_epochs > 0 else None,
+        seed=seed,
+        outpath=os.path.join(data_obj.outpath, "umap"),
+        colby=color,
+        markby=marker,
+        **outname_kws,
+    )
+
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri, conversion
+    from rpy2.robjects.conversion import localconverter
+    from rpy2.robjects.packages import importr
+
+    from . import grdevice_helper
+
+    r_source = robjects.r["source"]
+    r_file = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0], "R", "umapplot.R"
+    )
+    r_source(r_file)
+    umap2 = robjects.r["umap2"]
+
+    color_series = utils.normalize_metadata_str_values(col_meta[color])
+    user_mapping = None
+    if data_obj.metadata_colors is not None and color in data_obj.metadata_colors:
+        user_mapping = data_obj.metadata_colors.get(color)
+    themapping = utils.get_color_mapping_with_defaults(
+        color_series, user_mapping if isinstance(user_mapping, dict) else None
+    )
+    color_list = (
+        robjects.vectors.ListVector(themapping) if themapping else robjects.NULL
+    )
+
+    dfm[color] = utils.normalize_metadata_str_values(dfm[color])
+
+    file_fmts = ctx.obj["file_fmts"]
+    umap_outname = outname_func("umap")
+    with localconverter(robjects.default_converter + pandas2ri.converter):
+        dfm_r = conversion.py2rpy(dfm)
+
+    umap_plots = umap2(
+        dfm_r,
+        color=color or robjects.NULL,
+        shape=marker or robjects.NULL,
+        outfiletypes=list(file_fmts),
+        outname=umap_outname,
+        center=center,
+        scale=scale,
+        normalize_by=normalize_by or robjects.NULL,
+        label=annotate,
+        fillna=fillna or "min",
+        showframe=frame,
+        color_list=color_list,
+        marker_list=robjects.NULL,
+        title=outname_kws.get("genefile") or robjects.NULL,
+        annot_str=outname_kws.get("genefile") or robjects.NULL,
+        fig_width=figsize[0],
+        fig_height=figsize[1],
+        return_plots=True,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+        metric=metric,
+        spread=spread,
+        n_components=n_components,
+        max_components=max_components,
+        n_epochs=n_epochs,
+        random_state=seed,
+    )
+
+    r_print = robjects.r["print"]
+    grdevices = importr("grDevices")
+    plot_items = iter_named_items(umap_plots)
+
+    for plot_name, plot_obj in plot_items:
+        for file_fmt in file_fmts:
+            out = f"{umap_outname}{plot_name}{file_fmt}"
+            grdevice = grdevice_helper.get_device(
+                filetype=file_fmt,
+                width=figsize[0],
+                height=figsize[1],
+                res=ctx.obj["png_res"],
+            )
+            grdevice(file=out)
+            try:
+                r_print(plot_obj)
+            finally:
+                grdevices.dev_off()
+
+    telemetry = ctx.obj.get("telemetry") if ctx.obj else None
+    if telemetry is not None:
+        try:
+            correlation_id = None
+            if ctx.obj:
+                correlation_id = ctx.obj.get("telemetry_correlation_id")
+
+            embedding_tsv = umap_outname + "_embedding.tsv"
+            params_tsv = umap_outname + "_params.tsv"
+            telemetry.emit_event(
+                type="tackle.umap.export",
+                name="umap",
+                severity="info",
+                correlation_id=correlation_id,
+                dimensions={
+                    "analysis_name": str(data_obj.outpath_name),
+                    "analysis_outpath": str(data_obj.outpath),
+                    "taxon": str(data_obj.taxon),
+                },
+                value={
+                    "embedding_tsv": embedding_tsv,
+                    "params_tsv": params_tsv,
+                    "color": color,
+                    "marker": marker,
+                    "fillna": fillna,
+                    "center": center,
+                    "scale": scale,
+                    "normalize_by": normalize_by,
+                    "n_neighbors": n_neighbors,
+                    "min_dist": min_dist,
+                    "metric": metric,
+                    "spread": spread,
+                    "n_components": n_components,
+                    "max_components": max_components,
+                    "n_epochs": n_epochs,
+                    "seed": seed,
+                },
+            )
+        except Exception as e:
+            logger.debug("Telemetry emit failed for umap: %r", e)
 
 
 @main.command("cluster2")
@@ -2740,6 +3726,17 @@ def pca2(
     default=False,
     is_flag=True,
     help="add gene annotations to heatmap",
+)
+@click.option(
+    "-a",
+    "--annotation",
+    "--annotations",
+    "cluster_annotations",
+    type=click.Choice(ANNOTATION_CHOICES),
+    multiple=True,
+    default=(),
+    show_default=True,
+    help="Plot per-annotation subset heatmaps (repeatable). Use `_all` to include all annotation groups.",
 )
 @click.option(
     "--cluster-col-slices/--no-cluster-col-slices",
@@ -2873,6 +3870,13 @@ def pca2(
     help="""tackle volcanoplot output tsv file (...)
               to subselect genes meeting certain thresholds
               """,
+)
+@click.option(
+    "--reroute-volcano/--no-reroute-volcano",
+    default=True,
+    is_flag=True,
+    show_default=True,
+    help="When `--volcano-file` is provided, write topdiff clustermap outputs under the volcano TSV directory (volcano/topdiff/<contrast>/...).",
 )
 @click.option(
     "--volcano-filter-params",
@@ -3087,6 +4091,7 @@ def cluster2(
     add_description,
     annotate,
     annotate_genes,
+    cluster_annotations,
     cmap,
     cut_by,
     color_low,
@@ -3125,6 +4130,7 @@ def cluster2(
     main_title,
     order_by_abundance,
     volcano_file,
+    reroute_volcano,
     volcano_filter_params,
     volcano_topn,
     volcano_top_n,
@@ -3148,6 +4154,15 @@ def cluster2(
     export_sweep_tsvs,
 ):
     volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
+    cluster_annotations = list(cluster_annotations or ())
+    if "_all" in cluster_annotations:
+        cluster_annotations = [x for x in ANNOTATION_CHOICES if x != "_all"]
+    else:
+        seen = set()
+        cluster_annotations = [
+            x for x in cluster_annotations if not (x in seen or seen.add(x))
+        ]
+
     if nclusters == "auto" and cluster_func == "none":
         raise click.BadParameter("`--nclusters auto` requires `--cluster-func`")
     if min_autoclusters is not None and max_autoclusters is not None:
@@ -3218,6 +4233,8 @@ def cluster2(
         cluster_db=cluster_db,
         cluster_db_path=cluster_db_path,
         export_sweep_tsvs=export_sweep_tsvs,
+        cluster_annotations=cluster_annotations,
+        reroute_volcano=reroute_volcano,
     )
 
 
@@ -3964,6 +4981,7 @@ def metrics(ctx, full, before_filter, before_norm):
     make_metrics(
         data_obj,
         file_fmts,
+        png_res=ctx.obj["png_res"],
         before_filter=before_filter,
         before_norm=before_norm,
         full=full,
@@ -4101,7 +5119,7 @@ class Float_or_Bool(click.ParamType):
     "-s",
     "--label-scale",
     type=float,
-    default=1.8,
+    default=1.0,
     show_default=True,
     help="To what extent to scale the labels",
 )
@@ -4113,7 +5131,7 @@ class Float_or_Bool(click.ParamType):
 )
 @click.option(
     "--marker-scale",
-    default=1.8,
+    default=1.0,
     show_default=True,
 )
 @click.option(
@@ -4176,6 +5194,20 @@ class Float_or_Bool(click.ParamType):
     show_default=True,
 )
 @click.option(
+    "--limma-robust/--no-limma-robust",
+    default=True,
+    is_flag=True,
+    show_default=True,
+    help="Use robust empirical Bayes moderation in limma volcano modeling",
+)
+@click.option(
+    "--limma-trend/--no-limma-trend",
+    default=True,
+    is_flag=True,
+    show_default=True,
+    help="Use limma-trend variance modeling in empirical Bayes step for volcano modeling",
+)
+@click.option(
     "--genefile",
     # type=click.Path(exists=True, dir_okay=False),
     type=Path_or_Geneset(exists=True, dir_okay=False),
@@ -4196,7 +5228,7 @@ class Float_or_Bool(click.ParamType):
 )
 @click.option(
     "--pch",
-    default=16,
+    default=21,
     show_default=True,
     help="<experimental> use 21 for circles with borders",
 )
@@ -4258,6 +5290,8 @@ def volcano(
     force_highlight_geneids,
     formula,
     contrasts,
+    limma_robust,
+    limma_trend,
     genefile,
     figsize,
     pch,
@@ -4310,6 +5344,8 @@ def volcano(
         marker_scale=marker_scale,
         formula=formula,
         contrasts=contrasts,
+        limma_robust=limma_robust,
+        limma_trend=limma_trend,
         genes=genes,
         width=width,
         height=height,

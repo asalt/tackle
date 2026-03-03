@@ -19,14 +19,30 @@ setup(
     py_modules=['main', 'utils', 'clusterplot', 'scatterplot', 'pcaplot', 'containers'],
     install_requires=[
         'Click',
+        'Jinja2',
     ],
+    extras_require={
+        'excel': [
+            'openpyxl',
+            'xlsxwriter',
+        ],
+        'excel-fast': [
+            'openpyxl',
+            'xlsxwriter',
+            'pyarrow',
+        ],
+        'slides': [
+            'python-pptx',
+        ],
+    },
     entry_points="""
     [console_scripts]
     tackle=tackle.main:main
+    tackle1=tackle.cli1.app:cli
     # correlationplot=main:main
     """,
 
-    package_data={'': ['R/*.r', 'R/*.R', 'GSEA/*.jar', 'GSEA/*.gmt', 'GSEA/genesets/*gmt', 'data/*.data', 'data/*txt', 'data/*tab', 'data/*tsv', 'data/*xlsx']},
+    package_data={'': ['R/*.r', 'R/*.R', 'GSEA/*.jar', 'GSEA/*.gmt', 'GSEA/genesets/*gmt', 'data/*.data', 'data/*txt', 'data/*tab', 'data/*tsv', 'data/*xlsx', 'templates/*.j2']},
     include_package_data=True
 
 )

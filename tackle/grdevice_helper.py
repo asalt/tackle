@@ -30,7 +30,6 @@ def get_gr_devices():
 
 def get_grid_kws(filetype, width=7, height=7, units="in", res=300):
 
-
     from rpy2.robjects.packages import importr
 
     grdevices = importr("grDevices")
@@ -41,7 +40,7 @@ def get_grid_kws(filetype, width=7, height=7, units="in", res=300):
     }
 
     gr_kws = {
-       "png": dict(width=width, height=height, units="in", res=300),
+       "png": dict(width=width, height=height, units=units, res=res),
        "pdf": dict(
            width=width,
            height=height,
@@ -64,7 +63,4 @@ def get_device(filetype="pdf", **kwargs):
     gr_device = gr_devices[filetype]
     gr_kwargs = get_grid_kws(filetype, **kwargs)
     return partial(gr_device, **gr_kwargs)
-
-
-
 

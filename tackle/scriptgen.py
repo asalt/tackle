@@ -161,8 +161,36 @@ VOLCANO_FORMULA="~ 0 + $DESIGN_COL"
 # Use a heredoc so you can paste multi-line contrast definitions safely.
 # TODO: fill these in. Prefer named contrasts:
 #   MyContrast = treatA - treatB,
-read -r -d '' VOLCANO_CONTRASTS <<'EOF'
+VOLCANO_CONTRASTS=$(cat <<'EOF'
 EOF
+)
+
+# ---- "Top diff" cluster2 plots from volcano TSVs ----
+# These defaults are used by plot_topdiff() below.
+CLUSTER2=(
+    # TODO: add common cluster2 flags here, e.g.
+    # --no-col-cluster
+    # --cut-by "$DESIGN_COL"
+    # --row-dend-side left
+    # --row-annot-side right
+    # --row-names-side right
+)
+
+# Each entry is a whitespace-split string of extra args appended per volcano TSV.
+# Notes:
+# - This is intentionally simple and easy to edit/copy-paste.
+# - Quotes inside a string are not interpreted by bash when we split it; if you need
+#   a flag value that contains spaces, handle that variant manually.
+TOPDIFF_VARIANTS=(
+    "--cut-by $DESIGN_COL --volcano-sortby pValue --volcano-topn 100"
+    "--cut-by $DESIGN_COL --volcano-sortby pValue --volcano-topn 50"
+    "--cut-by $DESIGN_COL --volcano-sortby pValue --add-description --volcano-topn 100"
+    "--cut-by $DESIGN_COL --volcano-sortby pValue --add-description --volcano-topn 50"
+    "--cut-by $DESIGN_COL --volcano-sortby pValue --add-description --annotate PeptideCount --volcano-topn 100"
+    "--cut-by $DESIGN_COL --volcano-sortby pValue --add-description --annotate PeptideCount --volcano-topn 50"
+    "--cut-by $DESIGN_COL --volcano-sortby log2_FC --volcano-topn 100"
+    "--cut-by $DESIGN_COL --volcano-sortby log2_FC --volcano-topn 50"
+)
 
 run_volcano() {{
     tackle "${{HEADMAIN[@]}}" "$CONF" \\
@@ -176,6 +204,44 @@ run_volcano() {{
         --label-scale "$VOLCANO_LABEL_SCALE"
 }}
 
+plot_topdiff() {{
+    local conf="$1"
+
+    local thebasename
+    thebasename="$(basename "${{conf%.conf}}")"
+
+    local qstr="$RESULT_DIR/$thebasename/$NAME/volcano"
+    echo "searching: $qstr" >&2
+
+    local -a files
+    mapfile -d '' -t files < <(find "$qstr" -type f -name '*.tsv' -print0 2>/dev/null)
+
+    if [[ ${{#files[@]}} -eq 0 ]]; then
+        printf 'No volcano TSVs found in %s\n' "$qstr" >&2
+        return 1
+    fi
+
+    local -a cmd
+    cmd=(tackle "${{HEADMAIN[@]}}")
+    cmd+=("$conf")
+
+    local f
+    for f in "${{files[@]}}"; do
+        if [[ -r "$f" ]]; then
+            local v
+            local -a v_arr
+            for v in "${{TOPDIFF_VARIANTS[@]}}"; do
+                read -r -a v_arr <<< "$v"
+                cmd+=(cluster2 "${{CLUSTER2[@]}}" --volcano-file "$f" --gene-symbols --optimal-figsize "${{v_arr[@]}}")
+            done
+        else
+            printf 'Unable to read file: %s\n' "$f" >&2
+        fi
+    done
+
+    "${{cmd[@]}}"
+}}
+
 run_export_and_metrics() {{
     tackle "${{HEADMAIN[@]}}" "$CONF" \\
         export --level gct \\
@@ -186,6 +252,7 @@ main() {{
     # TODO: uncomment what you want.
     # run_export_and_metrics
     # run_volcano
+    # plot_topdiff "$CONF"
     :
 }}
 

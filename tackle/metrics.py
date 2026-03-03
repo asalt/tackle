@@ -111,7 +111,7 @@ def _build_metrics_from_filtered(df_filtered: pd.DataFrame, *, before_norm: bool
 
 
 def make_metrics(
-    data_obj, file_fmts, before_filter=False, before_norm=False, full=False
+    data_obj, file_fmts, png_res=300, before_filter=False, before_norm=False, full=False
 ):
 
     rc = {
@@ -271,7 +271,10 @@ def make_metrics(
         for file_fmt in file_fmts:
             out = f"{export_name}_{plot_name}{file_fmt}"
             grdevice = grdevice_helper.get_device(
-                filetype=file_fmt, width=plot_width, height=plot_height
+                filetype=file_fmt,
+                width=plot_width,
+                height=plot_height,
+                res=png_res,
             )
             grdevice(file=out)
             try:
@@ -339,7 +342,10 @@ def make_metrics(
         for file_fmt in file_fmts:
             out = outname + file_fmt
             grdevice = grdevice_helper.get_device(
-                filetype=file_fmt, width=figwidth, height=figheight
+                filetype=file_fmt,
+                width=figwidth,
+                height=figheight,
+                res=png_res,
             )  # returns a partial grdevice func
             grdevice(file=out)  # open file for saving
             robjects.r(_code)

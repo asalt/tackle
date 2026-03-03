@@ -264,5 +264,34 @@ single Excel workbook:
   - `--base-dir PATH` to run standalone without reloading data
   - `--no-include-export` to skip `export/` tables
   - `--no-include-volcano` to skip `volcano/` TSVs
+  - `--no-style` to disable minimal formatting (freeze header row, auto-filter, column widths)
 
-This requires either `openpyxl` or `xlsxwriter` to be installed.
+This requires an Excel writer engine (either `openpyxl` or `xlsxwriter`).
+
+Recommended installation:
+#+BEGIN_SRC sh
+pip install -e '.[excel]'        # editable checkout
+# or (if installing from a package)
+pip install 'tackle[excel]'
+#+END_SRC
+
+Optional: install `.[excel-fast]` to also pull in `pyarrow` for faster TSV reads.
+
+* Slide deck table summaries
+
+To create slide-ready summaries from volcano TSV outputs, you can generate a bundle of
+PNG/PDF table images (and optionally a PowerPoint deck):
+
+- `tackle make-deck --base-dir <analysis_outdir>`  # writes to `<analysis_outdir>/report/deck/`
+- Options:
+  - `--filter SUBSTR` (repeatable) to include only matching volcano TSVs
+  - `--topn N` and `--direction both|up|down` to control top-hit selection
+  - `--p-cutoff 0.05` (set to 0 to disable) and `--fc-cutoff` to filter hits
+  - `--no-pptx` to skip deck generation (still writes table images)
+
+To enable PowerPoint output, install:
+#+BEGIN_SRC sh
+pip install -e '.[slides]'
+# or
+pip install 'tackle[slides]'
+#+END_SRC

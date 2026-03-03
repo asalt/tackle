@@ -108,3 +108,54 @@ def test_agent_telemetry_writes_local_events_even_if_post_fails(tmp_path, monkey
     ev = json.loads(lines[0])
     assert ev["type"] == "tackle.test"
     assert ev["agent_id"] == "tester"
+
+
+def test_agent_telemetry_config_from_env_reads_conf(monkeypatch, tmp_path):
+    from tackle.telemetry import AgentTelemetryConfig
+
+    conf = tmp_path / "tackle-agent.conf"
+    conf.write_text(
+        "\n".join(
+            [
+                "[agent]",
+                "api_key = conf-key",
+                "bearer_token = conf-token",
+                "timeout_seconds = 3.5",
+                "agent_id = conf-agent",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("TACKLE_AGENT_CONF", str(conf))
+    monkeypatch.delenv("TACKLE_AGENT_API_KEY", raising=False)
+    monkeypatch.delenv("TACKLE_AGENT_BEARER_TOKEN", raising=False)
+    monkeypatch.delenv("TACKLE_AGENT_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("TACKLE_AGENT_ID", raising=False)
+
+    cfg = AgentTelemetryConfig.from_env(
+        agent_api="http://example:3001",
+        agent_id=None,
+        local_events_path=None,
+    )
+    assert cfg.api_key == "conf-key"
+    assert cfg.bearer_token == "conf-token"
+    assert cfg.timeout_seconds == 3.5
+    assert cfg.agent_id == "conf-agent"
+
+
+def test_agent_telemetry_config_env_overrides_conf(monkeypatch, tmp_path):
+    from tackle.telemetry import AgentTelemetryConfig
+
+    conf = tmp_path / "tackle-agent.conf"
+    conf.write_text("[agent]\napi_key = conf-key\n", encoding="utf-8")
+    monkeypatch.setenv("TACKLE_AGENT_CONF", str(conf))
+    monkeypatch.setenv("TACKLE_AGENT_API_KEY", "env-key")
+
+    cfg = AgentTelemetryConfig.from_env(
+        agent_api="http://example:3001",
+        agent_id=None,
+        local_events_path=None,
+    )
+    assert cfg.api_key == "env-key"
