@@ -27,6 +27,9 @@ _SANITIZE_REPLACEMENTS = (
     ("?", "qmk"),
 )
 
+_LIMMA_EBAYES_ROBUST = True
+_LIMMA_EBAYES_TREND = True
+
 
 def _sanitize_name(value: str) -> str:
     """
@@ -405,6 +408,8 @@ def run_limma_pipeline(
     target_gene_ids: Optional[Sequence[str]] = None,
     symbol_lookup: Optional[Mapping[str, Sequence[str]]] = None,
     joint_export_dir: Optional[str] = None,
+    limma_ebayes_robust: bool = _LIMMA_EBAYES_ROBUST, # we default true for continuous data that hasn't been centered
+    limma_ebayes_trend: bool = _LIMMA_EBAYES_TREND, # we default true for continuous data that hasn't been centered
 ) -> Dict[str, pd.DataFrame]:
     """
     Execute a limma linear model using the supplied design specification.
@@ -431,6 +436,8 @@ def run_limma_pipeline(
     target_gene_ids:
         Optional ordered list of GeneIDs; when provided the expression matrix
         is restricted to those rows before fitting.
+    limma_ebayes_robust, limma_ebayes_trend:
+        Boolean controls for limma::eBayes robust/trend arguments.
 
     Returns
     -------
@@ -444,6 +451,8 @@ def run_limma_pipeline(
     from rpy2.robjects.packages import importr
 
     logger = logger or logging.getLogger(__name__)
+    r_ebayes_robust = "TRUE" if limma_ebayes_robust else "FALSE"
+    r_ebayes_trend = "TRUE" if limma_ebayes_trend else "FALSE"
 
     importr("limma")
     importr("dplyr", on_conflict="warn")
@@ -462,6 +471,26 @@ def run_limma_pipeline(
         pass
     if logger:
         logger.info("Limma: rewritten formula: %s", formula)
+        logger.info(
+            "Limma setup: edata_shape=%s pheno_shape=%s group=%s formula=%s block=%s contrasts=%s target_gene_ids=%s",
+            edata.shape,
+            pheno.shape,
+            group,
+            formula,
+            block,
+            contrasts,
+            len(target_gene_ids) if target_gene_ids else 0,
+        )
+        if target_gene_ids:
+            logger.info(
+                "Limma target GeneIDs preview: %s",
+                list(target_gene_ids)[:10],
+            )
+        logger.info(
+            "Limma eBayes params: robust=%s trend=%s",
+            limma_ebayes_robust,
+            limma_ebayes_trend,
+        )
 
     with localconverter(robjects.default_converter + pandas2ri.converter):
         robjects.r.assign("edata", edata)
@@ -506,6 +535,18 @@ def run_limma_pipeline(
         robjects.r(f'block <- as.factor(pheno[["{block}"]])')
         robjects.r("corfit <- duplicateCorrelation(edata, design = mod, block = block)")
         robjects.r("cor <- corfit$consensus")
+        if logger:
+            block_counts = {
+                ("<NA>" if pd.isna(level) else str(level)): int(count)
+                for level, count in pheno[block].value_counts(dropna=False).items()
+            }
+            cor_value = float(robjects.r("as.numeric(cor)")[0])
+            logger.info(
+                "Limma block setup: block=%s value_counts=%s duplicateCorrelation=%s",
+                block,
+                block_counts,
+                cor_value,
+            )
     else:
         robjects.r("block <- NULL")
         robjects.r("cor <- NULL")
@@ -577,18 +618,22 @@ def run_limma_pipeline(
             contrast_list,
             direct_coef_list,
         )
-        logger.info("limma model matrix terms: %s", fixed_terms)
+        logger.info("Limma model matrix terms: %s", fixed_terms)
         logger.info("Contrasts: %s", contrast_list)
+        mod_dims = tuple(int(x) for x in robjects.r("dim(mod)"))
+        mod_colnames = [str(x) for x in robjects.r("colnames(mod)")]
+        mod_repr = "\n".join(str(x) for x in robjects.r("capture.output(print(mod))"))
+        logger.info("Limma model matrix shape: %s columns=%s", mod_dims, mod_colnames)
+        logger.info("Limma model matrix:\n%s", mod_repr)
 
     if not contrast_list and not direct_coef_list:
         raise ValueError("No contrasts or coefficients selected for limma analysis.")
 
-    robjects.r("print(mod)")
     # Fit once; reuse for direct coefs. Compute separate fit2 for contrasts if any.
     robjects.r(
-        """
+        f"""
 fit <- lmFit(as.matrix(edata), mod, block = block, cor = cor)
-fit2_base <- eBayes(fit, robust = TRUE, trend = TRUE)
+fit2_base <- eBayes(fit, robust = {r_ebayes_robust}, trend = {r_ebayes_trend})
 """
     )
     has_contrasts = bool(contrast_list)
@@ -596,10 +641,10 @@ fit2_base <- eBayes(fit, robust = TRUE, trend = TRUE)
         with localconverter(robjects.default_converter + pandas2ri.converter):
             robjects.r.assign("contrasts_array", contrast_list)
         robjects.r(
-            """
+            f"""
 contrasts_matrix <- makeContrasts(contrasts = contrasts_array, levels = mod)
 fit2_con <- contrasts.fit(fit, contrasts_matrix)
-fit2_con <- eBayes(fit2_con, robust = TRUE, trend = TRUE)
+fit2_con <- eBayes(fit2_con, robust = {r_ebayes_robust}, trend = {r_ebayes_trend})
 """
         )
 

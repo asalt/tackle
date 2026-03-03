@@ -389,7 +389,9 @@ class HGeneMapper:
             self._df = homologene
         return self._df
 
-    def map_to_human(self, gids):
+    def map_to_taxon(self, gids, target_taxon="9606"):
+        target_taxon = str(target_taxon)
+        gids = [str(x) for x in gids]
         homologene = self.df
         hgene_query = homologene[homologene.GeneID.isin(gids)]
         gid_hgene = (
@@ -397,14 +399,17 @@ class HGeneMapper:
             .set_index("GeneID")["Homologene"]
             .to_dict()
         )
-        hgene_hugid = (
-            homologene.query('TaxonID=="9606"')[["GeneID", "Homologene"]]
+        hgene_target = (
+            homologene[homologene["TaxonID"] == target_taxon][["GeneID", "Homologene"]]
             .set_index("Homologene")["GeneID"]
             .to_dict()
         )
 
-        results = {x: hgene_hugid.get(gid_hgene.get(x)) for x in gids}
+        results = {x: hgene_target.get(gid_hgene.get(x)) for x in gids}
         return results
+
+    def map_to_human(self, gids):
+        return self.map_to_taxon(gids, target_taxon="9606")
 
 
 @lru_cache(maxsize=1)
@@ -476,11 +481,11 @@ def assign_sra(df):
 
 def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     annotator = get_annotation_mapper()
-    overlap = set(annotator.df.GeneID) & set(df.GeneID)
-
-    annotations = annotator.map_gene_ids(df.GeneID)
-    if "GeneSymbol" in annotations:
-        annotations = annotations.drop("GeneSymbol", axis=1)
+    mapped = annotator.map_gene_ids(df.GeneID)
+    # Avoid duplicating GeneSymbol when it already exists on the left; otherwise keep
+    # the mapped GeneSymbol so downstream ordering doesn't KeyError.
+    if "GeneSymbol" in df.columns and "GeneSymbol" in mapped.columns:
+        mapped = mapped.drop("GeneSymbol", axis=1)
     # if (len(overlap) / len(df)) > 0.2:  # human data
     #     dfout = df.merge(
     #         annotator.df[["GeneID", *annotations]], on="GeneID", how="left"
@@ -494,7 +499,7 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     # hg_gene_df = pd.DataFrame.from_dict(
     #     hg_gene_dict, orient="index", columns=["GeneID_hs"]
     # )
-    dfout = df.merge(annotations, on="GeneID", how="left")
+    dfout = df.merge(mapped, on="GeneID", how="left")
 
     # .merge(
     #     annotator.df[["GeneID", *annotations]].rename(columns=dict(GeneID="GeneID_hs")),
@@ -502,22 +507,18 @@ def add_annotations(df: pd.DataFrame, annotations: Iterable) -> pd.DataFrame:
     #     how="left",
     # )
 
-    front = [
-        "GeneID",
-        "TaxonID",
-        "GeneSymbol",
-        "GeneDescription",
-        "FunCats",  #'GeneCapacity',
-        *[x for x in annotations.columns if x != "GeneID"],
-    ]
-    col_order = [*front, *[x for x in dfout if x not in front]]
+    front = ["GeneID", "TaxonID", "GeneSymbol", "GeneDescription", "FunCats"]
+    front.extend([x for x in mapped.columns if x not in ("GeneID", *front)])
+
+    front_existing = [x for x in front if x in dfout.columns]
+    col_order = [*front_existing, *[x for x in dfout.columns if x not in front_existing]]
     return dfout[col_order]
 
 
 class Data:
     def __init__(
         self,
-        annotations=None,
+        annotations=True,
         additional_info=None,
         batch=None,
         batch_nonparametric=False,
@@ -582,7 +583,9 @@ class Data:
         if experiment_file is None:
             raise ValueError("Must specify valid experiment_file")
 
-        self.annotations = annotations
+        # Global `--annotations/--no-annotations` controls export enrichment.
+        # Keep this boolean on the Data object so export code can toggle quickly.
+        self.annotations = True if annotations is None else bool(annotations)
         self.additional_info = additional_info
         self.batch = batch
         self.batch_nonparametric = batch_nonparametric
@@ -947,6 +950,45 @@ class Data:
         iat = boolean_array.index(True)
         return array[iat]
 
+    def _export_ibaq_column_name(self) -> str:
+        """Return the iBAQ column label to use for exports under current normalization."""
+        if self.median:
+            return "iBAQ_dstrAdj_MED"
+        if self.ifot:
+            return "iBAQ_dstrAdj_FOT"
+        if self.ifot_ki:
+            return "FOT_KI"
+        if self.ifot_tf:
+            return "FOT_TF"
+        if self.quantile75:
+            return "iBAQ_dstrAdj_Q75"
+        if self.quantile90:
+            return "iBAQ_dstrAdj_Q90"
+        if self.genefile_norm:
+            return "iBAQ_dstrAdj_GNORM"
+        return "iBAQ_dstrAdj"
+
+    def _mspc_ibaq_export_cols(self) -> list:
+        """Return MSPC iBAQ export columns: always include none/MED/FOT + active norm."""
+        cols = [
+            "iBAQ_dstrAdj",
+            "iBAQ_dstrAdj_nonorm",
+            "iBAQ_dstrAdj_MED",
+            "iBAQ_dstrAdj_FOT",
+        ]
+        active = self._export_ibaq_column_name()
+        if active not in cols:
+            cols.append(active)
+        return cols
+
+    @staticmethod
+    def _export_label_token(label) -> str:
+        """Normalize export label token for column naming."""
+        token = str(label).strip()
+        if token.lower() == "none":
+            return "0"
+        return token
+
     def get_outname(self, plottype: str, **kwargs):
         # TODO move utils.get_outname to here?
         # no
@@ -1259,6 +1301,15 @@ class Data:
                 "PeptideCount",
                 "PeptideCount_u2g",
             ]
+            if self.metrics and self.metrics_after_filter:
+                _cols.extend(
+                    [
+                        "GPGroup",
+                        "PSMs_u2g",
+                        "PeptideCount_S",
+                        "PeptideCount_S_u2g",
+                    ]
+                )
             if self.cluster_annotate_cols:
                 for x in self.cluster_annotate_cols:
                     if x not in _cols:
@@ -1636,18 +1687,43 @@ class Data:
 
         # metadata = self.col_metadata.T  # rows are experiments, cols are metadat
         metadata = self.col_metadata  # rows are experiments, cols are metadata
+
+        group_cols = group
+        if isinstance(group_cols, str) and "," in group_cols:
+            group_cols = [x.strip() for x in group_cols.split(",") if x.strip()]
+        if isinstance(group_cols, (list, tuple)):
+            missing = [c for c in group_cols if c not in metadata.columns]
+            if missing:
+                raise ValueError(
+                    f"Reference normalization group column(s) not found in metadata: {missing}"
+                )
+        elif group_cols not in metadata.columns:
+            raise ValueError(
+                f"Reference normalization group column '{group_cols}' not found in metadata"
+            )
+        if label not in metadata.columns:
+            raise ValueError(
+                f"Reference normalization label column '{label}' not found in metadata"
+            )
         areas = self._areas_log.copy()
         ctrl_exps = list()
 
-        for ix, g in metadata.groupby(group):
-            # should only be one
-            ctrl_exp = g[g[label] == control].index[0]
+        for ix, g in metadata.groupby(group_cols):
+            ctrl_mask = g[label].astype(str) == str(control)
+            ctrl_candidates = g[ctrl_mask].index.tolist()
+            if len(ctrl_candidates) != 1:
+                raise ValueError(
+                    "Reference normalization requires exactly 1 control sample per group; "
+                    f"group={ix!r} {label}=={control!r} matches={len(ctrl_candidates)} candidates={ctrl_candidates}"
+                )
+            ctrl_exp = ctrl_candidates[0]
             ctrl_exps.append(ctrl_exp)
             # to_normalize = list(set(g.index) - set([ctrl_exp]))
             to_normalize = g.index
             areas.loc[:, to_normalize] = self._areas_log[to_normalize].sub(
                 self._areas_log[ctrl_exp].fillna(0) + 1e-20, axis="index"
             )
+        # import ipdb; ipdb.set_trace()
         areas = areas.drop(ctrl_exps, axis=1).where(lambda x: x != 0).dropna(how="all")
         finite = areas.astype(float).pipe(np.isfinite)
 
@@ -1655,9 +1731,10 @@ class Data:
 
         minval_log = areas[finite].stack().dropna().min()
         maxval_log = areas[finite].stack().dropna().max()
-        # self._areas_log = self._areas.fillna(self.minval_log / 2).replace(
-        #     np.inf, maxval_log * 1.5
-        # )
+        # if self.fill_na_zero:
+        #     self._areas_log = self._areas.fillna(minval_log / 2).replace(
+        #         np.inf, maxval_log * 1.5
+        #     )
         # not sure if this is right, can check:
         # sample_cols = [x for x in self.col_metadata.columns if x not in ctrl_exps]
         sample_cols = self.col_metadata.columns
@@ -1693,6 +1770,12 @@ class Data:
         except AttributeError:
             pd.NA = "NA"  # bugfix for pandas < 1.0
         batch = pheno[self.batch]
+        batch_dtype = str(batch.dtype)
+        batch_is_numeric = bool(pd.api.types.is_numeric_dtype(batch))
+        batch_value_counts = {
+            ("<NA>" if pd.isna(level) else str(level)): int(count)
+            for level, count in batch.value_counts(dropna=False).items()
+        }
 
         for item, grp in pheno.groupby(batch):
             cols = grp.index
@@ -1708,6 +1791,9 @@ class Data:
             robjects.default_converter + pandas2ri.converter + numpy2ri.converter
         ):  # no tuples
             r.assign("pheno", pheno)
+            r.assign("combat_batch", batch)
+            r("combat_batch <- as.factor(combat_batch)")
+            combat_batch = r["combat_batch"]
 
 
             if self.covariate is not None:
@@ -1742,11 +1828,40 @@ class Data:
             else:
                 plot_prior = False
 
+            mod_dims = tuple(int(x) for x in r("dim(mod)"))
+            mod_colnames = [str(x) for x in r("colnames(mod)")]
+            mod_repr = "\n".join(str(x) for x in r("capture.output(print(mod))"))
+            batch_factor_levels = [str(x) for x in r("levels(combat_batch)")]
+            logger.info(
+                "ComBat setup: data_shape=%s pheno_shape=%s batch_column=%s batch_dtype=%s covariate=%s",
+                data.shape,
+                pheno.shape,
+                self.batch,
+                batch_dtype,
+                self.covariate if self.covariate is not None else "None",
+            )
+            if batch_is_numeric:
+                logger.warning(
+                    "ComBat batch column `%s` is numeric dtype `%s`; coercing to an R factor before ComBat.",
+                    self.batch,
+                    batch_dtype,
+                )
+            logger.info("ComBat batch value counts: %s", batch_value_counts)
+            logger.info("ComBat batch factor levels: %s", batch_factor_levels)
+            logger.info("ComBat model matrix shape: %s columns=%s", mod_dims, mod_colnames)
+            logger.info("ComBat model matrix:\n%s", mod_repr)
+            logger.info(
+                "ComBat params: par_prior=%s mean_only=%s prior_plots=%s",
+                not self.batch_nonparametric,
+                False,
+                plot_prior,
+            )
+
             try:
                 # no tuples
                 res = sva.ComBat(
                     dat=data.values,
-                    batch=batch,
+                    batch=combat_batch,
                     mod=mod,
                     par_prior=not self.batch_nonparametric,
                     mean_only=False,
@@ -1841,6 +1956,8 @@ class Data:
         self,
         formula=None,
         contrasts_str=None,
+        limma_robust=True,
+        limma_trend=True,
         impute_missing_values=False,
         fill_na_zero=False,
     ) -> (
@@ -2030,9 +2147,11 @@ class Data:
             pvalues = r("pvalue.batch(as.matrix(edata), mod, mod0, ncov)")
         elif not self.pairs and self.limma:
             logger.info(
-                "Limma: invoking pipeline with formula=%s, contrasts=%s",
+                "Limma: invoking pipeline with formula=%s, contrasts=%s, robust=%s, trend=%s",
                 limma_formula,
                 contrasts_str,
+                limma_robust,
+                limma_trend,
             )
             results = run_limma_pipeline(
                 edata=mat,
@@ -2045,6 +2164,8 @@ class Data:
                 target_gene_ids=limma_targets,
                 symbol_lookup=symbol_lookup,
                 joint_export_dir=joint_export_dir,
+                limma_ebayes_robust=limma_robust,
+                limma_ebayes_trend=limma_trend,
             )
             return results
 
@@ -2062,13 +2183,26 @@ class Data:
             importr("limma")
             r("library(dplyr)")
             r("mod  <- model.matrix(~{}+{}, pheno)".format(self.group, self.pairs))
+            logger.info(
+                "Limma paired setup: group=%s pairs=%s eBayes_robust=%s eBayes_trend=%s",
+                self.group,
+                self.pairs,
+                limma_robust,
+                limma_trend,
+            )
+            mod_dims = tuple(int(x) for x in r("dim(mod)"))
+            mod_colnames = [str(x) for x in r("colnames(mod)")]
+            mod_repr = "\n".join(str(x) for x in r("capture.output(print(mod))"))
+            logger.info("Limma paired model matrix shape: %s columns=%s", mod_dims, mod_colnames)
+            logger.info("Limma paired model matrix:\n%s", mod_repr)
+            robust_r = "TRUE" if limma_robust else "FALSE"
+            trend_r = "TRUE" if limma_trend else "FALSE"
+            coef_name = self.group + pheno[self.group].iloc[-1]
             results = r(
-                """lmFit(as.matrix(edata), mod) %>%
-                       eBayes(robust=TRUE, trend=TRUE) %>%
-                       topTable(n=Inf, sort.by='none', coef="{}")
-            """.format(
-                    self.group + pheno[self.group].iloc[-1]
-                )
+                f"""lmFit(as.matrix(edata), mod) %>%
+                       eBayes(robust={robust_r}, trend={trend_r}) %>%
+                       topTable(n=Inf, sort.by='none', coef="{coef_name}")
+            """
             )
             pvalues = results["P.Value"]
             padj = results["adj.P.Val"]
@@ -2171,23 +2305,11 @@ class Data:
 
         self.areas_log  # make sure it's created
 
+        _area_col = self._export_ibaq_column_name()
         level_formatter = level
         if level in ("area", "gct", "gct_pca") and linear:
             level_formatter = level + "_linear"
-        # not the best having this redundant code
         if level == "MSPC":  # just export 1 column and name it
-            if self.median is True:
-                _area_col = "iBAQ_dstrAdj_MED"
-            elif self.ifot is True:
-                _area_col = "iBAQ_dstrAdj_FOT"
-            elif self.ifot_ki is True:
-                _area_col = "FOT_KI"
-            elif self.ifot_tf is True:
-                _area_col = "FOT_TF"
-            else:
-                _area_col = "AreaSum_dstrAdj"
-                _area_col = "iBAQ_dstrAdj"
-                # _area_col = "AreaSum_u2g_max"
             level_formatter = level + "_" + _area_col
 
         outname = (
@@ -2279,32 +2401,12 @@ class Data:
                 # "GeneCapacity",
             ]
 
-            if self.median is True:
-                _area_col = "iBAQ_dstrAdj_MED"
-            elif self.ifot is True:
-                _area_col = "iBAQ_dstrAdj_FOT"
-            elif self.ifot_ki is True:
-                _area_col = "FOT_KI"
-            elif self.ifot_tf is True:
-                _area_col = "FOT_TF"
-            else:
-                _area_col = "iBAQ_dstrAdj"
-                # _area_col = "AreaSum_dstrAdj"
-                # _area_col = "AreaSum_u2g_max"
-
             cols = [
                 "SRA",
                 "PeptideCount",
                 "PeptideCount_u2g",
                 "PSMs",
-                _area_col,
-                # "AreaSum_dstrAdj",
-                # "iBAQ_dstrAdj",
-                # # "iBAQ_dstrAdj_log10",
-                # "iBAQ_dstrAdj_MED",
-                # # "iBAQ_dstrAdj_MED_log10",
-                # # "iBAQ_dstrAdj_MED_log10_zscore",
-                # "iBAQ_dstrAdj_FOT",
+                *self._mspc_ibaq_export_cols(),
             ]
 
             # keep track of all observed records to determine whether or not to report QUAl columns
@@ -2323,13 +2425,14 @@ class Data:
                     identifier["searchno"],
                     identifier["label"],
                 )
+                _label_token = self._export_label_token(_label)
                 _id = f"{_rec}_{_run}_{_search}"
                 # if _id in records: # do not re-write QUAL data
                 #     if col in ['SRA', 'PeptideCount', 'PeptideCount_u2g', 'PSMs']:
                 #         continue
 
                 renamer = {
-                    x: f"{x}_{_rec}_{_run}_{_search}_{_label}_{col}" for x in cols
+                    x: f"{x}_{_rec}_{_run}_{_search}_{_label_token}_{col}" for x in cols
                 }
 
                 if ndistinct_records < self.col_metadata.pipe(len):
@@ -2352,6 +2455,10 @@ class Data:
                 if "GeneID" in subdf:
                     subdf = subdf.drop("GeneID", 1)
                 subdf.columns = subdf.columns.droplevel(0)
+                if _area_col not in subdf and "area" in subdf:
+                    subdf[_area_col] = subdf["area"]
+                if "iBAQ_dstrAdj" in subdf and "iBAQ_dstrAdj_nonorm" not in subdf:
+                    subdf["iBAQ_dstrAdj_nonorm"] = subdf["iBAQ_dstrAdj"]
                 subdf.index = subdf.index.map(maybe_int).astype(str)
                 subdf["GeneID"] = subdf.index
 
@@ -2376,9 +2483,11 @@ class Data:
             for_export = pd.concat(data, axis=1).reset_index()
             for_export["GeneID"] = for_export["GeneID"].apply(maybe_int)
             for_export["TaxonID"] = for_export["TaxonID"].apply(maybe_int)
-            # annotations
             if self.annotations:
-                for_export = add_annotations(for_export, self.annotations)
+                try:
+                    for_export = add_annotations(for_export, self.annotations)
+                except Exception as e:
+                    logger.warning(f"Export MSPC: failed to add annotations: {e}")
 
             gm = get_gene_mapper()
             if "GeneDescription" in for_export:
@@ -2406,6 +2515,75 @@ class Data:
                 how="left",
             )
             # "median_isoform_mass",
+
+            # Optionally stitch volcano metrics (if they exist for this analysis) onto the
+            # MSPC export table so downstream filtering can happen in one file.
+            try:
+                volcano_root = os.path.join(self.outpath, "volcano")
+                volcano_paths = sorted(
+                    glob.glob(os.path.join(volcano_root, "**", "*.tsv"), recursive=True)
+                ) if os.path.isdir(volcano_root) else []
+                if volcano_paths:
+                    keep_metrics = ("log2_FC", "pAdj", "pValue", "signedlogP", "t")
+                    seen_labels = set()
+                    for vp in volcano_paths:
+                        rel = os.path.relpath(vp, volcano_root)
+                        label = os.path.splitext(rel)[0].replace(os.sep, "__")
+                        label = re.sub(r"[^A-Za-z0-9._-]+", "_", label).strip("_") or "volcano"
+                        if label in seen_labels:
+                            base = label
+                            i = 2
+                            while f"{base}_{i}" in seen_labels:
+                                i += 1
+                            label = f"{base}_{i}"
+                        seen_labels.add(label)
+
+                        try:
+                            header = pd.read_csv(vp, sep="\t", nrows=0).columns
+                            usecols = ["GeneID", *[c for c in keep_metrics if c in header]]
+                            vdf = pd.read_csv(vp, sep="\t", usecols=usecols)
+                        except Exception:
+                            vdf = pd.read_csv(vp, sep="\t")
+
+                        vdf.columns = [str(c) for c in vdf.columns]
+                        if "GeneID" not in vdf.columns and len(vdf.columns) > 0:
+                            vdf = vdf.rename(columns={vdf.columns[0]: "GeneID"})
+                        if "GeneID" not in vdf.columns:
+                            logger.debug(f"Export MSPC: skipping volcano file without GeneID column: {vp}")
+                            continue
+
+                        vdf["GeneID"] = vdf["GeneID"].apply(maybe_int)
+                        vdf = vdf.drop_duplicates(subset=["GeneID"], keep="first")
+                        cols = ["GeneID", *[c for c in keep_metrics if c in vdf.columns]]
+                        vdf = vdf[cols]
+                        vdf = vdf.rename(
+                            columns={c: f"{label}__{c}" for c in vdf.columns if c != "GeneID"}
+                        )
+                        for_export = for_export.merge(vdf, on="GeneID", how="left")
+            except Exception as e:
+                logger.warning(f"Export MSPC: failed to stitch volcano TSVs: {e}")
+
+            # Keep key gene metadata grouped at the front (and keep any stitched volcano
+            # columns at the end by preserving relative order of everything else).
+            try:
+                front_cols = [
+                    c
+                    for c in (
+                        "GeneID",
+                        "TaxonID",
+                        "GeneSymbol",
+                        "GeneDescription",
+                        "FunCats",
+                        "median_isoform_mass",
+                    )
+                    if c in for_export.columns
+                ]
+                if front_cols:
+                    rest_cols = [c for c in for_export.columns if c not in front_cols]
+                    for_export = for_export[front_cols + rest_cols]
+            except Exception as e:
+                logger.debug(f"Export MSPC: failed to reorder frontmatter columns: {e}")
+
             for_export.to_csv(outname, sep="\t", index=False)
 
         elif level == "align":
@@ -2563,30 +2741,31 @@ class Data:
             #     export = export.apply(lambda x: 10**x)
             if level in ("area", "gct") and not self.impute_missing_values:  # not necessary here
                 export[self.areas == 0] = 0  # fill the zeros back
-                export[self.mask] = np.nan
-            order = export.columns
-            if genesymbols:
-                # export['GeneSymbol'] = export.index.map(lambda x: self.gid_symbol.get(x, '?'))
-                export["GeneSymbol"] = export.index.map(
-                    lambda x: self.gid_symbol.get(
-                        x,
-                        # _genemapper.symbol.get(x, '?')
-                        # _genemapper.symbol.get(str(int(x)), x),
-                        # _genemapper.symbol.get(x, x),
-                        get_gene_mapper().symbol.get(x, x),
-                    )
+                if not self.fill_na_zero:
+                    export[self.mask] = np.nan
+            # Always include GeneSymbol in table-like exports.
+            export["GeneSymbol"] = export.index.map(
+                lambda x: self.gid_symbol.get(
+                    x,
+                    get_gene_mapper().symbol.get(str(x), x),
                 )
-                # index column is GeneID, add GeneSymbol
-                order = ["GeneSymbol"]
-                order += [x for x in export.columns if x not in order]
-            # add annotations
-            annot_mapper = get_annotation_mapper()
+            )
 
             if level == "area":
-                export[order].to_csv(outname, sep="\t")
+                export_out = export.reset_index()
+                if "GeneID" not in export_out.columns and len(export_out.columns) > 0:
+                    export_out = export_out.rename(columns={export_out.columns[0]: "GeneID"})
+                export_out["GeneID"] = export_out["GeneID"].apply(maybe_int)
+                if self.annotations:
+                    try:
+                        export_out = add_annotations(export_out, self.annotations)
+                    except Exception as e:
+                        logger.warning(f"Export area: failed to add annotations: {e}")
+                export_out.to_csv(outname, sep="\t", index=False)
                 logger.info(f"Wrote {outname}")
                 return outname
 
+            annot_mapper = get_annotation_mapper()
             if level in ("gct", "gct_pca"):
                 from rpy2.robjects.packages import importr
 
@@ -2701,7 +2880,6 @@ class Data:
                 r(
                     'my_ds <- new("GCT", mat=as.matrix(m), rid=rid, cid=cid, cdesc=cdesc, rdesc=as.data.frame(rdesc))'
                 )
-                # import ipdb; ipdb.set_trace()
                 r(
                     "write_gct(my_ds, outname, precision=4)"
                 )

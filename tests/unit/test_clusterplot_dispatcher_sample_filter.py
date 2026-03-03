@@ -1,6 +1,6 @@
 import pandas as pd
 
-from tackle.clusterplot_dispatcher import _series_matches_includes
+from tackle.clusterplot_dispatcher import _resolve_annotation_hits, _series_matches_includes
 
 
 def test_series_matches_includes_numeric_metadata_with_string_values():
@@ -18,3 +18,54 @@ def test_series_matches_includes_object_numeric_metadata_with_string_values():
 
     assert mask.to_dict() == {"s1": False, "s2": True, "s3": False, "s4": False}
 
+
+def test_resolve_annotation_hits_prefers_direct_hits():
+    x_gene_ids = ["101", "102", "103"]
+    annot_gene_ids = ["999", "102"]
+
+    hits, strategy = _resolve_annotation_hits(
+        x_gene_ids=x_gene_ids,
+        annotation_gene_ids=annot_gene_ids,
+        hgene_mapper=None,
+    )
+
+    assert hits == ["102"]
+    assert strategy == "direct"
+
+
+def test_resolve_annotation_hits_recovers_via_human_remap():
+    class DummyMapper:
+        def map_to_taxon(self, gids, target_taxon="9606"):
+            mapping = {
+                ("m1", "9606"): "h1",
+                ("m2", "9606"): "h2",
+                ("h1", "9606"): "h1",
+                ("h2", "9606"): "h2",
+                ("h1", "10090"): "m1",
+                ("h2", "10090"): "m2",
+            }
+            return {gid: mapping.get((gid, str(target_taxon))) for gid in gids}
+
+    hits, strategy = _resolve_annotation_hits(
+        x_gene_ids=["m1", "m2"],
+        annotation_gene_ids=["h1"],
+        hgene_mapper=DummyMapper(),
+    )
+
+    assert hits == ["m1"]
+    assert strategy == "x_to_human"
+
+
+def test_resolve_annotation_hits_returns_none_when_no_mapping():
+    class EmptyMapper:
+        def map_to_taxon(self, gids, target_taxon="9606"):
+            return {gid: None for gid in gids}
+
+    hits, strategy = _resolve_annotation_hits(
+        x_gene_ids=["x1", "x2"],
+        annotation_gene_ids=["a1", "a2"],
+        hgene_mapper=EmptyMapper(),
+    )
+
+    assert hits == []
+    assert strategy == "none"

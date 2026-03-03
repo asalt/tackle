@@ -92,7 +92,7 @@ def test_cluster2_with_volcano_filter(ctx):
     except RRuntimeError as err:
         pytest.skip(f"R runtime prerequisites missing: {err}")
 
-    cluster_dir = Path(data_obj.outpath) / "cluster2"
+    cluster_dir = Path(vfile).parent / "topdiff" / "test"
     images = list(cluster_dir.rglob("*.png"))
     assert images, "Expected a clustermap image after volcano filtering"
     # Check that naming encodes sortby and direction (dir_b for both)

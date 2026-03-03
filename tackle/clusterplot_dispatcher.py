@@ -1,10 +1,12 @@
 # cluster2.py
 
 # from . import rutils
+import hashlib
 import os
 import re
 from copy import deepcopy
 from functools import partial
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -29,6 +31,54 @@ from .containers import (
 )
 
 logger = _get_logger(__name__)
+
+
+def extract_contrast_from_volcano_filename(volcano_basename: str) -> str:
+    """Extract the contrast label from a tackle volcano TSV basename.
+
+    Examples
+    --------
+    - group_test.tsv -> test
+    - ..._groupA_minus_B_imv_T_fna_T.tsv -> A_minus_B
+
+    Falls back to the file stem (without extension) when a contrast cannot be
+    inferred.
+    """
+    base = os.path.basename(str(volcano_basename))
+    stem = base[:-4] if base.lower().endswith(".tsv") else base
+    if not stem:
+        return ""
+
+    # Match the *first* group token and capture until the next known token or end.
+    m = re.search(
+        r"(?:^|_)group_?(.*?)(?=_(?:imv|fna|dir|lrob|ltrd|sort|pvalue|padj)_|$)",
+        stem,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return stem
+
+    contrast = (m.group(1) or "").strip("_")
+    return contrast or stem
+
+
+def _sanitize_topdiff_contrast(value: str) -> str:
+    token = str(value or "").strip()
+    if not token:
+        return "contrast"
+    token = (
+        token.replace(":", "_")
+        .replace("+", "_")
+        .replace("?", "qmk")
+        .replace("|", "or")
+        .replace("\\", "_")
+        .replace("/", "_")
+    )
+    token = re.sub(r"\s+", "_", token)
+    token = re.sub(r"__+", "_", token).strip("_")
+    if len(token) > 120:
+        token = token[:120].rstrip("_")
+    return token or "contrast"
 
 
 def _series_matches_includes(series: pd.Series, include_values) -> pd.Series:
@@ -59,6 +109,59 @@ def _series_matches_includes(series: pd.Series, include_values) -> pd.Series:
     if string_includes:
         mask |= series.astype(str).isin(string_includes)
     return mask
+
+
+def _map_ids_to_taxon(hgene_mapper, gids, target_taxon: str):
+    """Map GeneIDs to a target taxon via homologene when possible."""
+    gids = [str(x) for x in gids]
+    if not gids or hgene_mapper is None:
+        return {g: None for g in gids}
+    if hasattr(hgene_mapper, "map_to_taxon"):
+        return hgene_mapper.map_to_taxon(gids, target_taxon=target_taxon)
+    # Backward-compatible fallback for older mappers.
+    if str(target_taxon) == "9606" and hasattr(hgene_mapper, "map_to_human"):
+        return hgene_mapper.map_to_human(gids)
+    return {g: None for g in gids}
+
+
+def _resolve_annotation_hits(
+    x_gene_ids,
+    annotation_gene_ids,
+    hgene_mapper=None,
+):
+    """Return X GeneIDs matching an annotation directly or via human/mouse remap."""
+    x_ids = [str(x) for x in x_gene_ids]
+    if not x_ids:
+        return [], "none"
+    annot_ids = {str(x) for x in annotation_gene_ids if x is not None}
+    if not annot_ids:
+        return [], "none"
+
+    direct = [gid for gid in x_ids if gid in annot_ids]
+    if direct:
+        return direct, "direct"
+
+    # First try remapping X genes into annotation space.
+    for target_taxon, label in (("9606", "human"), ("10090", "mouse")):
+        mapped_x = _map_ids_to_taxon(hgene_mapper, x_ids, target_taxon=target_taxon)
+        hits = [gid for gid in x_ids if mapped_x.get(gid) in annot_ids]
+        if hits:
+            return hits, f"x_to_{label}"
+
+    # Then try remapping annotation genes into X space.
+    annot_list = list(annot_ids)
+    for target_taxon, label in (("9606", "human"), ("10090", "mouse")):
+        mapped_annot = _map_ids_to_taxon(
+            hgene_mapper, annot_list, target_taxon=target_taxon
+        )
+        mapped_annot_ids = {x for x in mapped_annot.values() if x is not None}
+        if not mapped_annot_ids:
+            continue
+        hits = [gid for gid in x_ids if gid in mapped_annot_ids]
+        if hits:
+            return hits, f"annot_to_{label}"
+
+    return [], "none"
 
 
 def run(
@@ -124,6 +227,8 @@ def run(
     cluster_db=False,
     cluster_db_path=None,
     export_sweep_tsvs=False,
+    cluster_annotations=None,
+    reroute_volcano=True,
 ):
 
     from . import grdevice_helper
@@ -138,6 +243,7 @@ def run(
 
     outname_kws = dict()
     print(volcano_direction)
+    topdiff_out_dir = None
 
     # hacky sloppy name assignment
     outname_kws["rds" + "l" if row_dend_side == "left" else "rds" + "r"] = ""
@@ -146,6 +252,7 @@ def run(
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
+    cluster_annotations = list(cluster_annotations or ())
     if z_score == "None":
         z_score = None
     if standard_scale == "None":
@@ -171,6 +278,7 @@ def run(
     # =================================================================
 
     data_obj = ctx.obj["data_obj"]
+    png_res = ctx.obj.get("png_res", 300)
     cluster_db_writer = None
     try:
         from .cluster2.db import ClusterDb, ClusterDbConfig
@@ -275,28 +383,37 @@ def run(
         )
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
-        if "Batch" in volcanofile_basename:
-            volcanofile_basename = volcanofile_basename[
-                volcanofile_basename.find("Batch") + 12 :
-            ]
-            # name_group = volcanofile_basename[ volcanofile_basename.find("_group"): ]
-        name_group = re.search(r"(?<=group)[_]?(.*)(?=\.tsv)", volcanofile_basename)
-        if name_group is None:
-            name_group = volcanofile_basename
+
+        contrast_label = extract_contrast_from_volcano_filename(volcanofile_basename)
+        contrast_token = _sanitize_topdiff_contrast(contrast_label)
+        column_title = contrast_label
+
+        if reroute_volcano:
+            topdiff_out_dir = Path(volcano_file).resolve().parent / "topdiff" / contrast_token
+            outname_kws["vsrc"] = hashlib.sha1(volcanofile_basename.encode("utf-8")).hexdigest()[:8]
+            logger.info(
+                "cluster2 topdiff reroute enabled: contrast=%s out_dir=%s",
+                contrast_label,
+                topdiff_out_dir,
+            )
         else:
-            name_group = name_group.group(1)
-        logger.info(f"volcanofile name group is {name_group}")
-        outname_kws["vfile"] = (
-            name_group.replace(":", "_")
-            .replace("+", "_")
-            .replace("?", "qmk")
-            .replace("|", "or")
-            .replace(r"/", "_")
-            .replace(r"\\", "_")
-        )
+            logger.info(
+                "cluster2 topdiff reroute disabled (--no-reroute-volcano); writing under analysis outpath"
+            )
+            # Preserve legacy nesting based on the volcano filename suffix.
+            legacy_base = volcanofile_basename
+            if "Batch" in legacy_base:
+                legacy_base = legacy_base[legacy_base.find("Batch") + 12 :]
+            name_group = re.search(r"(?<=group)[_]?(.*)(?=\.tsv)", legacy_base)
+            if name_group is None:
+                name_group = legacy_base
+            else:
+                name_group = name_group.group(1)
+            logger.info(f"volcanofile name group is {name_group}")
+            outname_kws["vfile"] = _sanitize_topdiff_contrast(name_group)
         outname_kws[volcano_sortby] = ""
         outname_kws[f"dir_{volcano_direction[0]}"] = ""
-        column_title = name_group  # _df = pd.read_table(volcano_file) # if "pValue" not in _df and "p-value" in _df:
+        # _df = pd.read_table(volcano_file) # if "pValue" not in _df and "p-value" in _df:
         #     _df = _df.rename(columns={"p-value": "pValue"})
         # if "log2_FC" not in _df and "Value" in _df:  #
         #     _df = _df.rename(columns={"Value": "log2_FC"})
@@ -587,6 +704,19 @@ def run(
         outpath=data_obj.outpath,  # , "cluster2")
         **_d,
     )
+
+    plot_outname_func = None
+    if volcano_file is not None and reroute_volcano and topdiff_out_dir is not None:
+        plot_outname_func = partial(
+            get_outname,
+            tx="all",
+            non_zeros=data_obj.non_zeros,
+            batch=None,
+            batch_method="param" if not data_obj.batch_nonparametric else "nonparam",
+            norm=data_obj.normtype,
+            outpath=str(topdiff_out_dir),
+            **_d,
+        )
     # =================================================================
     if gene_symbols and add_description:
         # this could definitely be improved
@@ -989,7 +1119,10 @@ def run(
             robjects.default_converter + pandas2ri.converter
         ):  # no tuples
             grdevice = grdevice_helper.get_device(
-                filetype=file_fmt, width=figwidth, height=figheight
+                filetype=file_fmt,
+                width=figwidth,
+                height=figheight,
+                res=png_res,
             )
             grdevice(file=out)  # open file for saving
             ret = cluster2(**call_kws)  # draw
@@ -1007,7 +1140,10 @@ def run(
                 else sil_df
             )
 
-            out = outname_func("clustermap", **outname_kws) + ".tsv"
+            if plot_outname_func is not None:
+                out = plot_outname_func("", name="clustermap", **outname_kws) + ".tsv"
+            else:
+                out = outname_func("clustermap", **outname_kws) + ".tsv"
             print("saving", out)
             cluster_metrics.to_csv(out, index=False, sep="\t")
 
@@ -1420,7 +1556,7 @@ def run(
                     f"cluster2_sweep_k{sel_min_k}_{max_k}_linkage-{linkage}_metrics_{cluster_func}{file_fmt}",
                 )
                 grdevice = grdevice_helper.get_device(
-                    filetype=file_fmt, width=10, height=8
+                    filetype=file_fmt, width=10, height=8, res=png_res
                 )
                 grdevice(file=out_plot)
                 try:
@@ -1472,7 +1608,15 @@ def run(
         # outname_kws.update(extra_outname_kws)
         # this_outname_kws = outname_kws.copy()  # <- defensive copy
         # this_outname_kws.update(extra_outname_kws)
-        out = outname_func(outname_base_name, **this_outname_kws) + nrow_ncol + file_fmt
+        if plot_outname_func is not None:
+            base_name = outname_base_name.replace(os.sep, "_").replace("/", "_")
+            out = (
+                plot_outname_func("", name=base_name, **this_outname_kws)
+                + nrow_ncol
+                + file_fmt
+            )
+        else:
+            out = outname_func(outname_base_name, **this_outname_kws) + nrow_ncol + file_fmt
 
         plot_and_save(
             X,
@@ -1488,10 +1632,10 @@ def run(
         ##                     plot any annotations                     ##
         ##################################################################
 
-        if data_obj.annotations is None:
+        if not cluster_annotations:
             continue
 
-        for annotation in data_obj.annotations:
+        for annotation in cluster_annotations:
             annotator = get_annotation_mapper()
             if annotation in (None, "", "_all"):
                 continue
@@ -1501,41 +1645,54 @@ def run(
                 annot_df = annotator.df
 
             subX = X[X.GeneID.isin(annot_df.GeneID)]
-            if subX.empty:  # try mapping to homologene
-                logger.info(f"Trying to map genes to hs through homologene")
+            if subX.empty:
                 hgene_mapper = get_hgene_mapper()
-                hg_gene_dict = hgene_mapper.map_to_human(X.GeneID)
-                hs_genes = set(hg_gene_dict.values())
-                _annot_genes = set(annot_df.GeneID) & set(hg_gene_dict.values())
-                _tokeep = [k for k, v in hg_gene_dict.items() if v in _annot_genes]
-                _tokeep = set(_tokeep)
-                logger.info(
-                    f"{annotation}: Successfully remapped {len(_tokeep)} genes to hs genes"
+                _tokeep, strategy = _resolve_annotation_hits(
+                    x_gene_ids=X.GeneID,
+                    annotation_gene_ids=annot_df.GeneID,
+                    hgene_mapper=hgene_mapper,
                 )
-                subX = X[X.GeneID.isin(_tokeep)]
-            if subX.empty:  # if still empty, continue
+                if _tokeep:
+                    logger.info(
+                        "%s: recovered %d genes after homologene remap (%s)",
+                        annotation,
+                        len(_tokeep),
+                        strategy,
+                    )
+                    subX = X[X.GeneID.isin(set(_tokeep))]
+            if subX.empty:
+                logger.warning(
+                    "%s: no genes matched directly or after homologene remap; skipping.",
+                    annotation,
+                )
                 continue
 
             sub_annot_mat = None
             if annotate and annot_mat is not None:
                 sub_annot_mat = annot_mat[annot_mat.GeneID.isin(subX.GeneID)]
-            _show_gene_symbols = False
-            if len(subX) < 141 and bool(gene_symbols) == False:
-                _show_gene_symbols = True
-                logger.info(
-                    f"number of genes is {len(subX)} << 101, adding symbols. Specify --gene-symbols to override>."
-                )
-            if gene_symbols is True:  # force override
-                _show_gene_symbols = True
 
             _sub_ncol = len([x for x in subX.columns if x not in ("GeneID", "GeneSymbol")])
             _sub_nrow = subX.shape[0]
             sub_nrow_ncol = "_{0}x{1}".format(_sub_nrow, _sub_ncol)
-            out = (
-                outname_func("clustermap", geneset=fix_name(annotation), **outname_kws)
-                + sub_nrow_ncol
-                + file_fmt
-            )
+            if plot_outname_func is not None:
+                out = (
+                    plot_outname_func(
+                        "",
+                        name="clustermap",
+                        geneset=fix_name(annotation),
+                        **outname_kws,
+                    )
+                    + sub_nrow_ncol
+                    + file_fmt
+                )
+            else:
+                out = (
+                    outname_func(
+                        "clustermap", geneset=fix_name(annotation), **outname_kws
+                    )
+                    + sub_nrow_ncol
+                    + file_fmt
+                )
             if len(out) > 299:  # quick fix
                 out_path, out_name = os.path.split(out)
                 out_name = (
@@ -1551,7 +1708,7 @@ def run(
                 # grdevice,
                 main_title=annotation,
                 annot_mat=sub_annot_mat,
-                show_gene_symbols=_show_gene_symbols,
+                show_gene_symbols=bool(gene_symbols),
                 file_fmt=file_fmt,
             )
 

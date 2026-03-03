@@ -13,11 +13,15 @@ try:
 except AttributeError:
     pd.NA = "NA"  # not sure if using this, could be in main.py
 
-from .utils import get_outname, parse_gid_file, fix_name
+from .utils import get_outname, parse_gid_file, fix_name, _get_logger
 from .formula_utils import find_geneid_keys_in_string
 
 # from .containers import GeneMapper
 
+
+
+# Module-level logger (used for replay export warnings, etc.)
+logger = _get_logger(__name__)
 
 
 # helper functions
@@ -143,18 +147,20 @@ def volcanoplot(
         sig_metric="pAdj",
         number_by="log2_FC",
         yaxis="pAdj",
-        label_scale=1.4,
-        marker_scale=1.2,
+        label_scale=1.0,
+        marker_scale=1.0,
         highlight_geneids=None,
         force_highlight_geneids=False,
         formula=None,
         contrasts=None,
+        limma_robust=True,
+        limma_trend=True,
         impute_missing_values=False,
         width=5,
         height=5,
         annot_scale=1.0,
         bg_marker_color="#22222288",
-        pch=16,
+        pch=21,
         alpha=1.0,
         fill_na_zero=False,
         extra_outname_info=None,
@@ -176,6 +182,7 @@ def volcanoplot(
 
     # gm = GeneMapper()
     gm = get_gene_mapper()
+    point_size = 2.4
 
     if yaxis not in ("pValue", "pAdj"):
         raise ValueError("Must choose between `pValue` and `pAdj`")
@@ -207,11 +214,133 @@ def volcanoplot(
     results = data_obj.stat_model(
             formula=formula,
             contrasts_str=contrasts,
+            limma_robust=limma_robust,
+            limma_trend=limma_trend,
             impute_missing_values=impute_missing_values,
             fill_na_zero=fill_na_zero,
             )
 
     meta = data_obj.col_metadata
+
+    # ---- Limma replay inputs (GCT + resolved context) ----
+    try:
+        from pathlib import Path
+
+        from .limma_replay import write_limma_replay_files
+        from .statmodels.limma_runner import normalize_formula_targets
+        from .statmodels.limma_runner import _inject_gene_covariates_in_formula  # type: ignore[attr-defined]
+
+        # Determine the volcano output directory (matches per-contrast outputs).
+        _volcano_subdir = ["volcano"]
+        _plottype = "volcano"
+        if formula:
+            try:
+                _fhash = hashlib.sha1(str(formula).encode("utf-8")).hexdigest()[:10]
+            except Exception:
+                _fhash = "fhash"
+            _fstr = re.sub(r"\s+", "_", str(formula).strip())
+            _fstr = re.sub(r"[^A-Za-z0-9._-]", "_", _fstr).strip("._")
+            if not _fstr:
+                _fstr = "formula"
+            if len(_fstr) > 60:
+                _fstr = _fstr[:60]
+            _volcano_subdir.extend(["limma", f"{_fstr}__{_fhash}"])
+            _plottype = ""
+
+        # Outname only used to compute the output directory; group token is a placeholder.
+        _dummy_outname = get_outname(
+            _plottype,
+            name=data_obj.outpath_name,
+            taxon=data_obj.taxon,
+            non_zeros=data_obj.non_zeros,
+            colors_only=data_obj.colors_only,
+            batch=data_obj.batch_applied,
+            normtype=data_obj.normtype,
+            imv="T" if impute_missing_values else "F",
+            fna="T" if fill_na_zero else "F",
+            group="replay",
+            outpath=os.path.join(data_obj.outpath, *_volcano_subdir),
+        )
+        volcano_dir = str(Path(_dummy_outname).parent)
+
+        # Build symbol lookup (dataset symbols + gene mapper hints) to keep formula normalization consistent.
+        symbol_lookup = {}
+        try:
+            for gid, sym in data_obj.gid_symbol.items():
+                if sym:
+                    symbol_lookup.setdefault(sym, []).append(gid)
+            try:
+                gm2 = get_gene_mapper()
+                for entrez_id, sym in gm2.symbol.items():
+                    if not sym:
+                        continue
+                    ds_ids = symbol_lookup.get(sym)
+                    if ds_ids:
+                        symbol_lookup.setdefault(str(entrez_id), ds_ids)
+            except Exception:
+                pass
+        except Exception:
+            symbol_lookup = {}
+
+        # Extract limma input matrix from the result tables (guaranteed to match the fit).
+        sample_ids = list(meta.index.astype(str))
+        first_df = next(iter(results.values()))
+        expr_cols = [c for c in sample_ids if c in first_df.columns]
+        edata = first_df[expr_cols].copy()
+        pheno = meta.reindex(expr_cols).copy()
+
+        formula_effective = None
+        formula_rewritten = None
+        if formula:
+            formula_effective, _ = normalize_formula_targets(formula, edata.index, symbol_lookup, logger=None)
+            formula_rewritten, pheno = _inject_gene_covariates_in_formula(
+                formula_effective,
+                edata,
+                pheno,
+                symbol_lookup,
+                logger=None,
+            )
+
+        # Gene descriptions from GeneMapper (Entrez->desc); fall back to empty.
+        gene_descriptions = {}
+        try:
+            gene_descriptions = dict(gm.description)
+        except Exception:
+            gene_descriptions = {}
+
+        write_limma_replay_files(
+            analysis_dir=str(data_obj.outpath),
+            volcano_dir=volcano_dir,
+            results=results,
+            sample_metadata=pheno,
+            gene_symbols=data_obj.gid_symbol,
+            gene_descriptions=gene_descriptions,
+            funcats=data_obj.gid_funcat_mapping,
+            group=data_obj.group,
+            formula_in=formula,
+            formula_effective=formula_effective,
+            formula_rewritten=formula_rewritten,
+            contrasts_spec=contrasts,
+            block=getattr(data_obj, "block", None),
+            limma_robust=limma_robust,
+            limma_trend=limma_trend,
+            impute_missing_values=impute_missing_values,
+            fill_na_zero=fill_na_zero,
+            normtype=getattr(data_obj, "normtype", None),
+            non_zeros=getattr(data_obj, "non_zeros", None),
+            taxon=getattr(data_obj, "taxon", None),
+            batch_applied=getattr(data_obj, "batch_applied", None),
+            batch_method=(
+                "parametric" if not getattr(data_obj, "batch_nonparametric", False) else "nonparametric"
+            )
+            if getattr(data_obj, "batch_applied", None)
+            else None,
+            imputation_backend=getattr(data_obj, "imputation_backend", None),
+            lupine_mode=getattr(data_obj, "lupine_mode", None),
+            force=True,
+        )
+    except Exception as e:
+        logger.warning("Volcano limma replay export failed: %r", e)
 
     def fix_group_name(group, entries):
         # for entry in meta.index:
@@ -332,6 +461,10 @@ def volcanoplot(
         direction_codes = {"up": "U", "down": "D", "both": "B"}
         # if direction != "both":
         _xtra["dir"] = direction_codes.get(direction, "?")
+        if not limma_robust:
+            _xtra["lrob"] = False
+        if not limma_trend:
+            _xtra["ltrd"] = False
 
         _b = None
         if not data_obj.batch_nonparametric and data_obj.batch_applied == True:
@@ -589,7 +722,7 @@ def volcanoplot(
                     annot_cex=annot_scale,
                     marker_cex=marker_scale,
                     max_fc=max_fc,
-                    point_size=1.4,
+                    point_size=point_size,
                     group0=group0,
                     group1=group1,
                     alpha=alpha,
@@ -684,7 +817,7 @@ def volcanoplot(
                         annot_cex=annot_scale,
                         marker_cex=marker_scale,
                         max_fc=max_fc,
-                        point_size=1.4,
+                        point_size=point_size,
                         group0=group0,
                         group1=group1,
                         alpha=alpha,

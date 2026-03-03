@@ -1,9 +1,13 @@
 # constants.py
 
+# TODO this is a 1-1 mapping that we cannot
+# allow multiple choices, e.g. strep cannot map to 53354 and NZ_CP077423
 TAXON_MAPPER = {
     "human": "9606",
     "mouse": "10090",
     "celegans": "6239",
+    "strep" : "53354",
+    "NZ_CP077423": "NZ_CP077423"
 }
 
 

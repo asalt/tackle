@@ -1482,6 +1482,36 @@ def get_outname(
     :colors_only: does nothing, depreciated
 
     """
+    KEY_ALIASES = {
+        "normtype": "norm",
+        "norm_by": "nby",
+        "nonzero_subgroup": "nzgrp",
+        "colors_only": "colors",
+        "colby": "col",
+        "markby": "mark",
+        "fillna": "fill",
+        "center": "ctr",
+        "scale": "scl",
+        "standard_scale": "ss",
+        "z_score": "z",
+        "annotate": "annot",
+        "batch_method": "bmethod",
+        "batch": "batch",
+        "genefile": "genes",
+        "genefile_norm": "gnorm",
+    }
+
+    def _short_key(key: str) -> str:
+        key = str(key)
+        return KEY_ALIASES.get(key, key)
+
+    def _clean_token(token: str) -> str:
+        token = str(token)
+        token = token.replace(" ", "_").replace("-", "_").replace("/", "_")
+        token = token.replace(":", "_")
+        token = token.replace("__", "_")
+        return token.strip("_")
+
     if taxon is None and tx is not None:
         taxon = tx
     print(f"plottype is {plottype}")
@@ -1490,10 +1520,21 @@ def get_outname(
         kwargs.pop("missing_values")
 
     kwarg_values = list()
-    for key, value in filter(str, kwargs.items()):
-        _value = str(value).replace(" ", "_").replace("-", "_")
-        s = "{}_{}".format(key, _value)
-        kwarg_values.append(s)
+    for key in sorted(kwargs.keys()):
+        value = kwargs[key]
+        if value is None:
+            continue
+        short_key = _short_key(key)
+        if isinstance(value, bool):
+            token = f"{short_key}{'T' if value else 'F'}"
+        elif value == "":
+            token = short_key
+        elif isinstance(value, (list, tuple, set)):
+            value_str = "-".join(_clean_token(v) for v in value)
+            token = f"{short_key}_{value_str}"
+        else:
+            token = f"{short_key}_{_clean_token(value)}"
+        kwarg_values.append(token)
     kwarg_string = "_".join(kwarg_values) if kwarg_values else ""
 
     batch_str = ("{}Batch_{}_".format(batch_method, batch) if batch else "").replace(
@@ -1509,13 +1550,20 @@ def get_outname(
     if taxon != "all":
         outpath = os.path.join(outpath, taxon)
 
-    # "{}".format(kwargs)
-    fname = "{}more_{}".format(
-        # name,
-        # plottype,
-        non_zeros,
-        kwarg_string,
-    ).strip("_")
+    fname_parts = []
+    if name:
+        fname_parts.append(_clean_token(name))
+    plot_token = ""
+    if plottype:
+        plot_root = str(plottype).replace("\\", "/").split("/")[0]
+        plot_token = _clean_token(plot_root)
+    if plot_token:
+        fname_parts.append(plot_token)
+    if non_zeros is not None:
+        fname_parts.append(f"nz{_clean_token(non_zeros)}")
+    if kwarg_string:
+        fname_parts.append(kwarg_string)
+    fname = "_".join(x for x in fname_parts if x)
     fname = (
         fname.replace("noCov_", "")
         .replace("norm_", "")
@@ -1523,8 +1571,7 @@ def get_outname(
         .replace("Treatment", "treat")
         .replace("median", "med")
         .replace("__", "_")
-    )
-    fname = fname.lstrip(r".")
+    ).lstrip(r".")
 
     # here is where we could split the path further
     # this might not be necessary here anymore
