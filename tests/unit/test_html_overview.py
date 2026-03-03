@@ -134,3 +134,38 @@ def test_build_html_overview_self_contained_uses_optimized_png(tmp_path: Path, m
     html_text = outputs.out_html.read_text(encoding="utf-8")
     assert base64.b64encode(optimized).decode("ascii") in html_text
     assert base64.b64encode(original).decode("ascii") not in html_text
+
+
+def test_build_html_overview_pngquant_topdiff_quality_override(tmp_path: Path, monkeypatch) -> None:
+    base = tmp_path / "analysis"
+    volcano_png = base / "volcano" / "mouse" / "v1_sort_pValue.png"
+    topdiff_png = base / "topdiff" / "cluster" / "topdiff_clustermap.png"
+    volcano_png.parent.mkdir(parents=True, exist_ok=True)
+    topdiff_png.parent.mkdir(parents=True, exist_ok=True)
+    volcano_png.write_bytes(b"\x89PNG\r\n\x1a\nVOLC")
+    topdiff_png.write_bytes(b"\x89PNG\r\n\x1a\nTOPD")
+
+    monkeypatch.setattr(html_overview, "_pngquant_available", lambda: True)
+    seen_quality = {}
+
+    def _fake_opt(src, dst, **kwargs):
+        seen_quality[Path(src).name] = kwargs.get("quality")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(b"\x89PNG\r\n\x1a\nOPT")
+        return True
+
+    monkeypatch.setattr(html_overview, "_pngquant_optimize", _fake_opt)
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(
+        base_dir=str(base),
+        out_dir=str(out_dir),
+        force=True,
+        pngquant=True,
+        pngquant_quality="60-70",
+        pngquant_topdiff_quality="88-92",
+    )
+
+    assert outputs.out_html.exists()
+    assert seen_quality[volcano_png.name] == "60-70"
+    assert seen_quality[topdiff_png.name] == "88-92"

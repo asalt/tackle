@@ -16,6 +16,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+try:
+    from tqdm import tqdm
+except Exception:
+    def tqdm(iterable, *args, **kwargs):  # type: ignore[override]
+        return iterable
+
 import pandas as pd
 
 from .deckgen import _summarize_volcano_top_hits
@@ -386,6 +392,17 @@ def _pngquant_optimize(
     return False
 
 
+def _pngquant_quality_for_item(
+    *,
+    item: PlotItem,
+    default_quality: Optional[str],
+    topdiff_quality: Optional[str],
+) -> Optional[str]:
+    if item.category == "topdiff-cluster" and topdiff_quality:
+        return str(topdiff_quality)
+    return str(default_quality) if default_quality else None
+
+
 def _render_j2_template(template_name: str, **context: object) -> str:
     try:
         from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -684,6 +701,7 @@ def build_html_overview(
     ai_model_label: Optional[str] = None,
     pngquant: bool = False,
     pngquant_quality: Optional[str] = "65-85",
+    pngquant_topdiff_quality: Optional[str] = "85-90",
     pngquant_speed: int = 3,
     pngquant_strip: bool = True,
 ) -> HtmlOverviewOutputs:
@@ -708,7 +726,7 @@ def build_html_overview(
         assets_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(
-        "HTML overview: base_dir=%s out_dir=%s copy_assets=%s force=%s self_contained=%s filter=%s pngquant=%s quality=%s speed=%s strip=%s",
+        "HTML overview: base_dir=%s out_dir=%s copy_assets=%s force=%s self_contained=%s filter=%s pngquant=%s quality=%s topdiff_quality=%s speed=%s strip=%s",
         root,
         out_root,
         copy_assets,
@@ -717,6 +735,7 @@ def build_html_overview(
         list(filter_contains),
         pngquant,
         pngquant_quality,
+        pngquant_topdiff_quality,
         pngquant_speed,
         pngquant_strip,
     )
@@ -741,43 +760,98 @@ def build_html_overview(
         else None
     )
     temp_png_dir = Path(temp_png_dir_ctx.name) if temp_png_dir_ctx is not None else None
+    optimized_count = 0
+    total_before = 0
+    total_after = 0
     try:
         if self_contained:
-            for item in plots:
+            pbar = tqdm(plots, desc="compressing", disable=not use_pngquant)
+            for item in pbar:
                 source_png = Path(item.source_path)
                 embed_png = source_png
                 if use_pngquant and temp_png_dir is not None:
                     optimized_png = temp_png_dir / item.source_relpath
+                    quality = _pngquant_quality_for_item(
+                        item=item,
+                        default_quality=pngquant_quality,
+                        topdiff_quality=pngquant_topdiff_quality,
+                    )
                     if _pngquant_optimize(
                         source_png,
                         optimized_png,
-                        quality=pngquant_quality,
+                        quality=quality,
                         speed=int(pngquant_speed),
                         strip=bool(pngquant_strip),
                     ):
+                        before = source_png.stat().st_size
+                        after = optimized_png.stat().st_size
+                        total_before += before
+                        total_after += after
+                        optimized_count += 1
+                        saved = total_before - total_after
+                        ratio = (total_after / total_before) if total_before else 1.0
+                        pbar.set_postfix(
+                            saved=f"{saved / 1e6:.1f}MB",
+                            ratio=f"{ratio:.2f}x",
+                        )
                         embed_png = optimized_png
                 item.asset_relpath = _data_uri_for_file(embed_png, mime="image/png")
+            if hasattr(pbar, "close"):
+                pbar.close()
         else:
             if assets_dir is None:
                 raise ValueError("assets_dir is required when self_contained=False")
-            for item in plots:
+            pbar = tqdm(plots, desc="compressing", disable=not use_pngquant)
+            for item in pbar:
                 source_png = Path(item.source_path)
                 dst = assets_dir / "plots" / item.source_relpath
                 wrote_optimized = False
                 if use_pngquant:
+                    quality = _pngquant_quality_for_item(
+                        item=item,
+                        default_quality=pngquant_quality,
+                        topdiff_quality=pngquant_topdiff_quality,
+                    )
                     wrote_optimized = _pngquant_optimize(
                         source_png,
                         dst,
-                        quality=pngquant_quality,
+                        quality=quality,
                         speed=int(pngquant_speed),
                         strip=bool(pngquant_strip),
                     )
+                    if wrote_optimized:
+                        before = source_png.stat().st_size
+                        after = dst.stat().st_size
+                        total_before += before
+                        total_after += after
+                        optimized_count += 1
+                        saved = total_before - total_after
+                        ratio = (total_after / total_before) if total_before else 1.0
+                        pbar.set_postfix(
+                            saved=f"{saved / 1e6:.1f}MB",
+                            ratio=f"{ratio:.2f}x",
+                        )
                 if not wrote_optimized:
                     _copy_or_symlink(source_png, dst, copy=copy_assets, force=force)
                 item.asset_relpath = str(dst.relative_to(out_root).as_posix())
+            if hasattr(pbar, "close"):
+                pbar.close()
     finally:
         if temp_png_dir_ctx is not None:
             temp_png_dir_ctx.cleanup()
+
+    if use_pngquant:
+        if optimized_count > 0 and total_before > 0:
+            logger.info(
+                "PNG compression summary: %.1f MB -> %.1f MB (%.2fx) [%d/%d optimized]",
+                total_before / 1e6,
+                total_after / 1e6,
+                total_after / total_before,
+                optimized_count,
+                len(plots),
+            )
+        else:
+            logger.info("PNG compression summary: no PNG files were optimized.")
 
     # Volcano TSV summaries (copied into assets/data/...).
     volcano_tables = _collect_volcano_tables(

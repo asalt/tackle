@@ -1714,6 +1714,13 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     help="pngquant quality range (min-max), for example 60-85.",
 )
 @click.option(
+    "--pngquant-topdiff-quality",
+    type=str,
+    default="85-90",
+    show_default=True,
+    help="Optional pngquant quality override for top-diff heatmaps.",
+)
+@click.option(
     "--pngquant-speed",
     type=click.IntRange(1, 11),
     default=3,
@@ -1822,6 +1829,7 @@ def make_html(
     self_contained,
     pngquant,
     pngquant_quality,
+    pngquant_topdiff_quality,
     pngquant_speed,
     pngquant_strip,
     force,
@@ -1891,6 +1899,9 @@ def make_html(
             ai_model_label=str(ai_model_label) if ai_model_label else None,
             pngquant=bool(pngquant),
             pngquant_quality=str(pngquant_quality) if pngquant_quality else None,
+            pngquant_topdiff_quality=(
+                str(pngquant_topdiff_quality) if pngquant_topdiff_quality else None
+            ),
             pngquant_speed=int(pngquant_speed),
             pngquant_strip=bool(pngquant_strip),
         )
