@@ -50,3 +50,32 @@ def test_build_html_overview_bundle(tmp_path: Path) -> None:
     assert (out_dir / "assets" / "plots" / "volcano" / "mouse" / plot_png.name).exists()
     assert (out_dir / "assets" / "data" / "volcano" / "mouse" / tsv_path.name).exists()
 
+
+def test_build_html_overview_groups_volcano_by_sort_metric(tmp_path: Path) -> None:
+    base = tmp_path / "analysis"
+    volcano_dir = base / "volcano" / "mouse"
+
+    png_fc = volcano_dir / "run1_volcano_nz1_groupA_minus_groupB_sort_log2_FC.png"
+    png_pv = volcano_dir / "run1_volcano_nz1_groupA_minus_groupB_sort_pValue.png"
+    _write_dummy_png(png_fc)
+    _write_dummy_png(png_pv)
+
+    tsv_path = volcano_dir / "run1_volcano_nz1_groupA_minus_groupB.tsv"
+    df = pd.DataFrame(
+        {
+            "GeneID": ["1", "2", "3"],
+            "GeneSymbol": ["AAA", "BBB", "CCC"],
+            "log2_FC": [1.2, -2.3, 0.5],
+            "pValue": [0.01, 0.02, 0.5],
+        }
+    )
+    tsv_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(tsv_path, sep="\t", index=False)
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(base_dir=str(base), out_dir=str(out_dir), force=True)
+
+    assert outputs.out_html.exists()
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+    assert "Sort: log2_FC (1)" in html_text
+    assert "Sort: pValue (1)" in html_text

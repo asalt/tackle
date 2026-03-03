@@ -224,9 +224,9 @@
         {% if sec.count == 0 %}
         <p class="muted">No plots found for this category.</p>
         {% else %}
-          {% if sec.key == "topdiff-cluster" and sec.contrasts %}
+          {% if (sec.key == "topdiff-cluster" or sec.key == "volcano") and sec.contrasts %}
             {% if (sec.contrasts | length) > 1 %}
-            <nav class="contrast-tabs" aria-label="Top diff contrasts">
+            <nav class="contrast-tabs" aria-label="{% if sec.key == 'volcano' %}Volcano contrasts{% else %}Top diff contrasts{% endif %}">
               {% for c in sec.contrasts %}
               <button class="contrast-tab" type="button" data-contrast-tab="{{ c.key }}">{{ c.label }} ({{ c.count }})</button>
               {% endfor %}
@@ -236,7 +236,7 @@
             {% for c in sec.contrasts %}
             <div class="contrast-panel{% if loop.first %} active{% endif %}" data-contrast-panel="{{ c.key }}">
               {% if c.groups and (c.groups | length) > 1 %}
-              <nav class="size-tabs" aria-label="Top diff sizes">
+              <nav class="size-tabs" aria-label="{% if sec.key == 'volcano' %}Volcano sort variants{% else %}Top diff sizes{% endif %}">
                 {% for g in c.groups %}
                 <button class="size-tab" type="button" data-size-tab="{{ g.key }}">{{ g.label }} ({{ g.count }})</button>
                 {% endfor %}
@@ -257,6 +257,24 @@
                     <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
                       <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy" />
                     </a>
+                    {% endif %}
+
+                    {% if item.category == "volcano" and item.volcano_table %}
+                    <details class="plot">
+                      <summary>Top hits (TSV preview)</summary>
+                      <p class="meta table-meta">
+                        TSV:
+                        {% if item.volcano_table.asset_relpath %}
+                        <a href="{{ item.volcano_table.asset_relpath }}" target="_blank" rel="noopener"><code>{{ item.volcano_table.source_relpath }}</code></a>
+                        {% else %}
+                        <code>{{ item.volcano_table.source_relpath }}</code>
+                        {% endif %}
+                      </p>
+                      {% if item.volcano_table.error %}
+                      <p class="warn">Note: {{ item.volcano_table.error }}</p>
+                      {% endif %}
+                      {{ item.volcano_table.preview_table_html | safe }}
+                    </details>
                     {% endif %}
                   </div>
                 </details>

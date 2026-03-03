@@ -228,6 +228,90 @@ def _group_topdiff_by_contrast(items: Sequence[PlotItem]) -> List[Dict[str, Any]
     return out
 
 
+_VOLCANO_CONTRAST_RE = re.compile(
+    r"(?:^|_)group_?(?P<contrast>.*?)(?=_(?:imv|fna|dir|lrob|ltrd|sort|pvalue|padj)_|$)",
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_volcano_contrast(relpath: str) -> str:
+    stem = Path(str(relpath)).stem
+    match = _VOLCANO_CONTRAST_RE.search(stem)
+    if match:
+        contrast = (match.group("contrast") or "").strip("_")
+        if contrast:
+            return contrast
+    return stem or "Other"
+
+
+def _extract_volcano_sort_metric(relpath: str) -> str:
+    stem = Path(str(relpath)).stem
+    lower = stem.lower()
+    if re.search(r"(?:^|_)sort_?log2(?:_|-)?fc(?:_|$)", lower):
+        return "log2_FC"
+    if re.search(r"(?:^|_)sort_?pvalue(?:_|$)", lower):
+        return "pValue"
+    if re.search(r"(?:^|_)log2(?:_|-)?fc(?:_|$)", lower):
+        return "log2_FC"
+    if re.search(r"(?:^|_)pvalue(?:_|$)", lower):
+        return "pValue"
+    return "other"
+
+
+def _group_volcano_by_contrast_and_sort(items: Sequence[PlotItem]) -> List[Dict[str, Any]]:
+    by_contrast: Dict[str, Dict[str, List[PlotItem]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for item in items:
+        contrast = _extract_volcano_contrast(item.source_relpath)
+        sort_metric = _extract_volcano_sort_metric(item.source_relpath)
+        by_contrast[contrast][sort_metric].append(item)
+
+    sort_order = {"log2_FC": 0, "pValue": 1, "other": 2}
+    sort_labels = {
+        "log2_FC": "Sort: log2_FC",
+        "pValue": "Sort: pValue",
+        "other": "Other",
+    }
+
+    out: List[Dict[str, Any]] = []
+    used_keys = set()
+    for contrast, grouped in sorted(by_contrast.items(), key=lambda kv: kv[0].lower()):
+        contrast_key = _slugify_html_id(contrast)
+        base = contrast_key
+        suffix = 2
+        while contrast_key in used_keys:
+            contrast_key = f"{base}-{suffix}"
+            suffix += 1
+        used_keys.add(contrast_key)
+
+        groups: List[Dict[str, Any]] = []
+        for metric, plots in sorted(
+            grouped.items(), key=lambda kv: (sort_order.get(kv[0], 99), str(kv[0]))
+        ):
+            metric_key = _slugify_html_id(f"{contrast}-{metric}")
+            groups.append(
+                {
+                    "key": metric_key,
+                    "label": sort_labels.get(metric, f"Sort: {metric}"),
+                    "count": len(plots),
+                    "sort_metric": metric,
+                    "plots": sorted(plots, key=lambda p: p.source_relpath),
+                }
+            )
+
+        out.append(
+            {
+                "key": contrast_key,
+                "label": contrast,
+                "count": sum(group["count"] for group in groups),
+                "groups": groups,
+            }
+        )
+
+    return out
+
+
 def _render_html_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     pieces = ["<table class='data-table'>", "<thead><tr>"]
     for head in headers:
@@ -656,6 +740,17 @@ def build_html_overview(
             continue
         if k == "topdiff-cluster":
             contrasts = _group_topdiff_by_contrast(items)
+            sections.append(
+                {
+                    "key": k,
+                    "label": label,
+                    "count": len(items),
+                    "plots": items,
+                    "contrasts": contrasts,
+                }
+            )
+        elif k == "volcano":
+            contrasts = _group_volcano_by_contrast_and_sort(items)
             sections.append(
                 {
                     "key": k,
