@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style type="text/css">
+    :root {
+      --bg: #0d1117;
+      --card: #151b23;
+      --ink: #e6edf3;
+      --muted: #9aa5b1;
+      --line: #30363d;
+      --accent: #4ea1ff;
+      --warn: #ffcc66;
+      --shadow: rgba(0,0,0,0.35);
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at 20% 0%, #121826 0%, var(--bg) 55%, #070a0f 100%);
+      color: var(--ink);
+      font: 15px/1.45 "IBM Plex Sans", "Trebuchet MS", sans-serif;
+    }
+    .main-container {
+      max-width: 100% !important;
+      margin: auto;
+    }
+    main.main-container {
+      width: 100%;
+      padding: 1.6rem 1rem 3rem 1rem;
+      box-sizing: border-box;
+    }
+    h1, h2 {
+      margin: 0.6rem 0;
+      font-family: "Source Serif 4", "Georgia", serif;
+      letter-spacing: 0.2px;
+    }
+    h1 { font-size: 2.0rem; }
+    h2 {
+      margin-top: 1.2rem;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 0.2rem;
+    }
+    p.meta {
+      color: var(--muted);
+      margin: 0.25rem 0 0.4rem 0;
+    }
+    code {
+      font-family: "IBM Plex Mono", "Consolas", monospace;
+      font-size: 0.92em;
+      color: #c9d1d9;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-top: 1rem;
+      box-shadow: 0 2px 16px var(--shadow);
+    }
+
+    details {
+      margin: 0.75em 0;
+    }
+    details > summary {
+      cursor: pointer;
+    }
+
+    /* Tabs */
+    nav.tabs {
+      margin-top: 1.0rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(13, 17, 23, 0.92);
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.6rem;
+    }
+    .tab {
+      border: 1px solid var(--line);
+      background: #0b1220;
+      color: var(--ink);
+      padding: 0.45rem 0.7rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.92rem;
+      letter-spacing: 0.15px;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+    .tab:hover { border-color: #44505b; }
+    .tab.active {
+      background: rgba(78, 161, 255, 0.16);
+      border-color: rgba(78, 161, 255, 0.65);
+      color: #d9ecff;
+    }
+    section.panel { display: none; }
+    section.panel.active { display: block; }
+
+    /* Nested tabs (Top Diff) */
+    nav.contrast-tabs, nav.size-tabs {
+      margin-top: 0.8rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.55rem;
+      background: rgba(255,255,255,0.01);
+    }
+    .contrast-tab, .size-tab {
+      border: 1px solid var(--line);
+      background: #0b1220;
+      color: var(--ink);
+      padding: 0.38rem 0.6rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 650;
+      font-size: 0.90rem;
+      letter-spacing: 0.12px;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+    .contrast-tab:hover, .size-tab:hover { border-color: #44505b; }
+    .contrast-tab.active, .size-tab.active {
+      background: rgba(78, 161, 255, 0.16);
+      border-color: rgba(78, 161, 255, 0.65);
+      color: #d9ecff;
+    }
+    .contrast-panel { display: none; }
+    .contrast-panel.active { display: block; }
+    .size-panel { display: none; }
+    .size-panel.active { display: block; }
+
+    /* Plot items */
+    details.plot {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.02);
+      padding: 0.2rem 0.6rem;
+    }
+    summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 700;
+      padding: 0.5rem 0.2rem;
+      outline: none;
+    }
+    .plot-body { padding: 0.4rem 0.2rem 0.8rem 0.2rem; }
+    .plot-path { margin: 0.2rem 0 0.6rem 0; }
+    .plot-img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 1px 12px rgba(0,0,0,0.25);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .muted { color: var(--muted); }
+    .warn { color: var(--warn); font-weight: 650; }
+
+    /* Tables */
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.6rem;
+      font-size: 0.92rem;
+    }
+    table.data-table th, table.data-table td {
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      padding: 0.35rem 0.45rem;
+    }
+    table.data-table th {
+      background: rgba(78, 161, 255, 0.10);
+      font-weight: 800;
+    }
+    .table-meta {
+      margin: 0.4rem 0 0.2rem 0;
+    }
+    pre.ai-summary {
+      margin: 0.6rem 0 0 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 0.95rem/1.45 "IBM Plex Mono", "Consolas", monospace;
+      color: var(--ink);
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="main-container">
+    <h1>{{ title }}</h1>
+    {% if show_date %}
+    <p class="meta">Generated: {{ generated_at }}</p>
+    {% endif %}
+    <p class="meta">Base directory: <code>{{ base_dir }}</code></p>
+    <p class="meta">Discovered: <strong>{{ total_plots }}</strong> plot PNGs, <strong>{{ volcano_tables_total }}</strong> volcano TSVs</p>
+
+    <nav class="tabs" aria-label="Report sections">
+      {% for sec in sections %}
+      <button class="tab" type="button" data-tab="{{ sec.key }}">{{ sec.label }} ({{ sec.count }})</button>
+      {% endfor %}
+      {% if volcano_tables_unmatched %}
+      <button class="tab" type="button" data-tab="volcano-tables">Volcano Tables ({{ volcano_tables_unmatched | length }})</button>
+      {% endif %}
+    </nav>
+
+    {% for sec in sections %}
+    <section class="panel" id="tab-{{ sec.key }}">
+      <div class="card">
+        <h2>{{ sec.label }}</h2>
+        {% if sec.count == 0 %}
+        <p class="muted">No plots found for this category.</p>
+        {% else %}
+          {% if sec.key == "topdiff-cluster" and sec.contrasts %}
+            {% if (sec.contrasts | length) > 1 %}
+            <nav class="contrast-tabs" aria-label="Top diff contrasts">
+              {% for c in sec.contrasts %}
+              <button class="contrast-tab" type="button" data-contrast-tab="{{ c.key }}">{{ c.label }} ({{ c.count }})</button>
+              {% endfor %}
+            </nav>
+            {% endif %}
+
+            {% for c in sec.contrasts %}
+            <div class="contrast-panel{% if loop.first %} active{% endif %}" data-contrast-panel="{{ c.key }}">
+              {% if c.groups and (c.groups | length) > 1 %}
+              <nav class="size-tabs" aria-label="Top diff sizes">
+                {% for g in c.groups %}
+                <button class="size-tab" type="button" data-size-tab="{{ g.key }}">{{ g.label }} ({{ g.count }})</button>
+                {% endfor %}
+              </nav>
+              {% endif %}
+
+              {% for g in c.groups %}
+              <div class="size-panel{% if loop.first %} active{% endif %}" data-size-panel="{{ g.key }}">
+                {% for item in g.plots %}
+                <details class="plot">
+                  <summary>{{ item.title }}</summary>
+                  <div class="plot-body">
+                    <p class="meta plot-path"><code>{{ item.source_relpath }}</code></p>
+                    {% if self_contained %}
+                    <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy"
+                         onclick="window.open(this.src, '_blank');" />
+                    {% else %}
+                    <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
+                      <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy" />
+                    </a>
+                    {% endif %}
+                  </div>
+                </details>
+                {% endfor %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endfor %}
+          {% else %}
+            {% for item in sec.plots %}
+            <details class="plot">
+  	          <summary>{{ item.title }}</summary>
+  	          <div class="plot-body">
+  	            <p class="meta plot-path"><code>{{ item.source_relpath }}</code></p>
+  	            {% if self_contained %}
+  	            <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy"
+  	                 onclick="window.open(this.src, '_blank');" />
+  	            {% else %}
+  	            <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
+  	              <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy" />
+  	            </a>
+  	            {% endif %}
+
+              {% if item.category == "volcano" and item.volcano_table %}
+  	            <details class="plot">
+  	              <summary>Top hits (TSV preview)</summary>
+  	              <p class="meta table-meta">
+  	                TSV:
+  	                {% if item.volcano_table.asset_relpath %}
+  	                <a href="{{ item.volcano_table.asset_relpath }}" target="_blank" rel="noopener"><code>{{ item.volcano_table.source_relpath }}</code></a>
+  	                {% else %}
+  	                <code>{{ item.volcano_table.source_relpath }}</code>
+  	                {% endif %}
+  	              </p>
+  	              {% if item.volcano_table.error %}
+  	              <p class="warn">Note: {{ item.volcano_table.error }}</p>
+  	              {% endif %}
+  	              {{ item.volcano_table.preview_table_html | safe }}
+              </details>
+              {% endif %}
+              </div>
+            </details>
+            {% endfor %}
+          {% endif %}
+        {% endif %}
+
+        {% if ai_summary_enabled %}
+          {% set ai_text = ai_section_summaries.get(sec.key) %}
+          {% set ai_err = ai_section_errors.get(sec.key) %}
+          <details class="plot" open>
+            <summary>AI Summary ({{ ai_model_label }})</summary>
+            <div class="plot-body">
+              <p class="muted">Generated via the agent API at build time; please sanity-check key claims.</p>
+              {% if ai_err %}
+              <p class="warn">AI summary unavailable: {{ ai_err }}</p>
+              {% endif %}
+              {% if ai_text %}
+              <pre class="ai-summary">{{ ai_text }}</pre>
+              {% endif %}
+            </div>
+          </details>
+        {% endif %}
+      </div>
+    </section>
+    {% endfor %}
+
+    {% if volcano_tables_unmatched %}
+    <section class="panel" id="tab-volcano-tables">
+      <div class="card">
+        <h2>Volcano Tables (unmatched)</h2>
+        <p class="muted">
+          These TSVs were discovered under <code>volcano/</code> but were not confidently matched
+          to a volcano PNG in the same folder.
+        </p>
+        {% for tbl in volcano_tables_unmatched %}
+	        <details class="plot">
+	          <summary>{{ tbl.title }}</summary>
+	          <div class="plot-body">
+	            <p class="meta plot-path"><code>{{ tbl.source_relpath }}</code></p>
+	            <p class="meta table-meta">
+	              TSV:
+	              {% if tbl.asset_relpath %}
+	              <a href="{{ tbl.asset_relpath }}" target="_blank" rel="noopener"><code>{{ tbl.source_relpath }}</code></a>
+	              {% else %}
+	              <code>{{ tbl.source_relpath }}</code>
+	              {% endif %}
+	            </p>
+	            {% if tbl.error %}
+	            <p class="warn">Note: {{ tbl.error }}</p>
+	            {% endif %}
+	            {{ tbl.preview_table_html | safe }}
+          </div>
+        </details>
+        {% endfor %}
+
+        {% if ai_summary_enabled %}
+          {% set ai_text = ai_section_summaries.get('volcano-tables') %}
+          {% set ai_err = ai_section_errors.get('volcano-tables') %}
+          <details class="plot" open>
+            <summary>AI Summary ({{ ai_model_label }})</summary>
+            <div class="plot-body">
+              <p class="muted">Generated via the agent API at build time; please sanity-check key claims.</p>
+              {% if ai_err %}
+              <p class="warn">AI summary unavailable: {{ ai_err }}</p>
+              {% endif %}
+              {% if ai_text %}
+              <pre class="ai-summary">{{ ai_text }}</pre>
+              {% endif %}
+            </div>
+          </details>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </main>
+
+  <script>
+    (function() {
+      const tabs = Array.from(document.querySelectorAll(".tab"));
+      const panels = Array.from(document.querySelectorAll("section.panel"));
+
+      function activate(key) {
+        tabs.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === key));
+        panels.forEach(p => p.classList.toggle("active", p.id === "tab-" + key));
+        if (key) {
+          try { window.location.hash = key; } catch (e) {}
+        }
+      }
+
+      const keys = tabs.map(btn => btn.dataset.tab);
+      const initial = (window.location.hash || "").replace("#", "");
+      if (initial && keys.includes(initial)) {
+        activate(initial);
+      } else if (keys.length) {
+        activate(keys[0]);
+      }
+
+      tabs.forEach(btn => {
+        btn.addEventListener("click", () => activate(btn.dataset.tab));
+      });
+    })();
+
+    (function() {
+      const navs = Array.from(document.querySelectorAll("nav.contrast-tabs"));
+      navs.forEach(nav => {
+        const card = nav.closest(".card") || nav.parentElement;
+        const btns = Array.from(nav.querySelectorAll(".contrast-tab"));
+        const panels = Array.from(card.querySelectorAll(".contrast-panel"));
+        const panelByKey = new Map();
+        panels.forEach(p => panelByKey.set(p.dataset.contrastPanel, p));
+        if (!btns.length) return;
+
+        function activateContrast(key) {
+          btns.forEach(b => b.classList.toggle("active", b.dataset.contrastTab === key));
+          panels.forEach(p => p.classList.toggle("active", p.dataset.contrastPanel === key));
+        }
+
+        activateContrast(btns[0].dataset.contrastTab);
+        btns.forEach(b => b.addEventListener("click", () => activateContrast(b.dataset.contrastTab)));
+      });
+    })();
+
+    (function() {
+      const navs = Array.from(document.querySelectorAll("nav.size-tabs"));
+      navs.forEach(nav => {
+        const contrastPanel = nav.closest(".contrast-panel") || nav.parentElement;
+        const btns = Array.from(nav.querySelectorAll(".size-tab"));
+        const panels = Array.from(contrastPanel.querySelectorAll(".size-panel"));
+        const panelByKey = new Map();
+        panels.forEach(p => panelByKey.set(p.dataset.sizePanel, p));
+        if (!btns.length) return;
+
+        function activateSize(key) {
+          btns.forEach(b => b.classList.toggle("active", b.dataset.sizeTab === key));
+          panels.forEach(p => p.classList.toggle("active", p.dataset.sizePanel === key));
+        }
+
+        activateSize(btns[0].dataset.sizeTab);
+        btns.forEach(b => b.addEventListener("click", () => activateSize(b.dataset.sizeTab)));
+      });
+    })();
+  </script>
+</body>
+</html>
