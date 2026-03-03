@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 import pandas as pd
 
+import tackle.html_overview as html_overview
 from tackle.html_overview import build_html_overview
 
 
@@ -79,3 +81,56 @@ def test_build_html_overview_groups_volcano_by_sort_metric(tmp_path: Path) -> No
     html_text = outputs.out_html.read_text(encoding="utf-8")
     assert "Sort: log2_FC (1)" in html_text
     assert "Sort: pValue (1)" in html_text
+
+
+def test_build_html_overview_pngquant_missing_falls_back(tmp_path: Path, monkeypatch) -> None:
+    base = tmp_path / "analysis"
+    volcano_dir = base / "volcano" / "mouse"
+    plot_png = volcano_dir / "run1_volcano_nz1_groupA_minus_groupB_pValue.png"
+    _write_dummy_png(plot_png)
+
+    monkeypatch.setattr(html_overview, "_pngquant_available", lambda: False)
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(
+        base_dir=str(base),
+        out_dir=str(out_dir),
+        force=True,
+        pngquant=True,
+    )
+
+    assert outputs.out_html.exists()
+    assert (out_dir / "assets" / "plots" / "volcano" / "mouse" / plot_png.name).exists()
+
+
+def test_build_html_overview_self_contained_uses_optimized_png(tmp_path: Path, monkeypatch) -> None:
+    base = tmp_path / "analysis"
+    volcano_dir = base / "volcano" / "mouse"
+    plot_png = volcano_dir / "run1_volcano_nz1_groupA_minus_groupB_pValue.png"
+    plot_png.parent.mkdir(parents=True, exist_ok=True)
+    original = b"\x89PNG\r\n\x1a\nORIGINAL"
+    optimized = b"\x89PNG\r\n\x1a\nOPTIMIZED"
+    plot_png.write_bytes(original)
+
+    monkeypatch.setattr(html_overview, "_pngquant_available", lambda: True)
+
+    def _fake_opt(src, dst, **kwargs):
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(optimized)
+        return True
+
+    monkeypatch.setattr(html_overview, "_pngquant_optimize", _fake_opt)
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(
+        base_dir=str(base),
+        out_dir=str(out_dir),
+        force=True,
+        self_contained=True,
+        pngquant=True,
+    )
+
+    assert outputs.out_html.exists()
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+    assert base64.b64encode(optimized).decode("ascii") in html_text
+    assert base64.b64encode(original).decode("ascii") not in html_text

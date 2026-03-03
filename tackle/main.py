@@ -1701,6 +1701,32 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     help="Embed plot PNGs directly in the HTML so it can be shared as a single file (no assets directory).",
 )
 @click.option(
+    "--pngquant/--no-pngquant",
+    default=False,
+    show_default=True,
+    help="Optimize plot PNGs with pngquant before adding them to the HTML bundle.",
+)
+@click.option(
+    "--pngquant-quality",
+    type=str,
+    default="65-85",
+    show_default=True,
+    help="pngquant quality range (min-max), for example 60-85.",
+)
+@click.option(
+    "--pngquant-speed",
+    type=click.IntRange(1, 11),
+    default=3,
+    show_default=True,
+    help="pngquant speed (1 slow/best to 11 fast).",
+)
+@click.option(
+    "--pngquant-strip/--no-pngquant-strip",
+    default=True,
+    show_default=True,
+    help="Strip metadata when optimizing PNGs with pngquant.",
+)
+@click.option(
     "--force",
     is_flag=True,
     default=False,
@@ -1794,6 +1820,10 @@ def make_html(
     show_date,
     copy_assets,
     self_contained,
+    pngquant,
+    pngquant_quality,
+    pngquant_speed,
+    pngquant_strip,
     force,
     filter_contains,
     plot_kinds,
@@ -1859,6 +1889,10 @@ def make_html(
             pandas_low_memory=bool(pandas_low_memory),
             ai_summary=bool(ai_summary),
             ai_model_label=str(ai_model_label) if ai_model_label else None,
+            pngquant=bool(pngquant),
+            pngquant_quality=str(pngquant_quality) if pngquant_quality else None,
+            pngquant_speed=int(pngquant_speed),
+            pngquant_strip=bool(pngquant_strip),
         )
     except (FileExistsError, NotADirectoryError, FileNotFoundError, RuntimeError) as e:
         raise click.ClickException(str(e))

@@ -7,6 +7,8 @@ import re
 import shutil
 import json
 import os
+import subprocess
+import tempfile
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -352,6 +354,38 @@ def _data_uri_for_file(path: Path, *, mime: str) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
+def _pngquant_available() -> bool:
+    return shutil.which("pngquant") is not None
+
+
+def _pngquant_optimize(
+    src: Path,
+    dst: Path,
+    *,
+    quality: Optional[str] = "65-85",
+    speed: int = 3,
+    strip: bool = True,
+) -> bool:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["pngquant", "--force", "--skip-if-larger", "--output", str(dst)]
+    if quality:
+        cmd.append(f"--quality={str(quality)}")
+    cmd.append(f"--speed={int(speed)}")
+    if strip:
+        cmd.append("--strip")
+    cmd.extend(["--", str(src)])
+
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0:
+        return True
+    return False
+
+
 def _render_j2_template(template_name: str, **context: object) -> str:
     try:
         from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -648,6 +682,10 @@ def build_html_overview(
     pandas_low_memory: bool = False,
     ai_summary: bool = False,
     ai_model_label: Optional[str] = None,
+    pngquant: bool = False,
+    pngquant_quality: Optional[str] = "65-85",
+    pngquant_speed: int = 3,
+    pngquant_strip: bool = True,
 ) -> HtmlOverviewOutputs:
     root = Path(base_dir).expanduser().resolve()
     if not root.exists() or not root.is_dir():
@@ -670,13 +708,17 @@ def build_html_overview(
         assets_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(
-        "HTML overview: base_dir=%s out_dir=%s copy_assets=%s force=%s self_contained=%s filter=%s",
+        "HTML overview: base_dir=%s out_dir=%s copy_assets=%s force=%s self_contained=%s filter=%s pngquant=%s quality=%s speed=%s strip=%s",
         root,
         out_root,
         copy_assets,
         force,
         self_contained,
         list(filter_contains),
+        pngquant,
+        pngquant_quality,
+        pngquant_speed,
+        pngquant_strip,
     )
 
     # Collect images first (exclude our output dir).
@@ -688,16 +730,54 @@ def build_html_overview(
     )
 
     # Copy/symlink plot assets into the bundle, or embed them as data URIs.
-    if self_contained:
-        for item in plots:
-            item.asset_relpath = _data_uri_for_file(Path(item.source_path), mime="image/png")
-    else:
-        if assets_dir is None:
-            raise ValueError("assets_dir is required when self_contained=False")
-        for item in plots:
-            dst = assets_dir / "plots" / item.source_relpath
-            _copy_or_symlink(Path(item.source_path), dst, copy=copy_assets, force=force)
-            item.asset_relpath = str(dst.relative_to(out_root).as_posix())
+    use_pngquant = bool(pngquant)
+    if use_pngquant and not _pngquant_available():
+        logger.warning("pngquant requested but not found on PATH; using original PNG files.")
+        use_pngquant = False
+
+    temp_png_dir_ctx = (
+        tempfile.TemporaryDirectory(prefix="tackle_make_html_pngquant_")
+        if (self_contained and use_pngquant)
+        else None
+    )
+    temp_png_dir = Path(temp_png_dir_ctx.name) if temp_png_dir_ctx is not None else None
+    try:
+        if self_contained:
+            for item in plots:
+                source_png = Path(item.source_path)
+                embed_png = source_png
+                if use_pngquant and temp_png_dir is not None:
+                    optimized_png = temp_png_dir / item.source_relpath
+                    if _pngquant_optimize(
+                        source_png,
+                        optimized_png,
+                        quality=pngquant_quality,
+                        speed=int(pngquant_speed),
+                        strip=bool(pngquant_strip),
+                    ):
+                        embed_png = optimized_png
+                item.asset_relpath = _data_uri_for_file(embed_png, mime="image/png")
+        else:
+            if assets_dir is None:
+                raise ValueError("assets_dir is required when self_contained=False")
+            for item in plots:
+                source_png = Path(item.source_path)
+                dst = assets_dir / "plots" / item.source_relpath
+                wrote_optimized = False
+                if use_pngquant:
+                    wrote_optimized = _pngquant_optimize(
+                        source_png,
+                        dst,
+                        quality=pngquant_quality,
+                        speed=int(pngquant_speed),
+                        strip=bool(pngquant_strip),
+                    )
+                if not wrote_optimized:
+                    _copy_or_symlink(source_png, dst, copy=copy_assets, force=force)
+                item.asset_relpath = str(dst.relative_to(out_root).as_posix())
+    finally:
+        if temp_png_dir_ctx is not None:
+            temp_png_dir_ctx.cleanup()
 
     # Volcano TSV summaries (copied into assets/data/...).
     volcano_tables = _collect_volcano_tables(
