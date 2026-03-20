@@ -24,6 +24,13 @@ sort_presets = {
         "dn_query": "log2_FC < 0",
         "reverse_dn": True,
     },
+    "pAdj": {
+        "sort_func": "pAdj",   # adjusted p-value
+        "ascending": True,
+        "up_query": "log2_FC > 0",
+        "dn_query": "log2_FC < 0",
+        "reverse_dn": True,
+    },
     "log2_FC": {
         "sort_func": lambda df: (df["log2_FC"] * 1/(df["pValue"]+1e-9)),  # just sort by the column "log2_FC"
         "ascending": False,      # bigger FC => more interesting
@@ -82,8 +89,22 @@ def sort_and_select_topn(
     
     preset = sort_presets[sort_by]
 
-    df = df[ abs(df["log2_FC"]) > fc ]
-    df = df[ df[pval_type] < pval_cutoff ]
+    # Apply optional fold-change / p-value cutoffs. The CLI defaults (fc=0, pval_cutoff=1)
+    # are intended to mean "no cutoff".
+    try:
+        fc_val = float(fc)
+    except Exception:
+        fc_val = None
+    # Interpret `fc` as a fold-change ratio (e.g. 2 => abs(log2_FC) > log2(2) == 1).
+    if fc_val is not None and fc_val > 1 and "log2_FC" in df.columns:
+        df = df[abs(df["log2_FC"]) > np.log2(fc_val)]
+
+    try:
+        pval_val = float(pval_cutoff)
+    except Exception:
+        pval_val = None
+    if pval_val is not None and pval_val < 1:
+        df = df[df[pval_type] < pval_val]
     
     # Retrieve the sort key: can be a string (column name) or a callable
     sort_key = preset["sort_func"]
@@ -92,7 +113,16 @@ def sort_and_select_topn(
     dn_query = preset["dn_query"]
     reverse_dn = preset["reverse_dn"]
     
-    # If direction is "both", we pick topn//2 from up and topn//2 from down
+    def sort_df(df_sub: pd.DataFrame) -> pd.DataFrame:
+        if callable(sort_key):
+            df_sub = df_sub.assign(__sortkey=sort_key(df_sub))
+            sort_cols = ["__sortkey"]
+        else:
+            sort_cols = [sort_key]
+        return df_sub.sort_values(by=sort_cols, ascending=ascending)
+
+    # If direction is "both", we pick topn//2 from up and topn//2 from down and
+    # then backfill (from the remaining best rows) to reach `topn` when possible.
     # Otherwise we pick topn from just up or down.
     if direction == "both":
         n_each = int(int(topn) // 2)
@@ -105,16 +135,8 @@ def sort_and_select_topn(
         """
         if query_expr:
             df_sub = df_sub.query(query_expr)
-        
-        if callable(sort_key):
-            # Evaluate the function on df_sub to get a Series to sort by
-            df_sub = df_sub.assign(__sortkey=sort_key(df_sub))
-            sort_cols = ["__sortkey"]
-        else:
-            # Otherwise it's a column name
-            sort_cols = [sort_key]
-        
-        df_sub = df_sub.sort_values(by=sort_cols, ascending=ascending).head(n_each)
+
+        df_sub = sort_df(df_sub).head(n_each)
         
         # Some workflows like to reverse the 'down' group after sorting
         # (e.g. so the "most negative" is last). You can also skip this step.
@@ -122,11 +144,30 @@ def sort_and_select_topn(
     
     # Re-compute subsets for up/down/both
     if direction == "both":
-        up_part = subset_and_sort(df, up_query) if up_query else df.head(n_each)
-        dn_part = subset_and_sort(df, dn_query) if dn_query else df.tail(n_each)
+        # Treat log2_FC == 0 as neither up nor down for balanced selection/backfill.
+        df_dir = df.query("log2_FC != 0") if "log2_FC" in df.columns else df
+
+        up_part = subset_and_sort(df_dir, up_query) if up_query else df_dir.head(n_each)
+        dn_part = subset_and_sort(df_dir, dn_query) if dn_query else df_dir.tail(n_each)
         if reverse_dn:
             dn_part = dn_part.iloc[::-1]  # Reverse
-        return pd.concat([up_part, dn_part], axis=0)
+        combined = pd.concat([up_part, dn_part], axis=0)
+
+        # Backfill to hit the requested total `topn` whenever possible.
+        missing = int(topn) - int(len(combined))
+        if missing > 0 and not df_dir.empty:
+            selected = set()
+            if "GeneID" in combined.columns:
+                selected = set(combined["GeneID"].astype(str).tolist())
+
+            candidates = sort_df(df_dir)
+            if selected and "GeneID" in candidates.columns:
+                candidates = candidates[~candidates["GeneID"].astype(str).isin(selected)]
+            filler = candidates.head(missing)
+            if not filler.empty:
+                combined = pd.concat([combined, filler], axis=0)
+
+        return combined
     
     elif direction == "up":
         return subset_and_sort(df, up_query)
@@ -182,15 +223,21 @@ def process_file(
     topn: int,
     fc=0,
     pval_cutoff=1,
-    pval_type="pValue"
+    pval_type="pValue",
+    restrict_gene_ids: set[str] | None = None,
 ) -> pd.DataFrame:
     """
     Wrapper that:
       1) Loads the file
+      2) Optionally restricts to a gene universe
       2) Sorts/picks topN
       3) Returns the final DataFrame
     """
     df = parse_volcano_file(volcano_file)
+    if restrict_gene_ids and "GeneID" in df.columns:
+        universe = {str(x) for x in restrict_gene_ids if x is not None}
+        if universe:
+            df = df[df["GeneID"].astype(str).isin(universe)]
     df_filtered = sort_and_select_topn(df, sort_by=sort_by, direction=direction, topn=topn,
             fc=fc,
             pval_cutoff=pval_cutoff,
@@ -224,9 +271,19 @@ def sort_files(
         volcano_files = [volcano_files]
     
     dfs_combined = []
+    gene_universe = set(X.index.astype(str))
     
     for vf in volcano_files:
-        df_filtered = process_file(vf, sort_by=sort_by, direction=direction, topn=topn, fc=fc, pval_cutoff=pval_cutoff, pval_type=pval_type)
+        df_filtered = process_file(
+            vf,
+            sort_by=sort_by,
+            direction=direction,
+            topn=topn,
+            fc=fc,
+            pval_cutoff=pval_cutoff,
+            pval_type=pval_type,
+            restrict_gene_ids=gene_universe,
+        )
         if not df_filtered.empty:
             dfs_combined.append(df_filtered)
     

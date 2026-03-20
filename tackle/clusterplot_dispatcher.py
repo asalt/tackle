@@ -164,6 +164,36 @@ def _resolve_annotation_hits(
     return [], "none"
 
 
+def _resolve_annotation_filter_gene_ids(
+    *,
+    x_gene_ids,
+    annotation_filters,
+    annotator,
+    hgene_mapper=None,
+):
+    """Return X GeneIDs matching any annotation filter (order preserved)."""
+    x_ids = [str(x) for x in x_gene_ids]
+    filters = [
+        x
+        for x in (annotation_filters or ())
+        if x not in (None, "", "_all")
+    ]
+    if not filters:
+        return x_ids
+
+    hits: set[str] = set()
+    for annotation in filters:
+        annot_df = annotator.get_annot(annotation)
+        _tokeep, _strategy = _resolve_annotation_hits(
+            x_gene_ids=x_ids,
+            annotation_gene_ids=annot_df.GeneID,
+            hgene_mapper=hgene_mapper,
+        )
+        hits.update(_tokeep)
+
+    return [gid for gid in x_ids if gid in hits]
+
+
 def run(
     ctx,
     add_description,
@@ -227,7 +257,7 @@ def run(
     cluster_db=False,
     cluster_db_path=None,
     export_sweep_tsvs=False,
-    cluster_annotations=None,
+    annotation_filter=None,
     reroute_volcano=True,
 ):
 
@@ -244,6 +274,7 @@ def run(
     outname_kws = dict()
     print(volcano_direction)
     topdiff_out_dir = None
+    geneset_title = None
 
     # hacky sloppy name assignment
     outname_kws["rds" + "l" if row_dend_side == "left" else "rds" + "r"] = ""
@@ -252,7 +283,6 @@ def run(
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
-    cluster_annotations = list(cluster_annotations or ())
     if z_score == "None":
         z_score = None
     if standard_scale == "None":
@@ -361,6 +391,29 @@ def run(
                 Xmissing = pd.DataFrame(index=list(missing), columns=X.columns)
                 Xmissing.index.name = X.index.name
                 X = pd.concat([X, Xmissing])
+
+    annotation_filter = [
+        x for x in (annotation_filter or ()) if x not in (None, "", "_all")
+    ]
+    if annotation_filter:
+        annotator = get_annotation_mapper()
+        hgene_mapper = get_hgene_mapper()
+        to_keep = _resolve_annotation_filter_gene_ids(
+            x_gene_ids=X.index,
+            annotation_filters=annotation_filter,
+            annotator=annotator,
+            hgene_mapper=hgene_mapper,
+        )
+        if not to_keep:
+            logger.warning(
+                "annotation filter %s: 0 matching genes; skipping plot.",
+                ",".join(annotation_filter),
+            )
+            return
+
+        X = X.loc[to_keep]
+        outname_kws["geneset"] = annotation_filter
+        geneset_title = ":".join(annotation_filter)
 
     # print(len(X))
 
@@ -978,13 +1031,18 @@ def run(
         if annot_mat is None:
             annot_mat = robjects.NULL
         if main_title is None:
-            main_title = robjects.NULL
+            main_title = ""
+
+        title_base = str(main_title) if main_title else (str(column_title) if column_title else "")
+        if geneset_title:
+            title_base = f"{title_base}\n{geneset_title}" if title_base else str(geneset_title)
+        title_arg = title_base if title_base else robjects.NULL
 
         from .cluster2.plotting import compute_cluster2_figsize
 
         n_rows = int(X.shape[0])
         n_cols = int(len([c for c in X.columns if c not in ("GeneID", "GeneSymbol")]))
-        has_title = not (main_title == robjects.NULL)
+        has_title = title_arg is not robjects.NULL
 
         row_annot_df_pd = row_annot_df if isinstance(row_annot_df, pd.DataFrame) else None
         show_gene_symbols = kws.get("show_gene_symbols", gene_symbols)
@@ -1054,7 +1112,7 @@ def run(
             cluster_func=cluster_func or robjects.NULL,
             max_autoclusters=max_autoclusters,
             show_missing_values=show_missing_values,
-            main_title=main_title or column_title or robjects.NULL,
+            main_title=title_arg,
             # mask=data_obj.mask,
             # figsize=figsize,
             linear=linear,  # linear transformation not done in R yet
@@ -1627,90 +1685,6 @@ def run(
             file_fmt=file_fmt,
             figsize=figsize,
         )
-
-        ##################################################################
-        ##                     plot any annotations                     ##
-        ##################################################################
-
-        if not cluster_annotations:
-            continue
-
-        for annotation in cluster_annotations:
-            annotator = get_annotation_mapper()
-            if annotation in (None, "", "_all"):
-                continue
-            try:
-                annot_df = annotator.get_annot(annotation)
-            except Exception:
-                annot_df = annotator.df
-
-            subX = X[X.GeneID.isin(annot_df.GeneID)]
-            if subX.empty:
-                hgene_mapper = get_hgene_mapper()
-                _tokeep, strategy = _resolve_annotation_hits(
-                    x_gene_ids=X.GeneID,
-                    annotation_gene_ids=annot_df.GeneID,
-                    hgene_mapper=hgene_mapper,
-                )
-                if _tokeep:
-                    logger.info(
-                        "%s: recovered %d genes after homologene remap (%s)",
-                        annotation,
-                        len(_tokeep),
-                        strategy,
-                    )
-                    subX = X[X.GeneID.isin(set(_tokeep))]
-            if subX.empty:
-                logger.warning(
-                    "%s: no genes matched directly or after homologene remap; skipping.",
-                    annotation,
-                )
-                continue
-
-            sub_annot_mat = None
-            if annotate and annot_mat is not None:
-                sub_annot_mat = annot_mat[annot_mat.GeneID.isin(subX.GeneID)]
-
-            _sub_ncol = len([x for x in subX.columns if x not in ("GeneID", "GeneSymbol")])
-            _sub_nrow = subX.shape[0]
-            sub_nrow_ncol = "_{0}x{1}".format(_sub_nrow, _sub_ncol)
-            if plot_outname_func is not None:
-                out = (
-                    plot_outname_func(
-                        "",
-                        name="clustermap",
-                        geneset=fix_name(annotation),
-                        **outname_kws,
-                    )
-                    + sub_nrow_ncol
-                    + file_fmt
-                )
-            else:
-                out = (
-                    outname_func(
-                        "clustermap", geneset=fix_name(annotation), **outname_kws
-                    )
-                    + sub_nrow_ncol
-                    + file_fmt
-                )
-            if len(out) > 299:  # quick fix
-                out_path, out_name = os.path.split(out)
-                out_name = (
-                    out_name.replace("treatment", "treat")
-                    .replace("clustermap", "cmap")
-                    .replace("normtype", "norm")
-                    .replace("genotype", "geno")
-                )
-                out = os.path.join(out_path, out_name)
-            plot_and_save(
-                subX,
-                out,
-                # grdevice,
-                main_title=annotation,
-                annot_mat=sub_annot_mat,
-                show_gene_symbols=bool(gene_symbols),
-                file_fmt=file_fmt,
-            )
 
         # heatmap = ret.rx('heatmap')
         # print(heatmap)
