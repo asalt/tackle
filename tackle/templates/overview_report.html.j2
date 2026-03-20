@@ -161,6 +161,10 @@
       border-radius: 10px;
       box-shadow: 0 1px 12px rgba(0,0,0,0.25);
     }
+    .plot-img-deferred {
+      min-height: 2px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(78, 161, 255, 0.05));
+    }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .muted { color: var(--muted); }
@@ -197,6 +201,181 @@
       border-radius: 10px;
       padding: 0.75rem;
     }
+
+    /* Interactive payload */
+    .action-btn {
+      border: 1px solid var(--line);
+      background: rgba(78, 161, 255, 0.16);
+      color: #d9ecff;
+      padding: 0.5rem 0.75rem;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+    .action-btn:hover { border-color: rgba(78, 161, 255, 0.65); }
+    .action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .protein-meta-btn {
+      border: 1px solid var(--line);
+      background: rgba(78, 161, 255, 0.12);
+      color: #d9ecff;
+      padding: 0.22rem 0.55rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .protein-meta-btn:hover { border-color: rgba(78, 161, 255, 0.65); }
+    .protein-meta-panel {
+      margin-top: 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.025);
+      padding: 0.8rem;
+    }
+    .protein-meta-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.8rem;
+      margin-bottom: 0.45rem;
+    }
+    .protein-meta-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 800;
+    }
+    .protein-meta-close {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      padding: 0.18rem 0.45rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+    }
+    .protein-meta-close:hover { color: var(--ink); border-color: #44505b; }
+    .protein-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.65rem;
+      margin-top: 0.65rem;
+    }
+    .protein-meta-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.018);
+      padding: 0.55rem 0.65rem;
+    }
+    .protein-meta-card dt {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      margin-bottom: 0.18rem;
+    }
+    .protein-meta-card dd {
+      margin: 0;
+      word-break: break-word;
+    }
+    .interactive-volcano-block {
+      margin-top: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .interactive-volcano-status {
+      margin: 0;
+    }
+    .interactive-volcano-host {
+      min-height: 560px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.018);
+      padding: 0.3rem;
+      overflow: hidden;
+    }
+    .interactive-volcano-host[hidden] {
+      display: none !important;
+    }
+    .interactive-table-block {
+      margin-top: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .interactive-table-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .interactive-table-toolbar[hidden] {
+      display: none !important;
+    }
+    .interactive-table-search {
+      min-width: min(320px, 100%);
+      max-width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      color: var(--ink);
+      padding: 0.48rem 0.7rem;
+      border-radius: 10px;
+      font: inherit;
+    }
+    .interactive-table-search::placeholder {
+      color: rgba(217, 236, 255, 0.45);
+    }
+    .interactive-table-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      align-items: center;
+    }
+    .interactive-table-filters[hidden] {
+      display: none !important;
+    }
+    .interactive-filter-label {
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 700;
+    }
+    .category-filter-btn {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.025);
+      color: var(--ink);
+      padding: 0.28rem 0.6rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 700;
+      transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+    }
+    .category-filter-btn:hover {
+      border-color: rgba(78, 161, 255, 0.65);
+    }
+    .category-filter-btn.active {
+      background: rgba(78, 161, 255, 0.18);
+      border-color: rgba(78, 161, 255, 0.65);
+      color: #d9ecff;
+    }
+    .interactive-table-status {
+      margin: 0;
+    }
+    .interactive-table-host {
+      width: 100%;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.018);
+      padding: 0.35rem;
+      overflow: hidden;
+    }
+    .interactive-table-host[hidden] {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -207,6 +386,11 @@
     {% endif %}
     <p class="meta">Base directory: <code>{{ base_dir }}</code></p>
     <p class="meta">Discovered: <strong>{{ total_plots }}</strong> plot PNGs, <strong>{{ volcano_tables_total }}</strong> volcano TSVs</p>
+    {% if interactive_resource_mode == "inline" and resource_manifest and resource_manifest.resource_count %}
+    <p class="warn">
+      This report embeds interactive resources directly in the HTML. Initial startup can be slow on very large reports, but later interactions should stay snappy once resources are cached in-browser.
+    </p>
+    {% endif %}
 
     <nav class="tabs" aria-label="Report sections">
       {% for sec in sections %}
@@ -246,22 +430,42 @@
               {% for g in c.groups %}
               <div class="size-panel{% if loop.first %} active{% endif %}" data-size-panel="{{ g.key }}">
                 {% for item in g.plots %}
-                <details class="plot">
-                  <summary>{{ item.title }}</summary>
-                  <div class="plot-body">
-                    <p class="meta plot-path"><code>{{ item.source_relpath }}</code></p>
-                    {% if self_contained %}
-                    <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy"
-                         onclick="window.open(this.src, '_blank');" />
-                    {% else %}
-                    <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
-                      <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy" />
-                    </a>
-                    {% endif %}
+	                <details class="plot">
+	                  <summary>{{ item.title }}</summary>
+	                  <div class="plot-body">
+	                    <p class="meta plot-path"><code>{{ item.source_relpath }}</code></p>
+	                    {% if not self_contained and item.asset_relpath %}
+	                    <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
+	                      <img class="plot-img{% if defer_plot_images %} plot-img-deferred{% endif %}" data-plot-id="{{ item.source_relpath }}" data-resource-id="{{ item.resource_id }}" alt="{{ item.title }}" loading="lazy" />
+	                    </a>
+	                    {% else %}
+	                    <img class="plot-img{% if defer_plot_images %} plot-img-deferred{% endif %}" data-plot-id="{{ item.source_relpath }}" data-resource-id="{{ item.resource_id }}" alt="{{ item.title }}" loading="lazy"
+	                         onclick="if (this.currentSrc) { window.open(this.currentSrc, '_blank'); }" />
+	                    {% endif %}
 
-                    {% if item.category == "volcano" and item.volcano_table %}
-                    <details class="plot">
-                      <summary>Top hits (TSV preview)</summary>
+	                    {% if item.category == "volcano" and item.volcano_table %}
+                      {% if plotly_resource_id and item.volcano_table.resource_id %}
+                      <div class="interactive-volcano-block" data-interactive-volcano="{{ item.volcano_table.resource_id }}" data-volcano-resource-id="{{ item.volcano_table.resource_id }}" data-plot-title="{{ item.title }}">
+                        <button class="action-btn" type="button" data-interactive-volcano-trigger="{{ item.volcano_table.resource_id }}">Open interactive volcano</button>
+                        <p class="meta interactive-volcano-status" hidden></p>
+                        <div class="interactive-volcano-host" hidden></div>
+                      </div>
+                      {% endif %}
+                      {% if tabulator_resource_ids and item.volcano_table.resource_id %}
+                      <div class="interactive-table-block" data-interactive-table="{{ item.volcano_table.resource_id }}" data-volcano-resource-id="{{ item.volcano_table.resource_id }}" data-table-title="{{ item.title }}">
+                        <button class="action-btn" type="button" data-interactive-table-trigger="{{ item.volcano_table.resource_id }}">Open interactive table</button>
+                        <div class="interactive-table-toolbar" hidden>
+                          <input class="interactive-table-search" type="search" data-interactive-table-search placeholder="Filter genes, descriptions, categories" />
+                          <button class="action-btn" type="button" data-interactive-table-reset>Reset filters</button>
+                          <button class="action-btn" type="button" data-interactive-table-download>Download CSV</button>
+                        </div>
+                        <div class="interactive-table-filters" hidden></div>
+                        <p class="meta interactive-table-status" hidden></p>
+                        <div class="interactive-table-host" hidden></div>
+                      </div>
+                      {% endif %}
+	                    <details class="plot volcano-preview"{% if item.volcano_table.resource_id %} data-volcano-resource-id="{{ item.volcano_table.resource_id }}"{% endif %}>
+	                      <summary>Top hits (TSV preview)</summary>
                       <p class="meta table-meta">
                         TSV:
                         {% if item.volcano_table.asset_relpath %}
@@ -289,17 +493,37 @@
   	          <summary>{{ item.title }}</summary>
   	          <div class="plot-body">
   	            <p class="meta plot-path"><code>{{ item.source_relpath }}</code></p>
-  	            {% if self_contained %}
-  	            <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy"
-  	                 onclick="window.open(this.src, '_blank');" />
-  	            {% else %}
+  	            {% if not self_contained and item.asset_relpath %}
   	            <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
-  	              <img class="plot-img" src="{{ item.asset_relpath }}" alt="{{ item.title }}" loading="lazy" />
+  	              <img class="plot-img{% if defer_plot_images %} plot-img-deferred{% endif %}" data-plot-id="{{ item.source_relpath }}" data-resource-id="{{ item.resource_id }}" alt="{{ item.title }}" loading="lazy" />
   	            </a>
+  	            {% else %}
+  	            <img class="plot-img{% if defer_plot_images %} plot-img-deferred{% endif %}" data-plot-id="{{ item.source_relpath }}" data-resource-id="{{ item.resource_id }}" alt="{{ item.title }}" loading="lazy"
+ 	                 onclick="if (this.currentSrc) { window.open(this.currentSrc, '_blank'); }" />
   	            {% endif %}
 
               {% if item.category == "volcano" and item.volcano_table %}
-  	            <details class="plot">
+                {% if plotly_resource_id and item.volcano_table.resource_id %}
+                <div class="interactive-volcano-block" data-interactive-volcano="{{ item.volcano_table.resource_id }}" data-volcano-resource-id="{{ item.volcano_table.resource_id }}" data-plot-title="{{ item.title }}">
+                  <button class="action-btn" type="button" data-interactive-volcano-trigger="{{ item.volcano_table.resource_id }}">Open interactive volcano</button>
+                  <p class="meta interactive-volcano-status" hidden></p>
+                  <div class="interactive-volcano-host" hidden></div>
+                </div>
+                {% endif %}
+                {% if tabulator_resource_ids and item.volcano_table.resource_id %}
+                <div class="interactive-table-block" data-interactive-table="{{ item.volcano_table.resource_id }}" data-volcano-resource-id="{{ item.volcano_table.resource_id }}" data-table-title="{{ item.title }}">
+                  <button class="action-btn" type="button" data-interactive-table-trigger="{{ item.volcano_table.resource_id }}">Open interactive table</button>
+                  <div class="interactive-table-toolbar" hidden>
+                    <input class="interactive-table-search" type="search" data-interactive-table-search placeholder="Filter genes, descriptions, categories" />
+                    <button class="action-btn" type="button" data-interactive-table-reset>Reset filters</button>
+                    <button class="action-btn" type="button" data-interactive-table-download>Download CSV</button>
+                  </div>
+                  <div class="interactive-table-filters" hidden></div>
+                  <p class="meta interactive-table-status" hidden></p>
+                  <div class="interactive-table-host" hidden></div>
+                </div>
+                {% endif %}
+  	            <details class="plot volcano-preview"{% if item.volcano_table.resource_id %} data-volcano-resource-id="{{ item.volcano_table.resource_id }}"{% endif %}>
   	              <summary>Top hits (TSV preview)</summary>
   	              <p class="meta table-meta">
   	                TSV:
@@ -350,10 +574,23 @@
           to a volcano PNG in the same folder.
         </p>
         {% for tbl in volcano_tables_unmatched %}
-	        <details class="plot">
+	        <details class="plot volcano-preview"{% if tbl.resource_id %} data-volcano-resource-id="{{ tbl.resource_id }}"{% endif %}>
 	          <summary>{{ tbl.title }}</summary>
 	          <div class="plot-body">
 	            <p class="meta plot-path"><code>{{ tbl.source_relpath }}</code></p>
+              {% if tabulator_resource_ids and tbl.resource_id %}
+              <div class="interactive-table-block" data-interactive-table="{{ tbl.resource_id }}" data-volcano-resource-id="{{ tbl.resource_id }}" data-table-title="{{ tbl.title }}">
+                <button class="action-btn" type="button" data-interactive-table-trigger="{{ tbl.resource_id }}">Open interactive table</button>
+                <div class="interactive-table-toolbar" hidden>
+                  <input class="interactive-table-search" type="search" data-interactive-table-search placeholder="Filter genes, descriptions, categories" />
+                  <button class="action-btn" type="button" data-interactive-table-reset>Reset filters</button>
+                  <button class="action-btn" type="button" data-interactive-table-download>Download CSV</button>
+                </div>
+                <div class="interactive-table-filters" hidden></div>
+                <p class="meta interactive-table-status" hidden></p>
+                <div class="interactive-table-host" hidden></div>
+              </div>
+              {% endif %}
 	            <p class="meta table-meta">
 	              TSV:
 	              {% if tbl.asset_relpath %}
@@ -391,14 +628,600 @@
     {% endif %}
   </main>
 
+  <script id="tackle-resource-manifest" type="application/json">{{ resource_manifest | tojson }}</script>
+
   <script>
     (function() {
+      const reportApi = window.tackleInteractiveReport || {};
+      const state = reportApi.state || {
+        activeTab: null,
+        parsedData: new Map(),
+        renderedSections: new Set(),
+        plotObjects: new Map(),
+        tableObjects: new Map(),
+        resourceCache: new Map(),
+        resourceMeta: new Map(),
+        resourcePromises: new Map(),
+        libraryCache: new Map(),
+        libraryPromises: new Map(),
+        metrics: [],
+      };
+      let resources = reportApi.resources || null;
+      if (!resources || typeof resources !== "object" || !resources.entries) {
+        resources = { mode: "none", entries: {}, resource_count: 0 };
+        const manifestEl = document.getElementById("tackle-resource-manifest");
+        if (manifestEl) {
+          try {
+            const parsed = JSON.parse(manifestEl.textContent || "{}");
+            if (parsed && typeof parsed === "object") {
+              resources = parsed;
+            }
+          } catch (e) {
+            resources.error = String((e && e.message) ? e.message : e);
+          }
+        }
+      }
+      if (!resources.entries || typeof resources.entries !== "object") {
+        resources.entries = {};
+      }
+
+      function emitStateChange(type, detail) {
+        const payload = Object.assign(
+          {
+            type: String(type || "state"),
+            t: Math.round(((window.performance && performance.now()) || Date.now()) * 1000) / 1000,
+          },
+          detail || {}
+        );
+        try {
+          window.dispatchEvent(new CustomEvent("tackleStateChanged", { detail: payload }));
+        } catch (e) {}
+        return payload;
+      }
+
+      function recordMetric(name, detail) {
+        const payload = Object.assign(
+          {
+            name: String(name || "metric"),
+            t: Math.round(((window.performance && performance.now()) || Date.now()) * 1000) / 1000,
+          },
+          detail || {}
+        );
+        state.metrics.push(payload);
+        try {
+          window.dispatchEvent(new CustomEvent("tackleMetricRecorded", { detail: payload }));
+        } catch (e) {}
+        return payload;
+      }
+
+      function markRendered(kind, key) {
+        const label = String(kind || "section") + ":" + String(key || "");
+        state.renderedSections.add(label);
+        emitStateChange("rendered", { label: label });
+        return label;
+      }
+
+      function setActiveTab(key) {
+        state.activeTab = key || null;
+        if (key) markRendered("tab", key);
+        emitStateChange("active-tab", { activeTab: state.activeTab });
+        return state.activeTab;
+      }
+
+      function plotKeyForElement(img) {
+        return (
+          img.getAttribute("data-plot-id") ||
+          img.getAttribute("data-resource-id") ||
+          img.getAttribute("alt") ||
+          img.getAttribute("src") ||
+          "plot"
+        );
+      }
+
+      function updatePlotState(img, updates) {
+        if (!img) return null;
+        const plotId = plotKeyForElement(img);
+        const prev = state.plotObjects.get(plotId) || {
+          plotId: plotId,
+          alt: img.getAttribute("alt") || "",
+        };
+        const next = Object.assign(
+          {},
+          prev,
+          {
+            plotId: plotId,
+            alt: img.getAttribute("alt") || prev.alt || "",
+            deferred: img.classList.contains("plot-img-deferred"),
+            loaded: !!img.getAttribute("src"),
+            complete: !!img.complete,
+          },
+          updates || {}
+        );
+        state.plotObjects.set(plotId, next);
+        emitStateChange("plot", {
+          plotId: plotId,
+          loaded: !!next.loaded,
+          deferred: !!next.deferred,
+          complete: !!next.complete,
+        });
+        return next;
+      }
+
+      function updateTableState(key, updates) {
+        const tableId = String(key || "");
+        if (!tableId) return null;
+        const prev = state.tableObjects.get(tableId) || {
+          tableId: tableId,
+        };
+        const next = Object.assign({}, prev, updates || {}, {
+          tableId: tableId,
+        });
+        state.tableObjects.set(tableId, next);
+        emitStateChange("table", {
+          tableId: tableId,
+          rendered: !!next.rendered,
+          rowCount: next.rowCount == null ? null : next.rowCount,
+          visibleRowCount: next.visibleRowCount == null ? null : next.visibleRowCount,
+          activeCategories: Array.isArray(next.activeCategories) ? next.activeCategories.slice() : [],
+        });
+        return next;
+      }
+
+      function getCachedResource(key) {
+        const cacheKey = String(key || "");
+        return cacheKey && state.resourceCache.has(cacheKey)
+          ? state.resourceCache.get(cacheKey)
+          : null;
+      }
+
+      function setCachedResource(key, value, meta) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) return value;
+        state.resourceCache.set(cacheKey, value);
+        const metaCopy = Object.assign({}, meta || {});
+        if (Object.prototype.hasOwnProperty.call(metaCopy, "data_url")) {
+          delete metaCopy.data_url;
+        }
+        const nextMeta = Object.assign(
+          {},
+          state.resourceMeta.get(cacheKey) || {},
+          metaCopy,
+          {
+            cachedAt: Math.round(performance.now() * 1000) / 1000,
+          }
+        );
+        state.resourceMeta.set(cacheKey, nextMeta);
+        emitStateChange("resource-cached", {
+          key: cacheKey,
+          meta: nextMeta,
+        });
+        return value;
+      }
+
+      function getResourcePromise(key) {
+        const cacheKey = String(key || "");
+        return cacheKey && state.resourcePromises.has(cacheKey)
+          ? state.resourcePromises.get(cacheKey)
+          : null;
+      }
+
+      function setResourcePromise(key, promise) {
+        const cacheKey = String(key || "");
+        if (!cacheKey || !promise) return promise;
+        state.resourcePromises.set(cacheKey, promise);
+        emitStateChange("resource-pending", { key: cacheKey });
+        return promise;
+      }
+
+      function clearResourcePromise(key) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) return false;
+        const deleted = state.resourcePromises.delete(cacheKey);
+        if (deleted) {
+          emitStateChange("resource-ready", { key: cacheKey });
+        }
+        return deleted;
+      }
+
+      function getResourceEntry(key) {
+        const cacheKey = String(key || "");
+        return cacheKey && resources.entries && resources.entries[cacheKey]
+          ? resources.entries[cacheKey]
+          : null;
+      }
+
+      function getLibrary(key) {
+        const cacheKey = String(key || "");
+        return cacheKey && state.libraryCache.has(cacheKey)
+          ? state.libraryCache.get(cacheKey)
+          : null;
+      }
+
+      function setLibrary(key, value, meta) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) return value;
+        state.libraryCache.set(cacheKey, value);
+        emitStateChange("library-cached", {
+          key: cacheKey,
+          meta: Object.assign({}, meta || {}),
+        });
+        return value;
+      }
+
+      function getLibraryPromise(key) {
+        const cacheKey = String(key || "");
+        return cacheKey && state.libraryPromises.has(cacheKey)
+          ? state.libraryPromises.get(cacheKey)
+          : null;
+      }
+
+      function setLibraryPromise(key, promise) {
+        const cacheKey = String(key || "");
+        if (!cacheKey || !promise) return promise;
+        state.libraryPromises.set(cacheKey, promise);
+        emitStateChange("library-pending", { key: cacheKey });
+        return promise;
+      }
+
+      function clearLibraryPromise(key) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) return false;
+        const deleted = state.libraryPromises.delete(cacheKey);
+        if (deleted) {
+          emitStateChange("library-ready", { key: cacheKey });
+        }
+        return deleted;
+      }
+
+      async function readResourceArrayBuffer(entry) {
+        const target = entry && (entry.data_url || entry.path);
+        if (!target) {
+          throw new Error("Resource is missing both data_url and path.");
+        }
+        const response = await fetch(target);
+        if (!response.ok) {
+          throw new Error("Failed to load resource: " + response.status + " " + response.statusText);
+        }
+        return await response.arrayBuffer();
+      }
+
+      async function loadResource(key) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) throw new Error("Resource key is required.");
+        const entry = getResourceEntry(cacheKey);
+        if (!entry) throw new Error("Unknown resource: " + cacheKey);
+
+        const cached = getCachedResource(cacheKey);
+        if (cached != null) {
+          if (reportApi.recordMetric) {
+            reportApi.recordMetric("resource_cache_hit", { key: cacheKey, cache: "value" });
+          }
+          return cached;
+        }
+
+        const pending = getResourcePromise(cacheKey);
+        if (pending) {
+          if (reportApi.recordMetric) {
+            reportApi.recordMetric("resource_cache_hit", { key: cacheKey, cache: "promise" });
+          }
+          return pending;
+        }
+
+        if (!entry.compression || entry.compression === "none") {
+          if (
+            entry.format === "png" ||
+            entry.format === "image/png" ||
+            entry.format === "javascript" ||
+            entry.format === "css"
+          ) {
+            const target = entry.data_url || entry.path || null;
+            if (!target) {
+              throw new Error("Resource is missing a URL: " + cacheKey);
+            }
+            const cachedValue = setCachedResource(cacheKey, target, entry);
+            if (reportApi.recordMetric) {
+              reportApi.recordMetric("resource_loaded", {
+                key: cacheKey,
+                kind: entry.kind || null,
+                format: entry.format || null,
+                durationMs: 0,
+              });
+            }
+            try {
+              window.dispatchEvent(
+                new CustomEvent("tackleResourceLoaded", {
+                  detail: { key: cacheKey, entry: entry, value: cachedValue },
+                })
+              );
+            } catch (e) {}
+            return cachedValue;
+          }
+        }
+
+        const promise = (async () => {
+          const startedAt = Math.round(performance.now() * 1000) / 1000;
+          let value = null;
+
+          if (entry.format === "json") {
+            const buf = await readResourceArrayBuffer(entry);
+            if (entry.compression === "gzip") {
+              if (typeof DecompressionStream === "undefined") {
+                throw new Error("DecompressionStream is not available in this browser.");
+              }
+              const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+              value = await new Response(stream, {
+                headers: { "Content-Type": "application/json" },
+              }).json();
+            } else {
+              value = JSON.parse(new TextDecoder().decode(buf));
+            }
+          } else {
+            throw new Error("Unsupported resource format: " + entry.format);
+          }
+
+          if (entry.data_url) {
+            entry.data_url = "";
+          }
+          setCachedResource(cacheKey, value, Object.assign({}, entry, {
+            loadedAt: Math.round(performance.now() * 1000) / 1000,
+          }));
+          if (reportApi.recordMetric) {
+            reportApi.recordMetric("resource_loaded", {
+              key: cacheKey,
+              kind: entry.kind || null,
+              format: entry.format || null,
+              durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
+            });
+          }
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tackleResourceLoaded", {
+                detail: { key: cacheKey, entry: entry, value: value },
+              })
+            );
+          } catch (e) {}
+          return value;
+        })().finally(() => {
+          clearResourcePromise(cacheKey);
+        });
+
+        setResourcePromise(cacheKey, promise);
+        return promise;
+      }
+
+      function bindPlotImage(img) {
+        if (!img || img.dataset.stateBound === "1") return;
+        img.dataset.stateBound = "1";
+        updatePlotState(img);
+        img.addEventListener("load", () => {
+          const entry = updatePlotState(img, {
+            loaded: true,
+            complete: true,
+            loadedAt: Math.round(performance.now() * 1000) / 1000,
+          });
+          recordMetric("plot_image_loaded", {
+            plotId: entry ? entry.plotId : plotKeyForElement(img),
+          });
+        });
+        img.addEventListener("error", () => {
+          updatePlotState(img, {
+            error: true,
+            errorAt: Math.round(performance.now() * 1000) / 1000,
+          });
+          recordMetric("plot_image_error", {
+            plotId: plotKeyForElement(img),
+          });
+        });
+      }
+
+      function snapshotState() {
+        return {
+          activeTab: state.activeTab,
+          resourceMode: resources.mode || "none",
+          parsedDataKeys: Array.from(state.parsedData.keys()),
+          renderedSections: Array.from(state.renderedSections),
+          plotObjects: Array.from(state.plotObjects.values()),
+          tableObjects: Array.from(state.tableObjects.values()),
+          resourceKeys: Array.from(state.resourceCache.keys()),
+          resourceMeta: Object.fromEntries(state.resourceMeta.entries()),
+          pendingResourceKeys: Array.from(state.resourcePromises.keys()),
+          libraryKeys: Array.from(state.libraryCache.keys()),
+          pendingLibraryKeys: Array.from(state.libraryPromises.keys()),
+          metrics: state.metrics.slice(),
+        };
+      }
+
+      Array.from(document.querySelectorAll("img.plot-img")).forEach(bindPlotImage);
+
+      reportApi.state = state;
+      reportApi.recordMetric = recordMetric;
+      reportApi.markRendered = markRendered;
+      reportApi.setActiveTab = setActiveTab;
+      reportApi.updatePlotState = updatePlotState;
+      reportApi.updateTableState = updateTableState;
+      reportApi.bindPlotImage = bindPlotImage;
+      reportApi.emitStateChange = emitStateChange;
+      reportApi.getCachedResource = getCachedResource;
+      reportApi.setCachedResource = setCachedResource;
+      reportApi.getResourcePromise = getResourcePromise;
+      reportApi.setResourcePromise = setResourcePromise;
+      reportApi.clearResourcePromise = clearResourcePromise;
+      reportApi.getResourceEntry = getResourceEntry;
+      reportApi.getLibrary = getLibrary;
+      reportApi.setLibrary = setLibrary;
+      reportApi.getLibraryPromise = getLibraryPromise;
+      reportApi.setLibraryPromise = setLibraryPromise;
+      reportApi.clearLibraryPromise = clearLibraryPromise;
+      reportApi.loadResource = loadResource;
+      reportApi.resources = resources;
+      reportApi.snapshotState = snapshotState;
+      window.tackleInteractiveReport = reportApi;
+
+      recordMetric("script_bootstrap", {
+        plotCount: state.plotObjects.size,
+      });
+      window.addEventListener("DOMContentLoaded", () => {
+        recordMetric("domcontentloaded_event", {
+          plotCount: state.plotObjects.size,
+        });
+      });
+      window.addEventListener("load", () => {
+        recordMetric("window_load_event", {
+          activeTab: state.activeTab,
+        });
+      });
+    })();
+
+    (function() {
+      const reportApi = window.tackleInteractiveReport || {};
+
+      async function loadExternalScript(key, globalName) {
+        const cacheKey = String(key || "");
+        const globalKey = String(globalName || "");
+        if (!cacheKey) throw new Error("Script resource key is required.");
+        if (globalKey && window[globalKey]) {
+          if (reportApi.setLibrary) {
+            reportApi.setLibrary(cacheKey, window[globalKey], { globalName: globalKey, reused: true });
+          }
+          return window[globalKey];
+        }
+
+        const cachedLibrary = reportApi.getLibrary ? reportApi.getLibrary(cacheKey) : null;
+        if (cachedLibrary) {
+          return cachedLibrary;
+        }
+
+        const pending = reportApi.getLibraryPromise ? reportApi.getLibraryPromise(cacheKey) : null;
+        if (pending) {
+          return pending;
+        }
+
+        const promise = (async () => {
+          const src = await reportApi.loadResource(cacheKey);
+          if (!src) {
+            throw new Error("Script resource is missing a URL: " + cacheKey);
+          }
+          const existing = document.querySelector('script[data-tackle-library="' + cacheKey + '"]');
+          if (!existing) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = src;
+              script.async = true;
+              script.dataset.tackleLibrary = cacheKey;
+              script.onload = () => resolve(script);
+              script.onerror = () => reject(new Error("Failed to load script resource: " + cacheKey));
+              document.head.appendChild(script);
+            });
+          }
+          const lib = globalKey ? window[globalKey] : true;
+          if (!lib) {
+            throw new Error("Loaded script did not define " + globalKey + ".");
+          }
+          if (reportApi.setLibrary) {
+            reportApi.setLibrary(cacheKey, lib, { globalName: globalKey });
+          }
+          if (reportApi.recordMetric) {
+            reportApi.recordMetric("library_loaded", {
+              key: cacheKey,
+              globalName: globalKey || null,
+            });
+          }
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tackleLibraryLoaded", {
+                detail: { key: cacheKey, globalName: globalKey || null },
+              })
+            );
+          } catch (e) {}
+          return lib;
+        })().finally(() => {
+          if (reportApi.clearLibraryPromise) {
+            reportApi.clearLibraryPromise(cacheKey);
+          }
+        });
+
+        if (reportApi.setLibraryPromise) {
+          reportApi.setLibraryPromise(cacheKey, promise);
+        }
+        return promise;
+      }
+
+      async function loadExternalStyle(key) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) throw new Error("Style resource key is required.");
+
+        const cachedLibrary = reportApi.getLibrary ? reportApi.getLibrary(cacheKey) : null;
+        if (cachedLibrary) {
+          return cachedLibrary;
+        }
+
+        const pending = reportApi.getLibraryPromise ? reportApi.getLibraryPromise(cacheKey) : null;
+        if (pending) {
+          return pending;
+        }
+
+        const promise = (async () => {
+          const href = await reportApi.loadResource(cacheKey);
+          if (!href) {
+            throw new Error("Style resource is missing a URL: " + cacheKey);
+          }
+          const existing = document.querySelector('link[data-tackle-library="' + cacheKey + '"]');
+          if (!existing) {
+            await new Promise((resolve, reject) => {
+              const link = document.createElement("link");
+              link.rel = "stylesheet";
+              link.href = href;
+              link.dataset.tackleLibrary = cacheKey;
+              link.onload = () => resolve(link);
+              link.onerror = () => reject(new Error("Failed to load style resource: " + cacheKey));
+              document.head.appendChild(link);
+            });
+          }
+          const styleRef = { href: href };
+          if (reportApi.setLibrary) {
+            reportApi.setLibrary(cacheKey, styleRef, { kind: "style" });
+          }
+          if (reportApi.recordMetric) {
+            reportApi.recordMetric("library_loaded", {
+              key: cacheKey,
+              globalName: null,
+              kind: "style",
+            });
+          }
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tackleLibraryLoaded", {
+                detail: { key: cacheKey, globalName: null, kind: "style" },
+              })
+            );
+          } catch (e) {}
+          return styleRef;
+        })().finally(() => {
+          if (reportApi.clearLibraryPromise) {
+            reportApi.clearLibraryPromise(cacheKey);
+          }
+        });
+
+        if (reportApi.setLibraryPromise) {
+          reportApi.setLibraryPromise(cacheKey, promise);
+        }
+        return promise;
+      }
+
+      reportApi.loadExternalScript = loadExternalScript;
+      reportApi.loadExternalStyle = loadExternalStyle;
+      window.tackleInteractiveReport = reportApi;
+    })();
+
+    (function() {
+      const reportApi = window.tackleInteractiveReport || {};
       const tabs = Array.from(document.querySelectorAll(".tab"));
       const panels = Array.from(document.querySelectorAll("section.panel"));
 
       function activate(key) {
         tabs.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === key));
         panels.forEach(p => p.classList.toggle("active", p.id === "tab-" + key));
+        if (reportApi.setActiveTab) reportApi.setActiveTab(key);
         if (key) {
           try { window.location.hash = key; } catch (e) {}
         }
@@ -418,6 +1241,7 @@
     })();
 
     (function() {
+      const reportApi = window.tackleInteractiveReport || {};
       const navs = Array.from(document.querySelectorAll("nav.contrast-tabs"));
       navs.forEach(nav => {
         const card = nav.closest(".card") || nav.parentElement;
@@ -430,6 +1254,7 @@
         function activateContrast(key) {
           btns.forEach(b => b.classList.toggle("active", b.dataset.contrastTab === key));
           panels.forEach(p => p.classList.toggle("active", p.dataset.contrastPanel === key));
+          if (reportApi.markRendered) reportApi.markRendered("contrast", key);
         }
 
         activateContrast(btns[0].dataset.contrastTab);
@@ -438,6 +1263,7 @@
     })();
 
     (function() {
+      const reportApi = window.tackleInteractiveReport || {};
       const navs = Array.from(document.querySelectorAll("nav.size-tabs"));
       navs.forEach(nav => {
         const contrastPanel = nav.closest(".contrast-panel") || nav.parentElement;
@@ -450,12 +1276,1254 @@
         function activateSize(key) {
           btns.forEach(b => b.classList.toggle("active", b.dataset.sizeTab === key));
           panels.forEach(p => p.classList.toggle("active", p.dataset.sizePanel === key));
+          if (reportApi.markRendered) reportApi.markRendered("size", key);
         }
 
         activateSize(btns[0].dataset.sizeTab);
         btns.forEach(b => b.addEventListener("click", () => activateSize(b.dataset.sizeTab)));
       });
     })();
+
+    (function() {
+      const reportApi = window.tackleInteractiveReport || {};
+
+      async function hydratePlotImage(img) {
+        if (!img || img.dataset.loaded === "1") return img ? img.currentSrc || img.getAttribute("src") || "" : "";
+        const resourceId = img.getAttribute("data-resource-id") || "";
+        if (!resourceId) return "";
+        if (reportApi.bindPlotImage) reportApi.bindPlotImage(img);
+        const src = await reportApi.loadResource(resourceId);
+        if (!src) return "";
+        img.setAttribute("src", src);
+        img.dataset.loaded = "1";
+        img.classList.remove("plot-img-deferred");
+        if (reportApi.updatePlotState) {
+          reportApi.updatePlotState(img, {
+            loaded: true,
+            hydratedAt: Math.round(performance.now() * 1000) / 1000,
+            resourceId: resourceId,
+          });
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("tacklePlotImageLoaded", {
+              detail: {
+                alt: img.getAttribute("alt") || "",
+                src: src,
+                plotId: img.getAttribute("data-plot-id") || "",
+                resourceId: resourceId,
+              },
+            })
+          );
+        } catch (e) {}
+        return src;
+      }
+
+      async function hydrateDeferredImages(root) {
+        const scope = root || document;
+        const isScopedDetails = root instanceof HTMLDetailsElement;
+        const images = Array.from(scope.querySelectorAll("img.plot-img[data-resource-id]"));
+        const startedAt = Math.round(performance.now() * 1000) / 1000;
+        let hydratedCount = 0;
+        for (const img of images) {
+          if (img.dataset.loaded === "1") continue;
+          if (img.classList.contains("plot-img-deferred") && !isScopedDetails) continue;
+          if (!img.classList.contains("plot-img-deferred") && isScopedDetails) {
+            continue;
+          }
+          await hydratePlotImage(img);
+          hydratedCount += 1;
+        }
+        if (hydratedCount > 0 && reportApi.recordMetric) {
+          reportApi.recordMetric("hydrate_deferred_images", {
+            count: hydratedCount,
+            startedAt: startedAt,
+            scopeTag: (root && root.tagName) ? root.tagName.toLowerCase() : "document",
+          });
+        }
+      }
+
+      function findPlotImage(plotId) {
+        const wanted = String(plotId || "");
+        return Array.from(document.querySelectorAll("img.plot-img[data-plot-id]")).find(
+          img => (img.getAttribute("data-plot-id") || "") === wanted
+        ) || null;
+      }
+
+      async function loadPlot(plotId) {
+        const img = findPlotImage(plotId);
+        if (!img) {
+          throw new Error("Unknown plot: " + plotId);
+        }
+        return await hydratePlotImage(img);
+      }
+
+      async function loadVolcanoData(resourceId) {
+        const cacheKey = String(resourceId || "");
+        const payload = await reportApi.loadResource(cacheKey);
+        if (reportApi.state && reportApi.state.parsedData) {
+          reportApi.state.parsedData.set("volcano:" + cacheKey, payload);
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("tackleVolcanoDataLoaded", {
+              detail: { resourceId: cacheKey, payload: payload },
+            })
+          );
+        } catch (e) {}
+        return payload;
+      }
+
+      reportApi.hydrateDeferredImages = hydrateDeferredImages;
+      reportApi.loadPlot = loadPlot;
+      reportApi.loadVolcanoData = loadVolcanoData;
+      window.tackleInteractiveReport = reportApi;
+
+      window.addEventListener("DOMContentLoaded", () => {
+        const eagerImages = Array.from(
+          document.querySelectorAll("img.plot-img[data-resource-id]:not(.plot-img-deferred)")
+        );
+        if (eagerImages.length) {
+          hydrateDeferredImages(document).catch(() => {});
+        }
+      });
+
+      document.addEventListener(
+        "toggle",
+        event => {
+          const node = event.target;
+          if (!(node instanceof HTMLDetailsElement)) return;
+          if (!node.open) return;
+          hydrateDeferredImages(node).catch(() => {});
+          const volcanoResourceId = node.getAttribute("data-volcano-resource-id") || "";
+          if (volcanoResourceId) {
+            loadVolcanoData(volcanoResourceId).catch(() => {});
+          }
+        },
+        true
+      );
+    })();
+
+    {% if interactive_payload %}
+    (function() {
+      const reportApi = window.tackleInteractiveReport || {};
+      const state = reportApi.state || null;
+
+      async function loadInteractivePayload() {
+        const cacheKey = {{ interactive_payload.resource_id | tojson }};
+        const startedAt = Math.round(performance.now() * 1000) / 1000;
+        const payload = await reportApi.loadResource(cacheKey);
+        if (state && state.parsedData) {
+          state.parsedData.set(cacheKey, payload);
+        }
+        if (reportApi.recordMetric) {
+          reportApi.recordMetric("payload_decoded", {
+            kind: payload && payload.kind ? payload.kind : null,
+            proteinCount: payload && payload.protein_count ? payload.protein_count : null,
+            durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
+          });
+        }
+        return payload;
+      }
+
+      function escHtml(value) {
+        return String(value == null ? "" : value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function formatMetricLabel(key) {
+        const labels = {
+          peptide_count_total: "Max peptide count",
+          peptide_count_u2g_total: "Max unique peptide count",
+          peptide_count_s_total: "Max strict peptide count",
+          peptide_count_s_u2g_total: "Max strict unique peptide count",
+          psms_total: "Max PSMs",
+          psms_u2g_total: "Max unique PSMs",
+          psms_s_total: "Max strict PSMs",
+          psms_s_u2g_total: "Max strict unique PSMs",
+          peptide_count: "Peptide count",
+          peptide_count_u2g: "Unique peptide count",
+          peptide_count_s: "Strict peptide count",
+          peptide_count_s_u2g: "Strict unique peptide count",
+          psms: "PSMs",
+          psms_u2g: "Unique PSMs",
+          psms_s: "Strict PSMs",
+          psms_s_u2g: "Strict unique PSMs",
+        };
+        return labels[key] || key;
+      }
+
+      function formatTagLabel(key) {
+        return {
+          CYTO_NUC: "Cyto/Nuc",
+          ER_GOLGI: "ER/Golgi",
+          MitoCarta: "MitoCarta",
+          SurfaceLabel: "Surface",
+          CellMembrane: "Cell membrane",
+          MATRISOME: "MATRISOME",
+          SECRETED: "Secreted",
+          glycomineN: "glycomineN",
+          glycomineO: "glycomineO",
+          IO: "IO",
+          IDG: "IDG",
+        }[key] || key;
+      }
+
+      function lookupProtein(payload, proteinId, proteinSymbol) {
+        if (!payload || payload.kind !== "protein_metadata" || !payload.proteins) return null;
+        const proteins = payload.proteins || {};
+        if (proteinId && proteins[proteinId]) return proteins[proteinId];
+        const symbolMap = payload.symbol_to_gene_id || {};
+        if (proteinSymbol && symbolMap[proteinSymbol] && proteins[symbolMap[proteinSymbol]]) {
+          return proteins[symbolMap[proteinSymbol]];
+        }
+        return null;
+      }
+
+      function ensureProteinPanel(anchor) {
+        const plotBody = anchor.closest(".plot-body") || anchor.parentElement;
+        if (!plotBody) return null;
+        let panel = plotBody.querySelector(".protein-meta-panel");
+        if (!panel) {
+          panel = document.createElement("div");
+          panel.className = "protein-meta-panel";
+          panel.hidden = true;
+          plotBody.appendChild(panel);
+        }
+        return panel;
+      }
+
+      function renderRunsTable(runs) {
+        const runIds = Object.keys(runs || {});
+        if (!runIds.length) return "";
+
+        const metricOrder = [
+          "peptide_count",
+          "peptide_count_u2g",
+          "peptide_count_s",
+          "peptide_count_s_u2g",
+          "psms",
+          "psms_u2g",
+          "psms_s",
+          "psms_s_u2g",
+        ];
+        const metricKeys = metricOrder.filter(key => runIds.some(runId => runs[runId] && runs[runId][key] != null));
+        if (!metricKeys.length) return "";
+
+        const headerHtml = ["<th>Run</th>"]
+          .concat(metricKeys.map(key => "<th>" + escHtml(formatMetricLabel(key)) + "</th>"))
+          .join("");
+        const rowHtml = runIds.sort().map(runId => {
+          const values = metricKeys.map(key => "<td>" + escHtml(runs[runId][key] == null ? "" : runs[runId][key]) + "</td>").join("");
+          return "<tr><td><code>" + escHtml(runId) + "</code></td>" + values + "</tr>";
+        }).join("");
+
+        return [
+          "<details class='protein-run-metrics'>",
+          "<summary>Per-run counts (" + escHtml(runIds.length) + ")</summary>",
+          "<table class='data-table'><thead><tr>",
+          headerHtml,
+          "</tr></thead><tbody>",
+          rowHtml,
+          "</tbody></table>",
+          "</details>",
+        ].join("");
+      }
+
+      function renderProteinPanel(panel, protein, proteinId, proteinSymbol) {
+        if (!panel) return;
+
+        const titleBits = [];
+        if (protein.gene_symbol) titleBits.push(escHtml(protein.gene_symbol));
+        if (protein.gene_id) titleBits.push("<code>" + escHtml(protein.gene_id) + "</code>");
+        const title = titleBits.join(" ");
+
+        const cards = [];
+        if (protein.gene_description) {
+          cards.push(
+            "<div class='protein-meta-card'><dt>Description</dt><dd>" + escHtml(protein.gene_description) + "</dd></div>"
+          );
+        }
+        if (protein.fun_cats) {
+          cards.push(
+            "<div class='protein-meta-card'><dt>FunCats</dt><dd>" + escHtml(protein.fun_cats) + "</dd></div>"
+          );
+        }
+        if (protein.gene_type) {
+          cards.push(
+            "<div class='protein-meta-card'><dt>Gene type</dt><dd>" + escHtml(protein.gene_type) + "</dd></div>"
+          );
+        }
+        if (protein.taxon_id != null) {
+          cards.push(
+            "<div class='protein-meta-card'><dt>Taxon ID</dt><dd>" + escHtml(protein.taxon_id) + "</dd></div>"
+          );
+        }
+        if (protein.median_isoform_mass != null) {
+          cards.push(
+            "<div class='protein-meta-card'><dt>Median isoform mass</dt><dd>" + escHtml(protein.median_isoform_mass) + "</dd></div>"
+          );
+        }
+
+        const metrics = protein.metrics || {};
+        const metricItems = Object.keys(metrics)
+          .filter(key => metrics[key] != null)
+          .sort()
+          .map(key => "<div class='protein-meta-card'><dt>" + escHtml(formatMetricLabel(key)) + "</dt><dd>" + escHtml(metrics[key]) + "</dd></div>");
+        cards.push.apply(cards, metricItems);
+
+        const annotations = protein.annotations || {};
+        const tagItems = Object.keys(annotations)
+          .filter(key => annotations[key] != null && String(annotations[key]).trim() !== "")
+          .sort()
+          .map(key => escHtml(formatTagLabel(key)) + ": " + escHtml(annotations[key]));
+        if (tagItems.length) {
+          cards.push(
+            "<div class='protein-meta-card'><dt>Annotations</dt><dd>" + tagItems.join("<br />") + "</dd></div>"
+          );
+        }
+
+        const runTable = renderRunsTable(protein.runs || {});
+        const fallback = !cards.length && !runTable
+          ? "<p class='muted'>No metadata was available for this protein.</p>"
+          : "";
+
+        panel.innerHTML = [
+          "<div class='protein-meta-header'>",
+          "<div>",
+          "<p class='protein-meta-title'>" + (title || escHtml(proteinSymbol || proteinId || "Protein details")) + "</p>",
+          "</div>",
+          "<button class='protein-meta-close' type='button'>Close</button>",
+          "</div>",
+          "<div class='protein-meta-grid'>",
+          cards.join(""),
+          "</div>",
+          runTable,
+          fallback,
+        ].join("");
+        panel.hidden = false;
+      }
+
+      reportApi.loadPayload = loadInteractivePayload;
+      window.tackleInteractiveReport = reportApi;
+      window.tackleLoadInteractivePayload = loadInteractivePayload;
+
+      async function showProteinDetails(options) {
+        const proteinId = ((options && options.proteinId) || "").trim();
+        const proteinSymbol = ((options && options.proteinSymbol) || "").trim();
+        const anchor = (options && options.anchor) || null;
+        const panel = anchor ? ensureProteinPanel(anchor) : null;
+        if (anchor && !panel) return null;
+        const startedAt = Math.round(performance.now() * 1000) / 1000;
+
+        const payload = await loadInteractivePayload();
+        if (!payload || payload.kind !== "protein_metadata") {
+          throw new Error("Embedded payload does not contain protein metadata.");
+        }
+        const protein = lookupProtein(payload, proteinId, proteinSymbol);
+        if (!protein) {
+          throw new Error("No metadata found for " + (proteinSymbol || proteinId || "the selected protein") + ".");
+        }
+        if (state && state.parsedData) {
+          const cacheKey = "protein:" + String(protein.gene_id || proteinId || proteinSymbol);
+          state.parsedData.set(cacheKey, protein);
+        }
+        if (panel) {
+          renderProteinPanel(panel, protein, proteinId, proteinSymbol);
+          if (reportApi.markRendered) {
+            reportApi.markRendered("protein", protein.gene_id || proteinId || proteinSymbol);
+          }
+          try { panel.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e) {}
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("tackleProteinDetailsRendered", {
+              detail: { proteinId: proteinId, proteinSymbol: proteinSymbol, protein: protein },
+            })
+          );
+        } catch (e) {}
+        if (reportApi.recordMetric) {
+          reportApi.recordMetric("protein_details_rendered", {
+            proteinId: protein.gene_id || proteinId || null,
+            proteinSymbol: protein.gene_symbol || proteinSymbol || null,
+            durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
+          });
+        }
+        return protein;
+      }
+
+      reportApi.showProteinDetails = showProteinDetails;
+      reportApi.lookupProtein = lookupProtein;
+      window.tackleInteractiveReport = reportApi;
+
+      document.addEventListener("click", async event => {
+        const closeBtn = event.target.closest(".protein-meta-close");
+        if (closeBtn) {
+          const panel = closeBtn.closest(".protein-meta-panel");
+          if (panel) {
+            panel.hidden = true;
+            panel.innerHTML = "";
+          }
+          return;
+        }
+
+        const proteinBtn = event.target.closest(".protein-meta-btn");
+        if (!proteinBtn) return;
+
+        const proteinId = (proteinBtn.dataset.proteinId || "").trim();
+        const proteinSymbol = (proteinBtn.dataset.proteinSymbol || "").trim();
+        const panel = ensureProteinPanel(proteinBtn);
+        if (!panel) return;
+
+        proteinBtn.disabled = true;
+        try {
+          await showProteinDetails({
+            proteinId: proteinId,
+            proteinSymbol: proteinSymbol,
+            anchor: proteinBtn,
+          });
+        } catch (e) {
+          const msg = (e && e.message) ? e.message : String(e);
+          panel.innerHTML = "<p class='warn'>Protein details unavailable: " + escHtml(msg) + "</p>";
+          panel.hidden = false;
+        } finally {
+          proteinBtn.disabled = false;
+        }
+      });
+    })();
+    {% endif %}
+
+    {% if tabulator_resource_ids %}
+    (function() {
+      const reportApi = window.tackleInteractiveReport || {};
+      const tabulatorResourceIds = {{ tabulator_resource_ids | tojson }};
+      const annotationLabelMap = {
+        CYTO_NUC: "Cyto/Nuc",
+        ER_GOLGI: "ER/Golgi",
+        MitoCarta: "MitoCarta",
+        SurfaceLabel: "Surface",
+        CellMembrane: "Cell membrane",
+        MATRISOME: "MATRISOME",
+        SECRETED: "Secreted",
+        glycomineN: "glycomineN",
+        glycomineO: "glycomineO",
+        IO: "IO",
+        IDG: "IDG",
+      };
+      const annotationFieldOrder = [
+        "CYTO_NUC",
+        "MATRISOME",
+        "ER_GOLGI",
+        "MitoCarta",
+        "CellMembrane",
+        "SurfaceLabel",
+        "SECRETED",
+        "IO",
+        "IDG",
+        "glycomineN",
+        "glycomineO",
+      ];
+
+      function formatAnnotationLabel(field) {
+        return annotationLabelMap[field] || String(field || "");
+      }
+
+      function hasValue(value) {
+        if (value == null) return false;
+        if (typeof value === "string") return value.trim() !== "";
+        return true;
+      }
+
+      function lookupProteinFromPayload(payload, geneId, geneSymbol) {
+        if (!payload || payload.kind !== "protein_metadata" || !payload.proteins) return null;
+        if (reportApi.lookupProtein) {
+          return reportApi.lookupProtein(payload, geneId, geneSymbol);
+        }
+        const proteins = payload.proteins || {};
+        if (geneId && proteins[geneId]) return proteins[geneId];
+        const symbolMap = payload.symbol_to_gene_id || {};
+        if (geneSymbol && symbolMap[geneSymbol] && proteins[symbolMap[geneSymbol]]) {
+          return proteins[symbolMap[geneSymbol]];
+        }
+        return null;
+      }
+
+      async function ensureTabulator() {
+        const jsKey = String((tabulatorResourceIds && tabulatorResourceIds.js) || "");
+        const cssKey = String((tabulatorResourceIds && tabulatorResourceIds.css) || "");
+        if (!jsKey || !cssKey) {
+          throw new Error("Tabulator resources are not configured for this report.");
+        }
+
+        const cached = reportApi.getLibrary ? reportApi.getLibrary(jsKey) : null;
+        if (cached && typeof cached === "function") {
+          return cached;
+        }
+        if (typeof window.Tabulator === "function") {
+          if (reportApi.setLibrary) {
+            reportApi.setLibrary(jsKey, window.Tabulator, { globalName: "Tabulator", reused: true });
+          }
+          return window.Tabulator;
+        }
+
+        await Promise.all([
+          reportApi.loadExternalStyle(cssKey),
+          reportApi.loadExternalScript(jsKey, "Tabulator"),
+        ]);
+
+        const TableClass = window.Tabulator || (reportApi.getLibrary ? reportApi.getLibrary(jsKey) : null);
+        if (typeof TableClass !== "function") {
+          throw new Error("Tabulator did not initialize correctly.");
+        }
+        if (reportApi.setLibrary) {
+          reportApi.setLibrary(jsKey, TableClass, { globalName: "Tabulator" });
+        }
+        return TableClass;
+      }
+
+      async function loadProteinPayloadForTable() {
+        if (!reportApi.loadPayload) return null;
+        try {
+          const payload = await reportApi.loadPayload();
+          return payload && payload.kind === "protein_metadata" ? payload : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function buildInteractiveTableRows(payload, proteinPayload) {
+        const sourceRows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+        const annotationFields = new Set();
+        const rows = sourceRows.map((row, index) => {
+          const next = Object.assign({ __row_index: index + 1 }, row || {});
+          const geneId = String((next.GeneID || next.gene_id) || "");
+          const geneSymbol = String((next.GeneSymbol || next.gene_symbol) || "");
+          const protein = lookupProteinFromPayload(proteinPayload, geneId, geneSymbol);
+          if (protein) {
+            if (!hasValue(next.GeneDescription) && hasValue(protein.gene_description)) {
+              next.GeneDescription = protein.gene_description;
+            }
+            if (!hasValue(next.FunCats) && hasValue(protein.fun_cats)) {
+              next.FunCats = protein.fun_cats;
+            }
+            if (!hasValue(next.PeptideCountTotal) && protein.metrics && hasValue(protein.metrics.peptide_count_total)) {
+              next.PeptideCountTotal = protein.metrics.peptide_count_total;
+            }
+            if (!hasValue(next.PSMsTotal) && protein.metrics && hasValue(protein.metrics.psms_total)) {
+              next.PSMsTotal = protein.metrics.psms_total;
+            }
+            const annotations = protein.annotations || {};
+            Object.keys(annotations).forEach(field => {
+              const value = annotations[field];
+              if (!hasValue(value)) return;
+              next[field] = value;
+              annotationFields.add(field);
+            });
+          }
+          return next;
+        });
+
+        const orderedFields = annotationFieldOrder
+          .filter(field => annotationFields.has(field))
+          .concat(
+            Array.from(annotationFields).filter(field => !annotationFieldOrder.includes(field)).sort()
+          );
+        return {
+          rows: rows,
+          categoryFields: orderedFields,
+        };
+      }
+
+      function buildInitialSort(payload) {
+        const pCol = String((payload && payload.plot_p_col) || "");
+        if (pCol) {
+          return [{ column: pCol, dir: "asc" }];
+        }
+        return [];
+      }
+
+      function buildInteractiveTableColumns(payload, rows, categoryFields) {
+        const baseColumns = Array.isArray(payload && payload.columns) ? payload.columns.map(col => String(col)) : [];
+        const seen = new Set();
+        const columns = [];
+
+        function addColumn(field, title, extra) {
+          const key = String(field || "");
+          if (!key || seen.has(key)) return;
+          if (key !== "__protein_details" && !rows.some(row => hasValue(row[key]))) return;
+          seen.add(key);
+          columns.push(
+            Object.assign(
+              {
+                title: title || key,
+                field: key,
+                headerSort: key !== "__protein_details",
+                tooltip: true,
+              },
+              extra || {}
+            )
+          );
+        }
+
+        addColumn("GeneID", "GeneID", { frozen: true, width: 124 });
+        addColumn("GeneSymbol", "GeneSymbol", { frozen: true, width: 144 });
+        addColumn("GeneDescription", "GeneDescription", { widthGrow: 2, minWidth: 220 });
+        addColumn("Description", "Description", { widthGrow: 2, minWidth: 220 });
+        addColumn("FunCats", "FunCats", { widthGrow: 2, minWidth: 180 });
+        categoryFields.forEach(field =>
+          addColumn(field, formatAnnotationLabel(field), { minWidth: 140 })
+        );
+        addColumn("PeptideCountTotal", "Max peptide count", { width: 156 });
+        addColumn("PSMsTotal", "Max PSMs", { width: 132 });
+        baseColumns.forEach(field => addColumn(field, field));
+
+        if (reportApi.showProteinDetails) {
+          addColumn("__protein_details", "Protein", {
+            width: 112,
+            hozAlign: "center",
+            formatter: function() {
+              return "<button class='protein-meta-btn' type='button'>Details</button>";
+            },
+            cellClick: function(event, cell) {
+              const row = cell && cell.getRow ? cell.getRow() : null;
+              const data = row && row.getData ? row.getData() : {};
+              reportApi.showProteinDetails({
+                proteinId: String((data && data.GeneID) || ""),
+                proteinSymbol: String((data && data.GeneSymbol) || ""),
+                anchor: cell && cell.getElement ? cell.getElement() : null,
+              }).catch(() => {});
+            },
+          });
+        }
+
+        return columns;
+      }
+
+      function getInteractiveTableState(block) {
+        if (!block) return null;
+        return {
+          trigger: block.querySelector("[data-interactive-table-trigger]"),
+          toolbar: block.querySelector(".interactive-table-toolbar"),
+          search: block.querySelector("[data-interactive-table-search]"),
+          reset: block.querySelector("[data-interactive-table-reset]"),
+          download: block.querySelector("[data-interactive-table-download]"),
+          filters: block.querySelector(".interactive-table-filters"),
+          status: block.querySelector(".interactive-table-status"),
+          host: block.querySelector(".interactive-table-host"),
+        };
+      }
+
+      function renderCategoryFilters(block, categoryFields) {
+        const ui = getInteractiveTableState(block);
+        if (!ui || !ui.filters) return;
+        ui.filters.innerHTML = "";
+        if (!categoryFields.length) {
+          ui.filters.hidden = true;
+          return;
+        }
+
+        const label = document.createElement("span");
+        label.className = "interactive-filter-label";
+        label.textContent = "Category filters:";
+        ui.filters.appendChild(label);
+
+        categoryFields.forEach(field => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "category-filter-btn";
+          button.dataset.categoryField = field;
+          button.textContent = formatAnnotationLabel(field);
+          button.addEventListener("click", () => {
+            button.classList.toggle("active");
+            applyInteractiveTableFilters(block);
+          });
+          ui.filters.appendChild(button);
+        });
+        ui.filters.hidden = false;
+      }
+
+      function buildRowFilter(searchText, activeCategories) {
+        const needle = String(searchText || "").trim().toLowerCase();
+        const required = Array.isArray(activeCategories) ? activeCategories.slice() : [];
+        return function(row) {
+          if (!row || typeof row !== "object") return false;
+          for (const field of required) {
+            if (!hasValue(row[field])) {
+              return false;
+            }
+          }
+          if (!needle) {
+            return true;
+          }
+          const haystack = [
+            row.GeneID,
+            row.GeneSymbol,
+            row.GeneDescription,
+            row.Description,
+            row.FunCats,
+          ]
+            .concat(required.map(field => row[field]))
+            .filter(hasValue)
+            .map(value => String(value).toLowerCase())
+            .join(" ");
+          return haystack.indexOf(needle) !== -1;
+        };
+      }
+
+      function computeVisibleRowCount(rows, searchText, activeCategories) {
+        const matcher = buildRowFilter(searchText, activeCategories);
+        return (Array.isArray(rows) ? rows : []).filter(matcher).length;
+      }
+
+      function applyInteractiveTableFilters(block) {
+        if (!block) return null;
+        const ui = getInteractiveTableState(block);
+        if (!ui || !ui.host) return null;
+        const table = block.__interactiveTable || null;
+        const rows = Array.isArray(block.__interactiveTableRows) ? block.__interactiveTableRows : [];
+        const resourceId = block.getAttribute("data-volcano-resource-id") || block.getAttribute("data-interactive-table") || "";
+        const searchText = ui.search ? ui.search.value : "";
+        const activeCategories = Array.from(
+          block.querySelectorAll(".category-filter-btn.active")
+        )
+          .map(button => button.getAttribute("data-category-field") || "")
+          .filter(Boolean);
+        const visibleRowCount = computeVisibleRowCount(rows, searchText, activeCategories);
+
+        if (table) {
+          if ((searchText && searchText.trim()) || activeCategories.length) {
+            if (typeof table.setFilter === "function") {
+              table.setFilter(buildRowFilter(searchText, activeCategories));
+            }
+          } else if (typeof table.clearFilter === "function") {
+            table.clearFilter(true);
+          }
+        }
+
+        ui.host.dataset.visibleCount = String(visibleRowCount);
+        ui.host.dataset.rowCount = String(rows.length);
+        if (ui.status) {
+          ui.status.hidden = false;
+          ui.status.textContent = visibleRowCount === rows.length
+            ? "Interactive table ready (" + String(rows.length) + " rows)."
+            : "Interactive table filtered to " + String(visibleRowCount) + " of " + String(rows.length) + " rows.";
+        }
+        if (reportApi.updateTableState) {
+          reportApi.updateTableState(resourceId, {
+            rendered: true,
+            title: block.getAttribute("data-table-title") || "",
+            rowCount: rows.length,
+            visibleRowCount: visibleRowCount,
+            activeCategories: activeCategories,
+            searchText: searchText,
+            categoryFields: Array.isArray(block.__interactiveCategoryFields)
+              ? block.__interactiveCategoryFields.slice()
+              : [],
+          });
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("tackleInteractiveTableFiltered", {
+              detail: {
+                resourceId: resourceId,
+                visibleRowCount: visibleRowCount,
+                rowCount: rows.length,
+                activeCategories: activeCategories.slice(),
+                searchText: searchText,
+              },
+            })
+          );
+        } catch (e) {}
+        return {
+          rowCount: rows.length,
+          visibleRowCount: visibleRowCount,
+          activeCategories: activeCategories,
+        };
+      }
+
+      function bindInteractiveTableControls(block) {
+        if (!block || block.dataset.tableControlsBound === "1") return;
+        block.dataset.tableControlsBound = "1";
+        const ui = getInteractiveTableState(block);
+        if (!ui) return;
+
+        if (ui.search) {
+          ui.search.addEventListener("input", () => {
+            applyInteractiveTableFilters(block);
+          });
+        }
+        if (ui.reset) {
+          ui.reset.addEventListener("click", () => {
+            if (ui.search) {
+              ui.search.value = "";
+            }
+            Array.from(block.querySelectorAll(".category-filter-btn.active")).forEach(button => {
+              button.classList.remove("active");
+            });
+            applyInteractiveTableFilters(block);
+          });
+        }
+        if (ui.download) {
+          ui.download.addEventListener("click", () => {
+            const table = block.__interactiveTable || null;
+            if (!table || typeof table.download !== "function") {
+              return;
+            }
+            const rawTitle = block.getAttribute("data-table-title") || block.getAttribute("data-volcano-resource-id") || "interactive-volcano-table";
+            const fileName = String(rawTitle)
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-+|-+$/g, "") || "interactive-volcano-table";
+            table.download("csv", fileName + ".csv");
+          });
+        }
+      }
+
+      async function renderInteractiveTable(block) {
+        if (!block) return null;
+        if (block.__interactiveTablePromise) {
+          return block.__interactiveTablePromise;
+        }
+
+        const ui = getInteractiveTableState(block);
+        const resourceId = block.getAttribute("data-volcano-resource-id") || block.getAttribute("data-interactive-table") || "";
+        if (!ui || !ui.host || !resourceId) {
+          throw new Error("Interactive table block is missing its resource binding.");
+        }
+        if (ui.host.dataset.rendered === "1") {
+          ui.host.hidden = false;
+          if (ui.toolbar) ui.toolbar.hidden = false;
+          if (ui.status) ui.status.hidden = false;
+          applyInteractiveTableFilters(block);
+          return ui.host;
+        }
+
+        bindInteractiveTableControls(block);
+        if (ui.status) {
+          ui.status.hidden = false;
+          ui.status.textContent = "Loading interactive table…";
+        }
+        if (ui.trigger) {
+          ui.trigger.disabled = true;
+        }
+
+        block.__interactiveTablePromise = (async () => {
+          try {
+            const [TableClass, payload, proteinPayload] = await Promise.all([
+              ensureTabulator(),
+              reportApi.loadVolcanoData(resourceId),
+              loadProteinPayloadForTable(),
+            ]);
+            const enriched = buildInteractiveTableRows(payload, proteinPayload);
+            const columns = buildInteractiveTableColumns(payload, enriched.rows, enriched.categoryFields);
+            ui.host.hidden = false;
+            const table = new TableClass(ui.host, {
+              data: enriched.rows,
+              columns: columns,
+              layout: "fitDataStretch",
+              pagination: "local",
+              paginationSize: 25,
+              maxHeight: "540px",
+              placeholder: "No rows match the current filters.",
+              index: "__row_index",
+              initialSort: buildInitialSort(payload),
+            });
+
+            block.__interactiveTable = table;
+            block.__interactiveTableRows = enriched.rows;
+            block.__interactiveCategoryFields = enriched.categoryFields;
+
+            renderCategoryFilters(block, enriched.categoryFields);
+
+            if (ui.toolbar) {
+              ui.toolbar.hidden = false;
+            }
+            if (ui.download) {
+              ui.download.disabled = !(table && typeof table.download === "function");
+            }
+            ui.host.dataset.rendered = "1";
+            ui.host.dataset.rowCount = String(enriched.rows.length);
+
+            const filterState = applyInteractiveTableFilters(block) || {
+              rowCount: enriched.rows.length,
+              visibleRowCount: enriched.rows.length,
+              activeCategories: [],
+            };
+
+            if (reportApi.markRendered) {
+              reportApi.markRendered("interactive-table", resourceId);
+            }
+            if (reportApi.recordMetric) {
+              reportApi.recordMetric("interactive_table_rendered", {
+                resourceId: resourceId,
+                rowCount: enriched.rows.length,
+                visibleRowCount: filterState.visibleRowCount,
+                categoryFields: enriched.categoryFields.slice(),
+              });
+            }
+            try {
+              window.dispatchEvent(
+                new CustomEvent("tackleInteractiveTableRendered", {
+                  detail: {
+                    resourceId: resourceId,
+                    rowCount: enriched.rows.length,
+                    visibleRowCount: filterState.visibleRowCount,
+                    categoryFields: enriched.categoryFields.slice(),
+                    title: block.getAttribute("data-table-title") || "",
+                  },
+                })
+              );
+            } catch (e) {}
+            try {
+              ui.host.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            } catch (e) {}
+            return ui.host;
+          } catch (e) {
+            ui.host.hidden = true;
+            ui.host.dataset.rendered = "";
+            const msg = (e && e.message) ? e.message : String(e);
+            if (ui.status) {
+              ui.status.hidden = false;
+              ui.status.textContent = "Interactive table unavailable: " + msg;
+            }
+            throw e;
+          } finally {
+            if (ui.trigger) {
+              ui.trigger.disabled = false;
+            }
+            block.__interactiveTablePromise = null;
+          }
+        })();
+
+        return block.__interactiveTablePromise;
+      }
+
+      reportApi.ensureTabulator = ensureTabulator;
+      reportApi.renderInteractiveTable = renderInteractiveTable;
+      reportApi.applyInteractiveTableFilters = applyInteractiveTableFilters;
+      window.tackleInteractiveReport = reportApi;
+
+      document.addEventListener("click", event => {
+        const trigger = event.target.closest("[data-interactive-table-trigger]");
+        if (!trigger) return;
+        const block = trigger.closest("[data-interactive-table]");
+        if (!block) return;
+        renderInteractiveTable(block).catch(() => {});
+      });
+    })();
+    {% endif %}
+
+    {% if plotly_resource_id %}
+    (function() {
+      const reportApi = window.tackleInteractiveReport || {};
+      const plotlyResourceId = {{ plotly_resource_id | tojson }};
+
+      function pickVolcanoPColumn(payload) {
+        if (payload && payload.plot_p_col) {
+          return String(payload.plot_p_col);
+        }
+        if (payload && payload.meta && payload.meta.p_col) {
+          return String(payload.meta.p_col);
+        }
+        const columns = Array.isArray(payload && payload.columns) ? payload.columns : [];
+        if (columns.includes("pAdj")) return "pAdj";
+        if (columns.includes("pValue")) return "pValue";
+        return "";
+      }
+
+      function buildVolcanoFigure(payload) {
+        const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+        const pCol = pickVolcanoPColumn(payload);
+        if (!pCol) {
+          throw new Error("Volcano dataset is missing a usable p-value column.");
+        }
+
+        const meta = payload && payload.meta ? payload.meta : {};
+        const pCutoff = Number(meta.p_cutoff);
+        const hasPCutoff = Number.isFinite(pCutoff) && pCutoff > 0;
+        const fcCutoff = Number(meta.fc_cutoff);
+        const hasFCCutoff = Number.isFinite(fcCutoff) && fcCutoff > 0;
+        const positivePs = rows
+          .map(row => Number(row && row[pCol]))
+          .filter(value => Number.isFinite(value) && value > 0);
+        const pStretch = positivePs.length ? (Math.min.apply(null, positivePs) / 2) : 0;
+
+        const series = {
+          up: [],
+          down: [],
+          other: [],
+        };
+
+        rows.forEach((row, index) => {
+          const x = Number(row && row.log2_FC);
+          const pRaw = Number(row && row[pCol]);
+          const p = Number.isFinite(pRaw) ? (pRaw + pStretch) : NaN;
+          if (!Number.isFinite(x) || !Number.isFinite(p) || p <= 0) {
+            return;
+          }
+          const y = -Math.log10(p);
+          if (!Number.isFinite(y)) {
+            return;
+          }
+
+          const geneId = String((row && (row.GeneID || row.gene_id)) || "");
+          const geneSymbol = String((row && (row.GeneSymbol || row.gene_symbol)) || "");
+          const geneDescription = String((row && (row.GeneDescription || row.gene_description)) || "");
+          const label = geneSymbol || geneId || ("Row " + String(index + 1));
+          const point = {
+            x: x,
+            y: y,
+            text: label,
+            customdata: [geneId, geneSymbol, geneDescription],
+            hovertemplate:
+              "<b>%{text}</b><br>log2_FC=%{x:.3f}<br>" +
+              pCol +
+              "=%{customdata[3]:.4g}<extra></extra>",
+          };
+          point.customdata.push(pRaw);
+
+          const passesP = !hasPCutoff || (Number.isFinite(pRaw) && pRaw <= pCutoff);
+          const passesFC = !hasFCCutoff || Math.abs(x) >= fcCutoff;
+          if (passesP && passesFC && x > 0) {
+            series.up.push(point);
+          } else if (passesP && passesFC && x < 0) {
+            series.down.push(point);
+          } else {
+            series.other.push(point);
+          }
+        });
+
+        function makeTrace(name, color, points) {
+          return {
+            type: "scattergl",
+            mode: "markers",
+            name: name,
+            x: points.map(point => point.x),
+            y: points.map(point => point.y),
+            text: points.map(point => point.text),
+            customdata: points.map(point => point.customdata),
+            hovertemplate: points.length ? points[0].hovertemplate : "<extra></extra>",
+            marker: {
+              size: name === "Other" ? 9 : 11,
+              color: color,
+              opacity: name === "Other" ? 0.45 : 0.82,
+              line: {
+                width: name === "Other" ? 0 : 0.8,
+                color: "rgba(255,255,255,0.24)",
+              },
+            },
+          };
+        }
+
+        const traces = [
+          makeTrace("Other", "rgba(191, 200, 208, 0.72)", series.other),
+          makeTrace("Up", "rgba(255, 99, 132, 0.88)", series.up),
+          makeTrace("Down", "rgba(91, 179, 255, 0.88)", series.down),
+        ].filter(trace => trace.x.length > 0);
+
+        if (!traces.length) {
+          throw new Error("No usable volcano points were found in this dataset.");
+        }
+
+        const xValues = traces.flatMap(trace => trace.x.map(value => Math.abs(value)));
+        const yValues = traces.flatMap(trace => trace.y);
+        const yMax = yValues.length ? Math.max.apply(null, yValues) : 1;
+        const yUpper = Math.max(yMax * 1.08, 1);
+        const xAbsMax = xValues.length ? Math.max.apply(null, xValues) : 1;
+        const xUpper = Math.max(xAbsMax * 1.05, hasFCCutoff ? Math.abs(fcCutoff) * 1.2 : 1);
+        const shapes = [
+          {
+            type: "line",
+            x0: 0,
+            x1: 0,
+            y0: 0,
+            y1: yUpper,
+            line: { color: "rgba(191, 200, 208, 0.42)", width: 1, dash: "dot" },
+          },
+        ];
+        if (hasPCutoff) {
+          const yCut = -Math.log10(pCutoff);
+          if (Number.isFinite(yCut)) {
+            shapes.push({
+              type: "line",
+              x0: -xUpper,
+              x1: xUpper,
+              y0: yCut,
+              y1: yCut,
+              line: { color: "rgba(255, 209, 102, 0.55)", width: 1, dash: "dot" },
+            });
+          }
+        }
+        if (hasFCCutoff) {
+          shapes.push({
+            type: "line",
+            x0: fcCutoff,
+            x1: fcCutoff,
+            y0: 0,
+            y1: yUpper,
+            line: { color: "rgba(255, 209, 102, 0.45)", width: 1, dash: "dot" },
+          });
+          shapes.push({
+            type: "line",
+            x0: -fcCutoff,
+            x1: -fcCutoff,
+            y0: 0,
+            y1: yUpper,
+            line: { color: "rgba(255, 209, 102, 0.45)", width: 1, dash: "dot" },
+          });
+        }
+
+        return {
+          pointCount: traces.reduce((count, trace) => count + trace.x.length, 0),
+          pCol: pCol,
+          pStretch: pStretch,
+          xUpper: xUpper,
+          yUpper: yUpper,
+          traces: traces,
+          layout: {
+            title: { text: String((payload && payload.title) || "Interactive volcano"), x: 0.02 },
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(0,0,0,0)",
+            font: { color: "#d9ecff" },
+            margin: { t: 56, r: 18, b: 56, l: 64 },
+            hovermode: "closest",
+            legend: { orientation: "h", x: 0, y: 1.12 },
+            height: 560,
+            xaxis: {
+              title: "log2_FC",
+              zeroline: false,
+              range: [-xUpper, xUpper],
+              gridcolor: "rgba(191, 200, 208, 0.10)",
+            },
+            yaxis: {
+              title: "-log10(" + pCol + ")",
+              range: [0, yUpper],
+              gridcolor: "rgba(191, 200, 208, 0.10)",
+            },
+            shapes: shapes,
+          },
+          config: {
+            responsive: true,
+            displaylogo: false,
+          },
+        };
+      }
+
+      async function ensurePlotly() {
+        return await reportApi.loadExternalScript(plotlyResourceId, "Plotly");
+      }
+
+      async function renderInteractiveVolcano(block) {
+        if (!block) return null;
+        const trigger = block.querySelector("[data-interactive-volcano-trigger]");
+        const status = block.querySelector(".interactive-volcano-status");
+        const host = block.querySelector(".interactive-volcano-host");
+        const resourceId = block.getAttribute("data-volcano-resource-id") || "";
+        if (!host || !resourceId) {
+          throw new Error("Interactive volcano block is missing its resource binding.");
+        }
+        if (host.dataset.rendered === "1") {
+          host.hidden = false;
+          if (status) {
+            status.hidden = false;
+            status.textContent = "Interactive volcano ready.";
+          }
+          return host;
+        }
+
+        if (status) {
+          status.hidden = false;
+          status.textContent = "Loading interactive volcano…";
+        }
+        if (trigger) {
+          trigger.disabled = true;
+        }
+
+        try {
+          const [Plotly, payload] = await Promise.all([
+            ensurePlotly(),
+            reportApi.loadVolcanoData(resourceId),
+          ]);
+          const figure = buildVolcanoFigure(payload);
+          host.hidden = false;
+          host.dataset.rendered = "loading";
+          await Plotly.newPlot(host, figure.traces, figure.layout, figure.config);
+          host.dataset.rendered = "1";
+          host.dataset.pointCount = String(figure.pointCount);
+          host.dataset.pCol = String(figure.pCol || "");
+          host.dataset.yUpper = String(figure.yUpper || "");
+          host.dataset.pStretch = String(figure.pStretch || "");
+
+          if (typeof host.on === "function" && reportApi.showProteinDetails) {
+            host.on("plotly_click", event => {
+              const point = event && event.points && event.points[0] ? event.points[0] : null;
+              const customdata = point && point.customdata ? point.customdata : [];
+              reportApi.showProteinDetails({
+                proteinId: String(customdata[0] || ""),
+                proteinSymbol: String(customdata[1] || ""),
+                anchor: trigger || host,
+              }).catch(() => {});
+            });
+          }
+
+          if (status) {
+            status.hidden = false;
+            status.textContent = "Interactive volcano ready (" + String(figure.pointCount) + " points).";
+          }
+          if (reportApi.recordMetric) {
+            reportApi.recordMetric("interactive_volcano_rendered", {
+              resourceId: resourceId,
+              pointCount: figure.pointCount,
+            });
+          }
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tackleInteractiveVolcanoRendered", {
+                detail: {
+                  resourceId: resourceId,
+                  pointCount: figure.pointCount,
+                  title: block.getAttribute("data-plot-title") || "",
+                },
+              })
+            );
+          } catch (e) {}
+          try {
+            host.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          } catch (e) {}
+          return host;
+        } catch (e) {
+          host.hidden = true;
+          host.dataset.rendered = "";
+          const msg = (e && e.message) ? e.message : String(e);
+          if (status) {
+            status.hidden = false;
+            status.textContent = "Interactive volcano unavailable: " + msg;
+          }
+          throw e;
+        } finally {
+          if (trigger) {
+            trigger.disabled = false;
+          }
+        }
+      }
+
+      reportApi.ensurePlotly = ensurePlotly;
+      reportApi.renderInteractiveVolcano = renderInteractiveVolcano;
+      window.tackleInteractiveReport = reportApi;
+
+      document.addEventListener("click", event => {
+        const trigger = event.target.closest("[data-interactive-volcano-trigger]");
+        if (!trigger) return;
+        const block = trigger.closest("[data-interactive-volcano]");
+        if (!block) return;
+        renderInteractiveVolcano(block).catch(() => {});
+      });
+    })();
+    {% endif %}
   </script>
 </body>
 </html>

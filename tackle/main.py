@@ -130,6 +130,187 @@ try:
 except Exception:
     pass
 
+
+def _ensure_root_context(ctx):
+    try:
+        root = ctx.find_root()
+    except Exception:
+        root = ctx
+    if root is None:
+        return None
+    if getattr(root, "obj", None) is None:
+        root.obj = {}
+    return root
+
+
+def _telemetry_value_preview(value, *, max_items=12):
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)[: int(max_items)]
+        return [_telemetry_value_preview(item, max_items=max_items) for item in items]
+    if isinstance(value, dict):
+        out = {}
+        for idx, (key, item) in enumerate(value.items()):
+            if idx >= int(max_items):
+                break
+            out[str(key)] = _telemetry_value_preview(item, max_items=max_items)
+        return out
+    return str(value)
+
+
+def _telemetry_local_events_path_from_ctx(ctx):
+    try:
+        from .telemetry import make_local_events_path
+    except Exception:
+        return None
+
+    root = _ensure_root_context(ctx)
+    if root is None:
+        return None
+
+    root_obj = getattr(root, "obj", {}) or {}
+    data_obj = root_obj.get("data_obj")
+    outpath = getattr(data_obj, "outpath", None)
+    if outpath:
+        try:
+            return make_local_events_path(outpath)
+        except Exception:
+            return None
+
+    params = getattr(ctx, "params", {}) or {}
+    base_dir = params.get("base_dir")
+    if base_dir:
+        try:
+            return make_local_events_path(base_dir)
+        except Exception:
+            return None
+    return None
+
+
+def _ensure_command_telemetry(ctx):
+    root = _ensure_root_context(ctx)
+    if root is None:
+        return None
+
+    root_obj = getattr(root, "obj", {}) or {}
+    telemetry = root_obj.get("telemetry")
+    if telemetry is not None:
+        return telemetry
+
+    agent_api = str(root_obj.get("agent_api") or os.environ.get("TACKLE_AGENT_API") or "").strip()
+    if not agent_api:
+        return None
+
+    try:
+        from .telemetry import AgentTelemetry, AgentTelemetryConfig
+
+        telemetry = AgentTelemetry(
+            AgentTelemetryConfig.from_env(
+                agent_api=agent_api,
+                agent_id=root_obj.get("agent_id"),
+                local_events_path=_telemetry_local_events_path_from_ctx(ctx),
+            ),
+            logger=logger,
+        )
+        root_obj["telemetry"] = telemetry
+        root.obj = root_obj
+        return telemetry
+    except Exception as e:
+        logger.debug("Telemetry init failed for command context: %r", e)
+        return None
+
+
+def _command_telemetry_dimensions(ctx):
+    dims = {
+        "command": str(getattr(getattr(ctx, "command", None), "name", None) or getattr(ctx, "info_name", "") or ""),
+    }
+
+    root = _ensure_root_context(ctx)
+    root_obj = getattr(root, "obj", {}) or {} if root is not None else {}
+    data_obj = root_obj.get("data_obj")
+    if data_obj is not None:
+        dims["analysis_name"] = str(getattr(data_obj, "outpath_name", "") or "")
+        dims["analysis_outpath"] = str(getattr(data_obj, "outpath", "") or "")
+        dims["taxon"] = str(getattr(data_obj, "taxon", "") or "")
+    else:
+        params = getattr(ctx, "params", {}) or {}
+        base_dir = params.get("base_dir")
+        if base_dir:
+            dims["analysis_outpath"] = str(base_dir)
+
+    return {key: value for key, value in dims.items() if str(value).strip()}
+
+
+def _emit_command_telemetry(ctx, *, phase, severity="info", started_at=None, error_text=None):
+    telemetry = _ensure_command_telemetry(ctx)
+    if telemetry is None:
+        return
+
+    root = _ensure_root_context(ctx)
+    root_obj = getattr(root, "obj", {}) or {} if root is not None else {}
+    correlation_id = root_obj.get("telemetry_correlation_id")
+
+    payload = {
+        "command_path": str(getattr(ctx, "command_path", "") or ""),
+        "params": _telemetry_value_preview(getattr(ctx, "params", {}) or {}),
+    }
+    if started_at is not None:
+        payload["elapsed_seconds"] = round(max(0.0, time.time() - float(started_at)), 3)
+    if error_text:
+        payload["error"] = str(error_text)[:800]
+
+    try:
+        telemetry.emit_event(
+            type=f"tackle.command.{phase}",
+            name=str(getattr(getattr(ctx, "command", None), "name", None) or getattr(ctx, "info_name", "") or "command"),
+            severity=str(severity),
+            correlation_id=correlation_id,
+            dimensions=_command_telemetry_dimensions(ctx),
+            value=payload,
+        )
+    except Exception as e:
+        logger.debug("Telemetry emit failed for command %s %s: %r", getattr(ctx, "info_name", None), phase, e)
+
+
+def _install_command_telemetry_hooks():
+    for name, command in list(main.commands.items()):
+        if getattr(command, "_tackle_telemetry_wrapped", False):
+            continue
+
+        original_invoke = command.invoke
+
+        def _invoke(ctx, _original_invoke=original_invoke):
+            started_at = time.time()
+            _emit_command_telemetry(ctx, phase="start", severity="info")
+            try:
+                result = _original_invoke(ctx)
+            except Exception as exc:
+                if isinstance(exc, click.ClickException):
+                    message = exc.format_message()
+                else:
+                    message = str(exc)
+                _emit_command_telemetry(
+                    ctx,
+                    phase="failed",
+                    severity="error",
+                    started_at=started_at,
+                    error_text=f"{type(exc).__name__}: {message}",
+                )
+                raise
+            _emit_command_telemetry(
+                ctx,
+                phase="complete",
+                severity="info",
+                started_at=started_at,
+            )
+            return result
+
+        command.invoke = _invoke
+        command._tackle_telemetry_wrapped = True
+
 def run(data_obj):
     # if 'scatter' in plots or 'all' in data_obj.plots:
     if data_obj.make_plot("scatter"):
@@ -510,7 +691,12 @@ def _annotation_choices():
     `get_annotation_mapper().categories` can trigger pandas I/O (and logging) at import
     time, which is undesirable for standalone subcommands like `make-run`.
     """
-    path = os.path.join(os.path.dirname(__file__), "data", "combined_annotations_new.tsv")
+    path = os.path.join(
+        os.path.dirname(__file__),
+        "data",
+        "annotations",
+        "combined_annotations_new.tsv",
+    )
     try:
         with open(path, "r") as handle:
             header = handle.readline().rstrip("\n").split("\t")
@@ -1018,6 +1204,8 @@ def main(
 
     ctx.obj["file_fmts"] = file_format
     ctx.obj["png_res"] = png_res
+    ctx.obj["agent_api"] = agent_api
+    ctx.obj["agent_id"] = agent_id
 
     analysis_name = get_file_name(experiment_file)
     if analysis_name is None:
@@ -1660,6 +1848,25 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
 
 @main.command("make-html")
 @click.option(
+    "--interactive-payload",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    show_default=True,
+    help=(
+        "Optional JSON file to gzip+embed in the HTML for client-side interactive use "
+        "(requires a modern browser with DecompressionStream)."
+    ),
+)
+@click.option(
+    "--interactive-protein-metadata/--no-interactive-protein-metadata",
+    default=False,
+    show_default=True,
+    help=(
+        "Auto-build and gzip-embed a per-protein metadata index from export TSVs so "
+        "volcano preview tables can reveal metadata and peptide/PSM counts in-browser."
+    ),
+)
+@click.option(
     "--outdir",
     type=str,
     default=None,
@@ -1699,6 +1906,25 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     default=False,
     show_default=True,
     help="Embed plot PNGs directly in the HTML so it can be shared as a single file (no assets directory).",
+)
+@click.option(
+    "--defer-plot-images/--no-defer-plot-images",
+    default=True,
+    show_default=True,
+    help=(
+        "Defer loading plot images until a plot panel is opened. This is especially helpful "
+        "for large self-contained HTML reports."
+    ),
+)
+@click.option(
+    "--interactive-resource-mode",
+    type=click.Choice(["auto", "inline", "chunked"]),
+    default="auto",
+    show_default=True,
+    help=(
+        "How interactive resources are packaged. 'auto' uses inline resources for "
+        "--self-contained reports and chunked resources otherwise."
+    ),
 )
 @click.option(
     "--pngquant/--no-pngquant",
@@ -1818,15 +2044,26 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     show_default=True,
     help="Label to display next to AI summaries (e.g. 'llama3.1 tulu').",
 )
+@click.option(
+    "--force-ai-summary",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Bypass cached AI summary responses and regenerate them. Independent of --force.",
+)
 @click.pass_context
 def make_html(
     ctx,
+    interactive_payload,
+    interactive_protein_metadata,
     outdir,
     base_dir,
     title,
     show_date,
     copy_assets,
     self_contained,
+    defer_plot_images,
+    interactive_resource_mode,
     pngquant,
     pngquant_quality,
     pngquant_topdiff_quality,
@@ -1844,6 +2081,7 @@ def make_html(
     pandas_low_memory,
     ai_summary,
     ai_model_label,
+    force_ai_summary,
 ):
     """
     Create a static HTML overview bundle (index.html + assets/) for quick browsing.
@@ -1875,6 +2113,11 @@ def make_html(
         else:
             title = f"Tackle overview: {base_dir_path.name}"
 
+    if interactive_payload and interactive_protein_metadata:
+        raise click.ClickException(
+            "Pass either --interactive-payload or --interactive-protein-metadata, not both."
+        )
+
     p_cut = None if (p_cutoff is None or float(p_cutoff) <= 0) else float(p_cutoff)
 
     try:
@@ -1886,6 +2129,10 @@ def make_html(
             copy_assets=bool(copy_assets),
             force=bool(force),
             self_contained=bool(self_contained),
+            interactive_payload=str(interactive_payload) if interactive_payload else None,
+            interactive_protein_metadata=bool(interactive_protein_metadata),
+            interactive_resource_mode=str(interactive_resource_mode),
+            defer_plot_images=bool(defer_plot_images),
             filter_contains=tuple(filter_contains),
             include_kinds=tuple(plot_kinds),
             volcano_topn=int(volcano_topn),
@@ -1897,6 +2144,7 @@ def make_html(
             pandas_low_memory=bool(pandas_low_memory),
             ai_summary=bool(ai_summary),
             ai_model_label=str(ai_model_label) if ai_model_label else None,
+            force_ai_summary=bool(force_ai_summary),
             pngquant=bool(pngquant),
             pngquant_quality=str(pngquant_quality) if pngquant_quality else None,
             pngquant_topdiff_quality=(
@@ -3776,12 +4024,12 @@ def umap(
     "-a",
     "--annotation",
     "--annotations",
-    "cluster_annotations",
+    "annotation_filter",
     type=click.Choice(ANNOTATION_CHOICES),
     multiple=True,
     default=(),
     show_default=True,
-    help="Plot per-annotation subset heatmaps (repeatable). Use `_all` to include all annotation groups.",
+    help="Filter the heatmap rows to genes in the specified annotation group (repeatable; unions hits). Use `_all` to disable filtering.",
 )
 @click.option(
     "--cluster-col-slices/--no-cluster-col-slices",
@@ -4136,7 +4384,7 @@ def cluster2(
     add_description,
     annotate,
     annotate_genes,
-    cluster_annotations,
+    annotation_filter,
     cmap,
     cut_by,
     color_low,
@@ -4199,13 +4447,13 @@ def cluster2(
     export_sweep_tsvs,
 ):
     volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
-    cluster_annotations = list(cluster_annotations or ())
-    if "_all" in cluster_annotations:
-        cluster_annotations = [x for x in ANNOTATION_CHOICES if x != "_all"]
+    annotation_filter = list(annotation_filter or ())
+    if "_all" in annotation_filter:
+        annotation_filter = []
     else:
         seen = set()
-        cluster_annotations = [
-            x for x in cluster_annotations if not (x in seen or seen.add(x))
+        annotation_filter = [
+            x for x in annotation_filter if not (x in seen or seen.add(x))
         ]
 
     if nclusters == "auto" and cluster_func == "none":
@@ -4278,7 +4526,7 @@ def cluster2(
         cluster_db=cluster_db,
         cluster_db_path=cluster_db_path,
         export_sweep_tsvs=export_sweep_tsvs,
-        cluster_annotations=cluster_annotations,
+        annotation_filter=annotation_filter,
         reroute_volcano=reroute_volcano,
     )
 
@@ -5023,7 +5271,7 @@ def metrics(ctx, full, before_filter, before_norm):
     data_obj = ctx.obj["data_obj"]
     file_fmts = ctx.obj["file_fmts"]
 
-    make_metrics(
+    outputs = make_metrics(
         data_obj,
         file_fmts,
         png_res=ctx.obj["png_res"],
@@ -5031,6 +5279,10 @@ def metrics(ctx, full, before_filter, before_norm):
         before_norm=before_norm,
         full=full,
     )
+    if outputs and outputs.get("metrics_tsv"):
+        click.echo(f"Wrote metrics TSV: {outputs['metrics_tsv']}")
+    if outputs and outputs.get("metrics_html"):
+        click.echo(f"Wrote metrics HTML: {outputs['metrics_html']}")
 
 
 
@@ -7673,6 +7925,7 @@ def genecorr(
 #             xtickrotation=xtickrotation, xticksize=xticksize, retain_order=retain_order
 #     )
 
+_install_command_telemetry_hooks()
 
 if __name__ == "__main__":
     main(obj={})

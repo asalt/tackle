@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --paper: #f7f2e8;
+      --ink: #182433;
+      --ink-soft: #43556a;
+      --panel: rgba(255, 255, 255, 0.72);
+      --panel-strong: rgba(255, 255, 255, 0.88);
+      --line: rgba(24, 36, 51, 0.12);
+      --accent: #0b7a75;
+      --accent-soft: rgba(11, 122, 117, 0.14);
+      --highlight: #d67c2c;
+      --shadow: 0 14px 38px rgba(24, 36, 51, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(214, 124, 44, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(11, 122, 117, 0.11), transparent 24%),
+        linear-gradient(180deg, #fbf7ef 0%, var(--paper) 100%);
+      font: 16px/1.5 "IBM Plex Sans", "Segoe UI", sans-serif;
+    }
+    code, pre, .mono {
+      font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+    }
+    .page-shell {
+      width: min(1380px, calc(100vw - 2rem));
+      margin: 0 auto;
+      padding: 1.3rem 0 2.4rem;
+    }
+    .hero {
+      padding: 1.2rem 1.35rem 1.35rem;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,0.92), rgba(255,255,255,0.76)),
+        linear-gradient(120deg, rgba(11, 122, 117, 0.10), rgba(214, 124, 44, 0.08));
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      margin: 0 0 0.35rem;
+      color: var(--accent);
+      font-size: 0.84rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.9rem, 4vw, 3rem);
+      line-height: 1.05;
+    }
+    .hero-copy {
+      margin: 0.7rem 0 0;
+      color: var(--ink-soft);
+      max-width: 76ch;
+    }
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      margin-top: 0.95rem;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.42rem;
+      padding: 0.35rem 0.62rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.82);
+      border: 1px solid var(--line);
+      font-size: 0.9rem;
+    }
+    .pill-label {
+      color: var(--ink-soft);
+      font-weight: 700;
+    }
+    .content-grid {
+      display: grid;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .summary-grid {
+      display: grid;
+      gap: 0.8rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .summary-card,
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .summary-card {
+      padding: 0.95rem 1rem;
+    }
+    .summary-card dt {
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .summary-card dd {
+      margin: 0.35rem 0 0;
+      font-size: 1.65rem;
+      font-weight: 800;
+      line-height: 1.05;
+    }
+    .summary-card p {
+      margin: 0.22rem 0 0;
+      color: var(--ink-soft);
+      font-size: 0.9rem;
+    }
+    .panel {
+      padding: 1rem 1.05rem 1.1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.2rem;
+      font-size: 1.15rem;
+    }
+    .panel-copy {
+      margin: 0 0 0.8rem;
+      color: var(--ink-soft);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      align-items: center;
+      margin-bottom: 0.85rem;
+    }
+    .toolbar input[type="search"] {
+      min-width: min(360px, 100%);
+      max-width: 100%;
+      padding: 0.62rem 0.74rem;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.88);
+      color: var(--ink);
+      font: inherit;
+    }
+    .toolbar-btn {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.88);
+      color: var(--ink);
+      padding: 0.58rem 0.8rem;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+    .toolbar-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(11, 122, 117, 0.45);
+      background: #fff;
+    }
+    .toolbar-note {
+      color: var(--ink-soft);
+      font-size: 0.9rem;
+    }
+    .metrics-table-host,
+    .miscut-table-host {
+      min-height: 320px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.62);
+      overflow: hidden;
+    }
+    .fallback-note {
+      margin: 0 0 0.75rem;
+      padding: 0.75rem 0.85rem;
+      border-radius: 12px;
+      background: rgba(214, 124, 44, 0.10);
+      border: 1px solid rgba(214, 124, 44, 0.22);
+      color: #7c4815;
+    }
+    .static-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      background: rgba(255,255,255,0.72);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .static-table th,
+    .static-table td {
+      padding: 0.45rem 0.55rem;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    .static-table th {
+      background: rgba(11, 122, 117, 0.08);
+      font-weight: 800;
+    }
+    .plot-grid {
+      display: grid;
+      gap: 0.9rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+    .plot-card {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel-strong);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .plot-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: rgba(255,255,255,0.8);
+    }
+    .plot-card figcaption {
+      padding: 0.75rem 0.85rem 0.9rem;
+    }
+    .plot-title {
+      margin: 0;
+      font-weight: 800;
+    }
+    .plot-source {
+      margin: 0.18rem 0 0;
+      color: var(--ink-soft);
+      font-size: 0.88rem;
+    }
+    details.miscut-panel > summary {
+      cursor: pointer;
+      font-weight: 800;
+      list-style: none;
+    }
+    details.miscut-panel > summary::-webkit-details-marker {
+      display: none;
+    }
+    .metric-bar-cell {
+      position: relative;
+      min-height: 1.45rem;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 0.22rem;
+      overflow: hidden;
+    }
+    .metric-bar-fill {
+      position: absolute;
+      left: 0.22rem;
+      right: auto;
+      top: 50%;
+      height: 72%;
+      transform: translateY(-50%);
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(11, 122, 117, 0.18), rgba(11, 122, 117, 0.46));
+      pointer-events: none;
+    }
+    .metric-bar-value {
+      position: relative;
+      z-index: 1;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      padding-left: 0.3rem;
+    }
+    .metric-text-cell {
+      white-space: nowrap;
+    }
+    @media (max-width: 720px) {
+      .page-shell {
+        width: min(100vw - 1rem, 100%);
+        padding-top: 0.7rem;
+      }
+      .panel,
+      .hero {
+        border-radius: 16px;
+      }
+      .toolbar input[type="search"] {
+        min-width: 100%;
+      }
+    }
+  </style>
+  {% if tabulator_css %}
+  <style>{{ tabulator_css | safe }}</style>
+  {% endif %}
+</head>
+<body>
+  <main class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">Tackle Metrics</p>
+      <h1>{{ title }}</h1>
+      <p class="hero-copy">
+        Self-contained sample metrics report for <span class="mono">{{ analysis_label }}</span>. This is meant to be easy to share and quick to scan, with the full metrics table up front and the plot outputs bundled below.
+      </p>
+      <div class="pill-row">
+        {% for pill in context_pills %}
+        <span class="pill"><span class="pill-label">{{ pill.label }}:</span> <span>{{ pill.value }}</span></span>
+        {% endfor %}
+      </div>
+    </header>
+
+    <div class="content-grid">
+      <section class="summary-grid" aria-label="Summary cards">
+        {% for card in summary_cards %}
+        <dl class="summary-card">
+          <dt>{{ card.label }}</dt>
+          <dd>{{ card.value }}</dd>
+          {% if card.detail %}
+          <p>{{ card.detail }}</p>
+          {% endif %}
+        </dl>
+        {% endfor %}
+      </section>
+
+      <section class="panel">
+        <h2>Interactive Metrics Table</h2>
+        <p class="panel-copy">
+          Sample metadata stays on the left, numeric metric columns can be sorted, and the bar cells help surface relative differences without losing the exact values.
+        </p>
+        <div class="toolbar">
+          <input id="metrics-search" type="search" placeholder="Search samples, metadata, or metric values" />
+          <button class="toolbar-btn" id="metrics-reset" type="button">Reset</button>
+          {% if tabulator_available %}
+          <button class="toolbar-btn" id="metrics-download" type="button">Download CSV</button>
+          {% endif %}
+          <span class="toolbar-note" id="metrics-status"></span>
+        </div>
+        {% if not tabulator_available %}
+        <p class="fallback-note">
+          Tabulator could not be bundled during report generation, so this report is falling back to a plain HTML table.
+        </p>
+        {{ static_metrics_table_html | safe }}
+        {% else %}
+        <div class="metrics-table-host" id="metrics-table"></div>
+        {% endif %}
+      </section>
+
+      {% if miscut_payload %}
+      <section class="panel">
+        <details class="miscut-panel">
+          <summary>Miscut Ratio Detail</summary>
+          <p class="panel-copy" style="margin-top:0.7rem;">
+            Included because the metrics command already computes it when the source values are available. It stays tucked away by default.
+          </p>
+          {% if not tabulator_available %}
+          {{ static_miscut_table_html | safe }}
+          {% else %}
+          <div class="miscut-table-host" id="miscut-table"></div>
+          {% endif %}
+        </details>
+      </section>
+      {% endif %}
+
+      {% if plots %}
+      <section class="panel">
+        <h2>Bundled Plots</h2>
+        <p class="panel-copy">These are the PNG outputs from the metrics workflow, embedded directly into this HTML so the report stays shareable as a single file.</p>
+        <div class="plot-grid">
+          {% for plot in plots %}
+          <figure class="plot-card">
+            <img src="{{ plot.data_url }}" alt="{{ plot.title }}" loading="lazy" />
+            <figcaption>
+              <p class="plot-title">{{ plot.title }}</p>
+              <p class="plot-source"><span class="mono">{{ plot.source_name }}</span></p>
+            </figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </div>
+  </main>
+
+  <script id="metrics-report-payload" type="application/json">
+    {{ {"metrics": metrics_payload, "miscut": miscut_payload, "download_name": metrics_download_name} | tojson }}
+  </script>
+  {% if tabulator_js %}
+  <script>{{ tabulator_js | safe }}</script>
+  {% endif %}
+  {% if tabulator_available %}
+  <script>
+    (function() {
+      const payloadEl = document.getElementById("metrics-report-payload");
+      if (!payloadEl) return;
+      const payload = JSON.parse(payloadEl.textContent || "{}");
+      const metrics = payload.metrics || {};
+      const miscut = payload.miscut || null;
+      const rows = Array.isArray(metrics.rows) ? metrics.rows : [];
+      const columnSchema = Array.isArray(metrics.column_schema) ? metrics.column_schema : [];
+      const searchInput = document.getElementById("metrics-search");
+      const resetButton = document.getElementById("metrics-reset");
+      const downloadButton = document.getElementById("metrics-download");
+      const statusEl = document.getElementById("metrics-status");
+
+      function hasValue(value) {
+        if (value == null) return false;
+        if (typeof value === "string") return value.trim() !== "";
+        return true;
+      }
+
+      function escHtml(value) {
+        return String(value == null ? "" : value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function computeMaxByField(schema, sourceRows) {
+        const out = {};
+        (schema || []).forEach(col => {
+          if (!col || !col.numeric) return;
+          const field = String(col.field || "");
+          const max = (sourceRows || []).reduce((acc, row) => {
+            const value = Number(row ? row[field] : NaN);
+            return Number.isFinite(value) ? Math.max(acc, value) : acc;
+          }, 0);
+          out[field] = max > 0 ? max : 1;
+        });
+        return out;
+      }
+
+      const numericMaxByField = computeMaxByField(columnSchema, rows);
+
+      function formatNumber(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return value == null ? "" : String(value);
+        if (Math.abs(num - Math.round(num)) < 1e-9) return String(Math.round(num));
+        return num.toFixed(2).replace(/\.00$/, "");
+      }
+
+      function barTextFormatter(cell) {
+        const field = cell.getColumn().getField();
+        const rawValue = cell.getValue();
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) {
+          return "<span class='metric-text-cell'>" + escHtml(rawValue) + "</span>";
+        }
+        const max = numericMaxByField[field] || 1;
+        const pct = Math.max(6, Math.round((value / max) * 1000) / 10);
+        return [
+          "<div class='metric-bar-cell'>",
+          "<div class='metric-bar-fill' style='width:", String(Math.min(100, pct)), "%'></div>",
+          "<span class='metric-bar-value'>", escHtml(formatNumber(value)), "</span>",
+          "</div>"
+        ].join("");
+      }
+
+      function textFormatter(cell) {
+        const value = cell.getValue();
+        return "<span class='metric-text-cell'>" + escHtml(value) + "</span>";
+      }
+
+      function buildColumns(schema) {
+        return (schema || []).map(col => ({
+          title: String(col.title || ""),
+          field: String(col.field || ""),
+          frozen: !!col.frozen,
+          headerSort: true,
+          headerFilter: col.numeric ? false : "input",
+          sorter: col.numeric ? "number" : "string",
+          hozAlign: col.numeric ? "right" : "left",
+          minWidth: col.kind === "sample" ? 160 : (col.numeric ? 132 : 170),
+          formatter: col.numeric ? barTextFormatter : textFormatter,
+          tooltip: true,
+        }));
+      }
+
+      function globalMatcher(query) {
+        const needle = String(query || "").trim().toLowerCase();
+        if (!needle) {
+          return null;
+        }
+        return function(row) {
+          return Object.values(row || {}).some(value => {
+            if (!hasValue(value)) return false;
+            return String(value).toLowerCase().indexOf(needle) !== -1;
+          });
+        };
+      }
+
+      function updateStatus(table, totalRows) {
+        if (!statusEl || !table || typeof table.getDataCount !== "function") return;
+        const visible = table.getDataCount("active");
+        statusEl.textContent = visible === totalRows
+          ? String(totalRows) + " rows"
+          : String(visible) + " of " + String(totalRows) + " rows";
+      }
+
+      const metricsTable = new window.Tabulator("#metrics-table", {
+        data: rows,
+        columns: buildColumns(columnSchema),
+        layout: "fitDataTable",
+        pagination: "local",
+        paginationSize: 25,
+        maxHeight: "72vh",
+        renderHorizontal: "virtual",
+      });
+      updateStatus(metricsTable, rows.length);
+
+      if (searchInput) {
+        searchInput.addEventListener("input", () => {
+          const matcher = globalMatcher(searchInput.value);
+          if (matcher) {
+            metricsTable.setFilter(matcher);
+          } else {
+            metricsTable.clearFilter(true);
+          }
+          updateStatus(metricsTable, rows.length);
+        });
+      }
+
+      if (resetButton) {
+        resetButton.addEventListener("click", () => {
+          if (searchInput) {
+            searchInput.value = "";
+          }
+          metricsTable.clearFilter(true);
+          updateStatus(metricsTable, rows.length);
+        });
+      }
+
+      if (downloadButton) {
+        downloadButton.addEventListener("click", () => {
+          metricsTable.download("csv", String(payload.download_name || "metrics.csv"));
+        });
+      }
+
+      if (miscut && Array.isArray(miscut.rows) && miscut.rows.length) {
+        let miscutTable = null;
+        const miscutDetails = document.querySelector("details.miscut-panel");
+        const createMiscutTable = function() {
+          if (miscutTable) return miscutTable;
+          miscutTable = new window.Tabulator("#miscut-table", {
+            data: miscut.rows,
+            columns: buildColumns(Array.isArray(miscut.column_schema) ? miscut.column_schema : []),
+            layout: "fitDataTable",
+            pagination: "local",
+            paginationSize: 20,
+            maxHeight: "46vh",
+            renderHorizontal: "virtual",
+          });
+          return miscutTable;
+        };
+        if (miscutDetails) {
+          miscutDetails.addEventListener("toggle", () => {
+            if (miscutDetails.open) {
+              createMiscutTable();
+            }
+          });
+          if (miscutDetails.open) {
+            createMiscutTable();
+          }
+        } else {
+          createMiscutTable();
+        }
+      }
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>

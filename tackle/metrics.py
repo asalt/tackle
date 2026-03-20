@@ -1,5 +1,6 @@
 import os
 from collections import OrderedDict
+from pathlib import Path
 from warnings import warn
 
 from functools import partial
@@ -26,7 +27,7 @@ from .utils import (
 from . import grdevice_helper
 
 
-from .containers import TAXON_MAPPER
+# from .containers import TAXON_MAPPER
 
 idx = pd.IndexSlice
 
@@ -110,9 +111,30 @@ def _build_metrics_from_filtered(df_filtered: pd.DataFrame, *, before_norm: bool
     return data
 
 
+def _normalize_ratio_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    frame = frame.fillna(0)
+    return frame.apply(lambda col: col / col.sum() if col.sum() else col * 0)
+
+
+def _miscut_long_frame(frame: pd.DataFrame, *, value_name: str) -> pd.DataFrame:
+    normalized = _normalize_ratio_frame(frame)
+    reset = normalized.reset_index()
+    first_col = reset.columns[0]
+    if first_col != "miscuts":
+        reset = reset.rename(columns={first_col: "miscuts"})
+    return reset.melt(id_vars="miscuts", var_name="name", value_name=value_name)
+
+
+def _append_plot_png(plot_png_paths, plot_root: str) -> None:
+    plot_path = Path(f"{plot_root}.png")
+    if plot_path.exists():
+        plot_png_paths.append(plot_path)
+
+
 def make_metrics(
     data_obj, file_fmts, png_res=300, before_filter=False, before_norm=False, full=False
 ):
+    from .metrics_html import build_metrics_html_report
 
     rc = {
         "font.family": "sans-serif",
@@ -185,25 +207,18 @@ def make_metrics(
 
     # ========================================================================
 
+    miscut_frame = None
     trypsin_ready = bool(data) and all("Trypsin" in data[n] for n in data.keys())
     trypsinp_ready = bool(data) and all("Trypsin/P" in data[n] for n in data.keys())
     if trypsin_ready and trypsinp_ready:
         trypsin = OrderedDict((n, data[n]["Trypsin"]) for n in data.keys())
-        trypsin = pd.DataFrame(trypsin)
-        trypsin_df = trypsin.apply(lambda x: x / sum(x))
+        trypsin_df = _normalize_ratio_frame(pd.DataFrame(trypsin))
 
         trypsinP = OrderedDict((n, data[n]["Trypsin/P"]) for n in data.keys())
-        trypsinP = pd.DataFrame(trypsinP).fillna(0)
-        trypsinP_df = trypsinP.apply(lambda x: x / sum(x))
-        # trypsinP_df.index.name = 'miscuts'
-        # trypsinP_df = trypsin_df.reset_index()
+        trypsinP_df = _normalize_ratio_frame(pd.DataFrame(trypsinP))
 
-        trypsin_dfr = trypsin_df.melt(var_name="name", value_name="Trypsin")
-        trypsin_dfr.index.name = "miscuts"
-        trypsin_dfr = trypsin_dfr.reset_index()
-        trypsinP_dfr = trypsinP_df.melt(var_name="name", value_name="Trypsin/P")
-        trypsinP_dfr.index.name = "miscuts"
-        trypsinP_dfr = trypsinP_dfr.reset_index()
+        trypsin_dfr = _miscut_long_frame(trypsin_df, value_name="Trypsin")
+        trypsinP_dfr = _miscut_long_frame(trypsinP_df, value_name="Trypsin/P")
 
         miscut_frame = pd.DataFrame.merge(
             trypsin_dfr, trypsinP_dfr, on=["miscuts", "name"], how="outer"
@@ -266,10 +281,12 @@ def make_metrics(
     num_samples = to_export.shape[0]
     plot_width = min(24, max(9, num_samples // 2))
     plot_height = 9
+    plot_png_paths = []
 
     for plot_name, plot_obj in iter_named_items(metrics_plots):
+        plot_root = f"{export_name}_{plot_name}"
         for file_fmt in file_fmts:
-            out = f"{export_name}_{plot_name}{file_fmt}"
+            out = f"{plot_root}{file_fmt}"
             grdevice = grdevice_helper.get_device(
                 filetype=file_fmt,
                 width=plot_width,
@@ -281,6 +298,7 @@ def make_metrics(
                 r_print(plot_obj)
             finally:
                 grdevices.dev_off()
+        _append_plot_png(plot_png_paths, plot_root)
     # ==================================================================
 
     # ggridges = importr("ggridges")
@@ -352,6 +370,7 @@ def make_metrics(
             # print(ret[0])
             grdevices.dev_off()  # close file
             print(".done", flush=True)
+        _append_plot_png(plot_png_paths, outname)
 
     # area = pd.DataFrame(data=[data[n]['area'] for n in data.keys()], index=data.keys())
 
@@ -605,6 +624,33 @@ def make_metrics(
 
     outname = namegen("metrics_genecounts")
     save_multiple(fig, outname, *file_fmts)
+    _append_plot_png(plot_png_paths, outname)
+
+    metrics_html_path = None
+    try:
+        metrics_html_path = build_metrics_html_report(
+            out_html=export_name + ".html",
+            metrics_df=to_export,
+            metadata_df=data_obj.col_metadata,
+            miscut_df=miscut_frame,
+            plot_paths=plot_png_paths,
+            export_stem=export_name,
+            title=f"Tackle Metrics Report: {data_obj.outpath_name}",
+            analysis_label=data_obj.outpath_name,
+            before_filter=before_filter,
+            before_norm=before_norm,
+        )
+    except Exception as exc:
+        warn(f"Skipping metrics HTML report: {exc}")
+
+    return {
+        "metrics_tsv": Path(export_name + ".tsv"),
+        "metrics_html": metrics_html_path,
+        "miscut_tsv": None
+        if miscut_frame is None
+        else Path(namegen("miscut_ratio") + ".tsv"),
+        "plot_pngs": plot_png_paths,
+    }
 
     # # ==========================  gene count overlap
     # # this is just not practical when the number of experiments grows.

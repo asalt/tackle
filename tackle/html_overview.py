@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import difflib
+import hashlib
 import html
+import io
 import re
 import shutil
 import json
@@ -11,10 +13,12 @@ import subprocess
 import tempfile
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from urllib.request import Request, urlopen
+import gzip
 
 try:
     from tqdm import tqdm
@@ -39,6 +43,7 @@ class VolcanoTableItem:
     asset_relpath: str
     preview_table_html: str
     meta: Dict[str, Any]
+    resource_id: str = ""
     top_hits: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[str] = None
 
@@ -50,6 +55,7 @@ class PlotItem:
     source_relpath: str
     source_path: str
     asset_relpath: str
+    resource_id: str = ""
     volcano_table: Optional[VolcanoTableItem] = None
 
 
@@ -74,6 +80,62 @@ _CATEGORY_LABELS: Dict[str, str] = {
 
 _DEFAULT_ORDER: Tuple[str, ...] = ("metrics", "cluster", "pca", "umap", "volcano", "topdiff-cluster")
 
+_PROTEIN_META_BASE_FIELDS: Tuple[str, ...] = (
+    "GeneID",
+    "TaxonID",
+    "GeneSymbol",
+    "GeneDescription",
+    "Description",
+    "FunCats",
+    "GeneType",
+    "median_isoform_mass",
+    "MitoCarta_Pathways",
+)
+
+_PROTEIN_META_TAG_FIELDS: Tuple[str, ...] = (
+    "IDG",
+    "CYTO_NUC",
+    "ER_GOLGI",
+    "MitoCarta",
+    "SurfaceLabel",
+    "CellMembrane",
+    "MATRISOME",
+    "SECRETED",
+    "glycomineN",
+    "glycomineO",
+    "IO",
+)
+
+_PROTEIN_META_METRIC_PREFIXES: Tuple[Tuple[str, str], ...] = (
+    ("PeptideCount_S_u2g_", "peptide_count_s_u2g"),
+    ("PeptideCount_u2g_", "peptide_count_u2g"),
+    ("PeptideCount_S_", "peptide_count_s"),
+    ("PeptideCount_", "peptide_count"),
+    ("PSMs_S_u2g_", "psms_s_u2g"),
+    ("PSMs_u2g_", "psms_u2g"),
+    ("PSMs_S_", "psms_s"),
+    ("PSMs_", "psms"),
+)
+
+_PROTEIN_META_METRIC_LABELS: Dict[str, str] = {
+    "peptide_count_total": "Max peptide count",
+    "peptide_count_u2g_total": "Max unique peptide count",
+    "peptide_count_s_total": "Max strict peptide count",
+    "peptide_count_s_u2g_total": "Max strict unique peptide count",
+    "psms_total": "Max PSMs",
+    "psms_u2g_total": "Max unique PSMs",
+    "psms_s_total": "Max strict PSMs",
+    "psms_s_u2g_total": "Max strict unique PSMs",
+}
+
+_TABULATOR_VERSION = "6.3.1"
+_TABULATOR_JS_URL = (
+    f"https://unpkg.com/tabulator-tables@{_TABULATOR_VERSION}/dist/js/tabulator.min.js"
+)
+_TABULATOR_CSS_URL = (
+    f"https://unpkg.com/tabulator-tables@{_TABULATOR_VERSION}/dist/css/tabulator.min.css"
+)
+
 
 def _is_under(path: Path, parent: Path) -> bool:
     try:
@@ -85,7 +147,7 @@ def _is_under(path: Path, parent: Path) -> bool:
 
 def _classify_plot_png(relpath: str) -> Optional[str]:
     rel_lower = str(relpath).lower().replace("\\", "/")
-    if "topdiff" in rel_lower and ("cluster" in rel_lower or "clustermap" in rel_lower):
+    if rel_lower.startswith("topdiff/") or "/topdiff/" in rel_lower:
         return "topdiff-cluster"
     if "umap" in rel_lower:
         return "umap"
@@ -320,27 +382,80 @@ def _group_volcano_by_contrast_and_sort(items: Sequence[PlotItem]) -> List[Dict[
     return out
 
 
-def _render_html_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
-    pieces = ["<table class='data-table'>", "<thead><tr>"]
-    for head in headers:
+def _render_html_table(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+    *,
+    interactive_protein_lookup: bool = False,
+) -> str:
+    header_names = [str(head) for head in headers]
+    gene_id_idx = header_names.index("GeneID") if "GeneID" in header_names else None
+    gene_symbol_idx = header_names.index("GeneSymbol") if "GeneSymbol" in header_names else None
+    use_lookup = bool(
+        interactive_protein_lookup and (gene_id_idx is not None or gene_symbol_idx is not None)
+    )
+
+    table_classes = ["data-table"]
+    if use_lookup:
+        table_classes.append("protein-data-table")
+
+    pieces = [f"<table class='{' '.join(table_classes)}'>", "<thead><tr>"]
+    for head in header_names:
         pieces.append(f"<th>{html.escape(str(head))}</th>")
+    if use_lookup:
+        pieces.append("<th>Protein</th>")
     pieces.append("</tr></thead><tbody>")
     for row in rows:
-        pieces.append("<tr>")
-        for value in row:
+        row_values = list(row)
+        gene_id = ""
+        gene_symbol = ""
+        if gene_id_idx is not None and gene_id_idx < len(row_values):
+            gene_id = str(row_values[gene_id_idx]).strip()
+        if gene_symbol_idx is not None and gene_symbol_idx < len(row_values):
+            gene_symbol = str(row_values[gene_symbol_idx]).strip()
+
+        row_attrs: List[str] = []
+        if use_lookup and gene_id:
+            row_attrs.append(f"data-protein-id=\"{html.escape(gene_id)}\"")
+        if use_lookup and gene_symbol:
+            row_attrs.append(f"data-protein-symbol=\"{html.escape(gene_symbol)}\"")
+        attrs = f" {' '.join(row_attrs)}" if row_attrs else ""
+
+        pieces.append(f"<tr{attrs}>")
+        for value in row_values:
             pieces.append(f"<td>{html.escape(str(value))}</td>")
+        if use_lookup:
+            if gene_id or gene_symbol:
+                parts = ["<button class='protein-meta-btn' type='button'"]
+                if gene_id:
+                    parts.append(f" data-protein-id=\"{html.escape(gene_id)}\"")
+                if gene_symbol:
+                    parts.append(f" data-protein-symbol=\"{html.escape(gene_symbol)}\"")
+                parts.append(">Details</button>")
+                pieces.append(f"<td>{''.join(parts)}</td>")
+            else:
+                pieces.append("<td><span class='muted'>n/a</span></td>")
         pieces.append("</tr>")
     pieces.append("</tbody></table>")
     return "".join(pieces)
 
 
-def _df_preview_table_html(df: pd.DataFrame, *, max_rows: int = 30) -> str:
+def _df_preview_table_html(
+    df: pd.DataFrame,
+    *,
+    max_rows: int = 30,
+    interactive_protein_lookup: bool = False,
+) -> str:
     if df is None or df.empty:
         return "<p class='muted'>No rows.</p>"
     view = df.head(int(max_rows)).copy()
     headers = [str(c) for c in view.columns]
     rows = list(view.itertuples(index=False, name=None))
-    return _render_html_table(headers, rows)
+    return _render_html_table(
+        headers,
+        rows,
+        interactive_protein_lookup=interactive_protein_lookup,
+    )
 
 
 def _copy_or_symlink(src: Path, dst: Path, *, copy: bool, force: bool) -> None:
@@ -358,6 +473,645 @@ def _copy_or_symlink(src: Path, dst: Path, *, copy: bool, force: bool) -> None:
 def _data_uri_for_file(path: Path, *, mime: str) -> str:
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def _data_uri_for_bytes(data: bytes, *, mime: str) -> str:
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _write_bytes(dst: Path, data: bytes, *, force: bool) -> None:
+    if dst.exists() and not force:
+        raise FileExistsError(f"{dst} already exists (use --force to overwrite)")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(data)
+
+
+def _make_resource_id(kind: str, relpath: str) -> str:
+    digest = hashlib.sha1(str(relpath).encode("utf-8")).hexdigest()[:12]
+    stem = _slugify_html_id(Path(str(relpath)).stem)[:40]
+    prefix = _slugify_html_id(kind)[:20]
+    return f"{prefix}-{stem}-{digest}"
+
+
+def _gzip_bytes(data: bytes, *, compresslevel: int = 9, mtime: int = 0) -> bytes:
+    buf = io.BytesIO()
+    with gzip.GzipFile(
+        fileobj=buf,
+        mode="wb",
+        compresslevel=int(compresslevel),
+        mtime=int(mtime),
+    ) as handle:
+        handle.write(data)
+    return buf.getvalue()
+
+
+def _clean_payload_scalar(value: Any, *, float_digits: Optional[int] = None) -> Any:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        if float_digits is not None:
+            value = round(float(value), int(float_digits))
+        if float(value).is_integer():
+            return int(value)
+        return float(value)
+    return value
+
+
+def _clean_json_row(row: Dict[str, Any], *, float_digits: Optional[int] = None) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in row.items():
+        cleaned = _clean_payload_scalar(value, float_digits=float_digits)
+        if cleaned is None:
+            continue
+        out[str(key)] = cleaned
+    return out
+
+
+def _parse_protein_metric_column(name: str) -> Optional[Tuple[str, str]]:
+    text = str(name)
+    for prefix, metric_key in _PROTEIN_META_METRIC_PREFIXES:
+        if text.startswith(prefix):
+            run_id = text[len(prefix) :].strip("_")
+            if run_id:
+                return metric_key, run_id
+    return None
+
+
+def _merge_protein_metric_value(prior: Any, current: Any) -> Any:
+    if prior is None:
+        return current
+    if current is None:
+        return prior
+    try:
+        merged = max(float(prior), float(current))
+    except Exception:
+        return current
+    return _clean_payload_scalar(merged, float_digits=2)
+
+
+def _find_protein_metadata_export_tsv(root: Path) -> Optional[Tuple[Path, List[str]]]:
+    export_root = root / "export"
+    if not export_root.exists() or not export_root.is_dir():
+        return None
+
+    ranked: List[Tuple[int, int, str, Path, List[str]]] = []
+    for path in sorted(export_root.rglob("*.tsv")):
+        try:
+            header_df = pd.read_csv(path, sep="\t", nrows=0)
+        except Exception:
+            continue
+
+        columns = [str(c) for c in header_df.columns]
+        if "GeneID" not in columns:
+            continue
+
+        score = 0
+        lower_path = str(path.relative_to(root)).lower().replace("\\", "/")
+        if "data_mspc" in lower_path:
+            score += 100
+        if "protein" in lower_path:
+            score += 10
+        if "GeneSymbol" in columns:
+            score += 15
+        if "GeneDescription" in columns or "Description" in columns:
+            score += 15
+
+        metric_cols = [c for c in columns if _parse_protein_metric_column(c) is not None]
+        if not metric_cols:
+            continue
+        score += min(len(metric_cols), 25)
+
+        ranked.append((score, len(columns), lower_path, path, columns))
+
+    if not ranked:
+        return None
+
+    ranked.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    _, _, _, best_path, best_cols = ranked[0]
+    return best_path, best_cols
+
+
+def _build_interactive_protein_metadata_payload(
+    *,
+    root: Path,
+    pandas_low_memory: bool,
+) -> Dict[str, Any]:
+    found = _find_protein_metadata_export_tsv(root)
+    if found is None:
+        raise RuntimeError(
+            "Interactive protein metadata needs an export TSV with GeneID and peptide/PSM columns "
+            "(for example export/data_MSPC*/.../*.tsv)."
+        )
+
+    source_path, source_columns = found
+    base_cols = [c for c in _PROTEIN_META_BASE_FIELDS if c in source_columns]
+    tag_cols = [c for c in _PROTEIN_META_TAG_FIELDS if c in source_columns]
+    metric_cols = [c for c in source_columns if _parse_protein_metric_column(c) is not None]
+
+    usecols: List[str] = []
+    for col in [*base_cols, *tag_cols, *metric_cols]:
+        if col not in usecols:
+            usecols.append(col)
+
+    if "GeneID" not in usecols:
+        usecols.insert(0, "GeneID")
+
+    df = pd.read_csv(
+        source_path,
+        sep="\t",
+        usecols=usecols,
+        low_memory=pandas_low_memory,
+        dtype={"GeneID": str},
+    )
+    if "GeneID" not in df.columns:
+        raise RuntimeError(f"Protein metadata source is missing GeneID: {source_path}")
+
+    proteins: Dict[str, Dict[str, Any]] = {}
+    symbol_to_gene_id: Dict[str, str] = {}
+    ambiguous_symbols = set()
+    pretty_field_names = {
+        "TaxonID": "taxon_id",
+        "GeneSymbol": "gene_symbol",
+        "GeneDescription": "gene_description",
+        "Description": "gene_description",
+        "FunCats": "fun_cats",
+        "GeneType": "gene_type",
+        "median_isoform_mass": "median_isoform_mass",
+        "MitoCarta_Pathways": "mitocarta_pathways",
+    }
+
+    for row in df.to_dict(orient="records"):
+        gene_id_raw = _clean_payload_scalar(row.get("GeneID"))
+        if gene_id_raw is None:
+            continue
+        gene_id = str(gene_id_raw)
+        protein = proteins.setdefault(gene_id, {"gene_id": gene_id})
+
+        for col in base_cols:
+            if col == "GeneID":
+                continue
+            val = _clean_payload_scalar(row.get(col), float_digits=2)
+            if val is None:
+                continue
+            key = pretty_field_names.get(col, col.lower())
+            if key not in protein or protein.get(key) in (None, ""):
+                protein[key] = val
+
+        annotations = protein.setdefault("annotations", {})
+        for col in tag_cols:
+            val = _clean_payload_scalar(row.get(col))
+            if val is None:
+                continue
+            annotations[str(col)] = val
+        if not annotations:
+            protein.pop("annotations", None)
+
+        metrics = protein.setdefault("metrics", {})
+        runs = protein.setdefault("runs", {})
+        for col in metric_cols:
+            parsed = _parse_protein_metric_column(col)
+            if parsed is None:
+                continue
+            metric_key, run_id = parsed
+            val = _clean_payload_scalar(row.get(col), float_digits=2)
+            if val is None:
+                continue
+
+            total_key = f"{metric_key}_total"
+            metrics[total_key] = _merge_protein_metric_value(metrics.get(total_key), val)
+
+            run_metrics = runs.setdefault(run_id, {})
+            run_metrics[metric_key] = _merge_protein_metric_value(run_metrics.get(metric_key), val)
+        if not metrics:
+            protein.pop("metrics", None)
+        if not runs:
+            protein.pop("runs", None)
+
+        gene_symbol = protein.get("gene_symbol")
+        if gene_symbol:
+            symbol = str(gene_symbol)
+            existing = symbol_to_gene_id.get(symbol)
+            if existing is None:
+                symbol_to_gene_id[symbol] = gene_id
+            elif existing != gene_id:
+                ambiguous_symbols.add(symbol)
+
+    for symbol in ambiguous_symbols:
+        symbol_to_gene_id.pop(symbol, None)
+
+    return {
+        "schema_version": 1,
+        "kind": "protein_metadata",
+        "analysis_base_dir": str(root),
+        "source_table": str(source_path.relative_to(root)).replace("\\", "/"),
+        "protein_count": int(len(proteins)),
+        "metric_labels": dict(_PROTEIN_META_METRIC_LABELS),
+        "proteins": proteins,
+        "symbol_to_gene_id": symbol_to_gene_id,
+    }
+
+
+def _pick_interactive_volcano_p_column(columns: Sequence[str]) -> Optional[str]:
+    cols = {str(col) for col in columns}
+    if "pAdj" in cols:
+        return "pAdj"
+    if "pValue" in cols:
+        return "pValue"
+    return None
+
+
+def _build_volcano_dataset_payload(
+    *,
+    df: pd.DataFrame,
+    source_relpath: str,
+    title: str,
+    meta: Dict[str, Any],
+    top_hits: List[Dict[str, Any]],
+    error: Optional[str],
+) -> Dict[str, Any]:
+    records = [
+        _clean_json_row(row, float_digits=10)
+        for row in df.to_dict(orient="records")
+    ]
+    columns = [str(col) for col in df.columns]
+    plot_p_col = _pick_interactive_volcano_p_column(columns)
+    return {
+        "schema_version": 1,
+        "kind": "volcano_dataset",
+        "source_table": str(source_relpath),
+        "title": str(title),
+        "row_count": int(len(records)),
+        "columns": columns,
+        "plot_p_col": str(plot_p_col) if plot_p_col else None,
+        "rows": records,
+        "meta": dict(meta or {}),
+        "top_hits": [
+            _clean_json_row(dict(row), float_digits=10) for row in (top_hits or [])
+        ],
+        "error": str(error) if error else None,
+    }
+
+
+def _encode_interactive_payload_obj_gz_json(payload_obj: Any, *, source_name: str) -> Dict[str, Any]:
+    minified = json.dumps(payload_obj, ensure_ascii=False, separators=(",", ":"))
+    json_bytes = minified.encode("utf-8")
+    gz_bytes = _gzip_bytes(json_bytes, compresslevel=9, mtime=0)
+    b64 = base64.b64encode(gz_bytes).decode("ascii")
+    sha256 = hashlib.sha256(gz_bytes).hexdigest()
+    return {
+        "source_name": source_name,
+        "mime": "application/gzip",
+        "data_url": f"data:application/gzip;base64,{b64}",
+        "sha256": sha256,
+        "json_bytes": int(len(json_bytes)),
+        "gz_bytes": int(len(gz_bytes)),
+        "b64_chars": int(len(b64)),
+    }
+
+
+def _effective_resource_mode(*, self_contained: bool, interactive_resource_mode: str) -> str:
+    mode = str(interactive_resource_mode or "auto").strip().lower() or "auto"
+    if mode not in {"auto", "inline", "chunked"}:
+        raise RuntimeError(
+            f"Unsupported interactive resource mode: {interactive_resource_mode}"
+        )
+    if mode == "auto":
+        return "inline" if self_contained else "chunked"
+    if mode == "chunked" and self_contained:
+        raise RuntimeError(
+            "Chunked interactive resources are not compatible with --self-contained. "
+            "Use --interactive-resource-mode inline or disable --self-contained."
+        )
+    return mode
+
+
+def _build_json_resource_entry(
+    *,
+    resource_id: str,
+    payload_obj: Any,
+    source_name: str,
+    kind: str,
+    resource_mode: str,
+    out_root: Path,
+    force: bool,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    encoded = _encode_interactive_payload_obj_gz_json(payload_obj, source_name=source_name)
+    entry = {
+        "id": str(resource_id),
+        "kind": str(kind),
+        "format": "json",
+        "compression": "gzip",
+        "source_name": str(source_name),
+        "sha256": str(encoded["sha256"]),
+        "json_bytes": int(encoded["json_bytes"]),
+        "bytes": int(encoded["gz_bytes"]),
+    }
+    if resource_mode == "inline":
+        entry["data_url"] = str(encoded["data_url"])
+    else:
+        relpath = f"assets/interactive/chunks/{resource_id}.json.gz"
+        _write_bytes(out_root / relpath, base64.b64decode(encoded["data_url"].split(",", 1)[1]), force=force)
+        entry["path"] = relpath
+    return entry, encoded
+
+
+def _build_plot_resource_entry(
+    *,
+    resource_id: str,
+    item: PlotItem,
+    resource_mode: str,
+    data_url: Optional[str],
+    path: Optional[str],
+    source_bytes: bytes,
+) -> Dict[str, Any]:
+    entry = {
+        "id": str(resource_id),
+        "kind": "plot_image",
+        "format": "png",
+        "compression": "none",
+        "source_name": str(Path(item.source_relpath).name),
+        "source_relpath": str(item.source_relpath),
+        "title": str(item.title),
+        "sha256": _sha256_bytes(source_bytes),
+        "bytes": int(len(source_bytes)),
+    }
+    if resource_mode == "inline":
+        if not data_url:
+            raise RuntimeError(f"Inline plot resource is missing data URL: {item.source_relpath}")
+        entry["data_url"] = str(data_url)
+    else:
+        if not path:
+            raise RuntimeError(f"Chunked plot resource is missing path: {item.source_relpath}")
+        entry["path"] = str(path)
+    return entry
+
+
+def _build_file_resource_entry(
+    *,
+    resource_id: str,
+    source_path: Path,
+    source_name: str,
+    kind: str,
+    format: str,
+    mime: str,
+    resource_mode: str,
+    out_root: Path,
+    path: Optional[str],
+    copy_assets: bool,
+    force: bool,
+) -> Dict[str, Any]:
+    source_bytes = source_path.read_bytes()
+    entry = {
+        "id": str(resource_id),
+        "kind": str(kind),
+        "format": str(format),
+        "compression": "none",
+        "source_name": str(source_name),
+        "sha256": _sha256_bytes(source_bytes),
+        "bytes": int(len(source_bytes)),
+    }
+    if resource_mode == "inline":
+        entry["data_url"] = _data_uri_for_bytes(source_bytes, mime=mime)
+        return entry
+
+    if not path:
+        raise RuntimeError(f"Chunked resource is missing a destination path: {source_name}")
+
+    dst = out_root / str(path)
+    _copy_or_symlink(source_path, dst, copy=copy_assets, force=force)
+    entry["path"] = str(path)
+    return entry
+
+
+def _encode_interactive_payload_gz_json(payload_path: Path) -> Dict[str, Any]:
+    text = payload_path.read_text(encoding="utf-8")
+    obj = json.loads(text)
+    return _encode_interactive_payload_obj_gz_json(obj, source_name=payload_path.name)
+
+
+def _find_plotly_bundle_path() -> Optional[Path]:
+    try:
+        import plotly  # type: ignore
+    except Exception:
+        return None
+
+    candidate = Path(plotly.__file__).resolve().parent / "package_data" / "plotly.min.js"
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None
+
+
+def _download_vendor_asset(*, url: str, dst: Path) -> Path:
+    if dst.exists() and dst.is_file():
+        return dst
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    req = Request(
+        str(url),
+        headers={
+            "User-Agent": "tackle-make-html/1.0",
+            "Accept": "*/*",
+        },
+    )
+    with urlopen(req, timeout=30) as response:
+        data = response.read()
+    if not data:
+        raise RuntimeError(f"Downloaded empty vendor asset from {url}")
+
+    tmp_dst = dst.with_name(f"{dst.name}.{uuid.uuid4().hex}.tmp")
+    tmp_dst.write_bytes(data)
+    tmp_dst.replace(dst)
+    return dst
+
+
+def _find_tabulator_bundle_paths() -> Optional[Tuple[Path, Path]]:
+    env_js = (os.environ.get("TACKLE_TABULATOR_JS") or "").strip()
+    env_css = (os.environ.get("TACKLE_TABULATOR_CSS") or "").strip()
+    if env_js or env_css:
+        if not (env_js and env_css):
+            logger.warning(
+                "Tabulator bundle overrides require both TACKLE_TABULATOR_JS and TACKLE_TABULATOR_CSS."
+            )
+            return None
+        js_path = Path(env_js).expanduser().resolve()
+        css_path = Path(env_css).expanduser().resolve()
+        if not js_path.exists() or not js_path.is_file():
+            logger.warning("Tabulator JS override does not exist: %s", js_path)
+            return None
+        if not css_path.exists() or not css_path.is_file():
+            logger.warning("Tabulator CSS override does not exist: %s", css_path)
+            return None
+        return js_path, css_path
+
+    cache_dir = Path(tempfile.gettempdir()) / "tackle_vendor_assets" / "tabulator" / _TABULATOR_VERSION
+    js_path = cache_dir / "tabulator.min.js"
+    css_path = cache_dir / "tabulator.min.css"
+    try:
+        _download_vendor_asset(url=_TABULATOR_JS_URL, dst=js_path)
+        _download_vendor_asset(url=_TABULATOR_CSS_URL, dst=css_path)
+    except Exception as exc:
+        logger.warning("Unable to resolve Tabulator vendor assets: %s", exc)
+        return None
+    return js_path, css_path
+
+
+def _effective_html_ai_timeout_seconds(timeout_seconds: float) -> float:
+    raw = (
+        os.environ.get("TACKLE_HTML_AI_TIMEOUT_SECONDS")
+        or os.environ.get("TACKLE_MAKE_HTML_AI_TIMEOUT_SECONDS")
+        or ""
+    ).strip()
+    if raw:
+        try:
+            return max(1.0, float(raw))
+        except ValueError:
+            pass
+    return max(1.0, min(float(timeout_seconds), 30.0))
+
+
+def _build_ai_summary_prompt(
+    *,
+    section_key: str,
+    section_label: str,
+    prompt_obj: Mapping[str, Any],
+    unmatched_volcano_tables: bool = False,
+) -> str:
+    base_rules = [
+        "Write a concise summary for this Tackle HTML report section.",
+        "Use 4-7 short bullets.",
+        "Begin with factual description grounded in the provided JSON: counts, files, tables, contrasts, sample/group labels, and numeric values when available.",
+        "Do not claim to see or interpret PNG image contents directly.",
+        "If the JSON supports it, add one clearly hedged interpretation bullet using language like 'suggests', 'is consistent with', or 'may indicate'.",
+        "Prefer describing the generated files and exported measurements over repeating long file paths.",
+        "If evidence is weak or incomplete, say so plainly instead of guessing.",
+    ]
+
+    section_rules: List[str] = []
+    key = str(section_key or "").strip().lower()
+    if unmatched_volcano_tables or key == "volcano-tables":
+        section_rules.extend(
+            [
+                "For unmatched volcano tables, summarize which TSV outputs are present, what contrasts they appear to represent, and any top-hit patterns visible in the exported rows.",
+                "Do not imply that a missing PNG was reviewed.",
+            ]
+        )
+    elif key == "pca":
+        section_rules.extend(
+            [
+                "For PCA, prioritize sample counts, metadata groupings, explained variance, and whether score tables suggest separation or overlap along PC axes.",
+                "Any interpretation about separation must be based on scores/variance TSV values and sample annotations, not on the unseen image.",
+            ]
+        )
+    elif key == "volcano":
+        section_rules.extend(
+            [
+                "For volcano sections, describe contrasts, significance metrics/cutoffs, directionality, and notable top-hit genes from the exported tables when present.",
+                "Any biological interpretation must stay cautious and be tied to the reported statistics rather than the plot image itself.",
+            ]
+        )
+    elif key == "topdiff-cluster":
+        section_rules.extend(
+            [
+                "For top-diff heatmaps, describe the contrasts, top-N variants, and output organization from the file names and metadata.",
+                "Do not claim clustering patterns unless they are supported by accompanying numeric context.",
+            ]
+        )
+    elif key in {"metrics", "cluster", "umap"}:
+        section_rules.append(
+            f"For {section_label or section_key}, describe what artifacts were produced and any concrete numeric context present in the provided JSON."
+        )
+
+    prompt_json = json.dumps(prompt_obj, ensure_ascii=False)
+    prompt_json = _truncate_text(prompt_json, max_chars=16000)
+
+    lines = base_rules[:]
+    if section_rules:
+        lines.append("Section-specific guidance:")
+        lines.extend(section_rules)
+    lines.append("")
+    lines.append(f"SECTION_JSON: {prompt_json}")
+    return "\n".join(lines)
+
+
+def _ai_summary_cache_dir(out_root: Path) -> Path:
+    return out_root / ".ai-cache"
+
+
+def _ai_summary_cache_path(cache_dir: Path, *, message: str) -> Path:
+    digest = hashlib.sha256(str(message).encode("utf-8")).hexdigest()
+    return cache_dir / f"{digest}.json"
+
+
+def _load_ai_summary_cache(cache_dir: Path, *, message: str) -> Optional[str]:
+    cache_path = _ai_summary_cache_path(cache_dir, message=message)
+    if not cache_path.exists() or not cache_path.is_file():
+        return None
+    try:
+        obj = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("AI summary cache read failed: %s (%s: %s)", cache_path, type(e).__name__, e)
+        return None
+
+    expected_hash = cache_path.stem
+    if str(obj.get("message_sha256") or "") != expected_hash:
+        return None
+    if str(obj.get("prompt_message") or "") != str(message):
+        return None
+
+    text = str(obj.get("response_message") or "").strip()
+    return text or None
+
+
+def _write_ai_summary_cache(
+    cache_dir: Path,
+    *,
+    message: str,
+    response: Mapping[str, Any],
+    section_key: str,
+    section_label: str,
+    model_label: str,
+) -> Path:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = _ai_summary_cache_path(cache_dir, message=message)
+    payload = {
+        "schema_version": 1,
+        "message_sha256": cache_path.stem,
+        "prompt_message": str(message),
+        "response": dict(response),
+        "response_message": str(response.get("message") or ""),
+        "section_key": str(section_key),
+        "section_label": str(section_label),
+        "model_label": str(model_label),
+        "cached_at": datetime.now().astimezone().isoformat(),
+    }
+    tmp_path = cache_dir / f".{cache_path.stem}.{uuid.uuid4().hex}.tmp"
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(cache_path)
+    return cache_path
 
 
 def _pngquant_available() -> bool:
@@ -474,7 +1228,9 @@ def _collect_plot_items(
 def _collect_volcano_tables(
     *,
     base_dir: Path,
+    out_root: Path,
     assets_dir: Optional[Path],
+    interactive_resource_mode: str,
     write_assets: bool,
     copy_assets: bool,
     force: bool,
@@ -486,8 +1242,9 @@ def _collect_volcano_tables(
     tsv_engine: str = "auto",
     pandas_low_memory: bool = False,
     max_preview_rows: int = 30,
+    interactive_protein_lookup: bool = False,
     exclude_dirs: Sequence[Path] = (),
-) -> List[VolcanoTableItem]:
+) -> Tuple[List[VolcanoTableItem], Dict[str, Dict[str, Any]]]:
     root = base_dir.resolve()
     needles = [s for s in filter_contains if s]
     excluded = [p.resolve() for p in exclude_dirs if p]
@@ -495,6 +1252,7 @@ def _collect_volcano_tables(
 
     tsvs = _collect_tsvs(root, patterns=[("volcano", "*.tsv")])
     out: List[VolcanoTableItem] = []
+    resource_entries: Dict[str, Dict[str, Any]] = {}
     for rel, path in tsvs:
         rel_str = str(rel).replace("\\", "/")
         if needles and not any(n in rel_str for n in needles):
@@ -516,6 +1274,7 @@ def _collect_volcano_tables(
         meta: Dict[str, Any] = {}
         top_hits: List[Dict[str, Any]] = []
         preview_html = ""
+        resource_id = ""
         try:
             df = _read_tsv(path, engine=tsv_engine, low_memory=pandas_low_memory)
             try:
@@ -556,23 +1315,59 @@ def _collect_volcano_tables(
 
                     if picked is None or picked.empty:
                         error = fallback_error or "No rows matched filters (or no hits in this direction)."
-                        preview_html = _df_preview_table_html(df, max_rows=max_preview_rows)
+                        preview_html = _df_preview_table_html(
+                            df,
+                            max_rows=max_preview_rows,
+                            interactive_protein_lookup=interactive_protein_lookup,
+                        )
                     else:
                         error = fallback_error
                         try:
                             top_hits = picked.to_dict(orient="records")
                         except Exception:
                             top_hits = []
-                        preview_html = _df_preview_table_html(picked, max_rows=max_preview_rows)
+                        preview_html = _df_preview_table_html(
+                            picked,
+                            max_rows=max_preview_rows,
+                            interactive_protein_lookup=interactive_protein_lookup,
+                        )
                 else:
                     try:
                         top_hits = picked.to_dict(orient="records")
                     except Exception:
                         top_hits = []
-                    preview_html = _df_preview_table_html(picked, max_rows=max_preview_rows)
+                    preview_html = _df_preview_table_html(
+                        picked,
+                        max_rows=max_preview_rows,
+                        interactive_protein_lookup=interactive_protein_lookup,
+                    )
             except Exception as e:
                 error = str(e)
-                preview_html = _df_preview_table_html(df, max_rows=max_preview_rows)
+                preview_html = _df_preview_table_html(
+                    df,
+                    max_rows=max_preview_rows,
+                    interactive_protein_lookup=interactive_protein_lookup,
+                )
+
+            resource_id = _make_resource_id("volcano-dataset", rel_str)
+            payload_obj = _build_volcano_dataset_payload(
+                df=df,
+                source_relpath=rel_str,
+                title=title,
+                meta=meta,
+                top_hits=top_hits,
+                error=error,
+            )
+            entry, _ = _build_json_resource_entry(
+                resource_id=resource_id,
+                payload_obj=payload_obj,
+                source_name=rel_str,
+                kind="volcano_dataset",
+                resource_mode=interactive_resource_mode,
+                out_root=out_root,
+                force=force,
+            )
+            resource_entries[resource_id] = entry
         except Exception as e:
             error = str(e)
             preview_html = "<p class='muted'>Failed to read TSV.</p>"
@@ -585,13 +1380,14 @@ def _collect_volcano_tables(
                 asset_relpath=asset_rel,
                 preview_table_html=preview_html,
                 meta=meta,
+                resource_id=resource_id,
                 top_hits=top_hits,
                 error=error,
             )
         )
 
     out.sort(key=lambda x: x.source_relpath)
-    return out
+    return out, resource_entries
 
 
 def _attach_volcano_tables(volcano_plots: List[PlotItem], volcano_tables: List[VolcanoTableItem]) -> None:
@@ -688,6 +1484,10 @@ def build_html_overview(
     copy_assets: bool = True,
     force: bool = False,
     self_contained: bool = False,
+    interactive_payload: Optional[str] = None,
+    interactive_protein_metadata: bool = False,
+    interactive_resource_mode: str = "auto",
+    defer_plot_images: bool = True,
     filter_contains: Sequence[str] = (),
     include_kinds: Sequence[str] = _DEFAULT_ORDER,
     volcano_topn: int = 15,
@@ -699,6 +1499,7 @@ def build_html_overview(
     pandas_low_memory: bool = False,
     ai_summary: bool = False,
     ai_model_label: Optional[str] = None,
+    force_ai_summary: bool = False,
     pngquant: bool = False,
     pngquant_quality: Optional[str] = "65-85",
     pngquant_topdiff_quality: Optional[str] = "85-90",
@@ -708,6 +1509,14 @@ def build_html_overview(
     root = Path(base_dir).expanduser().resolve()
     if not root.exists() or not root.is_dir():
         raise FileNotFoundError(str(root))
+    if interactive_payload and interactive_protein_metadata:
+        raise RuntimeError(
+            "Pass either interactive_payload or interactive_protein_metadata, not both."
+        )
+    resource_mode = _effective_resource_mode(
+        self_contained=bool(self_contained),
+        interactive_resource_mode=str(interactive_resource_mode),
+    )
 
     out_root = Path(out_dir).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -763,12 +1572,14 @@ def build_html_overview(
     optimized_count = 0
     total_before = 0
     total_after = 0
+    resource_entries: Dict[str, Dict[str, Any]] = {}
     try:
         if self_contained:
             pbar = tqdm(plots, desc="compressing", disable=not use_pngquant)
             for item in pbar:
                 source_png = Path(item.source_path)
                 embed_png = source_png
+                item.resource_id = _make_resource_id("plot-image", item.source_relpath)
                 if use_pngquant and temp_png_dir is not None:
                     optimized_png = temp_png_dir / item.source_relpath
                     quality = _pngquant_quality_for_item(
@@ -795,7 +1606,21 @@ def build_html_overview(
                             ratio=f"{ratio:.2f}x",
                         )
                         embed_png = optimized_png
-                item.asset_relpath = _data_uri_for_file(embed_png, mime="image/png")
+                plot_bytes = embed_png.read_bytes()
+                plot_data_url = (
+                    _data_uri_for_bytes(plot_bytes, mime="image/png")
+                    if resource_mode == "inline"
+                    else None
+                )
+                item.asset_relpath = ""
+                resource_entries[item.resource_id] = _build_plot_resource_entry(
+                    resource_id=item.resource_id,
+                    item=item,
+                    resource_mode=resource_mode,
+                    data_url=plot_data_url,
+                    path=None,
+                    source_bytes=plot_bytes,
+                )
             if hasattr(pbar, "close"):
                 pbar.close()
         else:
@@ -805,6 +1630,7 @@ def build_html_overview(
             for item in pbar:
                 source_png = Path(item.source_path)
                 dst = assets_dir / "plots" / item.source_relpath
+                item.resource_id = _make_resource_id("plot-image", item.source_relpath)
                 wrote_optimized = False
                 if use_pngquant:
                     quality = _pngquant_quality_for_item(
@@ -834,6 +1660,20 @@ def build_html_overview(
                 if not wrote_optimized:
                     _copy_or_symlink(source_png, dst, copy=copy_assets, force=force)
                 item.asset_relpath = str(dst.relative_to(out_root).as_posix())
+                plot_bytes = dst.read_bytes()
+                plot_data_url = (
+                    _data_uri_for_bytes(plot_bytes, mime="image/png")
+                    if resource_mode == "inline"
+                    else None
+                )
+                resource_entries[item.resource_id] = _build_plot_resource_entry(
+                    resource_id=item.resource_id,
+                    item=item,
+                    resource_mode=resource_mode,
+                    data_url=plot_data_url,
+                    path=item.asset_relpath,
+                    source_bytes=plot_bytes,
+                )
             if hasattr(pbar, "close"):
                 pbar.close()
     finally:
@@ -853,10 +1693,61 @@ def build_html_overview(
         else:
             logger.info("PNG compression summary: no PNG files were optimized.")
 
+    interactive_payload_ctx: Optional[Dict[str, Any]] = None
+    plotly_resource_id: Optional[str] = None
+    tabulator_resource_ids: Optional[Dict[str, str]] = None
+    if interactive_payload:
+        payload_path = Path(str(interactive_payload)).expanduser()
+        if not payload_path.exists() or not payload_path.is_file():
+            raise FileNotFoundError(str(payload_path))
+        payload_obj = json.loads(payload_path.read_text(encoding="utf-8"))
+        payload_resource_id = "interactive_payload"
+        payload_entry, payload_encoded = _build_json_resource_entry(
+            resource_id=payload_resource_id,
+            payload_obj=payload_obj,
+            source_name=payload_path.name,
+            kind="custom",
+            resource_mode=resource_mode,
+            out_root=out_root,
+            force=force,
+        )
+        resource_entries[payload_resource_id] = payload_entry
+        interactive_payload_ctx = dict(payload_encoded)
+        interactive_payload_ctx["kind"] = "custom"
+    elif interactive_protein_metadata:
+        payload_obj = _build_interactive_protein_metadata_payload(
+            root=root,
+            pandas_low_memory=bool(pandas_low_memory),
+        )
+        payload_resource_id = "interactive_payload"
+        payload_entry, payload_encoded = _build_json_resource_entry(
+            resource_id=payload_resource_id,
+            payload_obj=payload_obj,
+            source_name=str(payload_obj.get("source_table") or "protein_metadata.auto.json"),
+            kind="protein_metadata",
+            resource_mode=resource_mode,
+            out_root=out_root,
+            force=force,
+        )
+        resource_entries[payload_resource_id] = payload_entry
+        interactive_payload_ctx = dict(payload_encoded)
+        interactive_payload_ctx["kind"] = "protein_metadata"
+        interactive_payload_ctx["protein_count"] = int(payload_obj.get("protein_count") or 0)
+        interactive_payload_ctx["source_table"] = str(payload_obj.get("source_table") or "")
+    if interactive_payload_ctx is not None:
+        interactive_payload_ctx["resource_id"] = "interactive_payload"
+        interactive_payload_ctx["resource_mode"] = resource_mode
+
+    interactive_protein_lookup = bool(
+        interactive_payload_ctx and interactive_payload_ctx.get("kind") == "protein_metadata"
+    )
+
     # Volcano TSV summaries (copied into assets/data/...).
-    volcano_tables = _collect_volcano_tables(
+    volcano_tables, volcano_resource_entries = _collect_volcano_tables(
         base_dir=root,
+        out_root=out_root,
         assets_dir=assets_dir,
+        interactive_resource_mode=resource_mode,
         write_assets=not self_contained,
         copy_assets=copy_assets,
         force=force,
@@ -868,8 +1759,62 @@ def build_html_overview(
         tsv_engine=tsv_engine,
         pandas_low_memory=pandas_low_memory,
         max_preview_rows=max_table_rows,
+        interactive_protein_lookup=interactive_protein_lookup,
         exclude_dirs=(out_root,),
     )
+    resource_entries.update(volcano_resource_entries)
+
+    if resource_mode == "chunked" and volcano_resource_entries:
+        plotly_bundle = _find_plotly_bundle_path()
+        if plotly_bundle is not None:
+            plotly_resource_id = "plotly_bundle"
+            resource_entries[plotly_resource_id] = _build_file_resource_entry(
+                resource_id=plotly_resource_id,
+                source_path=plotly_bundle,
+                source_name=plotly_bundle.name,
+                kind="script_bundle",
+                format="javascript",
+                mime="text/javascript",
+                resource_mode=resource_mode,
+                out_root=out_root,
+                path="assets/interactive/vendor/plotly.min.js",
+                copy_assets=copy_assets,
+                force=force,
+            )
+
+        tabulator_bundle = _find_tabulator_bundle_paths()
+        if tabulator_bundle is not None:
+            tabulator_js_path, tabulator_css_path = tabulator_bundle
+            tabulator_resource_ids = {
+                "js": "tabulator_bundle_js",
+                "css": "tabulator_bundle_css",
+            }
+            resource_entries[tabulator_resource_ids["js"]] = _build_file_resource_entry(
+                resource_id=tabulator_resource_ids["js"],
+                source_path=tabulator_js_path,
+                source_name=tabulator_js_path.name,
+                kind="script_bundle",
+                format="javascript",
+                mime="text/javascript",
+                resource_mode=resource_mode,
+                out_root=out_root,
+                path="assets/interactive/vendor/tabulator.min.js",
+                copy_assets=copy_assets,
+                force=force,
+            )
+            resource_entries[tabulator_resource_ids["css"]] = _build_file_resource_entry(
+                resource_id=tabulator_resource_ids["css"],
+                source_path=tabulator_css_path,
+                source_name=tabulator_css_path.name,
+                kind="style_bundle",
+                format="css",
+                mime="text/css",
+                resource_mode=resource_mode,
+                out_root=out_root,
+                path="assets/interactive/vendor/tabulator.min.css",
+                copy_assets=copy_assets,
+                force=force,
+            )
 
     # Attach volcano tables to volcano plot items when possible.
     volcano_plots = [p for p in plots if p.category == "volcano"]
@@ -929,174 +1874,317 @@ def build_html_overview(
 
     if ai_summary:
         agent_api = (os.environ.get("TACKLE_AGENT_API") or "").strip()
-        if not agent_api:
-            msg = (
-                "AI summary requested but TACKLE_AGENT_API is not configured "
-                "(set it in ~/.ispec/tackle-agent.conf or as an env var)."
+        no_agent_api_msg = (
+            "AI summary requested but TACKLE_AGENT_API is not configured "
+            "(set it in ~/.ispec/tackle-agent.conf or as an env var)."
+        )
+        cache_dir = _ai_summary_cache_dir(out_root)
+        cfg = None
+        support_chat_func = None
+        session_base = None
+        telemetry_client = None
+
+        pca_context = _collect_pca_ai_context(
+            root=root,
+            tsv_engine=tsv_engine,
+            pandas_low_memory=pandas_low_memory,
+        )
+
+        volcano_items = [
+            {
+                "tsv": t.source_relpath,
+                "meta": t.meta,
+                "top_hits": t.top_hits[:50],
+                "note": t.error,
+            }
+            for t in volcano_tables[:20]
+        ]
+        volcano_unmatched_items = [
+            {
+                "tsv": t.source_relpath,
+                "meta": t.meta,
+                "top_hits": t.top_hits[:50],
+                "note": t.error,
+            }
+            for t in unmatched_tables[:20]
+        ]
+
+        def _ensure_ai_client():
+            nonlocal cfg, support_chat_func, session_base, telemetry_client
+            if (
+                cfg is not None
+                and support_chat_func is not None
+                and session_base is not None
+                and telemetry_client is not None
+            ):
+                return cfg, support_chat_func, session_base, telemetry_client
+            if not agent_api:
+                raise RuntimeError(no_agent_api_msg)
+
+            from .telemetry import (
+                AgentTelemetry,
+                AgentTelemetryConfig,
+                make_local_events_path,
+                support_chat,
             )
-            for sec in sections:
-                ai_section_errors[str(sec["key"])] = msg
-            if unmatched_tables:
-                ai_section_errors["volcano-tables"] = msg
-        else:
+
+            cfg = AgentTelemetryConfig.from_env(
+                agent_api=agent_api,
+                local_events_path=make_local_events_path(root),
+            )
+            cfg = replace(
+                cfg,
+                timeout_seconds=_effective_html_ai_timeout_seconds(cfg.timeout_seconds),
+            )
+            support_chat_func = support_chat
+            session_base = f"tackle-make-html:{uuid.uuid4().hex}"
+            telemetry_client = AgentTelemetry(cfg, logger=logger)
+            logger.info(
+                "AI summary enabled for make-html: timeout=%.1fs sections=%d unmatched_tables=%d cache_dir=%s force_refresh=%s",
+                cfg.timeout_seconds,
+                len(sections),
+                len(unmatched_tables),
+                cache_dir,
+                bool(force_ai_summary),
+            )
+            return cfg, support_chat_func, session_base, telemetry_client
+
+        def _emit_ai_summary_event(
+            *,
+            phase: str,
+            section_key: Optional[str] = None,
+            section_label: Optional[str] = None,
+            severity: str = "info",
+            value: Optional[Dict[str, Any]] = None,
+        ) -> None:
             try:
-                from .telemetry import AgentTelemetryConfig, support_chat
+                _, _, session_base_local, telemetry_client_local = _ensure_ai_client()
+            except Exception:
+                return
 
-                cfg = AgentTelemetryConfig.from_env(agent_api=agent_api)
-                session_base = f"tackle-make-html:{uuid.uuid4().hex}"
-
-                pca_context = _collect_pca_ai_context(
-                    root=root,
-                    tsv_engine=tsv_engine,
-                    pandas_low_memory=pandas_low_memory,
+            dims = {
+                "analysis_outpath": str(root),
+                "report_title": report_title,
+                "section_key": section_key or None,
+                "section_label": section_label or None,
+            }
+            dims = {key: val for key, val in dims.items() if val not in {None, ""}}
+            try:
+                telemetry_client_local.emit_event(
+                    type=f"tackle.make_html.ai_summary.{phase}",
+                    name=str(section_key or "make-html-ai-summary"),
+                    severity=str(severity),
+                    correlation_id=session_base_local,
+                    dimensions=dims,
+                    value=value or {},
+                )
+            except Exception as e:
+                logger.debug(
+                    "AI summary telemetry emit failed: phase=%s section=%s error=%r",
+                    phase,
+                    section_key,
+                    e,
                 )
 
-                volcano_items = [
-                    {
-                        "tsv": t.source_relpath,
-                        "meta": t.meta,
-                        "top_hits": t.top_hits[:50],
-                        "note": t.error,
-                    }
-                    for t in volcano_tables[:20]
-                ]
-                volcano_unmatched_items = [
-                    {
-                        "tsv": t.source_relpath,
-                        "meta": t.meta,
-                        "top_hits": t.top_hits[:50],
-                        "note": t.error,
-                    }
-                    for t in unmatched_tables[:20]
-                ]
+        def _resolve_ai_summary(
+            *,
+            key: str,
+            label: str,
+            message: str,
+            meta: Mapping[str, Any],
+        ) -> Tuple[Optional[str], Optional[str]]:
+            if not force_ai_summary:
+                cached_text = _load_ai_summary_cache(cache_dir, message=message)
+                if cached_text is not None:
+                    logger.info("AI summary cache hit: section=%s", key)
+                    _emit_ai_summary_event(
+                        phase="section.complete",
+                        section_key=key,
+                        section_label=label,
+                        value={"cached": True, "prompt_chars": len(message)},
+                    )
+                    return cached_text, None
 
-                for sec in sections:
-                    key = str(sec.get("key") or "").strip()
-                    if not key:
-                        continue
-                    try:
-                        plot_paths = [p.source_relpath for p in sec.get("plots", [])][:30]
-                        prompt_obj: Dict[str, Any] = {
-                            "analysis_base_dir": str(root),
-                            "generated_at": now,
-                            "section": {
-                                "key": key,
-                                "label": sec.get("label"),
-                                "count": sec.get("count"),
-                                "plot_paths": plot_paths,
-                            },
-                        }
-                        if key == "pca":
-                            prompt_obj["pca"] = pca_context
-                        if key == "volcano":
-                            prompt_obj["volcano"] = volcano_items
-                        if key == "topdiff-cluster":
-                            contrasts_prompt: List[Dict[str, Any]] = []
-                            for c in sec.get("contrasts", []) or []:
-                                groups_prompt: List[Dict[str, Any]] = []
-                                for g in c.get("groups", []) or []:
-                                    plots = g.get("plots", []) or []
-                                    groups_prompt.append(
-                                        {
-                                            "key": g.get("key"),
-                                            "label": g.get("label"),
-                                            "topn": g.get("topn"),
-                                            "count": g.get("count"),
-                                            "plot_paths": [
-                                                getattr(p, "source_relpath", str(p)) for p in plots
-                                            ][:30],
-                                        }
-                                    )
-                                contrasts_prompt.append(
-                                    {
-                                        "key": c.get("key"),
-                                        "label": c.get("label"),
-                                        "count": c.get("count"),
-                                        "groups": groups_prompt,
-                                    }
-                                )
-                            prompt_obj["topdiff"] = contrasts_prompt
-
-                        prompt_json = json.dumps(prompt_obj, ensure_ascii=False)
-                        prompt_json = _truncate_text(prompt_json, max_chars=16000)
-
-                        msg = (
-                            "Write a concise section summary for this Tackle HTML report section. "
-                            "Use short bullets. "
-                            "Only claim what can be supported by the provided JSON (file names + small tables); "
-                            "do not hallucinate image contents.\n\n"
-                            f"SECTION_JSON: {prompt_json}"
-                        )
-                        resp = support_chat(
-                            cfg,
-                            session_id=f"{session_base}:{key}",
-                            message=msg,
-                            meta={
-                                "_queue_force_inline": True,
-                                "source": "tackle_make_html",
-                                "analysis_outpath": str(root),
-                                "report_title": report_title,
-                                "section_key": key,
-                                "section_label": sec.get("label"),
-                                "model_label": ai_model_label_value,
-                            },
-                        )
-                        text = (resp.get("message") or "").strip()
-                        if not text:
-                            ai_section_errors[key] = "AI summary endpoint returned an empty response."
-                        else:
-                            ai_section_summaries[key] = text
-                    except Exception as e:
-                        ai_section_errors[key] = f"{type(e).__name__}: {e}"
-
-                if unmatched_tables:
-                    key = "volcano-tables"
-                    try:
-                        prompt_obj = {
-                            "analysis_base_dir": str(root),
-                            "generated_at": now,
-                            "section": {
-                                "key": key,
-                                "label": "Volcano Tables (unmatched)",
-                                "count": len(unmatched_tables),
-                            },
-                            "volcano_unmatched": volcano_unmatched_items,
-                        }
-                        prompt_json = json.dumps(prompt_obj, ensure_ascii=False)
-                        prompt_json = _truncate_text(prompt_json, max_chars=16000)
-                        msg = (
-                            "Write a concise summary for the unmatched volcano TSV tables in this Tackle HTML report. "
-                            "Use short bullets and describe what tables are present and any standout top hits.\n\n"
-                            f"SECTION_JSON: {prompt_json}"
-                        )
-                        resp = support_chat(
-                            cfg,
-                            session_id=f"{session_base}:{key}",
-                            message=msg,
-                            meta={
-                                "_queue_force_inline": True,
-                                "source": "tackle_make_html",
-                                "analysis_outpath": str(root),
-                                "report_title": report_title,
-                                "section_key": key,
-                                "section_label": "Volcano Tables (unmatched)",
-                                "model_label": ai_model_label_value,
-                            },
-                        )
-                        text = (resp.get("message") or "").strip()
-                        if not text:
-                            ai_section_errors[key] = "AI summary endpoint returned an empty response."
-                        else:
-                            ai_section_summaries[key] = text
-                    except Exception as e:
-                        ai_section_errors[key] = f"{type(e).__name__}: {e}"
-
+            try:
+                cfg_local, support_chat_local, session_base_local, _ = _ensure_ai_client()
+                logger.info("AI summary request: section=%s", key)
+                _emit_ai_summary_event(
+                    phase="section.start",
+                    section_key=key,
+                    section_label=label,
+                    value={"cached": False, "prompt_chars": len(message)},
+                )
+                resp = support_chat_local(
+                    cfg_local,
+                    session_id=f"{session_base_local}:{key}",
+                    message=message,
+                    meta=meta,
+                )
+                text = (resp.get("message") or "").strip()
+                if not text:
+                    _emit_ai_summary_event(
+                        phase="section.failed",
+                        section_key=key,
+                        section_label=label,
+                        severity="error",
+                        value={"error": "empty_response"},
+                    )
+                    return None, "AI summary endpoint returned an empty response."
+                _write_ai_summary_cache(
+                    cache_dir,
+                    message=message,
+                    response=resp,
+                    section_key=key,
+                    section_label=label,
+                    model_label=ai_model_label_value,
+                )
+                logger.info("AI summary complete: section=%s", key)
+                _emit_ai_summary_event(
+                    phase="section.complete",
+                    section_key=key,
+                    section_label=label,
+                    value={
+                        "cached": False,
+                        "prompt_chars": len(message),
+                        "response_chars": len(text),
+                    },
+                )
+                return text, None
             except Exception as e:
-                msg = f"{type(e).__name__}: {e}"
-                for sec in sections:
-                    ai_section_errors[str(sec["key"])] = msg
-                if unmatched_tables:
-                    ai_section_errors["volcano-tables"] = msg
+                logger.warning("AI summary failed: section=%s error=%s: %s", key, type(e).__name__, e)
+                _emit_ai_summary_event(
+                    phase="section.failed",
+                    section_key=key,
+                    section_label=label,
+                    severity="error",
+                    value={"error": f"{type(e).__name__}: {e}"},
+                )
+                return None, f"{type(e).__name__}: {e}"
+
+        _emit_ai_summary_event(
+            phase="start",
+            value={
+                "sections": len(sections),
+                "unmatched_volcano_tables": len(unmatched_tables),
+                "force_refresh": bool(force_ai_summary),
+                "cache_dir": str(cache_dir),
+                "ai_model_label": ai_model_label_value,
+            },
+        )
+
+        for sec in sections:
+            key = str(sec.get("key") or "").strip()
+            if not key:
+                continue
+            plot_paths = [p.source_relpath for p in sec.get("plots", [])][:30]
+            prompt_obj: Dict[str, Any] = {
+                "analysis_base_dir": str(root),
+                "section": {
+                    "key": key,
+                    "label": sec.get("label"),
+                    "count": sec.get("count"),
+                    "plot_paths": plot_paths,
+                },
+            }
+            if key == "pca":
+                prompt_obj["pca"] = pca_context
+            if key == "volcano":
+                prompt_obj["volcano"] = volcano_items
+            if key == "topdiff-cluster":
+                contrasts_prompt: List[Dict[str, Any]] = []
+                for c in sec.get("contrasts", []) or []:
+                    groups_prompt: List[Dict[str, Any]] = []
+                    for g in c.get("groups", []) or []:
+                        plots = g.get("plots", []) or []
+                        groups_prompt.append(
+                            {
+                                "key": g.get("key"),
+                                "label": g.get("label"),
+                                "topn": g.get("topn"),
+                                "count": g.get("count"),
+                                "plot_paths": [
+                                    getattr(p, "source_relpath", str(p)) for p in plots
+                                ][:30],
+                            }
+                        )
+                    contrasts_prompt.append(
+                        {
+                            "key": c.get("key"),
+                            "label": c.get("label"),
+                            "count": c.get("count"),
+                            "groups": groups_prompt,
+                        }
+                    )
+                prompt_obj["topdiff"] = contrasts_prompt
+
+            msg = _build_ai_summary_prompt(
+                section_key=key,
+                section_label=str(sec.get("label") or key),
+                prompt_obj=prompt_obj,
+            )
+            text, err = _resolve_ai_summary(
+                key=key,
+                label=str(sec.get("label") or key),
+                message=msg,
+                meta={
+                    "_queue_force_inline": True,
+                    "source": "tackle_make_html",
+                    "analysis_outpath": str(root),
+                    "report_title": report_title,
+                    "section_key": key,
+                    "section_label": sec.get("label"),
+                    "model_label": ai_model_label_value,
+                },
+            )
+            if text:
+                ai_section_summaries[key] = text
+            elif err:
+                ai_section_errors[key] = err
+
+        if unmatched_tables:
+            key = "volcano-tables"
+            prompt_obj = {
+                "analysis_base_dir": str(root),
+                "section": {
+                    "key": key,
+                    "label": "Volcano Tables (unmatched)",
+                    "count": len(unmatched_tables),
+                },
+                "volcano_unmatched": volcano_unmatched_items,
+            }
+            msg = _build_ai_summary_prompt(
+                section_key=key,
+                section_label="Volcano Tables (unmatched)",
+                prompt_obj=prompt_obj,
+                unmatched_volcano_tables=True,
+            )
+            text, err = _resolve_ai_summary(
+                key=key,
+                label="Volcano Tables (unmatched)",
+                message=msg,
+                meta={
+                    "_queue_force_inline": True,
+                    "source": "tackle_make_html",
+                    "analysis_outpath": str(root),
+                    "report_title": report_title,
+                    "section_key": key,
+                    "section_label": "Volcano Tables (unmatched)",
+                    "model_label": ai_model_label_value,
+                },
+            )
+            if text:
+                ai_section_summaries[key] = text
+            elif err:
+                ai_section_errors[key] = err
+
+        _emit_ai_summary_event(
+            phase="complete",
+            value={
+                "sections_total": len(sections) + (1 if unmatched_tables else 0),
+                "sections_succeeded": len(ai_section_summaries),
+                "sections_failed": len(ai_section_errors),
+            },
+        )
 
     html_text = _render_j2_template(
         "overview_report.html.j2",
@@ -1105,6 +2193,16 @@ def build_html_overview(
         show_date=bool(show_date),
         base_dir=str(root),
         self_contained=bool(self_contained),
+        interactive_resource_mode=resource_mode,
+        defer_plot_images=bool(defer_plot_images),
+        interactive_payload=interactive_payload_ctx,
+        plotly_resource_id=plotly_resource_id,
+        tabulator_resource_ids=tabulator_resource_ids,
+        resource_manifest={
+            "mode": resource_mode,
+            "entries": resource_entries,
+            "resource_count": len(resource_entries),
+        },
         ai_summary_enabled=bool(ai_summary),
         ai_model_label=ai_model_label_value,
         ai_section_summaries=ai_section_summaries,

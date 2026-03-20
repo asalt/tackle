@@ -192,6 +192,59 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     readr::write_tsv(variance_df, variance_out)
   }
 
+  scree_n <- min(length(variance_ratio), max(10, max_pc))
+  scree_idx <- seq_len(scree_n)
+  scree_df <- tibble::tibble(
+    pc_index = scree_idx,
+    pc_label = factor(
+      paste0("PC", scree_idx),
+      levels = paste0("PC", scree_idx),
+      ordered = TRUE
+    ),
+    explained_pct = variance_ratio[scree_idx] * 100,
+    cumulative_pct = cumsum(variance_ratio[scree_idx]) * 100
+  )
+
+  scree_plot <- ggplot(scree_df, aes(x = pc_label)) +
+    geom_col(
+      aes(y = explained_pct),
+      fill = "#0b7a75",
+      width = 0.72
+    ) +
+    geom_line(
+      aes(y = cumulative_pct, group = 1),
+      color = "#d67c2c",
+      linewidth = 0.9
+    ) +
+    geom_point(
+      aes(y = cumulative_pct),
+      color = "#d67c2c",
+      size = 2.2
+    ) +
+    scale_y_continuous(
+      name = "Explained variance (%)",
+      limits = c(0, 100),
+      expand = expansion(mult = c(0, 0.03)),
+      sec.axis = sec_axis(~ ., name = "Cumulative variance (%)")
+    ) +
+    labs(
+      title = if (!is.null(title) && !is.na(title) && title != "") {
+        paste(title, "Scree Plot")
+      } else {
+        "PCA Scree Plot"
+      },
+      subtitle = paste("First", scree_n, "principal components"),
+      x = NULL
+    ) +
+    ggplot2::theme_classic(base_size = 20) +
+    theme(
+      axis.line.x = element_line(linewidth = 1),
+      axis.line.y = element_line(linewidth = 1),
+      plot.title = element_text(face = "bold"),
+      plot.subtitle = element_text(size = rel(0.8)),
+      axis.text.x = element_text(angle = 0, vjust = 0.8)
+    )
+
   #   .x <- forpca %>%
   # 	  group_by(!!normalize_by) %>%
   # 	  select(-variable, -!!color, -!!shape)
@@ -434,6 +487,20 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       } # end of outfiletypes ext
     }
   } # end of pc combo loop
+
+  if (isTRUE(return_plots)) {
+    plots[["scree"]] <- scree_plot
+  } else if (!is.null(outname) && !is.na(outname) && outname != "") {
+    for (ext in outfiletypes) {
+      out <- paste0(outname, "scree", ext)
+      print(paste("Saving", out))
+      device <- NULL
+      if (ext == ".pdf" || ext == "pdf") {
+        device <- grDevices::cairo_pdf
+      }
+      ggplot2::ggsave(out, scree_plot, device = device, width = fig_width, height = fig_height)
+    }
+  }
 
   if (isTRUE(return_plots)) {
     return(plots)
