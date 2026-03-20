@@ -46,6 +46,25 @@ def test_get_default_color_mapping_non_integer_series_uses_bright_palette():
     assert mapping == expected_mapping
 
 
+def test_get_default_color_mapping_applies_idg_reserved_colors():
+    series = pd.Series(["Tbio", "Tchem", "Tclin", "Tdark"], name="IDG")
+
+    mapping = get_default_color_mapping(series)
+
+    assert mapping["Tbio"] == "blue"
+    assert mapping["Tchem"] == "green"
+    assert mapping["Tclin"] == "pink"
+    assert mapping["Tdark"] == "black"
+
+
+def test_get_default_color_mapping_applies_both_reserved_color():
+    series = pd.Series(["CYTOPLASM", "BOTH"], name="CYTO_NUC")
+
+    mapping = get_default_color_mapping(series)
+
+    assert mapping["BOTH"] == "#984ea3"
+
+
 def test_normalize_metadata_str_values_coerces_missing_and_blank_to_NA():
     series = pd.Series([None, "", "null", pd.NA, float("nan"), "true", "FALSE"])
     out = normalize_metadata_str_values(series)

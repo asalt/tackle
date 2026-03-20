@@ -27,6 +27,7 @@ import seaborn as sb
 from seaborn.distributions import _freedman_diaconis_bins as seaborn_bin_calc
 import click
 
+from .colors import RESERVED_VALUE_COLORS, RESERVED_VALUE_COLORS_BY_FIELD
 
 
 # sb.set_context('notebook', font_scale=1.8)
@@ -41,17 +42,6 @@ def clean_categorical(col_data):
             if not (all(isinstance(x, str) for x in cats)):
                 col_data[col] = series.cat.rename_categories(lambda x: str(x))
     return col_data
-
-
-RESERVED_COLORS = {
-    "True": "green",
-    "False": "red",
-    "NA": "grey",
-    "Tbio": "blue",
-    "Tchem": "green",
-    "Tclin": "pink",
-    "Tdark": "black",
-}
 
 
 def get_default_color_mapping(s: pd.Series) -> dict:
@@ -76,10 +66,17 @@ def get_default_color_mapping(s: pd.Series) -> dict:
     }  # have to make str?
     themapping = {k: v for k, v in themapping.items() if k}
 
-    # update for boolean
-    for k in RESERVED_COLORS.keys():
-        if k in themapping:
-            themapping[k] = RESERVED_COLORS[k]
+    # Apply stable defaults for common values.
+    for key, color in RESERVED_VALUE_COLORS.items():
+        if key in themapping:
+            themapping[key] = color
+
+    field_name = str(getattr(s, "name", "") or "")
+    overrides = RESERVED_VALUE_COLORS_BY_FIELD.get(field_name)
+    if overrides:
+        for key, color in overrides.items():
+            if key in themapping:
+                themapping[key] = color
 
     # print(s.name, themapping)
     return themapping
@@ -115,7 +112,7 @@ def get_color_mapping_with_defaults(s: pd.Series, overrides=None) -> dict:
     mapping = get_default_color_mapping(s) or {}
     if isinstance(overrides, dict):
         mapping.update({str(k): str(v) for k, v in overrides.items() if v is not None})
-    return {k: mapping.get(k, RESERVED_COLORS.get("NA", "grey")) for k in values}
+    return {k: mapping.get(k, RESERVED_VALUE_COLORS.get("NA", "grey")) for k in values}
 
 
 STR_DTYPE_COERCION = {
