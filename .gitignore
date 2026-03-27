@@ -37,3 +37,4 @@ scripts/*.txt
 
 *.gmt
 *.zip
+examples/*

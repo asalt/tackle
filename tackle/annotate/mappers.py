@@ -194,7 +194,10 @@ class AnnotationTableConfig(LazyTableConfig):
     @classmethod
     def default(cls, *, data_dir: Optional[Path] = None) -> "AnnotationTableConfig":
         base = data_dir or _tackle_data_dir()
-        return cls(path=base / "combined_annotations_new.tsv", read_kwargs={"dtype": str})
+        return cls(
+            path=base / "annotations" / "combined_annotations_new.tsv",
+            read_kwargs={"dtype": str},
+        )
 
 
 @dataclass(slots=True)

@@ -3,6 +3,7 @@ from collections import OrderedDict
 import glob
 
 from .utils import *
+#from .constants import TAXON_MAPPER
 from .statmodels.limma_runner import run_limma_pipeline, normalize_formula_targets
 import hashlib, re
 
@@ -227,7 +228,7 @@ class GeneMapper(LazyLoader):
 
 class Annotations(LazyLoader):
     def __init__(self):
-        file_path = os.path.join(PWD, "data", "combined_annotations_new.tsv")
+        file_path = os.path.join(PWD, "data", "annotations", "combined_annotations_new.tsv")
         super().__init__(file_path)
         # self._categories = None
         # self._df = None # do not reinitialize here
