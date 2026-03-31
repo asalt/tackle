@@ -215,19 +215,47 @@ volcanoplot <- function(X, max_labels = 35,
 
   annot_size <- 4.0
   max_nchar <- max(nchar(group0), nchar(group1))
-  add_newlines <- function(group) {
-    str_replace_all(group, "(\\+|\\-|:)(?=\\S)", " \\1 ")
+  format_group_label <- function(group, width = 30) {
+    group <- str_replace_all(group, "_+", " ")
+    group <- str_replace_all(group, "\\s*\\n\\s*", " ")
+    group <- str_squish(group)
+    group <- str_replace_all(group, "\\s*\\+\\s*", " + ")
+    group <- str_replace_all(group, "\\s*:\\s*", " : ")
+
+    if (str_count(group, "(?<=\\S)\\s*-\\s*(?=\\S)|(?<=\\S)-(?=\\S)") == 1) {
+      parts <- str_split(group, "(?<=\\S)\\s*-\\s*(?=\\S)|(?<=\\S)-(?=\\S)", n = 2, simplify = TRUE)
+      left <- str_squish(parts[1])
+      right <- str_squish(parts[2])
+
+      if (nzchar(left) && nzchar(right) && str_detect(left, "\\s") && str_detect(right, "\\s")) {
+        one_line <- paste(left, right, sep = " - ")
+        if (nchar(one_line) <= width) {
+          return(one_line)
+        }
+        if (max(nchar(left), nchar(right)) <= width) {
+          return(paste0(left, " -\n", right))
+        }
+        left <- stringr::str_wrap(left, width = width, whitespace_only = TRUE)
+        right <- stringr::str_wrap(right, width = width, whitespace_only = TRUE)
+        return(paste0(left, " -\n", right))
+      }
+    }
+
+    stringr::str_wrap(group, width = width, whitespace_only = TRUE)
   }
-  group0 <- add_newlines(group0) %>% stringr::str_wrap(18, whitespace_only = TRUE)
-  group1 <- add_newlines(group1) %>% stringr::str_wrap(18, whitespace_only = TRUE)
-  if ((max_nchar) > 15) annot_size <- annot_size - .5
-  if ((max_nchar) > 25) annot_size <- annot_size - .75
-  if ((max_nchar) > 35) annot_size <- annot_size - .5
-  if ((max_nchar) > 45) annot_size <- annot_size - .5
-  if ((max_nchar) > 60) annot_size <- annot_size - .5
+  wrap_width <- 30
+  if ((max_nchar) > 45) wrap_width <- 26
+  if ((max_nchar) > 70) wrap_width <- 22
+  group0 <- format_group_label(group0, width = wrap_width)
+  group1 <- format_group_label(group1, width = wrap_width)
+  if ((max_nchar) > 15) annot_size <- annot_size - .3
+  if ((max_nchar) > 25) annot_size <- annot_size - .5
+  if ((max_nchar) > 35) annot_size <- annot_size - .3
+  if ((max_nchar) > 45) annot_size <- annot_size - .3
+  if ((max_nchar) > 60) annot_size <- annot_size - .3
+  # if ((max_nchar) > 80) annot_size <- annot_size - .4
   annot_size <- annot_size * annot_cex
-  .annot_space <- 0
-  if (annot_cex >= 1.8) .annot_space <- .2
+  side_annot_y <- max(ymax * 0.02, 0.15) # 
 
   outline_color <- "#444444"
   highlight_outline_color <- "purple"
@@ -271,25 +299,27 @@ volcanoplot <- function(X, max_labels = 35,
     scale_alpha_identity() +
     scale_fill_identity() +
     scale_color_identity() +
-    ylim(0, ymax) +
-    xlim(-xmax, xmax) +
+    coord_cartesian(xlim = c(-xmax, xmax), ylim = c(0, ymax), clip = "off") +
     geom_text_repel(
       data = X[X$label == TRUE, ],
-      aes(label = GeneSymbol, alpha = alpha), color = "black", min.segment.length = .15,
+      aes(label = GeneSymbol, alpha = alpha),
+      color = "black",
+      min.segment.length = .15,
       point.padding = 1e-3,
       box.padding = .1,
       size = 3.2 * label_cex,
       fontface = "bold",
-      segment.size = .35, segment.alpha = .4,
+      segment.size = .35,
+      segment.alpha = .4,
       max.overlaps = Inf,
       seed = 1234,
       show.legend = FALSE
     ) +
-    annotate("label", c(-xmax - .annot_space, xmax + .annot_space), c(0, 0),
+    annotate("text", c(-xmax * 0.98, xmax * 0.98), c(side_annot_y, side_annot_y),
       label = c(group0, group1),
-      color = "white",
-      fill = c(color_down, color_up),
-      linewidth = 0,
+      color = c(color_down, color_up),
+      fontface = "bold",
+      lineheight = 0.95,
       size = annot_size,
       hjust = c(0, 1), vjust = c(0, 0)
     ) +
@@ -299,7 +329,10 @@ volcanoplot <- function(X, max_labels = 35,
       caption = footnote
     ) +
     theme_classic() +
-    theme(plot.caption = element_text(color = grey(.5), size = 10))
+    theme(
+      plot.caption = element_text(color = grey(.5), size = 10),
+      plot.margin = margin(5.5, 18, 10, 18)
+    )
 
   print(p)
 }
