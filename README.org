@@ -235,12 +235,17 @@
 * Limma formulas and gene covariates
 
 When using limma via the `--formula` option, you can reference a gene's
-expression as a continuous covariate on the right-hand side of the formula.
+expression on either side of the formula.
 
 - Preferred: use explicit GeneID references in the form `GeneID_<id>`. The
   following separators are also supported: `GeneID:<id>`, `GeneID-<id>`.
-- Symbols still work: e.g., `HER2 ~ 0 + condition` restricts to HER2 on the LHS,
-  and `~ HER2 + condition` uses HER2 expression as a covariate on the RHS.
+- Symbols still work: e.g., `HER2 ~ 0 + condition` preserves `HER2` on the LHS,
+  injects that gene's values into the sample metadata, and fits the model using
+  the full formula exactly as written. This does not subset the expression
+  matrix or reinterpret `HER2` as an RHS coefficient target.
+- Gene references on the RHS still behave as covariates: `~ HER2 + condition`
+  injects HER2 expression on the RHS and returns the usual coefficient/contrast
+  output for the fitted design terms.
 - Bare numeric tokens on the RHS (e.g., `~ 2064`) are deprecated. They are
   interpreted as GeneIDs for backward compatibility but will emit a warning.
   Use `GeneID_2064` instead. The constants `0` and `1` always keep their usual
@@ -251,7 +256,8 @@ Examples:
 - `~ 1 + condition`  # intercept plus a factor (no gene injection)
 - `~ GeneID_2064`    # inject gene 2064 expression as covariate
 - `~ HER2 + batch`   # inject HER2 expression by symbol
-  - `HER2 ~ 0 + condition`  # restrict analysis to HER2, design from RHS
+- `GID_851751 ~ 0 + group`  # preserve the response term and fit the full formula
+- `GID_851751 + GID_1234 ~ 0 + group`  # multiple LHS response terms are allowed
 
 * Export summary workbook
 

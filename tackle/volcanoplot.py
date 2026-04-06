@@ -3,7 +3,7 @@ import itertools
 from pathlib import Path
 import hashlib
 import re
-from typing import Optional, Tuple
+from typing import Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -85,6 +85,8 @@ def _clean_group_label(value: str) -> str:
     s = value.strip()
     if s.startswith("(") and s.endswith(")"):
         s = s[1:-1].strip()
+    s = re.sub(r"_+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
@@ -98,6 +100,63 @@ def _split_comparison_groups(comparison: str) -> Optional[Tuple[str, str]]:
         # Special-case "A-B" (no spaces); avoid splitting expressions like "A-B-C".
         return tuple(g.strip() for g in comparison.split("-", 1))
     return None
+
+
+def _formula_rhs_text(formula: Optional[str]) -> str:
+    if not formula:
+        return ""
+    text = str(formula)
+    if "~" not in text:
+        return text.strip()
+    _lhs, rhs = text.split("~", 1)
+    return rhs.strip()
+
+
+def _extract_formula_geneids_for_exclusion(
+    formula: Optional[str],
+    symbol_to_geneids: Optional[Mapping[str, Sequence[str]]] = None,
+) -> list:
+    rhs = _formula_rhs_text(formula)
+    if not rhs:
+        return []
+
+    geneids = list(find_geneid_keys_in_string(rhs))
+    gid_keys = re.findall(r"(?i)\bGID_?([A-Za-z0-9_.-]+)\b", rhs)
+    gid_symbol_candidates = []
+    for key in gid_keys:
+        if key.isdigit():
+            geneids.append(key)
+        else:
+            gid_symbol_candidates.append(key)
+
+    if not symbol_to_geneids:
+        symbol_to_geneids = {}
+
+    sym_lookup = {}
+    for sym, ids in symbol_to_geneids.items():
+        if sym is None:
+            continue
+        sym_str = str(sym)
+        for lookup_key in (sym_str, sym_str.casefold()):
+            sym_lookup.setdefault(lookup_key, []).extend(str(gid) for gid in ids)
+
+    sym_tokens = re.findall(r"\b[A-Za-z][A-Za-z0-9_.]*\b", rhs)
+    sym_tokens.extend(gid_symbol_candidates)
+    for token in sym_tokens:
+        if token in ("scale", "I", "C"):
+            continue
+        matches = sym_lookup.get(token, []) + sym_lookup.get(token.casefold(), [])
+        geneids.extend(matches)
+
+    seen = set()
+    out = []
+    for gid in geneids:
+        gid_str = str(gid)
+        if gid_str in seen:
+            continue
+        seen.add(gid_str)
+        out.append(gid_str)
+    return out
 
 
 def shorten_path(path: str, max_component_bytes: int = 255) -> str:
@@ -166,6 +225,7 @@ def volcanoplot(
         extra_outname_info=None,
         color_down="blue",
         color_up="red",
+        comparison_wrap_width=None,
         global_xmax=None,
         global_ymax=None,
         cluster_topn=None,
@@ -227,7 +287,6 @@ def volcanoplot(
         from pathlib import Path
 
         from .limma_replay import write_limma_replay_files
-        from .statmodels.limma_runner import normalize_formula_targets
         from .statmodels.limma_runner import _inject_gene_covariates_in_formula  # type: ignore[attr-defined]
 
         # Determine the volcano output directory (matches per-contrast outputs).
@@ -263,7 +322,7 @@ def volcanoplot(
         )
         volcano_dir = str(Path(_dummy_outname).parent)
 
-        # Build symbol lookup (dataset symbols + gene mapper hints) to keep formula normalization consistent.
+        # Build symbol lookup (dataset symbols + gene mapper hints) to keep formula rewriting consistent.
         symbol_lookup = {}
         try:
             for gid, sym in data_obj.gid_symbol.items():
@@ -292,7 +351,7 @@ def volcanoplot(
         formula_effective = None
         formula_rewritten = None
         if formula:
-            formula_effective, _ = normalize_formula_targets(formula, edata.index, symbol_lookup, logger=None)
+            formula_effective = formula
             formula_rewritten, pheno = _inject_gene_covariates_in_formula(
                 formula_effective,
                 edata,
@@ -705,8 +764,7 @@ def volcanoplot(
                 # Rvolcanoplot(pandas2ri.py2ri(df.reset_index()), max_labels=number, fc_cutoff=foldchange,
                 # _data = df.reset_index()
                 # _data['FunCats'] = _data.FunCats.fillna('')
-                Rvolcanoplot(
-                    df,
+                r_plot_kwargs = dict(
                     max_labels=number,
                     fc_cutoff=foldchange,
                     number_by=number_by,
@@ -733,46 +791,23 @@ def volcanoplot(
                     # y_label_override=y_label_override,
                     # **kws,
                 )
+                if comparison_wrap_width is not None:
+                    r_plot_kwargs["comparison_wrap_width"] = comparison_wrap_width
+                Rvolcanoplot(df, **r_plot_kwargs)
                 grdevices.dev_off()
                 print("done.", flush=True)
 
-        # If formula contains a gene-based covariate, make an additional plot
-        # with that gene removed so it doesn't dominate the volcano visually.
-        def _extract_geneids_from_formula(_formula: str) -> list:
-            if not _formula:
-                return []
-            s = str(_formula)
-            # Explicit GeneID references (GeneID_*)
-            geneids = set(find_geneid_keys_in_string(s))
-            # Also handle GID tokens; if numeric, treat as GeneID; if not, treat as a symbol candidate
-            gid_keys = re.findall(r"(?i)\bGID_?([A-Za-z0-9_.-]+)\b", s)
-            gid_symbol_candidates = []
-            for k in gid_keys:
-                if k.isdigit():
-                    geneids.add(k)
-                else:
-                    gid_symbol_candidates.append(k)
-            # Symbol-based: Build reverse symbol lookup from GeneID->symbol
-            rev = {}
-            try:
-                for gid, sym in gm.symbol.items():
-                    if sym:
-                        rev.setdefault(str(sym), []).append(str(gid))
-            except Exception:
-                pass
-            # Capture candidate symbol tokens and translate
-            sym_tokens = re.findall(r"\b[A-Za-z][A-Za-z0-9_.]*\b", s)
-            # Include GID symbolic keys (e.g., GID_ERBB2 -> ERBB2) for mapping
-            sym_tokens.extend(gid_symbol_candidates)
-            for t in sym_tokens:
-                if t in ("scale", "I", "C"):
-                    continue
-                if t in rev:
-                    for gid in rev[t]:
-                        geneids.add(gid)
-            return list(geneids)
-
-        target_geneids = _extract_geneids_from_formula(formula)
+        # If the RHS contains a gene-based covariate, make an additional plot
+        # with that gene removed so it does not dominate the volcano visually.
+        exclusion_symbol_map = {}
+        for gid, sym in gm.symbol.items():
+            if not sym:
+                continue
+            exclusion_symbol_map.setdefault(str(sym), []).append(str(gid))
+        target_geneids = _extract_formula_geneids_for_exclusion(
+            formula,
+            symbol_to_geneids=exclusion_symbol_map,
+        )
         # Keep only gene IDs that actually exist in the results index
         existing_geneids = [gid for gid in target_geneids if gid in df_all.index.astype(str)] if 'df_all' in locals() else [gid for gid in target_geneids if gid in export_data.index.astype(str)]
 
@@ -800,8 +835,7 @@ def volcanoplot(
                     out = safe_path_with_ext(outname + excl_tag, file_fmt)
                     print("Saving", out, "...", end="", flush=True)
                     grdevice(file=out, **gr_kw)
-                    Rvolcanoplot(
-                        df2,
+                    r_plot_kwargs = dict(
                         max_labels=number,
                         fc_cutoff=foldchange,
                         number_by=number_by,
@@ -827,6 +861,9 @@ def volcanoplot(
                         # x_label_override=x_label_override,
                         # y_label_override=y_label_override,
                     )
+                    if comparison_wrap_width is not None:
+                        r_plot_kwargs["comparison_wrap_width"] = comparison_wrap_width
+                    Rvolcanoplot(df2, **r_plot_kwargs)
                     grdevices.dev_off()
                     print("done.", flush=True)
         ## end for comparison, df in results.items():

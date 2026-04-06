@@ -4,7 +4,7 @@ import glob
 
 from .utils import *
 #from .constants import TAXON_MAPPER
-from .statmodels.limma_runner import run_limma_pipeline, normalize_formula_targets
+from .statmodels.limma_runner import run_limma_pipeline
 import hashlib, re
 
 # from . import utils
@@ -2028,9 +2028,8 @@ class Data:
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 
-        # Prepare limma-specific helpers (formula sanitisation, target genes).
+        # Prepare limma-specific helpers (formula passthrough, symbol lookup).
         limma_formula = formula
-        limma_targets = None
         symbol_lookup = {}
         if self.limma:
             # Dataset symbol -> dataset GeneIDs
@@ -2049,15 +2048,8 @@ class Data:
             except Exception:
                 pass
 
-            limma_formula, limma_targets = normalize_formula_targets(
-                formula, mat.index, symbol_lookup, logger
-            )
             try:
-                logger.info("Limma: effective formula: %s", limma_formula)
-                logger.info(
-                    "Limma: target GeneIDs from LHS: %s",
-                    None if limma_targets is None else list(limma_targets)[:5],
-                )
+                logger.info("Limma: preserving formula: %s", limma_formula)
             except Exception:
                 pass
             # compute joint export directory for this formula (matches volcano folder structure)
@@ -2162,7 +2154,6 @@ class Data:
                 block=self.block,
                 contrasts=contrasts_str,
                 logger=logger,
-                target_gene_ids=limma_targets,
                 symbol_lookup=symbol_lookup,
                 joint_export_dir=joint_export_dir,
                 limma_ebayes_robust=limma_robust,

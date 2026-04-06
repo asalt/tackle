@@ -155,7 +155,9 @@ HEADMAIN=(
 # ---- Volcano settings ----
 VOLCANO_FOLDCHANGE=2
 VOLCANO_NUMBER_BY="pValue"
-VOLCANO_LABEL_SCALE=1.8
+VOLCANO_LABEL_SCALE=1.0
+VOLCANO_COMPARISON_LABEL_SCALE=1.0
+VOLCANO_COMPARISON_WRAP_WIDTH=""
 VOLCANO_FORMULA="~ 0 + $DESIGN_COL"
 
 # Use a heredoc so you can paste multi-line contrast definitions safely.
@@ -193,15 +195,34 @@ TOPDIFF_VARIANTS=(
 )
 
 run_volcano() {{
-    tackle "${{HEADMAIN[@]}}" "$CONF" \\
-        volcano \\
-        --fill-na-zero \\
-        --impute-missing-values \\
-        --number-by "$VOLCANO_NUMBER_BY" \\
-        --foldchange "$VOLCANO_FOLDCHANGE" \\
-        --formula "$VOLCANO_FORMULA" \\
-        --contrasts "$VOLCANO_CONTRASTS" \\
+    local -a volcano_args=(
+        volcano
+        --comparison-label-scale "$VOLCANO_COMPARISON_LABEL_SCALE"
+        --fill-na-zero
+        --impute-missing-values
+        --number-by "$VOLCANO_NUMBER_BY"
+        --contrasts "$VOLCANO_CONTRASTS"
+        --foldchange "$VOLCANO_FOLDCHANGE"
+        --formula "$VOLCANO_FORMULA"
         --label-scale "$VOLCANO_LABEL_SCALE"
+    )
+    if [[ -n "$VOLCANO_COMPARISON_WRAP_WIDTH" ]]; then
+        volcano_args+=(--comparison-wrap-width "$VOLCANO_COMPARISON_WRAP_WIDTH")
+    fi
+    tackle "${{HEADMAIN[@]}}" "$CONF" "${{volcano_args[@]}}"
+}}
+
+run_cluster() {{
+    tackle "${{HEADMAIN[@]}}" "$CONF" \\
+        cluster2 \\
+        cluster2 --cut-by "$DESIGN_COL" \\
+        #
+}}
+
+run_pca() {{
+    tackle "${{HEADMAIN[@]}}" "$CONF" \\
+        pca2 --annotate --color "$DESIGN_COL" --max-pc 4 \\
+        #
 }}
 
 plot_topdiff() {{
@@ -251,6 +272,7 @@ run_export_and_metrics() {{
 main() {{
     # TODO: uncomment what you want.
     # run_export_and_metrics
+    # run_pca && run_cluster
     # run_volcano
     # plot_topdiff "$CONF"
     :

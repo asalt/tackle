@@ -7,7 +7,6 @@ from rpy2.rinterface_lib.embedded import RRuntimeError
 
 from tackle.statmodels.limma_runner import (
     run_limma_pipeline,
-    normalize_formula_targets,
 )
 
 
@@ -74,55 +73,71 @@ def test_limma_pipeline_basic():
     assert all(col in subset_df.columns for col in samples)
 
 
-def test_normalize_formula_targets_symbol_resolution():
-    formula = "HER2 ~ 0 + condition"
-    index = pd.Index(["1234", "5678", "91011"])
-    symbol_lookup = {"HER2": ["5678"], "EGFR": ["1234", "91011"]}
+def test_limma_pipeline_full_formula_lhs_does_not_subset_rows():
+    genes = ["geneA", "geneB", "2064"]
+    samples = ["s1", "s2", "s3", "s4"]
 
-    normalised, targets = normalize_formula_targets(
-        formula, index, symbol_lookup, logger=None
+    edata = pd.DataFrame(
+        [
+            [10.0, 11.0, 25.0, 24.0],
+            [5.0, 4.5, 6.0, 6.5],
+            [100.0, 98.0, 102.0, 101.0],
+        ],
+        index=genes,
+        columns=samples,
     )
+    pheno = pd.DataFrame({"condition": ["A", "A", "B", "B"]}, index=samples)
 
-    assert normalised == "~0 + condition"
-    assert targets == ["5678"]
+    try:
+        results = run_limma_pipeline(
+            edata=edata,
+            pheno=pheno,
+            group=None,
+            formula="GID_2064 ~ 0 + condition",
+            block=None,
+            contrasts=None,
+        )
+    except RRuntimeError as err:
+        pytest.skip(f"R limma prerequisites missing: {err}")
 
+    assert len(results) == 1
+    assert any("condition" in label for label in results)
+    assert not any(label.startswith("coef_GID_2064=") for label in results)
 
-def test_normalize_formula_targets_symbol_case_insensitive():
-    formula = "her2 ~ condition"
-    index = pd.Index(["5678"])
-    symbol_lookup = {"HER2": ["5678"]}
-
-    normalised, targets = normalize_formula_targets(formula, index, symbol_lookup, logger=None)
-    assert normalised == "~condition"
-    assert targets == ["5678"]
-
-
-def test_normalize_formula_targets_geneid_lookup_with_int_index():
-    formula = "GENEID_5678 ~ 0 + condition"
-    index = pd.Index([1234, 5678])
-    symbol_lookup = {}
-
-    normalised, targets = normalize_formula_targets(formula, index, symbol_lookup, logger=None)
-    assert normalised == "~0 + condition"
-    assert targets == [5678]
+    contrast_df = next(iter(results.values()))
+    assert contrast_df.index.tolist() == genes
+    assert all(col in contrast_df.columns for col in samples)
 
 
-def test_normalize_formula_targets_errors_on_ambiguous():
-    formula = "EGFR ~ 1 + condition"
-    index = pd.Index(["1234", "5678"])
-    symbol_lookup = {"EGFR": ["1234", "5678"]}
+def test_limma_pipeline_rhs_gene_covariate_still_drives_direct_coef_with_lhs_present():
+    samples = ["s1", "s2", "s3", "s4", "s5", "s6"]
+    gid_2064 = np.array([1.0, 1.4, 1.9, 1.2, 1.7, 2.1])
+    gid_9999 = np.array([0.5, 0.9, 1.3, 0.7, 1.1, 1.5])
+    geneX = gid_9999 * 2.0 + np.array([0.2, -0.1, 0.05, -0.2, 0.15, -0.05])
+    geneY = np.array([0.1, -0.2, 0.0, 0.05, -0.1, 0.2])
+    edata = pd.DataFrame(
+        [geneX, geneY, gid_2064, gid_9999],
+        index=["geneX", "geneY", "2064", "9999"],
+        columns=samples,
+    )
+    pheno = pd.DataFrame({"condition": ["A", "A", "A", "B", "B", "B"]}, index=samples)
 
-    with pytest.raises(ValueError):
-        normalize_formula_targets(formula, index, symbol_lookup, logger=None)
+    try:
+        results = run_limma_pipeline(
+            edata=edata,
+            pheno=pheno,
+            group=None,
+            formula="GID_2064 ~ 0 + GID_9999 + condition",
+            block=None,
+            contrasts=None,
+        )
+    except RRuntimeError as err:
+        pytest.skip(f"R limma prerequisites missing: {err}")
 
-
-def test_normalize_formula_targets_unknown_symbol():
-    formula = "UNKNOWN ~ 0 + condition"
-    index = pd.Index(["1234"])
-    symbol_lookup = {}
-
-    with pytest.raises(ValueError):
-        normalize_formula_targets(formula, index, symbol_lookup, logger=None)
+    assert any(label.startswith("coef_GID_9999=") for label in results)
+    assert any("condition" in label for label in results)
+    direct_df = next(df for label, df in results.items() if label.startswith("coef_GID_9999="))
+    assert direct_df.index.tolist() == ["geneX", "geneY", "2064", "9999"]
 
 
 def test_limma_pipeline_continuous_covariate_from_geneid():

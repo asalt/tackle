@@ -55,120 +55,22 @@ def normalize_formula_targets(
     logger: Optional[logging.Logger] = None,
 ) -> Tuple[Optional[str], Optional[List[Any]]]:
     """
-    Interpret optional left-hand-side protein references in a limma formula.
+    Deprecated compatibility shim that preserves limma formulas verbatim.
 
-    When users pass strings like ``HER2 ~ 0 + model`` we treat ``HER2`` as a
-    request to restrict the analysis to that protein (looked up either by
-    GeneID or symbol) while the design continues to come from the right-hand
-    side.  The function returns the RHS-only formula along with the resolved
-    GeneIDs that should be retained in the expression matrix.
+    Limma formulas are no longer normalized into an RHS-only design or used to
+    derive target rows. If callers still reach for this helper, keep the input
+    formula unchanged and return ``None`` for targets so the LHS is not
+    reinterpreted as an expression-matrix subset.
     """
-    if not formula or "~" not in formula:
-        return formula, None
-
-    lhs_raw, rhs_raw = formula.split("~", 1)
-    lhs = lhs_raw.strip()
-    rhs = rhs_raw.strip()
-
-    if not lhs:
-        normalised = rhs if rhs.startswith("~") or not rhs else "~" + rhs
-        return (normalised if normalised else None), None
-
-    tokens = [tok.strip() for tok in lhs.split("+") if tok.strip()]
-    if not tokens:
-        raise ValueError("Formula left-hand side must specify at least one protein.")
-
-    index_map: Dict[str, Any] = {}
-    for gid in gene_index:
-        gid_str = str(gid)
-        index_map.setdefault(gid_str, gid)
-        if isinstance(gid, str):
-            index_map.setdefault(gid, gid)
-
-    gene_ids: List[Any] = []
-
-    def _lookup_symbol_matches(token: str) -> List[str]:
-        if not symbol_lookup:
-            return []
-        search_tokens = {
-            token,
-            _sanitize_name(token),
-            token.casefold(),
-            _sanitize_name(token).casefold(),
-        }
-        matches: List[str] = []
-        for sym, ids in symbol_lookup.items():
-            if sym is None:
-                continue
-            sym_str = str(sym)
-            sym_tokens = {
-                sym_str,
-                _sanitize_name(sym_str),
-                sym_str.casefold(),
-                _sanitize_name(sym_str).casefold(),
-            }
-            if sym_tokens & search_tokens:
-                matches.extend(ids)
-        return matches
-
-    for token in tokens:
-        token_str = str(token)
-        # Explicit GeneID/GID tokens on LHS (supports optional underscore)
-        key_any = _extract_gene_key_any(token_str)
-        if key_any is not None:
-            _, key = key_any
-            if key in index_map:
-                gene_ids.append(index_map[key])
-                continue
-            # Fallback via symbol lookup when explicit key looks like a symbol
-            matches = list(dict.fromkeys(_lookup_symbol_matches(key)))
-            if not matches:
-                raise ValueError(
-                    f"Unknown GeneID/GID reference '{token_str}' in formula left-hand side."
-                )
-            if len(matches) > 1:
-                raise ValueError(
-                    f"Reference '{token_str}' maps to multiple GeneIDs: {list(matches)}; please disambiguate."
-                )
-            gene_ids.append(matches[0])
-            continue
-        # Disallow bare numeric tokens on LHS (ambiguous; could be intercept/constant)
-        if token_str.isdigit():
-            raise ValueError(
-                f"Ambiguous numeric token '{token_str}' in formula left-hand side. "
-                f"Use explicit 'GeneID_{token_str}' or a gene symbol."
+    _ = gene_index
+    _ = symbol_lookup
+    if logger and formula and "~" in formula:
+        lhs_raw, _rhs_raw = formula.split("~", 1)
+        if lhs_raw.strip():
+            logger.info(
+                "Limma: preserving formula LHS verbatim; formula no longer derives target GeneIDs."
             )
-        if token_str in index_map:
-            gene_ids.append(index_map[token_str])
-            continue
-        # Avoid symbol lookup for purely numeric tokens
-        matches = list(dict.fromkeys(_lookup_symbol_matches(token_str)))
-        if not matches:
-            raise ValueError(f"Unknown protein '{token}' in formula left-hand side.")
-        if len(matches) > 1:
-            raise ValueError(
-                f"Protein '{token}' maps to multiple GeneIDs: {list(matches)}; "
-                "please disambiguate."
-            )
-        gene_ids.append(matches[0])
-
-    if not rhs:
-        raise ValueError(
-            "Formula must include a right-hand side when specifying proteins on the left."
-        )
-
-    normalised = rhs if rhs.startswith("~") else "~" + rhs
-    if logger:
-        logger.info("Limma restricting to GeneIDs via formula LHS: %s", gene_ids)
-    # Deduplicate while preserving order
-    seen = set()
-    ordered_ids = []
-    for gid in gene_ids:
-        if gid in seen:
-            continue
-        seen.add(gid)
-        ordered_ids.append(gid)
-    return normalised, ordered_ids
+    return formula, None
 
 
 def _resolve_contrasts(
@@ -197,7 +99,7 @@ def _inject_gene_covariates_in_formula(
     symbol_lookup: Optional[Mapping[str, Sequence[str]]],
     logger: Optional[logging.Logger] = None,
 ) -> Tuple[Optional[str], pd.DataFrame]:
-    """Create pheno columns from gene IDs/symbols referenced on the RHS.
+    """Create pheno columns from gene IDs/symbols referenced anywhere in the formula.
 
     Rewrites the formula to use safe variable names. Returns (new_formula, new_pheno).
     """
@@ -424,8 +326,9 @@ def run_limma_pipeline(
         ``edata`` columns.
     group, formula:
         Mutually exclusive design specifiers.  When ``group`` is provided,
-        ``~0+group`` is used.  Otherwise ``formula`` is passed straight through
-        to ``model.matrix``.
+        ``~0+group`` is used.  Otherwise ``formula`` is preserved and passed
+        through to ``model.matrix`` after any gene-backed terms have been
+        materialized into ``pheno``.
     block:
         Optional column name in ``pheno`` used for duplicate correlation.
     contrasts:
@@ -457,7 +360,7 @@ def run_limma_pipeline(
     importr("limma")
     importr("dplyr", on_conflict="warn")
 
-    # Optionally inject covariates derived from gene expression referenced in formula
+    # Materialize gene-backed terms referenced anywhere in the formula into pheno.
     if logger:
         logger.info("Limma: incoming formula: %s", formula)
     formula, pheno = _inject_gene_covariates_in_formula(formula, edata, pheno, symbol_lookup, logger)

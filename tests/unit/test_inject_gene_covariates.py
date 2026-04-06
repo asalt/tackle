@@ -65,3 +65,25 @@ def test_inject_gene_covariates_warns_for_numeric_gene_tokens():
     assert "GID_101" in new_pheno.columns
     assert logger.warnings, "expected a warning about deprecated numeric tokens"
     assert "GeneID" in logger.warnings[0]
+
+
+def test_inject_gene_covariates_rewrites_lhs_gene_terms_into_pheno_columns():
+    edata = pd.DataFrame(
+        [[1.0, 2.0], [3.0, 4.0]],
+        index=["101", "202"],
+        columns=["s1", "s2"],
+    )
+    pheno = pd.DataFrame({"condition": ["A", "B"]}, index=["s1", "s2"])
+
+    rewritten, new_pheno = _inject_gene_covariates_in_formula(
+        formula="GeneID_101 + HER2 ~ 0 + condition",
+        edata=edata,
+        pheno=pheno,
+        symbol_lookup={"HER2": ["202"]},
+        logger=None,
+    )
+
+    assert rewritten == "GID_101 + GID_202 ~ 0 + condition"
+    assert list(new_pheno.columns) == ["condition", "GID_101", "GID_202"]
+    assert new_pheno["GID_101"].tolist() == [1.0, 2.0]
+    assert new_pheno["GID_202"].tolist() == [3.0, 4.0]

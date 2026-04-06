@@ -3,6 +3,8 @@ import pytest
 from tackle.volcanoplot import (
     _clean_group_label,
     _dedupe_comparison_label,
+    _extract_formula_geneids_for_exclusion,
+    _formula_rhs_text,
     _split_comparison_groups,
 )
 
@@ -52,3 +54,20 @@ def test_split_comparison_groups_ambiguous(comparison):
 )
 def test_clean_group_label_parentheses(value, expected):
     assert _clean_group_label(value) == expected
+
+
+def test_formula_rhs_text_discards_lhs_terms():
+    assert _formula_rhs_text("GID_101 ~ 0 + group") == "0 + group"
+    assert _formula_rhs_text("~ GID_101 + group") == "GID_101 + group"
+
+
+def test_extract_formula_geneids_for_exclusion_only_uses_rhs_terms():
+    symbol_to_geneids = {"HER2": ["101"], "EGFR": ["202"]}
+
+    assert _extract_formula_geneids_for_exclusion("HER2 ~ 0 + group", symbol_to_geneids) == []
+    assert set(
+        _extract_formula_geneids_for_exclusion(
+            "HER2 ~ HER2 + GeneID_202 + group",
+            symbol_to_geneids,
+        )
+    ) == {"101", "202"}

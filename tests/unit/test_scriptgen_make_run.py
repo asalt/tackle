@@ -37,8 +37,16 @@ def test_make_run_skeleton_includes_config_summary(tmp_path: Path):
     assert "# - group: 2 (A, B)" in script
     assert "tackle \"${HEADMAIN[@]}\" \"$CONF\" \\" in script
     assert "VOLCANO_CONTRASTS=$(cat <<'EOF'" in script
+    assert 'VOLCANO_LABEL_SCALE=1.0' in script
+    assert 'VOLCANO_COMPARISON_LABEL_SCALE=1.0' in script
+    assert 'VOLCANO_COMPARISON_WRAP_WIDTH=""' in script
     assert "read -r -d '' VOLCANO_CONTRASTS" not in script
     assert "plot_topdiff()" in script
+    assert "run_pca() {" in script
+    assert "run_cluster() {" in script
+    assert 'pca2 --annotate --color "$DESIGN_COL" --max-pc 4' in script
+    assert 'cluster2 --cut-by "$DESIGN_COL"' in script
+    assert "# run_pca && run_cluster" in script
     assert "mapfile -d '' -t files" in script
     assert "find \"$qstr\" -type f -name '*.tsv' -print0" in script
     assert "TOPDIFF_VARIANTS=(" in script

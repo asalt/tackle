@@ -28,6 +28,7 @@ volcanoplot <- function(X, max_labels = 35,
                         point_size = NULL,
                         color_down = "blue",
                         color_up = "red",
+                        comparison_wrap_width = NULL,
                         global_xmax = NULL,
                         global_ymax = NULL,
                         x_label_override = NULL,
@@ -60,12 +61,8 @@ volcanoplot <- function(X, max_labels = 35,
   X[, "Sig"] <- Sig
 
   X[, "usd"] <- bg_marker_color
-  if (direction != "up") {
-    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- color_down
-  }
-  if (direction != "down") {
-    X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- color_up
-  }
+  X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC < 0), "usd"] <- color_down
+  X[(X[, sig_metric] < sig & X$FC > fc_cutoff & X$log2_FC > 0), "usd"] <- color_up
   X[, "alpha"] <- .20 # new column
   if (!"highlight" %in% colnames(X)) {
     X[, "highlight"] <- FALSE
@@ -243,9 +240,13 @@ volcanoplot <- function(X, max_labels = 35,
 
     stringr::str_wrap(group, width = width, whitespace_only = TRUE)
   }
-  wrap_width <- 30
-  if ((max_nchar) > 45) wrap_width <- 26
-  if ((max_nchar) > 70) wrap_width <- 22
+  if (!is.null(comparison_wrap_width) && !is.na(comparison_wrap_width) && comparison_wrap_width > 0) {
+    wrap_width <- as.integer(comparison_wrap_width)
+  } else {
+    wrap_width <- 30
+    if ((max_nchar) > 45) wrap_width <- 26
+    if ((max_nchar) > 70) wrap_width <- 22
+  }
   group0 <- format_group_label(group0, width = wrap_width)
   group1 <- format_group_label(group1, width = wrap_width)
   if ((max_nchar) > 15) annot_size <- annot_size - .3
