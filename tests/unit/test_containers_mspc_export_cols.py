@@ -9,6 +9,7 @@ def _make_data(**overrides):
     data.ifot_ki = False
     data.ifot_tf = False
     data.median = False
+    data.trim_mean = False
     data.quantile75 = False
     data.quantile90 = False
     data.genefile_norm = None
@@ -27,6 +28,7 @@ def test_export_ibaq_column_name_none():
     [
         ("median", "iBAQ_dstrAdj_MED"),
         ("ifot", "iBAQ_dstrAdj_FOT"),
+        ("trim_mean", "iBAQ_dstrAdj_TMN"),
         ("ifot_ki", "FOT_KI"),
         ("ifot_tf", "FOT_TF"),
         ("quantile75", "iBAQ_dstrAdj_Q75"),
@@ -58,6 +60,7 @@ def test_mspc_ibaq_export_cols_include_core_columns():
     [
         ({"ifot_ki": True}, "FOT_KI"),
         ({"ifot_tf": True}, "FOT_TF"),
+        ({"trim_mean": True}, "iBAQ_dstrAdj_TMN"),
         ({"quantile75": True}, "iBAQ_dstrAdj_Q75"),
         ({"quantile90": True}, "iBAQ_dstrAdj_Q90"),
         ({"genefile_norm": "genes.txt"}, "iBAQ_dstrAdj_GNORM"),

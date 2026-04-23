@@ -83,8 +83,6 @@ def _dedupe_comparison_label(comparison: str) -> str:
 
 def _clean_group_label(value: str) -> str:
     s = value.strip()
-    if s.startswith("(") and s.endswith(")"):
-        s = s[1:-1].strip()
     s = re.sub(r"_+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
@@ -341,12 +339,18 @@ def volcanoplot(
         except Exception:
             symbol_lookup = {}
 
-        # Extract limma input matrix from the result tables (guaranteed to match the fit).
-        sample_ids = list(meta.index.astype(str))
-        first_df = next(iter(results.values()))
-        expr_cols = [c for c in sample_ids if c in first_df.columns]
-        edata = first_df[expr_cols].copy()
-        pheno = meta.reindex(expr_cols).copy()
+        # Prefer the exact matrix sent into stat_model()/limma so replay preserves
+        # whichever imputation backend was actually used. Fall back to the joined
+        # result tables for older call paths.
+        edata = getattr(data_obj, "_last_stat_model_expression_data", None)
+        if isinstance(edata, pd.DataFrame) and not edata.empty:
+            edata = edata.copy()
+        else:
+            sample_ids = list(meta.index.astype(str))
+            first_df = next(iter(results.values()))
+            expr_cols = [c for c in sample_ids if c in first_df.columns]
+            edata = first_df[expr_cols].copy()
+        pheno = meta.reindex(list(edata.columns.astype(str))).copy()
 
         formula_effective = None
         formula_rewritten = None
@@ -372,6 +376,7 @@ def volcanoplot(
             volcano_dir=volcano_dir,
             results=results,
             sample_metadata=pheno,
+            expression_matrix=edata,
             gene_symbols=data_obj.gid_symbol,
             gene_descriptions=gene_descriptions,
             funcats=data_obj.gid_funcat_mapping,
@@ -395,6 +400,7 @@ def volcanoplot(
             if getattr(data_obj, "batch_applied", None)
             else None,
             imputation_backend=getattr(data_obj, "imputation_backend", None),
+            gaussian_method=getattr(data_obj, "gaussian_method", None),
             lupine_mode=getattr(data_obj, "lupine_mode", None),
             force=True,
         )

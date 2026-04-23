@@ -462,6 +462,7 @@ class DataSnapshotCache:
             "ifot_ki": getattr(data_obj, "ifot_ki"),
             "ifot_tf": getattr(data_obj, "ifot_tf"),
             "median": getattr(data_obj, "median"),
+            "trim_mean": getattr(data_obj, "trim_mean", False),
             "quantile75": getattr(data_obj, "quantile75"),
             "quantile90": getattr(data_obj, "quantile90"),
             "genefile_norm": os.path.abspath(genefile_norm) if genefile_norm else None,
@@ -470,6 +471,10 @@ class DataSnapshotCache:
             "fill_na_zero": getattr(data_obj, "fill_na_zero"),
             "imputation_backend": getattr(data_obj, "imputation_backend")
             if getattr(data_obj, "impute_missing_values")
+            else None,
+            "gaussian_method": getattr(data_obj, "gaussian_method", None)
+            if getattr(data_obj, "impute_missing_values")
+            and getattr(data_obj, "imputation_backend") == "gaussian"
             else None,
             "lupine_mode": getattr(data_obj, "lupine_mode")
             if getattr(data_obj, "impute_missing_values")

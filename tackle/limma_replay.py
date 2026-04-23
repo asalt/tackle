@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import textwrap
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -205,12 +206,163 @@ def _write_json(path: Path, payload: Mapping[str, Any], *, force: bool) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n", encoding="utf-8")
 
 
+def _write_text(path: Path, content: str, *, force: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not force:
+        raise FileExistsError(f"{path} already exists (use --force to overwrite)")
+    path.write_text(content, encoding="utf-8")
+
+
+def _render_replay_explore_rmd(*, gct_relpath: str, context_relpath: str) -> str:
+    return textwrap.dedent(
+        f"""\
+        ---
+        title: "Volcano Replay Explore"
+        output:
+          html_document:
+            toc: true
+            toc_float: true
+        ---
+
+        ```{{r setup, include=FALSE}}
+        knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+        ```
+
+        ```{{r load}}
+        if (!requireNamespace("jsonlite", quietly = TRUE)) {{
+          stop("Missing dependency: jsonlite")
+        }}
+        if (!requireNamespace("cmapR", quietly = TRUE)) {{
+          stop("Missing dependency: cmapR")
+        }}
+        ctx <- jsonlite::read_json("{context_relpath}", simplifyVector = TRUE)
+        suppressPackageStartupMessages(library(cmapR))
+
+        parse_gct_any <- function(path) {{
+          exports <- getNamespaceExports("cmapR")
+          if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
+          if ("parse_gctx" %in% exports) return(cmapR::parse_gctx(path))
+          stop("cmapR does not export parse.gctx / parse_gctx")
+        }}
+
+        ds <- parse_gct_any("{gct_relpath}")
+        mat <- ds@mat
+        cdesc <- ds@cdesc
+        rdesc <- ds@rdesc
+        ```
+
+        ## Replay Context
+
+        ```{{r context}}
+        key_fields <- c(
+          "run_id", "matrix_shape",
+          "group", "formula_in", "formula_effective", "formula_rewritten",
+          "contrasts_spec", "block",
+          "impute_missing_values", "imputation_backend", "gaussian_method", "lupine_mode",
+          "limma_robust", "limma_trend",
+          "normtype", "non_zeros", "taxon", "batch_applied", "batch_method"
+        )
+        present <- intersect(key_fields, names(ctx))
+        as.data.frame(t(unlist(ctx[present])), stringsAsFactors = FALSE)
+        ```
+
+        ## Matrix Summary
+
+        ```{{r matrix-summary}}
+        summary(as.vector(mat))
+        sample_summary <- data.frame(
+          sample = colnames(mat),
+          mean = colMeans(mat, na.rm = TRUE),
+          median = apply(mat, 2, median, na.rm = TRUE),
+          sd = apply(mat, 2, sd, na.rm = TRUE),
+          na_count = colSums(is.na(mat)),
+          stringsAsFactors = FALSE
+        )
+        knitr::kable(sample_summary)
+        ```
+
+        ## Global Distribution
+
+        ```{{r global-distribution}}
+        hist(as.vector(mat), breaks = 80, main = "Global expression distribution", xlab = "Expression")
+        lines(density(as.vector(mat), na.rm = TRUE), col = "steelblue", lwd = 2)
+        ```
+
+        ## Per-sample Distributions
+
+        ```{{r sample-distributions, fig.width=10, fig.height=5}}
+        boxplot(as.data.frame(mat), las = 2, outline = FALSE, main = "Per-sample distributions", ylab = "Expression")
+        ```
+
+        ## Sample Correlation
+
+        ```{{r sample-correlation, fig.width=7, fig.height=7}}
+        corr <- cor(mat, use = "pairwise.complete.obs")
+        heatmap(corr, symm = TRUE, margins = c(8, 8), main = "Sample correlation")
+        ```
+
+        ## PCA
+
+        ```{{r pca}}
+        complete_rows <- complete.cases(mat)
+        if (sum(complete_rows) >= 2 && ncol(mat) >= 2) {{
+          mat_complete <- mat[complete_rows, , drop = FALSE]
+          pcs <- prcomp(t(mat_complete), center = TRUE, scale. = TRUE)
+          pct <- round(100 * summary(pcs)$importance[2, 1:2], 1)
+          plot(
+            pcs$x[, 1], pcs$x[, 2],
+            pch = 19,
+            xlab = paste0("PC1 (", pct[[1]], "%)"),
+            ylab = paste0("PC2 (", pct[[2]], "%)"),
+            main = "Sample PCA"
+          )
+          text(pcs$x[, 1], pcs$x[, 2], labels = rownames(pcs$x), pos = 3, cex = 0.7)
+        }} else {{
+          cat("Not enough complete rows to compute PCA.\\n")
+        }}
+        ```
+
+        ## Top Variable Genes
+
+        ```{{r top-variable-genes}}
+        rv <- apply(mat, 1, var, na.rm = TRUE)
+        rv <- rv[is.finite(rv)]
+        if (length(rv) > 0) {{
+          top_ids <- names(sort(rv, decreasing = TRUE))[seq_len(min(20, length(rv)))]
+          gene_symbol <- if ("GeneSymbol" %in% colnames(rdesc)) rdesc[top_ids, "GeneSymbol"] else rep("", length(top_ids))
+          out <- data.frame(
+            GeneID = top_ids,
+            GeneSymbol = gene_symbol,
+            Variance = unname(rv[top_ids]),
+            stringsAsFactors = FALSE
+          )
+          knitr::kable(out)
+        }} else {{
+          cat("No finite row variances were available.\\n")
+        }}
+        ```
+        """
+    )
+
+
+def _render_replay_explore_sh(*, rmd_name: str, html_name: str) -> str:
+    return textwrap.dedent(
+        f"""\
+        #!/usr/bin/env bash
+        set -euo pipefail
+        cd "$(dirname "$0")"
+        Rscript -e "rmarkdown::render('{rmd_name}', output_file = '{html_name}')"
+        """
+    )
+
+
 def write_limma_replay_files(
     *,
     analysis_dir: str,
     volcano_dir: str,
     results: Mapping[str, pd.DataFrame],
     sample_metadata: pd.DataFrame,
+    expression_matrix: Optional[pd.DataFrame] = None,
     gene_symbols: Optional[Mapping[Any, Any]] = None,
     gene_descriptions: Optional[Mapping[str, str]] = None,
     funcats: Optional[Mapping[Any, Any]] = None,
@@ -230,14 +382,18 @@ def write_limma_replay_files(
     batch_applied: Optional[bool] = None,
     batch_method: Optional[str] = None,
     imputation_backend: Optional[str] = None,
+    gaussian_method: Optional[str] = None,
     lupine_mode: Optional[str] = None,
     force: bool = False,
 ) -> LimmaReplayFiles:
     analysis_root = Path(analysis_dir).expanduser().resolve()
     volcano_root = Path(volcano_dir).expanduser().resolve()
 
-    sample_ids = list(sample_metadata.index.astype(str))
-    edata = _extract_limma_input_from_results(results, sample_ids=sample_ids)
+    if expression_matrix is not None:
+        edata = expression_matrix.copy()
+    else:
+        sample_ids = list(sample_metadata.index.astype(str))
+        edata = _extract_limma_input_from_results(results, sample_ids=sample_ids)
 
     # Make a replay-specific cdesc that matches the matrix columns (and include injected covariates if present).
     cdesc = sample_metadata.copy()
@@ -268,6 +424,9 @@ def write_limma_replay_files(
         "limma_trend": bool(limma_trend),
         "impute_missing_values": bool(impute_missing_values),
         "fill_na_zero": bool(fill_na_zero),
+        "imputation_backend": imputation_backend,
+        "gaussian_method": gaussian_method if imputation_backend == "gaussian" else None,
+        "lupine_mode": lupine_mode if imputation_backend == "lupine" else None,
         "direct_coefs": direct_coefs,
         "contrast_expressions": contrast_exprs,
     }
@@ -277,6 +436,9 @@ def write_limma_replay_files(
     replay_dir.mkdir(parents=True, exist_ok=True)
 
     gct_path = _write_gct(out_path=replay_dir / "limma_input.gct", mat=edata, cdesc=cdesc, rdesc=rdesc)
+    replay_rmd_path = replay_dir / "replay_explore.Rmd"
+    replay_render_path = replay_dir / "render_replay_explore.sh"
+    replay_html_path = replay_dir / "replay_explore.html"
 
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     context = {
@@ -297,19 +459,39 @@ def write_limma_replay_files(
         "impute_missing_values": bool(impute_missing_values),
         "fill_na_zero": bool(fill_na_zero),
         "imputation_backend": imputation_backend,
-        "lupine_mode": lupine_mode,
+        "gaussian_method": gaussian_method if imputation_backend == "gaussian" else None,
+        "lupine_mode": lupine_mode if imputation_backend == "lupine" else None,
         "normtype": normtype,
         "non_zeros": non_zeros,
         "taxon": taxon,
         "batch_applied": batch_applied,
         "batch_method": batch_method,
         "gct_path": str(gct_path),
+        "replay_explore_rmd_path": str(replay_rmd_path),
+        "replay_explore_render_path": str(replay_render_path),
+        "replay_explore_html_path": str(replay_html_path),
         "result_labels": list(results.keys()),
         "direct_coefs": direct_coefs,
         "contrast_expressions": contrast_exprs,
     }
     context_path = replay_dir / "limma_replay_context.json"
     _write_json(context_path, context, force=force)
+    _write_text(
+        replay_rmd_path,
+        _render_replay_explore_rmd(
+            gct_relpath=gct_path.name,
+            context_relpath=context_path.name,
+        ),
+        force=force,
+    )
+    _write_text(
+        replay_render_path,
+        _render_replay_explore_sh(
+            rmd_name=replay_rmd_path.name,
+            html_name=replay_html_path.name,
+        ),
+        force=force,
+    )
 
     # Update "last run" pointer under analysis context.
     pointer_path = analysis_root / "context" / "last_volcano_replay.json"
@@ -417,4 +599,3 @@ def sanitize_for_filename(text: str) -> str:
     s = re.sub(r"[^\w.\-]+", "_", s)
     s = s.strip("._-")
     return s or "limma"
-

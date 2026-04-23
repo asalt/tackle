@@ -48,8 +48,9 @@ def test_split_comparison_groups_ambiguous(comparison):
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("(A+B)", "A+B"),
+        ("(A+B)", "(A+B)"),
         (" (A+B)/2 ", "(A+B)/2"),
+        (" ((A+B)/2 - (C+D)/2) ", "((A+B)/2 - (C+D)/2)"),
     ],
 )
 def test_clean_group_label_parentheses(value, expected):

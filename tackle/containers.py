@@ -3,6 +3,11 @@ from collections import OrderedDict
 import glob
 
 from .utils import *
+from .impute_cache import (
+    compute_imputation_cache_key,
+    load_imputation_cache,
+    save_imputation_cache,
+)
 #from .constants import TAXON_MAPPER
 from .statmodels.limma_runner import run_limma_pipeline
 import hashlib, re
@@ -562,6 +567,7 @@ class Data:
         ifot_ki=False,
         ifot_tf=False,
         median=False,
+        trim_mean=False,
         quantile75=False,
         quantile90=False,
         genefile_norm=None,
@@ -576,6 +582,9 @@ class Data:
         impute_missing_values=False,
         lupine_mode="local",
         imputation_backend="gaussian",
+        gaussian_method="legacy",
+        cache_impute=True,
+        cache_overwrite=False,
         only_local=False,
         norm_info=None,
     ):
@@ -634,6 +643,7 @@ class Data:
         self.ifot_ki = ifot_ki
         self.ifot_tf = ifot_tf
         self.median = median
+        self.trim_mean = trim_mean
         self.quantile75 = quantile75
         self.quantile90 = quantile90
         self.genefile_norm = genefile_norm
@@ -661,6 +671,9 @@ class Data:
         self.lupine_mode = lupine_mode
         # use gaussian distribution 2 sd down from mean of data by default
         self.imputation_backend = imputation_backend
+        self.gaussian_method = str(gaussian_method or "legacy")
+        self.cache_impute = bool(cache_impute)
+        self.cache_overwrite = bool(cache_overwrite)
 
         self.set_analysis_name(experiment_file)
         if set_outpath:
@@ -940,6 +953,7 @@ class Data:
             "ifot_ki",
             "ifot_tf",
             "median",
+            "trim_mean",
             "quantile75",
             "quantile90",
         ]
@@ -955,6 +969,8 @@ class Data:
         """Return the iBAQ column label to use for exports under current normalization."""
         if self.median:
             return "iBAQ_dstrAdj_MED"
+        if self.trim_mean:
+            return "iBAQ_dstrAdj_TMN"
         if self.ifot:
             return "iBAQ_dstrAdj_FOT"
         if self.ifot_ki:
@@ -1181,6 +1197,7 @@ class Data:
                 ifot_ki=self.ifot_ki,
                 ifot_tf=self.ifot_tf,
                 median=self.median,
+                trim_mean = self.trim_mean,
                 quantile75=self.quantile75,
                 quantile90=self.quantile90,
                 genefile_norm=self.genefile_norm,
@@ -1203,6 +1220,7 @@ class Data:
                 if self.export_all:
                     df.loc[:, "iBAQ_dstrAdj_FOT"] = normalize(df, ifot=True)
                     df.loc[:, "iBAQ_dstrAdj_MED"] = normalize(df, median=True)
+                    df.loc[:, "iBAQ_dstrAdj_TMN"] = normalize(df, trim_mean=True)
             else:
                 # df = filter_and_assign(df, name, self.funcats, self.funcats_inverse,
                 #                        self.geneid_subset, self.ignore_geneid_subset, self.ifot,
@@ -1237,6 +1255,9 @@ class Data:
 
                         df.loc[df.TaxonID == taxonid, "iBAQ_dstrAdj_MED"] = normalize(
                             df.loc[df.TaxonID == taxonid], median=True
+                        )
+                        df.loc[df.TaxonID == taxonid, "iBAQ_dstrAdj_TMN"] = normalize(
+                            df.loc[df.TaxonID == taxonid], trim_mean=True
                         )
 
                     # df = (df.pipe(normalize, ifot=True, outcol='iBAQ_dstrAdj_FOT')
@@ -1445,17 +1466,88 @@ class Data:
         )
         self.df_filtered = df_filtered.set_index(["GeneID", "Metric"])
 
-    # def impute_missing(self, frame):
-    #     _norm_notna = frame.replace(0, np.NAN).stack().apply(np.log10)
-    #     _norm_notna += np.abs(_norm_notna.min())
-    #     _mean = _norm_notna.mean()
-    #     _sd = _norm_notna.std()
-    #     _norm = stats.norm(loc=_mean-(_sd*2), scale=_sd)
-    #     _number_na = self._areas.replace(0, np.NAN).isna().sum().sum()
-    #     # print(frame.replace(0, np.NAN).isna().sum())
-    #     random_values = _norm.rvs(size=_number_na, random_state=1234)
+    def impute_missing(
+        self,
+        frame,
+        *,
+        downshift=1.8,
+        scale=None,
+        effective_width=None,
+        make_plot=False,
+    ):
+        cache_root = None
+        cache_key = None
+        cache_meta = None
 
-    #     _areas_log = np.log10(frame.replace(0, np.NAN))
+        if self.imputation_backend == "lupine":
+            cache_meta = {
+                "backend": "lupine",
+                "lupine_mode": self.lupine_mode,
+                "params": {
+                    "mode": self.lupine_mode,
+                    "biased": True,
+                    "LUPINE_N_MODELS": os.environ.get("LUPINE_N_MODELS"),
+                    "LUPINE_DEVICE": os.environ.get("LUPINE_DEVICE"),
+                },
+            }
+            logger.info("Imputing missing values with Lupine backend")
+        else:
+            cache_meta = {
+                "backend": "gaussian",
+                "gaussian_method": self.gaussian_method,
+                "params": {
+                    "downshift": downshift,
+                    "scale": scale,
+                    "effective_width": effective_width,
+                    "random_state": 1234,
+                },
+            }
+            logger.info(
+                "Imputing missing values with Gaussian backend (%s method)",
+                self.gaussian_method,
+            )
+
+        if self.impute_missing_values and self.cache_impute and self.outpath:
+            cache_root = os.path.join(self.outpath, "context", "imputation_cache")
+            cache_key = compute_imputation_cache_key(
+                frame,
+                backend=cache_meta["backend"],
+                gaussian_method=cache_meta.get("gaussian_method"),
+                lupine_mode=cache_meta.get("lupine_mode"),
+                params=cache_meta.get("params"),
+            )
+            if not self.cache_overwrite:
+                cached = load_imputation_cache(cache_root, cache_key)
+                if cached is not None:
+                    logger.info("Imputation cache hit: %s", cache_key[:10])
+                    return cached
+                logger.info("Imputation cache miss: %s", cache_key[:10])
+            else:
+                logger.info("Imputation cache overwrite requested: %s", cache_key[:10])
+
+        if self.imputation_backend == "lupine":
+            out = impute_missing_lupine(frame, mode=self.lupine_mode)
+        else:
+            out = impute_missing_gaussian(
+                frame,
+                method=self.gaussian_method,
+                downshift=downshift,
+                scale=scale,
+                effective_width=effective_width,
+                make_plot=make_plot,
+            )
+
+        if cache_root and cache_key:
+            save_imputation_cache(
+                cache_root,
+                cache_key,
+                out,
+                metadata=cache_meta,
+                overwrite=self.cache_overwrite,
+            )
+            logger.info("Imputation cache saved: %s", cache_key[:10])
+
+        return out
     #     _areas_log += np.abs(_areas_log.min().min())
 
     #     start_ix = 0
@@ -1516,10 +1608,12 @@ class Data:
         if self.impute_missing_values:
             # downshift=2.
             # scale = .5
-            downshift, scale = 1.8, 0.8
+            gaussian_cfg = get_gaussian_imputation_defaults(self.gaussian_method)
+            downshift = gaussian_cfg["downshift"]
+            plot_scale = gaussian_cfg["plot_scale"]
 
             inpute_plotname = get_outname(
-                "distribution_ds_{:.2g}_scale_{:.2g}".format(downshift, scale),
+                "distribution_ds_{:.2g}_scale_{:.2g}".format(downshift, plot_scale),
                 name=self.outpath_name,
                 taxon=self.taxon,
                 non_zeros=self.non_zeros,
@@ -1536,16 +1630,17 @@ class Data:
             )
             observed = to_impute.replace(0, np.nan).stack().dropna()
             missing = to_impute.isna()
-            if self.imputation_backend == "lupine":
-                logger.info("Imputing missing values with Lupine backend")
-                imputed = impute_missing_lupine(to_impute, mode=self.lupine_mode)
-            else:
-                logger.info("Imputing missing values with Gaussian backend")
-                imputed = impute_missing(
-                    to_impute, downshift=downshift, scale=scale, make_plot=False
-                )
+            imputed = self.impute_missing(
+                to_impute,
+                downshift=downshift,
+                scale=gaussian_cfg["scale"],
+                effective_width=gaussian_cfg["effective_width"],
+                make_plot=False,
+            )
             # Plot imputed vs observed distributions for both backends
-            plot_imputed(imputed, observed, missing, downshift=downshift, scale=scale)
+            plot_imputed(
+                imputed, observed, missing, downshift=downshift, scale=plot_scale
+            )
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
             self._areas_log = imputed
@@ -1589,7 +1684,7 @@ class Data:
         print(f"export_all is set to {self.export_all}")
         if self.export_all and not self.normed:
             new_cols = list()
-            for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED":
+            for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED", "iBAQ_dstrAdj_TMN":
                 frame = self.df_filtered.loc[idx[:, col], :]
                 if self.impute_missing_values and False:  # disable this
                     frame_log = self.impute_missing(frame).reset_index()
@@ -1617,7 +1712,7 @@ class Data:
             if (
                 self.export_all and not self.normed
             ):  # batch normalize the other requested area columns
-                for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED":
+                for col in "iBAQ_dstrAdj", "iBAQ_dstrAdj_FOT", "iBAQ_dstrAdj_MED", "iBAQ_dstrAdj_TMN":
                     logger.info(f"Batch normalizing {col}")
                     frame = (
                         self.df_filtered.loc[idx[:, col + "_log10"], :]
@@ -1780,7 +1875,7 @@ class Data:
 
         for item, grp in pheno.groupby(batch):
             cols = grp.index
-            data.loc[:, cols] = impute_missing(
+            data.loc[:, cols] = self.impute_missing(
                 data.loc[:, cols].replace(0, pd.NA),
                 downshift=0,
                 scale=0.1,
@@ -1997,10 +2092,12 @@ class Data:
 
         logger.info(f"Impute missing values for stat mod: {self.impute_missing_values}")
         if impute_missing_values:
-            downshift, scale = 1.8, 0.8
+            gaussian_cfg = get_gaussian_imputation_defaults(self.gaussian_method)
+            downshift = gaussian_cfg["downshift"]
+            plot_scale = gaussian_cfg["plot_scale"]
 
             inpute_plotname = get_outname(
-                "distribution_ds_{:.2g}_scale_{:.2g}".format(downshift, scale),
+                "distribution_ds_{:.2g}_scale_{:.2g}".format(downshift, plot_scale),
                 name=self.outpath_name,
                 taxon=self.taxon,
                 non_zeros=self.non_zeros,
@@ -2016,17 +2113,21 @@ class Data:
             mat[mat == 0] = np.nan
             observed = mat.replace(0, np.nan).stack().dropna()
             missing = mat.isna()
-            if self.imputation_backend == "lupine":
-                logger.info("Imputing missing values in stat model with Lupine backend")
-                mat = impute_missing_lupine(mat, mode=self.lupine_mode)
-            else:
-                logger.info("Imputing missing values in stat model with Gaussian backend")
-                mat = impute_missing(
-                    mat, downshift=downshift, scale=scale, make_plot=False
-                )
-            plot_imputed(mat, observed, missing, downshift=downshift, scale=scale)
+            mat = self.impute_missing(
+                mat,
+                downshift=downshift,
+                scale=gaussian_cfg["scale"],
+                effective_width=gaussian_cfg["effective_width"],
+                make_plot=False,
+            )
+            plot_imputed(mat, observed, missing, downshift=downshift, scale=plot_scale)
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
+
+        try:
+            self._last_stat_model_expression_data = mat.copy()
+        except Exception:
+            self._last_stat_model_expression_data = mat
 
         # Prepare limma-specific helpers (formula passthrough, symbol lookup).
         limma_formula = formula
@@ -2639,6 +2740,9 @@ class Data:
                 "iBAQ_dstrAdj_MED",
                 "iBAQ_dstrAdj_MED_log10",
                 "iBAQ_dstrAdj_MED_log10_zscore",
+                "iBAQ_dstrAdj_TMN",
+                "iBAQ_dstrAdj_TMN_log10",
+                "iBAQ_dstrAdj_TMN_log10_zscore",
             ]
 
             if "GeneCapacity" in export.index.get_level_values(1):

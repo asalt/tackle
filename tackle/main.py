@@ -914,6 +914,13 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Normalize based on median sample expression value",
 )
 @click.option(
+@click.option(
+    "--trim-mean",
+    default=False,
+    show_default=True,
+    is_flag=True,
+    help="Normalize based on the mean after discarding the lowest 25% and highest 25% of expression values",
+)
     "--quantile75",
     default=False,
     show_default=True,
@@ -941,7 +948,14 @@ ANNOTATION_CHOICES = _annotation_choices()
     type=click.Choice(("gaussian", "lupine")),
     default="gaussian",
     show_default=True,
-    help="Imputation method to use when --impute-missing-values is enabled.",
+    help="Imputation backend to use when --impute-missing-values is enabled.",
+)
+@click.option(
+    "--gaussian-method",
+    type=click.Choice(("legacy", "mqish")),
+    default="legacy",
+    show_default=True,
+    help="Gaussian imputation algorithm when --imputation-backend gaussian is used.",
 )
 @click.option(
     "--lupine-mode",
@@ -951,6 +965,18 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Lupine training mode when using --imputation-backend lupine.",
 )
 @click.option(
+@click.option(
+    "--cache-overwrite/--no-cache-overwrite",
+    default=False,
+    show_default=True,
+    help="When imputation caching is enabled, overwrite matching cached imputation outputs.",
+)
+@click.option(
+    "--cache-impute/--no-cache-impute",
+    default=True,
+    show_default=True,
+    help="Reuse and persist imputation outputs keyed by input matrix and imputation method.",
+)
     "-n",
     "--name",
     type=str,
@@ -1041,7 +1067,10 @@ def main(
     impute_missing_values,
     imputation_backend,
     lupine_mode,
+    gaussian_method,
     limma,
+    cache_overwrite,
+    cache_impute,
     block,
     pairs,
     ignore_geneids,
@@ -1052,6 +1081,7 @@ def main(
     genefile_norm,
     median,
     quantile75,
+    trim_mean,
     quantile90,
     name,
     normalize_across_species,
@@ -1105,10 +1135,10 @@ def main(
             "limma", "At the moment, only use of `limma` is supported"
         )
 
-    sumed_norm_flags = ifot + ifot_ki + ifot_tf + median + quantile75 + quantile90
+    sumed_norm_flags = ifot + ifot_ki + ifot_tf + median + trim_mean + quantile75 + quantile90
     if (sumed_norm_flags > 1) or (sumed_norm_flags > 0 and genefile_norm):
         raise click.BadParameter(
-            "Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`, `genefile_norm`"
+            "Cannot specify a combination of `iFOT`, `iFOT-KI`, `iFOT-TF`, `median`, `trim_mean`, `genefile_norm`"
         )
 
     # validate_subgroup(nonzero_subgroup, experiment_file)
@@ -1240,6 +1270,7 @@ def main(
         ifot_tf=ifot_tf,
         median=median,
         quantile75=quantile75,
+        trim_mean=trim_mean,
         quantile90=quantile90,
         genefile_norm=genefile_norm,
         name=name,
@@ -1250,7 +1281,10 @@ def main(
         impute_missing_values=impute_missing_values,
         imputation_backend=imputation_backend,
         lupine_mode=lupine_mode,
+        gaussian_method=gaussian_method,
         normalize_across_species=normalize_across_species,
+        cache_impute=cache_impute,
+        cache_overwrite=cache_overwrite,
         experiment_file=experiment_file,
         metrics=metrics,
         limma=limma,

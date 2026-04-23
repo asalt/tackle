@@ -383,6 +383,73 @@ def impute_missing_mqish(
     return areas_imputed
 
 
+DEFAULT_GAUSSIAN_IMPUTATION_METHOD = "legacy"
+
+
+def get_gaussian_imputation_defaults(
+    method: str = DEFAULT_GAUSSIAN_IMPUTATION_METHOD,
+):
+    method = str(method or DEFAULT_GAUSSIAN_IMPUTATION_METHOD).strip().lower()
+    if method == "legacy":
+        return {
+            "method": "legacy",
+            "downshift": 1.8,
+            "scale": 0.8,
+            "effective_width": None,
+            "plot_scale": 0.8,
+        }
+    if method == "mqish":
+        return {
+            "method": "mqish",
+            "downshift": 1.8,
+            "scale": None,
+            "effective_width": 0.3,
+            "plot_scale": 0.3,
+        }
+    raise ValueError(f"Unsupported gaussian imputation method: {method}")
+
+
+def impute_missing_gaussian(
+    frame,
+    *,
+    method: str = DEFAULT_GAUSSIAN_IMPUTATION_METHOD,
+    downshift: float = None,
+    scale: float = None,
+    effective_width: float = None,
+    random_state: int = 1234,
+    n_draws: int = None,
+    make_plot: bool = True,
+):
+    defaults = get_gaussian_imputation_defaults(method)
+    if downshift is None:
+        downshift = defaults["downshift"]
+
+    if defaults["method"] == "legacy":
+        if scale is None:
+            scale = defaults["scale"]
+        legacy_n_draws = 8 if n_draws is None else n_draws
+        return impute_missing_old(
+            frame,
+            downshift=downshift,
+            scale=scale,
+            random_state=random_state,
+            n_draws=legacy_n_draws,
+            make_plot=make_plot,
+        )
+
+    if effective_width is None:
+        effective_width = scale if scale is not None else defaults["effective_width"]
+    mq_n_draws = 1 if n_draws is None else n_draws
+    return impute_missing_mqish(
+        frame,
+        downshift=downshift,
+        effective_width=effective_width,
+        n_draws=mq_n_draws,
+        random_state=random_state,
+        make_plot=make_plot,
+    )
+
+
 def impute_missing_lupine(
     frame,
     n_models=None,
@@ -499,8 +566,23 @@ def impute_missing_lupine(
     return pd.DataFrame(qmats_mean, index=rows, columns=cols)
 
 
-impute_missing = impute_missing_mqish # impute_missing_old
-impute_missing = impute_missing_old # impute_missing_old
+def impute_missing(
+    frame,
+    downshift=2.0,
+    scale=1.0,
+    random_state=1234,
+    n_draws=None,
+    make_plot=True,
+):
+    return impute_missing_gaussian(
+        frame,
+        method=DEFAULT_GAUSSIAN_IMPUTATION_METHOD,
+        downshift=downshift,
+        scale=scale,
+        random_state=random_state,
+        n_draws=n_draws,
+        make_plot=make_plot,
+    )
 
 # def filter_observations(panel, column, threshold):
 #     """
@@ -1308,6 +1390,7 @@ def normalize(
     ifot_ki=False,
     ifot_tf=False,
     median=False,
+    trim_mean=False,
     quantile75=False,
     quantile90=False,
     genefile_norm=None,
@@ -1321,22 +1404,26 @@ def normalize(
             & (np.isfinite(df.iBAQ_dstrAdj))
         ].index
         norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].sum()
-    elif median or quantile75 or quantile90:
-        if quantile75:
-            q = 0.75
-        if quantile90:
-            q = 0.90
-        if median:
-            q = 0.5
+    elif median or trim_mean or quantile75 or quantile90:
         # ifot_normalizer.to_ignore
         nonzero_ix = (
             df[~df.GeneID.isin(ifot_normalizer.to_ignore)]
             .query("iBAQ_dstrAdj > 0")
             .index
         )
-        norm_ = df.loc[nonzero_ix, "iBAQ_dstrAdj"].quantile(q=q)
+        vals = df.loc[nonzero_ix, "iBAQ_dstrAdj"]
+        if trim_mean:
+            norm_ = stats.trim_mean(vals, 0.25) if len(vals) else 0
+        else:
+            if quantile75:
+                q = 0.75
+            if quantile90:
+                q = 0.90
+            if median:
+                q = 0.5
+            norm_ = vals.quantile(q=q)
 
-        print(q, norm_)
+            print(q, norm_)
 
         if taxon and taxon in UNANNOTATED_TIDS:
             norm_ = 1
@@ -1412,6 +1499,7 @@ def filter_and_assign(
     ifot_ki=False,
     ifot_tf=False,
     median=False,
+    trim_mean=False,
 ):
     """Filter by funcats and geneid_subset (if given)
     remove NAN GeneIDs"""
@@ -1420,6 +1508,9 @@ def filter_and_assign(
         norm_ = df.loc[ifot_normalizer.filter(df.index), "iBAQ_dstrAdj"].sum()
     elif median:
         norm_ = df.loc[ifot_normalizer.filter(df.index), "iBAQ_dstrAdj"].median()
+    elif trim_mean:
+        vals = df.loc[ifot_normalizer.filter(df.index), "iBAQ_dstrAdj"]
+        norm_ = stats.trim_mean(vals, 0.25) if len(vals) else 0
     elif ifot_ki:
         norm_ = df.loc[
             df["FunCats"].fillna("").str.contains("KI"), "iBAQ_dstrAdj"
@@ -1496,6 +1587,7 @@ def get_outname(
         "batch": "batch",
         "genefile": "genes",
         "genefile_norm": "gnorm",
+        "trim_mean": "tmean",
     }
 
     def _short_key(key: str) -> str:
@@ -1567,6 +1659,7 @@ def get_outname(
         .replace("sort_", "")
         .replace("Treatment", "treat")
         .replace("median", "med")
+        .replace("trim_mean", "tmean")
         .replace("__", "_")
     ).lstrip(r".")
 

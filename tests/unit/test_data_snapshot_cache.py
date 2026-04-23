@@ -30,11 +30,13 @@ class FakeData:
         self.ifot_ki = False
         self.ifot_tf = False
         self.median = False
+        self.trim_mean = False
         self.quantile75 = False
         self.quantile90 = False
         self.impute_missing_values = False
         self.fill_na_zero = True
         self.imputation_backend = "gaussian"
+        self.gaussian_method = "legacy"
         self.lupine_mode = "local"
         self.batch = None
         self.batch_nonparametric = False
