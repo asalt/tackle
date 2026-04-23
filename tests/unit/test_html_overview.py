@@ -4,6 +4,7 @@ import base64
 import gzip
 import html as html_lib
 import json
+import os
 import re
 from pathlib import Path
 
@@ -723,6 +724,27 @@ def test_build_html_overview_ai_summary_emits_telemetry_events(
     assert "tackle.make_html.ai_summary.section.start" in event_types
     assert "tackle.make_html.ai_summary.section.complete" in event_types
     assert "tackle.make_html.ai_summary.complete" in event_types
+
+
+def test_build_html_overview_displays_base_dir_relative_to_cwd(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    base = tmp_path / "analysis"
+    volcano_dir = base / "volcano" / "mouse"
+    _write_dummy_png(volcano_dir / "run1_volcano_nz1_groupA_minus_groupB_pValue.png")
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(base_dir=str(base), out_dir=str(out_dir), force=True)
+
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+    expected_rel = os.path.relpath(base.resolve(), Path.cwd().resolve()).replace("\\", "/")
+    if expected_rel == ".":
+        expected_rel = "./"
+    elif not expected_rel.startswith("."):
+        expected_rel = f"./{expected_rel}"
+
+    assert f"Base directory: <code>{expected_rel}</code>" in html_text
+    assert str(base.resolve()) not in html_text
 
 
 def test_build_html_overview_ai_summary_uses_cache_until_force_refresh(

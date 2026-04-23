@@ -2191,7 +2191,7 @@ def build_html_overview(
         title=report_title,
         generated_at=generated_at,
         show_date=bool(show_date),
-        base_dir=str(root),
+        base_dir=(lambda _p: ("./" if _p == "." else (_p if _p.startswith(".") else f"./{_p}")))(os.path.relpath(root, Path.cwd().resolve()).replace("\\", "/")),
         self_contained=bool(self_contained),
         interactive_resource_mode=resource_mode,
         defer_plot_images=bool(defer_plot_images),
