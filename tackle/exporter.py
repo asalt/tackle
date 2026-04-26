@@ -1,9 +1,13 @@
+import csv
+import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
+import textwrap
 import time
-import csv
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Tuple, Optional, Dict, Any, Sequence
 
@@ -12,6 +16,284 @@ import pandas as pd
 from .utils import _get_logger
 
 logger = _get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class XlsxVisualCheckResult:
+    available: bool
+    rendered: bool
+    output_paths: List[str]
+    command: List[str]
+    reason: Optional[str] = None
+    stdout: str = ""
+    stderr: str = ""
+
+
+@dataclass(frozen=True)
+class XlsxVisualReviewBundle:
+    fixture_name: str
+    bundle_dir: str
+    manifest_path: str
+    review_prompt_path: str
+    workbook_path: str
+    png_paths: List[str]
+    render_command: List[str]
+    available: bool
+    rendered: bool
+    reason: Optional[str] = None
+
+
+def _find_office_renderer() -> Optional[str]:
+    return shutil.which("soffice") or shutil.which("libreoffice")
+
+
+def _env_truthy(name: str) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return False
+    return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _resolve_xlsx_visual_review_dir(
+    *,
+    xlsx_path: Path,
+    fixture_name: str,
+    out_dir: Optional[str] = None,
+) -> Path:
+    if out_dir:
+        return Path(out_dir).expanduser().resolve()
+
+    out_root = os.getenv("TACKLE_XLS_VISUAL_OUTDIR")
+    if out_root:
+        return (Path(out_root).expanduser().resolve() / fixture_name)
+
+    if _env_truthy("TACKLE_XLS_VISUAL_KEEP"):
+        return (xlsx_path.parent / ".visual-check" / fixture_name).resolve()
+
+    return Path(tempfile.mkdtemp(prefix=f"tackle_xls_visual_{fixture_name}_")).resolve()
+
+
+def _write_json_file(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_text_file(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _sanitize_visual_fixture_name(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value).strip())
+    safe = safe.strip("._-")
+    return safe or "xlsx_visual_check"
+
+
+def _default_visual_review_checklist() -> List[str]:
+    return [
+        "Confirm the header row is readable and not clipped.",
+        "Confirm columns are wide enough for key labels and summary values.",
+        "Confirm the worksheet layout looks stable enough for manual or AI review.",
+    ]
+
+
+def _render_visual_review_prompt(
+    *,
+    fixture_name: str,
+    workbook_path: str,
+    png_paths: Sequence[str],
+    checklist: Sequence[str],
+    render_result: XlsxVisualCheckResult,
+) -> str:
+    png_lines = "\n".join(f"- `{path}`" for path in png_paths) if png_paths else "- No PNGs were produced."
+    checklist_lines = "\n".join(f"- {item}" for item in checklist)
+    status_line = (
+        "Rendered PNG previews are available."
+        if render_result.rendered
+        else f"Render status: unavailable/failed. Reason: {render_result.reason or 'unknown'}"
+    )
+    return textwrap.dedent(
+        f"""        # XLS Visual Review
+
+        Fixture: `{fixture_name}`
+        Workbook: `{workbook_path}`
+
+        {status_line}
+
+        ## Rendered PNGs
+        {png_lines}
+
+        ## Review checklist
+        {checklist_lines}
+
+        Use this bundle for a human or AI reviewer to assess overall workbook readability and layout.
+        Do not treat this prompt as a deterministic pass/fail oracle; semantic workbook assertions remain the source of truth.
+        """
+    )
+
+
+def render_xlsx_visual_check(
+    xlsx_path: str,
+    *,
+    out_dir: str,
+    office_bin: Optional[str] = None,
+    timeout_seconds: float = 60.0,
+) -> XlsxVisualCheckResult:
+    """Render an XLSX workbook to one or more PNG previews using LibreOffice.
+
+    This is intended for optional visual QA, not for required correctness checks.
+    When no office renderer is available, the result reports `available=False`
+    instead of raising so callers can skip gracefully.
+    """
+    xlsx = Path(xlsx_path).expanduser().resolve()
+    if not xlsx.exists() or not xlsx.is_file():
+        raise FileNotFoundError(str(xlsx))
+
+    dest = Path(out_dir).expanduser().resolve()
+    dest.mkdir(parents=True, exist_ok=True)
+
+    office = office_bin or _find_office_renderer()
+    if not office:
+        return XlsxVisualCheckResult(
+            available=False,
+            rendered=False,
+            output_paths=[],
+            command=[],
+            reason="No soffice/libreoffice renderer found on PATH.",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="tackle_xlsx_preview_profile_") as profile_dir:
+        profile_uri = Path(profile_dir).resolve().as_uri()
+        cmd = [
+            office,
+            "--headless",
+            f"-env:UserInstallation={profile_uri}",
+            "--convert-to",
+            "png",
+            "--outdir",
+            str(dest),
+            str(xlsx),
+        ]
+        try:
+            proc = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=float(timeout_seconds),
+            )
+        except Exception as exc:
+            return XlsxVisualCheckResult(
+                available=True,
+                rendered=False,
+                output_paths=[],
+                command=cmd,
+                reason=f"{type(exc).__name__}: {exc}",
+            )
+
+    output_paths = sorted(str(p) for p in dest.glob(f"{xlsx.stem}*.png") if p.is_file())
+    if proc.returncode != 0:
+        return XlsxVisualCheckResult(
+            available=True,
+            rendered=False,
+            output_paths=output_paths,
+            command=cmd,
+            reason=(proc.stderr or proc.stdout or f"Renderer exited with code {proc.returncode}").strip(),
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+        )
+    if not output_paths:
+        return XlsxVisualCheckResult(
+            available=True,
+            rendered=False,
+            output_paths=[],
+            command=cmd,
+            reason="Renderer completed but produced no PNG previews.",
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+        )
+    return XlsxVisualCheckResult(
+        available=True,
+        rendered=True,
+        output_paths=output_paths,
+        command=cmd,
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+    )
+
+
+def build_xlsx_visual_review_bundle(
+    xlsx_path: str,
+    *,
+    fixture_name: str,
+    checklist: Optional[Sequence[str]] = None,
+    out_dir: Optional[str] = None,
+    office_bin: Optional[str] = None,
+    timeout_seconds: float = 60.0,
+) -> XlsxVisualReviewBundle:
+    xlsx = Path(xlsx_path).expanduser().resolve()
+    if not xlsx.exists() or not xlsx.is_file():
+        raise FileNotFoundError(str(xlsx))
+
+    fixture = _sanitize_visual_fixture_name(fixture_name)
+    bundle_dir = _resolve_xlsx_visual_review_dir(
+        xlsx_path=xlsx,
+        fixture_name=fixture,
+        out_dir=out_dir,
+    )
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    render_dir = bundle_dir / "rendered_pngs"
+    render_result = render_xlsx_visual_check(
+        str(xlsx),
+        out_dir=str(render_dir),
+        office_bin=office_bin,
+        timeout_seconds=timeout_seconds,
+    )
+    checklist_items = [str(item).strip() for item in (checklist or ()) if str(item).strip()]
+    if not checklist_items:
+        checklist_items = _default_visual_review_checklist()
+
+    manifest_path = bundle_dir / "manifest.json"
+    review_prompt_path = bundle_dir / "review_prompt.md"
+    manifest_payload = {
+        "schema_version": 1,
+        "fixture_name": fixture,
+        "workbook_path": str(xlsx),
+        "png_paths": list(render_result.output_paths),
+        "checklist": checklist_items,
+        "render_command": list(render_result.command),
+        "available": bool(render_result.available),
+        "rendered": bool(render_result.rendered),
+        "reason": render_result.reason,
+        "review_status": None,
+        "review_notes": "",
+    }
+    _write_json_file(manifest_path, manifest_payload)
+    _write_text_file(
+        review_prompt_path,
+        _render_visual_review_prompt(
+            fixture_name=fixture,
+            workbook_path=str(xlsx),
+            png_paths=render_result.output_paths,
+            checklist=checklist_items,
+            render_result=render_result,
+        ),
+    )
+
+    return XlsxVisualReviewBundle(
+        fixture_name=fixture,
+        bundle_dir=str(bundle_dir),
+        manifest_path=str(manifest_path),
+        review_prompt_path=str(review_prompt_path),
+        workbook_path=str(xlsx),
+        png_paths=list(render_result.output_paths),
+        render_command=list(render_result.command),
+        available=bool(render_result.available),
+        rendered=bool(render_result.rendered),
+        reason=render_result.reason,
+    )
+
 
 def _excel_col_letter(col_num: int) -> str:
     """Convert a 1-based column number to an Excel column letter (e.g. 1->A, 27->AA)."""
