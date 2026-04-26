@@ -25,6 +25,7 @@ class LimmaReplayFiles:
     gct_path: Path
     context_path: Path
     pointer_path: Path
+    pre_impute_gct_path: Optional[Path] = None
 
 
 def _sanitize_name(value: str) -> str:
@@ -213,7 +214,13 @@ def _write_text(path: Path, content: str, *, force: bool) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _render_replay_explore_rmd(*, gct_relpath: str, context_relpath: str) -> str:
+def _render_replay_explore_rmd(
+    *,
+    gct_relpath: str,
+    context_relpath: str,
+    pre_impute_gct_relpath: Optional[str] = None,
+) -> str:
+    pre_impute_gct_literal = json.dumps(pre_impute_gct_relpath) if pre_impute_gct_relpath else "NULL"
     return textwrap.dedent(
         f"""\
         ---
@@ -245,25 +252,112 @@ def _render_replay_explore_rmd(*, gct_relpath: str, context_relpath: str) -> str
           stop("cmapR does not export parse.gctx / parse_gctx")
         }}
 
-        ds <- parse_gct_any("{gct_relpath}")
-        mat <- ds@mat
-        cdesc <- ds@cdesc
-        rdesc <- ds@rdesc
+        stored_ds <- parse_gct_any("{gct_relpath}")
+        mat_stored <- stored_ds@mat
+        cdesc <- stored_ds@cdesc
+        rdesc <- stored_ds@rdesc
+        mat <- mat_stored
+
+        pre_impute_gct_path <- {pre_impute_gct_literal}
+        mat_pre_impute <- NULL
+        if (!is.null(pre_impute_gct_path) && nzchar(pre_impute_gct_path) && file.exists(pre_impute_gct_path)) {{
+          pre_ds <- parse_gct_any(pre_impute_gct_path)
+          mat_pre_impute <- pre_ds@mat
+        }}
         ```
 
         ## Replay Context
 
         ```{{r context}}
         key_fields <- c(
-          "run_id", "matrix_shape",
+          "run_id", "matrix_shape", "stored_matrix_role",
           "group", "formula_in", "formula_effective", "formula_rewritten",
           "contrasts_spec", "block",
+          "has_pre_impute_matrix", "recompute_imputation_supported",
           "impute_missing_values", "imputation_backend", "gaussian_method", "lupine_mode",
           "limma_robust", "limma_trend",
           "normtype", "non_zeros", "taxon", "batch_applied", "batch_method"
         )
         present <- intersect(key_fields, names(ctx))
         as.data.frame(t(unlist(ctx[present])), stringsAsFactors = FALSE)
+        ```
+
+        ## Stored Matrix Replay
+
+        ```{{r stored-matrix-replay}}
+        cat("The stored limma_input.gct matrix is the authoritative replay matrix.\\n")
+        cat("All summary plots below use mat_stored as written by tackle.\\n")
+        if (!is.null(mat_pre_impute)) {{
+          cat("A pre-imputation matrix is also available at: ", pre_impute_gct_path, "\\n", sep = "")
+          cat("Pre-impute matrix dimensions: ", paste(dim(mat_pre_impute), collapse = " x "), "\\n", sep = "")
+        }} else {{
+          cat("No pre-imputation matrix was exported for this replay bundle.\\n")
+        }}
+        ```
+
+        ## Optional Gaussian Recompute
+
+        ```{{r optional-gaussian-recompute}}
+        deterministic_gaussian_impute <- function(x, downshift = 1.8, width = 0.3, seed = 1234) {{
+          out <- as.matrix(x)
+          out[out == 0] <- NA_real_
+          obs <- as.numeric(out[is.finite(out)])
+          miss <- is.na(out)
+          if (!any(miss) || length(obs) < 2) return(out)
+          obs_sd <- stats::sd(obs)
+          if (!is.finite(obs_sd) || obs_sd <= 0) obs_sd <- 1
+          set.seed(seed)
+          out[miss] <- stats::rnorm(
+            sum(miss),
+            mean = mean(obs) - downshift * obs_sd,
+            sd = max(.Machine$double.eps, width * obs_sd)
+          )
+          out
+        }}
+
+        can_recompute <- isTRUE(ctx$impute_missing_values) &&
+          identical(ctx$imputation_backend, "gaussian") &&
+          !is.null(mat_pre_impute)
+
+        if (can_recompute) {{
+          method <- ctx$gaussian_method
+          if (is.null(method) || !nzchar(method)) method <- "legacy"
+          width <- if (identical(method, "mqish")) 0.3 else 0.8
+          mat_recomputed <- deterministic_gaussian_impute(
+            mat_pre_impute,
+            downshift = 1.8,
+            width = width,
+            seed = 1234
+          )
+          common_rows <- intersect(rownames(mat_recomputed), rownames(mat_stored))
+          common_cols <- intersect(colnames(mat_recomputed), colnames(mat_stored))
+          delta <- mat_recomputed[common_rows, common_cols, drop = FALSE] -
+            mat_stored[common_rows, common_cols, drop = FALSE]
+          finite_delta <- as.numeric(delta[is.finite(delta)])
+          cat("R-side deterministic Gaussian recompute completed for inspection.\\n")
+          cat("Exact replay should use mat_stored; this chunk is a reproducibility diagnostic.\\n")
+          if (length(finite_delta) > 0) {{
+            knitr::kable(data.frame(
+              metric = c("mean_abs_delta", "max_abs_delta", "correlation"),
+              value = c(
+                mean(abs(finite_delta)),
+                max(abs(finite_delta)),
+                suppressWarnings(stats::cor(
+                  as.numeric(mat_recomputed[common_rows, common_cols]),
+                  as.numeric(mat_stored[common_rows, common_cols]),
+                  use = "complete.obs"
+                ))
+              )
+            ))
+          }} else {{
+            cat("No finite overlapping values were available for comparison.\\n")
+          }}
+        }} else {{
+          cat("Gaussian recompute skipped. This requires imputation_backend == 'gaussian' and limma_input_pre_impute.gct.\\n")
+          if (identical(ctx$imputation_backend, "lupine")) {{
+            cat("Lupine replay uses the stored matrix; model-side recompute is intentionally not attempted here.\\n")
+          }}
+        }}
         ```
 
         ## Matrix Summary
@@ -363,6 +457,7 @@ def write_limma_replay_files(
     results: Mapping[str, pd.DataFrame],
     sample_metadata: pd.DataFrame,
     expression_matrix: Optional[pd.DataFrame] = None,
+    pre_impute_expression_matrix: Optional[pd.DataFrame] = None,
     gene_symbols: Optional[Mapping[Any, Any]] = None,
     gene_descriptions: Optional[Mapping[str, str]] = None,
     funcats: Optional[Mapping[Any, Any]] = None,
@@ -436,6 +531,18 @@ def write_limma_replay_files(
     replay_dir.mkdir(parents=True, exist_ok=True)
 
     gct_path = _write_gct(out_path=replay_dir / "limma_input.gct", mat=edata, cdesc=cdesc, rdesc=rdesc)
+    pre_impute_gct_path: Optional[Path] = None
+    pre_impute_shape: Optional[List[int]] = None
+    if pre_impute_expression_matrix is not None:
+        pre_edata = pre_impute_expression_matrix.copy()
+        pre_edata = pre_edata.reindex(index=edata.index, columns=edata.columns)
+        pre_impute_shape = [int(pre_edata.shape[0]), int(pre_edata.shape[1])]
+        pre_impute_gct_path = _write_gct(
+            out_path=replay_dir / "limma_input_pre_impute.gct",
+            mat=pre_edata,
+            cdesc=cdesc,
+            rdesc=rdesc,
+        )
     replay_rmd_path = replay_dir / "replay_explore.Rmd"
     replay_render_path = replay_dir / "render_replay_explore.sh"
     replay_html_path = replay_dir / "replay_explore.html"
@@ -448,6 +555,12 @@ def write_limma_replay_files(
         "replay_dir": str(replay_dir),
         "run_id": run_id,
         "matrix_shape": [int(edata.shape[0]), int(edata.shape[1])],
+        "stored_matrix_role": (
+            "limma_input_imputed" if bool(impute_missing_values) else "limma_input"
+        ),
+        "stored_matrix_is_authoritative": True,
+        "has_pre_impute_matrix": pre_impute_gct_path is not None,
+        "pre_impute_matrix_shape": pre_impute_shape,
         "group": group,
         "formula_in": formula_in,
         "formula_effective": formula_effective,
@@ -467,6 +580,17 @@ def write_limma_replay_files(
         "batch_applied": batch_applied,
         "batch_method": batch_method,
         "gct_path": str(gct_path),
+        "pre_impute_gct_path": str(pre_impute_gct_path) if pre_impute_gct_path else None,
+        "recompute_imputation_supported": bool(
+            impute_missing_values
+            and imputation_backend == "gaussian"
+            and pre_impute_gct_path is not None
+        ),
+        "recompute_imputation_note": (
+            "R-side Gaussian recompute is a diagnostic; exact replay uses the stored limma_input.gct matrix."
+            if imputation_backend == "gaussian"
+            else "Stored matrix replay is authoritative; non-Gaussian backends are not recomputed in the Rmd."
+        ),
         "replay_explore_rmd_path": str(replay_rmd_path),
         "replay_explore_render_path": str(replay_render_path),
         "replay_explore_html_path": str(replay_html_path),
@@ -481,6 +605,7 @@ def write_limma_replay_files(
         _render_replay_explore_rmd(
             gct_relpath=gct_path.name,
             context_relpath=context_path.name,
+            pre_impute_gct_relpath=pre_impute_gct_path.name if pre_impute_gct_path else None,
         ),
         force=force,
     )
@@ -502,6 +627,7 @@ def write_limma_replay_files(
         "replay_dir": str(replay_dir),
         "run_id": run_id,
         "gct_path": str(gct_path),
+        "pre_impute_gct_path": str(pre_impute_gct_path) if pre_impute_gct_path else None,
         "context_path": str(context_path),
     }
     _write_json(pointer_path, pointer_payload, force=True)
@@ -514,6 +640,7 @@ def write_limma_replay_files(
         gct_path=gct_path,
         context_path=context_path,
         pointer_path=pointer_path,
+        pre_impute_gct_path=pre_impute_gct_path,
     )
 
 

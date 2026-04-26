@@ -141,6 +141,71 @@ def test_write_limma_replay_files_prefers_explicit_expression_matrix(tmp_path: P
     assert context["impute_missing_values"] is True
     assert context["imputation_backend"] == "gaussian"
     assert context["gaussian_method"] == "legacy"
+    assert context["stored_matrix_is_authoritative"] is True
+    assert context["stored_matrix_role"] == "limma_input_imputed"
+    assert context["has_pre_impute_matrix"] is False
     assert (files.replay_dir / "replay_explore.Rmd").exists()
     assert (files.replay_dir / "render_replay_explore.sh").exists()
-    assert "limma_input.gct" in (files.replay_dir / "replay_explore.Rmd").read_text(encoding="utf-8")
+    rmd = (files.replay_dir / "replay_explore.Rmd").read_text(encoding="utf-8")
+    assert "limma_input.gct" in rmd
+    assert "Stored Matrix Replay" in rmd
+    assert "Optional Gaussian Recompute" in rmd
+
+
+def test_write_limma_replay_files_writes_pre_impute_matrix_for_recompute(tmp_path: Path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_write_gct(*, out_path, mat, cdesc, rdesc, precision=4):
+        captured[out_path.name] = mat.copy()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text("# dummy gct\n", encoding="utf-8")
+        return out_path
+
+    monkeypatch.setattr("tackle.limma_replay._write_gct", fake_write_gct)
+
+    analysis = tmp_path / "analysis"
+    volcano = analysis / "volcano" / "mouse"
+    sample_metadata = pd.DataFrame({"group": ["A", "B"]}, index=["S1", "S2"])
+
+    imputed_edata = pd.DataFrame(
+        {"S1": [10.5, 20.5], "S2": [30.5, 40.5]},
+        index=["101", "202"],
+    )
+    pre_impute_edata = pd.DataFrame(
+        {"S1": [10.5, float("nan")], "S2": [float("nan"), 40.5]},
+        index=["101", "202"],
+    )
+    result_df = pd.DataFrame(
+        {"S1": [1.0, 2.0], "S2": [3.0, 4.0], "pAdj": [0.01, 0.02]},
+        index=["101", "202"],
+    )
+
+    files = write_limma_replay_files(
+        analysis_dir=str(analysis),
+        volcano_dir=str(volcano),
+        results={"A-B=A-B": result_df},
+        sample_metadata=sample_metadata,
+        expression_matrix=imputed_edata,
+        pre_impute_expression_matrix=pre_impute_edata,
+        impute_missing_values=True,
+        imputation_backend="gaussian",
+        gaussian_method="mqish",
+        force=True,
+    )
+
+    assert captured["limma_input.gct"].equals(imputed_edata)
+    assert captured["limma_input_pre_impute.gct"].equals(pre_impute_edata)
+    assert files.pre_impute_gct_path == files.replay_dir / "limma_input_pre_impute.gct"
+
+    context = json.loads(files.context_path.read_text(encoding="utf-8"))
+    assert context["has_pre_impute_matrix"] is True
+    assert context["pre_impute_gct_path"].endswith("limma_input_pre_impute.gct")
+    assert context["pre_impute_matrix_shape"] == [2, 2]
+    assert context["recompute_imputation_supported"] is True
+
+    pointer = json.loads(files.pointer_path.read_text(encoding="utf-8"))
+    assert pointer["pre_impute_gct_path"].endswith("limma_input_pre_impute.gct")
+
+    rmd = (files.replay_dir / "replay_explore.Rmd").read_text(encoding="utf-8")
+    assert 'pre_impute_gct_path <- "limma_input_pre_impute.gct"' in rmd
+    assert "mat_stored" in rmd

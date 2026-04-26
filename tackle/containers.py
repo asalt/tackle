@@ -2090,6 +2090,11 @@ class Data:
             mat[self.mask] = 0
             mat[mat == 0] = 0
 
+        try:
+            self._last_stat_model_expression_data_pre_impute = mat.copy()
+        except Exception:
+            self._last_stat_model_expression_data_pre_impute = mat
+
         logger.info(f"Impute missing values for stat mod: {self.impute_missing_values}")
         if impute_missing_values:
             gaussian_cfg = get_gaussian_imputation_defaults(self.gaussian_method)
