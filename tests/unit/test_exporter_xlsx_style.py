@@ -6,8 +6,11 @@ import pytest
 
 from tackle.exporter import (
     XlsxVisualCheckResult,
+    XLSX_HEADER_FILL,
+    XLSX_HEADER_FONT_NAME,
     _apply_sheet_style_openpyxl,
     _infer_col_widths,
+    _xlsx_header_row_height,
     build_xlsx_visual_review_bundle,
     render_xlsx_visual_check,
 )
@@ -53,15 +56,50 @@ def test_apply_sheet_style_openpyxl_sets_header_and_widths():
         headers=headers,
         kind="volcano",
         col_widths={"GeneID": 12, "GeneDescription": 50, "pAdj": 14},
+        header_rotation=60,
     )
 
     assert ws.freeze_panes == "A2"
     assert ws.auto_filter.ref == "A1:C2"
+    assert ws.page_setup.orientation == "landscape"
+    assert ws.sheet_view.showGridLines is False
     assert ws["A1"].font.bold is True
-    assert str(ws["A1"].fill.fgColor.rgb).endswith("F2F2F2")
+    assert ws["A1"].font.name == XLSX_HEADER_FONT_NAME
+    assert ws["A1"].font.sz == 10
+    assert str(ws["A1"].fill.fgColor.rgb).endswith(XLSX_HEADER_FILL)
+    assert ws["A1"].alignment.text_rotation == 60
+    assert ws["A1"].alignment.wrap_text is True
+    assert ws.row_dimensions[1].height == pytest.approx(_xlsx_header_row_height(60))
     assert ws.column_dimensions["A"].width == pytest.approx(12.0)
     assert ws.column_dimensions["B"].width == pytest.approx(50.0)
     assert ws.column_dimensions["C"].width == pytest.approx(14.0)
+
+
+@pytest.mark.skipif(
+    pytest.importorskip("openpyxl", reason="openpyxl required for workbook style checks") is None,
+    reason="openpyxl required for workbook style checks",
+)
+def test_apply_sheet_style_openpyxl_can_keep_horizontal_headers():
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    headers = ["GeneID", "GeneDescription"]
+    ws.append(headers)
+    ws.append(["101", "alpha protein"])
+
+    _apply_sheet_style_openpyxl(
+        ws,
+        nrows_total=2,
+        ncols=2,
+        headers=headers,
+        kind="volcano",
+        col_widths={"GeneID": 12, "GeneDescription": 50},
+        header_rotation=0,
+    )
+
+    assert ws["A1"].alignment.text_rotation == 0
+    assert ws.row_dimensions[1].height == pytest.approx(_xlsx_header_row_height(0))
 
 
 def test_render_xlsx_visual_check_reports_missing_renderer(tmp_path, monkeypatch):

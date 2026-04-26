@@ -17,6 +17,31 @@ from .utils import _get_logger
 
 logger = _get_logger(__name__)
 
+XLSX_HEADER_FONT_NAME = "Aptos"
+XLSX_HEADER_FONT_SIZE = 10
+XLSX_HEADER_FILL = "E8F1F8"
+XLSX_HEADER_ROTATION_CHOICES = (0, 45, 60, 90)
+XLSX_HEADER_ROW_HEIGHTS = {
+    0: 18.0,
+    45: 84.0,
+    60: 120.0,
+    90: 132.0,
+}
+
+
+def _normalize_header_rotation(value: Any) -> int:
+    try:
+        rotation = int(value)
+    except Exception as exc:
+        raise ValueError(f"header_rotation must be one of {XLSX_HEADER_ROTATION_CHOICES}") from exc
+    if rotation not in XLSX_HEADER_ROTATION_CHOICES:
+        raise ValueError(f"header_rotation must be one of {XLSX_HEADER_ROTATION_CHOICES}, got {rotation}")
+    return rotation
+
+
+def _xlsx_header_row_height(header_rotation: Any) -> float:
+    return float(XLSX_HEADER_ROW_HEIGHTS[_normalize_header_rotation(header_rotation)])
+
 
 @dataclass(frozen=True)
 class XlsxVisualCheckResult:
@@ -383,14 +408,20 @@ def _infer_col_widths(
 
     return widths
 
-def _xlsxwriter_formats(workbook):
+def _xlsxwriter_formats(workbook, *, header_rotation: int = 60):
     """Create a small set of reusable xlsxwriter formats."""
+    rotation = _normalize_header_rotation(header_rotation)
     header = workbook.add_format(
         {
             "bold": True,
-            "bg_color": "#F2F2F2",
+            "font_name": XLSX_HEADER_FONT_NAME,
+            "font_size": XLSX_HEADER_FONT_SIZE,
+            "bg_color": f"#{XLSX_HEADER_FILL}",
             "border": 1,
-            "text_wrap": False,
+            "text_wrap": True,
+            "align": "center",
+            "valign": "vcenter",
+            "rotation": rotation,
         }
     )
     text_wrap = workbook.add_format({"text_wrap": True})
@@ -428,14 +459,22 @@ def _apply_sheet_style_xlsxwriter(
     kind: Optional[str],
     col_widths: Optional[Dict[str, int]],
     formats: Dict[str, Any],
+    header_rotation: int = 60,
 ) -> None:
     if nrows_total <= 0 or ncols <= 0:
         return
+    rotation = _normalize_header_rotation(header_rotation)
     last_row = max(0, int(nrows_total) - 1)
     last_col = max(0, int(ncols) - 1)
+    try:
+        worksheet.set_landscape()
+        worksheet.fit_to_pages(1, 0)
+        worksheet.hide_gridlines(2)
+    except Exception:
+        pass
     worksheet.freeze_panes(1, 0)
     worksheet.autofilter(0, 0, last_row, last_col)
-    worksheet.set_row(0, None, formats.get("header"))
+    worksheet.set_row(0, _xlsx_header_row_height(rotation), formats.get("header"))
 
     # Set widths / column formats (row format should keep header styling).
     for idx, h in enumerate(headers):
@@ -456,25 +495,43 @@ def _apply_sheet_style_openpyxl(
     headers: Sequence[str],
     kind: Optional[str],
     col_widths: Optional[Dict[str, int]],
+    header_rotation: int = 60,
 ) -> None:
     if nrows_total <= 0 or ncols <= 0:
         return
     try:
-        from openpyxl.styles import Font, PatternFill
+        from openpyxl.styles import Alignment, Font, PatternFill
     except Exception:
         return
 
+    rotation = _normalize_header_rotation(header_rotation)
+    try:
+        worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+        worksheet.page_setup.orientation = "landscape"
+        worksheet.page_setup.fitToWidth = 1
+        worksheet.page_setup.fitToHeight = 0
+        worksheet.sheet_view.showGridLines = False
+    except Exception:
+        pass
     worksheet.freeze_panes = "A2"
     ref = _excel_a1_range(nrows_total, ncols)
     if ref:
         worksheet.auto_filter.ref = ref
 
-    header_font = Font(bold=True)
-    header_fill = PatternFill("solid", fgColor="F2F2F2")
+    header_font = Font(name=XLSX_HEADER_FONT_NAME, size=XLSX_HEADER_FONT_SIZE, bold=True)
+    header_fill = PatternFill("solid", fgColor=XLSX_HEADER_FILL)
+    header_alignment = Alignment(
+        text_rotation=rotation,
+        wrap_text=True,
+        vertical="center",
+        horizontal="center",
+    )
+    worksheet.row_dimensions[1].height = _xlsx_header_row_height(rotation)
     for col_idx in range(1, int(ncols) + 1):
         cell = worksheet.cell(row=1, column=col_idx)
         cell.font = header_font
         cell.fill = header_fill
+        cell.alignment = header_alignment
 
     if col_widths:
         for col_idx, h in enumerate(headers, start=1):
@@ -636,6 +693,7 @@ def build_export_xlsx(
     pandas_low_memory: bool = False,
     stream_export: bool = False,
     style: bool = True,
+    header_rotation: int = 60,
 ) -> str:
     """
     Create an Excel workbook summarizing common tackle exports under an analysis directory.
@@ -648,6 +706,7 @@ def build_export_xlsx(
     include_volcano: Include volcano result TSVs
     """
     root = Path(base_dir)
+    header_rotation = _normalize_header_rotation(header_rotation)
     logger.info(
         "Exporter: build_export_xlsx base_dir=%s out_path=%s include_export=%s include_volcano=%s",
         root, out_path, include_export, include_volcano,
@@ -711,7 +770,11 @@ def build_export_xlsx(
         }
 
     with pd.ExcelWriter(write_target, engine=engine, engine_kwargs=engine_kwargs) as xw:
-        xlsx_formats = _xlsxwriter_formats(xw.book) if (style and engine == "xlsxwriter") else None
+        xlsx_formats = (
+            _xlsxwriter_formats(xw.book, header_rotation=header_rotation)
+            if (style and engine == "xlsxwriter")
+            else None
+        )
         sources_rows: List[Dict[str, Any]] = []
         # Manifest sheet removed per request; key metadata remains in logs/context
         # Optional phenotype/metadata sheet first
@@ -739,6 +802,7 @@ def build_export_xlsx(
                                 kind="phenotype",
                                 col_widths=widths,
                                 formats=xlsx_formats or {},
+                                header_rotation=header_rotation,
                             )
                         elif engine == "openpyxl":
                             _apply_sheet_style_openpyxl(
@@ -748,6 +812,7 @@ def build_export_xlsx(
                                 headers=headers,
                                 kind="phenotype",
                                 col_widths=widths,
+                                header_rotation=header_rotation,
                             )
                 except Exception:
                     logger.debug("Exporter: styling skipped for sheet '%s'", pheno_sheet)
@@ -922,6 +987,7 @@ def build_export_xlsx(
                                     kind="volcano_merged",
                                     col_widths=widths,
                                     formats=xlsx_formats or {},
+                                    header_rotation=header_rotation,
                                 )
                             elif engine == "openpyxl":
                                 _apply_sheet_style_openpyxl(
@@ -931,6 +997,7 @@ def build_export_xlsx(
                                     headers=headers,
                                     kind="volcano_merged",
                                     col_widths=widths,
+                                    header_rotation=header_rotation,
                                 )
                     except Exception:
                         logger.debug("Exporter: styling skipped for merged volcano sheet")
@@ -980,6 +1047,7 @@ def build_export_xlsx(
                             kind="export",
                             col_widths=widths,
                             formats=xlsx_formats or {},
+                            header_rotation=header_rotation,
                         )
                     except Exception:
                         logger.debug("Exporter: styling skipped for streamed sheet '%s'", final)
@@ -1077,6 +1145,7 @@ def build_export_xlsx(
                                 kind=kind,
                                 col_widths=widths,
                                 formats=xlsx_formats or {},
+                                header_rotation=header_rotation,
                             )
                         elif engine == "openpyxl":
                             _apply_sheet_style_openpyxl(
@@ -1086,6 +1155,7 @@ def build_export_xlsx(
                                 headers=headers,
                                 kind=kind,
                                 col_widths=widths,
+                                header_rotation=header_rotation,
                             )
                 except Exception:
                     logger.debug("Exporter: styling skipped for sheet '%s'", final)
@@ -1135,6 +1205,7 @@ def build_export_xlsx(
                                     kind="sources",
                                     col_widths=widths,
                                     formats=xlsx_formats or {},
+                                    header_rotation=header_rotation,
                                 )
                             elif engine == "openpyxl":
                                 _apply_sheet_style_openpyxl(
@@ -1144,6 +1215,7 @@ def build_export_xlsx(
                                     headers=headers,
                                     kind="sources",
                                     col_widths=widths,
+                                    header_rotation=header_rotation,
                                 )
                     except Exception:
                         logger.debug("Exporter: styling skipped for 'sources' sheet")

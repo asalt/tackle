@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from tackle.exporter import build_export_xlsx, build_xlsx_visual_review_bundle
+from tackle.exporter import XLSX_HEADER_FILL, _xlsx_header_row_height, build_export_xlsx, build_xlsx_visual_review_bundle
 
 
 def _has_excel_writer():
@@ -273,6 +273,7 @@ def test_build_export_xlsx_semantic_style_check_for_volcano_sheet(tmp_path):
         meta={"analysis_name": "TEST"},
         engine_preference="openpyxl",
         slim_volcano=False,
+        header_rotation=60,
     )
 
     import openpyxl
@@ -285,7 +286,10 @@ def test_build_export_xlsx_semantic_style_check_for_volcano_sheet(tmp_path):
     assert ws.freeze_panes == "A2"
     assert ws.auto_filter.ref == "A1:E3"
     assert ws["A1"].font.bold is True
-    assert str(ws["A1"].fill.fgColor.rgb).endswith("F2F2F2")
+    assert str(ws["A1"].fill.fgColor.rgb).endswith(XLSX_HEADER_FILL)
+    assert ws["A1"].alignment.text_rotation == 60
+    assert ws["A1"].alignment.wrap_text is True
+    assert ws.row_dimensions[1].height == pytest.approx(_xlsx_header_row_height(60))
     assert ws.column_dimensions["A"].width == pytest.approx(12.0)
     assert ws.column_dimensions["B"].width == pytest.approx(16.0)
     assert ws.column_dimensions["C"].width == pytest.approx(50.0)

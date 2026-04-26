@@ -2488,6 +2488,13 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
     help="Apply minimal workbook styling (freeze header, filters, column widths).",
 )
 @click.option(
+    "--header-rotation",
+    type=click.Choice(["0", "45", "60", "90"]),
+    default="60",
+    show_default=True,
+    help="Rotate styled XLSX header text by this many degrees.",
+)
+@click.option(
     "--timing/--no-timing",
     default=False,
     show_default=True,
@@ -2519,7 +2526,7 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
     help="Optional temp directory to write the XLSX before moving to --out (useful on slow mounts).",
 )
 @click.pass_context
-def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano, style, timing, tsv_engine, pandas_low_memory, stream_export, staging_dir):
+def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano, style, header_rotation, timing, tsv_engine, pandas_low_memory, stream_export, staging_dir):
     """
     Build a summary Excel workbook by collecting common TSV exports
     (export tables, volcano results) from the current analysis outpath.
@@ -2599,6 +2606,7 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
                 pandas_low_memory=pandas_low_memory,
                 stream_export=stream_export,
                 style=style,
+                header_rotation=int(header_rotation),
             )
         else:
             result = build_export_xlsx(
@@ -2623,6 +2631,7 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
                 pandas_low_memory=pandas_low_memory,
                 stream_export=stream_export,
                 style=style,
+                header_rotation=int(header_rotation),
             )
     except RuntimeError as e:
         click.echo(str(e))
