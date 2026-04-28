@@ -59,7 +59,7 @@ def test_apply_sheet_style_openpyxl_sets_header_and_widths():
         header_rotation=60,
     )
 
-    assert ws.freeze_panes == "A2"
+    assert ws.freeze_panes == "C2"
     assert ws.auto_filter.ref == "A1:C2"
     assert ws.page_setup.orientation == "landscape"
     assert ws.sheet_view.showGridLines is False
@@ -100,6 +100,35 @@ def test_apply_sheet_style_openpyxl_can_keep_horizontal_headers():
 
     assert ws["A1"].alignment.text_rotation == 0
     assert ws.row_dimensions[1].height == pytest.approx(_xlsx_header_row_height(0))
+
+
+@pytest.mark.skipif(
+    pytest.importorskip("openpyxl", reason="openpyxl required for workbook style checks") is None,
+    reason="openpyxl required for workbook style checks",
+)
+def test_apply_sheet_style_openpyxl_can_color_scale_ibaq_columns():
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    headers = ["GeneID", "iBAQ_dstrAdj", "Other"]
+    ws.append(headers)
+    ws.append(["101", 1.0, 3.0])
+    ws.append(["202", 10.0, 4.0])
+
+    _apply_sheet_style_openpyxl(
+        ws,
+        nrows_total=3,
+        ncols=3,
+        headers=headers,
+        kind="export",
+        col_widths={"GeneID": 12, "iBAQ_dstrAdj": 14, "Other": 10},
+        header_rotation=60,
+        color_scale_ibaq=True,
+    )
+
+    ranges = [str(item.sqref) for item in ws.conditional_formatting]
+    assert ranges == ["B2:B3"]
 
 
 def test_render_xlsx_visual_check_reports_missing_renderer(tmp_path, monkeypatch):

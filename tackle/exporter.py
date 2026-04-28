@@ -27,6 +27,14 @@ XLSX_HEADER_ROW_HEIGHTS = {
     60: 120.0,
     90: 132.0,
 }
+XLSX_FROZEN_FRONT_COLUMNS = {
+    "GeneID",
+    "GeneSymbol",
+    "FunCats",
+    "GeneDescription",
+    "Description",
+    "TaxonID",
+}
 
 
 def _normalize_header_rotation(value: Any) -> int:
@@ -338,6 +346,84 @@ def _excel_a1_range(nrows: int, ncols: int) -> Optional[str]:
     end_col = _excel_col_letter(int(ncols))
     return f"A1:{end_col}{int(nrows)}"
 
+def _initial_frozen_column_count(headers: Sequence[str]) -> int:
+    frozen_cols = 0
+    for header in headers:
+        if str(header) not in XLSX_FROZEN_FRONT_COLUMNS:
+            break
+        frozen_cols += 1
+    return frozen_cols
+
+def _openpyxl_freeze_anchor(headers: Sequence[str]) -> str:
+    frozen_cols = _initial_frozen_column_count(headers)
+    if frozen_cols <= 0:
+        return "A2"
+    return f"{_excel_col_letter(frozen_cols + 1)}2"
+
+def _is_ibaq_column(header: str) -> bool:
+    return "ibaq" in str(header).lower()
+
+def _apply_ibaq_color_scale_xlsxwriter(
+    worksheet,
+    *,
+    headers: Sequence[str],
+    last_row: int,
+    color_scale_ibaq: bool,
+) -> None:
+    if not color_scale_ibaq or int(last_row) < 1:
+        return
+    for col_idx, header in enumerate(headers):
+        if not _is_ibaq_column(header):
+            continue
+        try:
+            worksheet.conditional_format(
+                1,
+                col_idx,
+                int(last_row),
+                col_idx,
+                {
+                    "type": "3_color_scale",
+                    "min_color": "#F7FBFF",
+                    "mid_color": "#6BAED6",
+                    "max_color": "#08306B",
+                },
+            )
+        except Exception:
+            logger.debug("Exporter: skipped iBAQ color scale for column %s", header)
+
+def _apply_ibaq_color_scale_openpyxl(
+    worksheet,
+    *,
+    headers: Sequence[str],
+    nrows_total: int,
+    color_scale_ibaq: bool,
+) -> None:
+    if not color_scale_ibaq or int(nrows_total) <= 1:
+        return
+    try:
+        from openpyxl.formatting.rule import ColorScaleRule
+    except Exception:
+        return
+    for col_idx, header in enumerate(headers, start=1):
+        if not _is_ibaq_column(header):
+            continue
+        try:
+            letter = _excel_col_letter(col_idx)
+            worksheet.conditional_formatting.add(
+                f"{letter}2:{letter}{int(nrows_total)}",
+                ColorScaleRule(
+                    start_type="min",
+                    start_color="F7FBFF",
+                    mid_type="percentile",
+                    mid_value=50,
+                    mid_color="6BAED6",
+                    end_type="max",
+                    end_color="08306B",
+                ),
+            )
+        except Exception:
+            logger.debug("Exporter: skipped iBAQ color scale for column %s", header)
+
 def _infer_col_widths(
     df: pd.DataFrame,
     *,
@@ -365,6 +451,7 @@ def _infer_col_widths(
                 "FunCats": 30,
                 "GeneDescription": 50,
                 "Description": 50,
+                "TaxonID": 12,
             }
         )
     if kind == "sources":
@@ -460,10 +547,12 @@ def _apply_sheet_style_xlsxwriter(
     col_widths: Optional[Dict[str, int]],
     formats: Dict[str, Any],
     header_rotation: int = 60,
+    color_scale_ibaq: bool = False,
 ) -> None:
     if nrows_total <= 0 or ncols <= 0:
         return
     rotation = _normalize_header_rotation(header_rotation)
+    frozen_cols = _initial_frozen_column_count(headers)
     last_row = max(0, int(nrows_total) - 1)
     last_col = max(0, int(ncols) - 1)
     try:
@@ -472,9 +561,13 @@ def _apply_sheet_style_xlsxwriter(
         worksheet.hide_gridlines(2)
     except Exception:
         pass
-    worksheet.freeze_panes(1, 0)
+    worksheet.freeze_panes(1, frozen_cols)
     worksheet.autofilter(0, 0, last_row, last_col)
-    worksheet.set_row(0, _xlsx_header_row_height(rotation), formats.get("header"))
+    header_format = formats.get("header")
+    worksheet.set_row(0, _xlsx_header_row_height(rotation), header_format)
+    if header_format is not None:
+        for idx, header in enumerate(headers):
+            worksheet.write(0, idx, str(header), header_format)
 
     # Set widths / column formats (row format should keep header styling).
     for idx, h in enumerate(headers):
@@ -486,6 +579,12 @@ def _apply_sheet_style_xlsxwriter(
             width = min(60, max(8, len(hname) + 2))
         fmt = _xlsxwriter_col_format(hname, kind=kind, formats=formats)
         worksheet.set_column(idx, idx, width, fmt)
+    _apply_ibaq_color_scale_xlsxwriter(
+        worksheet,
+        headers=headers,
+        last_row=last_row,
+        color_scale_ibaq=color_scale_ibaq,
+    )
 
 def _apply_sheet_style_openpyxl(
     worksheet,
@@ -496,6 +595,7 @@ def _apply_sheet_style_openpyxl(
     kind: Optional[str],
     col_widths: Optional[Dict[str, int]],
     header_rotation: int = 60,
+    color_scale_ibaq: bool = False,
 ) -> None:
     if nrows_total <= 0 or ncols <= 0:
         return
@@ -513,7 +613,7 @@ def _apply_sheet_style_openpyxl(
         worksheet.sheet_view.showGridLines = False
     except Exception:
         pass
-    worksheet.freeze_panes = "A2"
+    worksheet.freeze_panes = _openpyxl_freeze_anchor(headers)
     ref = _excel_a1_range(nrows_total, ncols)
     if ref:
         worksheet.auto_filter.ref = ref
@@ -541,6 +641,12 @@ def _apply_sheet_style_openpyxl(
                 continue
             letter = _excel_col_letter(col_idx)
             worksheet.column_dimensions[letter].width = float(width)
+    _apply_ibaq_color_scale_openpyxl(
+        worksheet,
+        headers=headers,
+        nrows_total=nrows_total,
+        color_scale_ibaq=color_scale_ibaq,
+    )
 
 def _read_tsv(path: Path, *, engine: str = "auto", low_memory: bool = False) -> pd.DataFrame:
     """Read a TSV file, optionally using pyarrow for speed."""
@@ -694,6 +800,7 @@ def build_export_xlsx(
     stream_export: bool = False,
     style: bool = True,
     header_rotation: int = 60,
+    color_scale_ibaq: bool = False,
 ) -> str:
     """
     Create an Excel workbook summarizing common tackle exports under an analysis directory.
@@ -707,6 +814,7 @@ def build_export_xlsx(
     """
     root = Path(base_dir)
     header_rotation = _normalize_header_rotation(header_rotation)
+    color_scale_ibaq = bool(color_scale_ibaq)
     logger.info(
         "Exporter: build_export_xlsx base_dir=%s out_path=%s include_export=%s include_volcano=%s",
         root, out_path, include_export, include_volcano,
@@ -803,6 +911,7 @@ def build_export_xlsx(
                                 col_widths=widths,
                                 formats=xlsx_formats or {},
                                 header_rotation=header_rotation,
+                                color_scale_ibaq=color_scale_ibaq,
                             )
                         elif engine == "openpyxl":
                             _apply_sheet_style_openpyxl(
@@ -813,6 +922,7 @@ def build_export_xlsx(
                                 kind="phenotype",
                                 col_widths=widths,
                                 header_rotation=header_rotation,
+                                color_scale_ibaq=color_scale_ibaq,
                             )
                 except Exception:
                     logger.debug("Exporter: styling skipped for sheet '%s'", pheno_sheet)
@@ -863,6 +973,8 @@ def build_export_xlsx(
                     cand = {}
                     if "FunCats" in df.columns:
                         cand["FunCats"] = df["FunCats"].astype(str)
+                    if "TaxonID" in df.columns:
+                        cand["TaxonID"] = df["TaxonID"].astype(str)
                     if "GeneDescription" in df.columns:
                         cand["GeneDescription"] = df["GeneDescription"].astype(str)
                     elif "Description" in df.columns:
@@ -937,7 +1049,7 @@ def build_export_xlsx(
                     except Exception:
                         logger.debug("Exporter: failed to merge annotations onto merged volcano table")
                 # Order columns: front matter then metrics grouped by type
-                front = [c for c in ("GeneID", "GeneSymbol", "FunCats", "GeneDescription") if c in merged.columns]
+                front = [c for c in ("GeneID", "GeneSymbol", "FunCats", "GeneDescription", "TaxonID") if c in merged.columns]
                 # Discover metric columns with pattern '<label>__<metric>'
                 metric_cols = [c for c in merged.columns if c not in front]
                 label_metric = {}
@@ -988,6 +1100,7 @@ def build_export_xlsx(
                                     col_widths=widths,
                                     formats=xlsx_formats or {},
                                     header_rotation=header_rotation,
+                                    color_scale_ibaq=color_scale_ibaq,
                                 )
                             elif engine == "openpyxl":
                                 _apply_sheet_style_openpyxl(
@@ -998,6 +1111,7 @@ def build_export_xlsx(
                                     kind="volcano_merged",
                                     col_widths=widths,
                                     header_rotation=header_rotation,
+                                    color_scale_ibaq=color_scale_ibaq,
                                 )
                     except Exception:
                         logger.debug("Exporter: styling skipped for merged volcano sheet")
@@ -1048,6 +1162,7 @@ def build_export_xlsx(
                             col_widths=widths,
                             formats=xlsx_formats or {},
                             header_rotation=header_rotation,
+                            color_scale_ibaq=color_scale_ibaq,
                         )
                     except Exception:
                         logger.debug("Exporter: styling skipped for streamed sheet '%s'", final)
@@ -1106,6 +1221,10 @@ def build_export_xlsx(
                 keep_cols = [
                     "GeneID",
                     "GeneSymbol",
+                    "FunCats",
+                    "GeneDescription",
+                    "Description",
+                    "TaxonID",
                     "log2_FC",
                     "pAdj",
                     "pValue",
@@ -1146,6 +1265,7 @@ def build_export_xlsx(
                                 col_widths=widths,
                                 formats=xlsx_formats or {},
                                 header_rotation=header_rotation,
+                                color_scale_ibaq=color_scale_ibaq,
                             )
                         elif engine == "openpyxl":
                             _apply_sheet_style_openpyxl(
@@ -1156,6 +1276,7 @@ def build_export_xlsx(
                                 kind=kind,
                                 col_widths=widths,
                                 header_rotation=header_rotation,
+                                color_scale_ibaq=color_scale_ibaq,
                             )
                 except Exception:
                     logger.debug("Exporter: styling skipped for sheet '%s'", final)
@@ -1206,6 +1327,7 @@ def build_export_xlsx(
                                     col_widths=widths,
                                     formats=xlsx_formats or {},
                                     header_rotation=header_rotation,
+                                    color_scale_ibaq=color_scale_ibaq,
                                 )
                             elif engine == "openpyxl":
                                 _apply_sheet_style_openpyxl(
@@ -1216,6 +1338,7 @@ def build_export_xlsx(
                                     kind="sources",
                                     col_widths=widths,
                                     header_rotation=header_rotation,
+                                    color_scale_ibaq=color_scale_ibaq,
                                 )
                     except Exception:
                         logger.debug("Exporter: styling skipped for 'sources' sheet")

@@ -37,6 +37,14 @@ def _has_openpyxl():
         return False
 
 
+def _has_xlsxwriter():
+    try:
+        import xlsxwriter  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _load_sheetnames(path: str):
     try:
         import openpyxl
@@ -162,7 +170,7 @@ def test_build_export_xlsx_applies_minimal_styling_by_default(tmp_path):
     export_sheet = next((s for s in wb.sheetnames if s.lower().startswith("export__")), None)
     assert export_sheet is not None
     ws = wb[export_sheet]
-    assert ws.freeze_panes == "A2"
+    assert ws.freeze_panes == "B2"
     assert ws.auto_filter.ref
 
 
@@ -283,7 +291,7 @@ def test_build_export_xlsx_semantic_style_check_for_volcano_sheet(tmp_path):
     assert sheet_name is not None
 
     ws = wb[sheet_name]
-    assert ws.freeze_panes == "A2"
+    assert ws.freeze_panes == "D2"
     assert ws.auto_filter.ref == "A1:E3"
     assert ws["A1"].font.bold is True
     assert str(ws["A1"].fill.fgColor.rgb).endswith(XLSX_HEADER_FILL)
@@ -295,6 +303,52 @@ def test_build_export_xlsx_semantic_style_check_for_volcano_sheet(tmp_path):
     assert ws.column_dimensions["C"].width == pytest.approx(50.0)
     assert ws.column_dimensions["D"].width == pytest.approx(12.0)
     assert ws.column_dimensions["E"].width == pytest.approx(14.0)
+
+
+@pytest.mark.skipif(
+    not (_has_openpyxl() and _has_xlsxwriter()),
+    reason="openpyxl and xlsxwriter required to inspect xlsxwriter workbook styling",
+)
+def test_build_export_xlsx_xlsxwriter_rotates_headers_and_freezes_front_columns(tmp_path):
+    base = tmp_path
+    (base / "export").mkdir(parents=True, exist_ok=True)
+
+    pd.DataFrame(
+        {
+            "GeneID": ["g1", "g2"],
+            "GeneSymbol": ["AAA", "BBB"],
+            "FunCats": ["kinase", "tf"],
+            "GeneDescription": ["alpha protein", "beta protein"],
+            "TaxonID": ["9606", "9606"],
+            "iBAQ_dstrAdj": [100.0, 5000.0],
+        }
+    ).to_csv(base / "export" / "data_MSPC_iBAQ_dstrAdj.tsv", sep="\t", index=False)
+
+    out = base / "export" / "summary.xlsx"
+    result = build_export_xlsx(
+        base_dir=str(base),
+        out_path=str(out),
+        include_export=True,
+        include_volcano=False,
+        pheno_df=None,
+        meta={"analysis_name": "TEST"},
+        engine_preference="xlsxwriter",
+        header_rotation=90,
+        color_scale_ibaq=True,
+    )
+
+    import openpyxl
+
+    wb = openpyxl.load_workbook(result, read_only=False)
+    sheet_name = next((s for s in wb.sheetnames if s.lower().startswith("export__")), None)
+    assert sheet_name is not None
+
+    ws = wb[sheet_name]
+    assert ws.freeze_panes == "F2"
+    assert ws["A1"].alignment.text_rotation == 90
+    assert ws["A1"].alignment.wrap_text is True
+    assert ws.row_dimensions[1].height == pytest.approx(_xlsx_header_row_height(90))
+    assert [str(item.sqref) for item in ws.conditional_formatting] == ["F2:F3"]
 
 
 @pytest.mark.skipif(not _has_soffice(), reason="soffice/libreoffice required for visual-check preview")

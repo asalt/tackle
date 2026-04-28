@@ -2495,6 +2495,12 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
     help="Rotate styled XLSX header text by this many degrees.",
 )
 @click.option(
+    "--color-scale-ibaq/--no-color-scale-ibaq",
+    default=False,
+    show_default=True,
+    help="Apply compact conditional color scales to columns whose header contains iBAQ.",
+)
+@click.option(
     "--timing/--no-timing",
     default=False,
     show_default=True,
@@ -2526,7 +2532,7 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
     help="Optional temp directory to write the XLSX before moving to --out (useful on slow mounts).",
 )
 @click.pass_context
-def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano, style, header_rotation, timing, tsv_engine, pandas_low_memory, stream_export, staging_dir):
+def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano, style, header_rotation, color_scale_ibaq, timing, tsv_engine, pandas_low_memory, stream_export, staging_dir):
     """
     Build a summary Excel workbook by collecting common TSV exports
     (export tables, volcano results) from the current analysis outpath.
@@ -2607,6 +2613,7 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
                 stream_export=stream_export,
                 style=style,
                 header_rotation=int(header_rotation),
+                color_scale_ibaq=color_scale_ibaq,
             )
         else:
             result = build_export_xlsx(
@@ -2632,6 +2639,7 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
                 stream_export=stream_export,
                 style=style,
                 header_rotation=int(header_rotation),
+                color_scale_ibaq=color_scale_ibaq,
             )
     except RuntimeError as e:
         click.echo(str(e))
