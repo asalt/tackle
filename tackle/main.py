@@ -914,13 +914,13 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Normalize based on median sample expression value",
 )
 @click.option(
-@click.option(
     "--trim-mean",
     default=False,
     show_default=True,
     is_flag=True,
     help="Normalize based on the mean after discarding the lowest 25% and highest 25% of expression values",
 )
+@click.option(
     "--quantile75",
     default=False,
     show_default=True,
@@ -965,7 +965,6 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Lupine training mode when using --imputation-backend lupine.",
 )
 @click.option(
-@click.option(
     "--cache-overwrite/--no-cache-overwrite",
     default=False,
     show_default=True,
@@ -977,6 +976,7 @@ ANNOTATION_CHOICES = _annotation_choices()
     show_default=True,
     help="Reuse and persist imputation outputs keyed by input matrix and imputation method.",
 )
+@click.option(
     "-n",
     "--name",
     type=str,
@@ -1066,11 +1066,11 @@ def main(
     group,
     impute_missing_values,
     imputation_backend,
-    lupine_mode,
     gaussian_method,
-    limma,
+    lupine_mode,
     cache_overwrite,
     cache_impute,
+    limma,
     block,
     pairs,
     ignore_geneids,
@@ -1080,8 +1080,8 @@ def main(
     ifot_tf,
     genefile_norm,
     median,
-    quantile75,
     trim_mean,
+    quantile75,
     quantile90,
     name,
     normalize_across_species,
@@ -1269,8 +1269,8 @@ def main(
         ifot_ki=ifot_ki,
         ifot_tf=ifot_tf,
         median=median,
-        quantile75=quantile75,
         trim_mean=trim_mean,
+        quantile75=quantile75,
         quantile90=quantile90,
         genefile_norm=genefile_norm,
         name=name,
@@ -1280,11 +1280,11 @@ def main(
         taxon=taxon,
         impute_missing_values=impute_missing_values,
         imputation_backend=imputation_backend,
-        lupine_mode=lupine_mode,
         gaussian_method=gaussian_method,
-        normalize_across_species=normalize_across_species,
+        lupine_mode=lupine_mode,
         cache_impute=cache_impute,
         cache_overwrite=cache_overwrite,
+        normalize_across_species=normalize_across_species,
         experiment_file=experiment_file,
         metrics=metrics,
         limma=limma,
@@ -2079,6 +2079,13 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     help="Label to display next to AI summaries (e.g. 'llama3.1 tulu').",
 )
 @click.option(
+    "--ai-timeout-seconds",
+    type=float,
+    default=60.0,
+    show_default=True,
+    help="Per-section timeout for build-time AI summary requests.",
+)
+@click.option(
     "--force-ai-summary",
     is_flag=True,
     default=False,
@@ -2115,6 +2122,7 @@ def make_html(
     pandas_low_memory,
     ai_summary,
     ai_model_label,
+    ai_timeout_seconds,
     force_ai_summary,
 ):
     """
@@ -2178,6 +2186,7 @@ def make_html(
             pandas_low_memory=bool(pandas_low_memory),
             ai_summary=bool(ai_summary),
             ai_model_label=str(ai_model_label) if ai_model_label else None,
+            ai_timeout_seconds=float(ai_timeout_seconds),
             force_ai_summary=bool(force_ai_summary),
             pngquant=bool(pngquant),
             pngquant_quality=str(pngquant_quality) if pngquant_quality else None,
@@ -2195,6 +2204,8 @@ def make_html(
         click.echo(f"- Assets: {outputs.assets_dir}")
     else:
         click.echo("- Assets: embedded (self-contained)")
+    if outputs.methods_md:
+        click.echo(f"- Methods/references: {outputs.methods_md}")
 
 
 @main.command("make-search-report")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import difflib
 import hashlib
+import math
 import html
 import io
 import re
@@ -30,6 +31,7 @@ import pandas as pd
 
 from .deckgen import _summarize_volcano_top_hits
 from .exporter import _collect_tsvs, _read_tsv
+from .methods_references import write_methods_references
 from .utils import _get_logger
 
 logger = _get_logger(__name__)
@@ -67,6 +69,8 @@ class HtmlOverviewOutputs:
     self_contained: bool
     total_plots: int
     total_volcano_tables: int
+    methods_md: Optional[Path] = None
+    methods_context_json: Optional[Path] = None
 
 
 _CATEGORY_LABELS: Dict[str, str] = {
@@ -990,7 +994,320 @@ def _effective_html_ai_timeout_seconds(timeout_seconds: float) -> float:
             return max(1.0, float(raw))
         except ValueError:
             pass
-    return max(1.0, min(float(timeout_seconds), 30.0))
+    return max(1.0, float(timeout_seconds))
+
+
+def _json_safe_scalar(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return round(value, 6)
+    if isinstance(value, (int, bool, str)):
+        return value
+    return str(value)
+
+
+def _json_safe_records(df: pd.DataFrame, *, max_rows: int = 20, max_cols: int = 16) -> List[Dict[str, Any]]:
+    if df is None or df.empty:
+        return []
+    trimmed = df.iloc[: int(max_rows), : int(max_cols)].copy()
+    records: List[Dict[str, Any]] = []
+    for row in trimmed.to_dict(orient="records"):
+        records.append({str(k): _json_safe_scalar(v) for k, v in row.items()})
+    return records
+
+
+def _numeric_summary_for_prompt(df: pd.DataFrame, *, max_cols: int = 12) -> Dict[str, Dict[str, Any]]:
+    if df is None or df.empty:
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    preferred = [
+        "GPGroups",
+        "Total_psms",
+        "u2g_psms",
+        "Total_peptides",
+        "u2g_peptides",
+        "Strict",
+        "Strict_u2g",
+        "S",
+        "R",
+        "A",
+        "log2_FC",
+        "pValue",
+        "pAdj",
+        "signedlogP",
+    ]
+    numeric_cols = [c for c in preferred if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+    numeric_cols.extend(
+        [
+            c
+            for c in df.columns
+            if c not in numeric_cols and pd.api.types.is_numeric_dtype(df[c])
+        ]
+    )
+    for col in numeric_cols[: int(max_cols)]:
+        ser = pd.to_numeric(df[col], errors="coerce").dropna()
+        if ser.empty:
+            continue
+        out[str(col)] = {
+            "min": _json_safe_scalar(float(ser.min())),
+            "median": _json_safe_scalar(float(ser.median())),
+            "max": _json_safe_scalar(float(ser.max())),
+            "mean": _json_safe_scalar(float(ser.mean())),
+        }
+    return out
+
+
+def _collect_metrics_ai_context(
+    *,
+    root: Path,
+    tsv_engine: str = "auto",
+    pandas_low_memory: bool = False,
+) -> Dict[str, Any]:
+    metrics_root = Path(root) / "metrics"
+    if not metrics_root.exists():
+        return {
+            "available": False,
+            "tables": [],
+            "group_summary_available": False,
+            "group_summary": None,
+            "group_summary_note": "No explicit metadata grouping was provided for metrics.",
+        }
+
+    tables: List[Dict[str, Any]] = []
+    for path in sorted(metrics_root.rglob("*.tsv"))[:8]:
+        try:
+            df = _read_tsv(path, engine=tsv_engine, low_memory=pandas_low_memory)
+        except Exception as exc:
+            tables.append(
+                {
+                    "path": str(path.relative_to(root).as_posix()),
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+
+        if df.columns.size and str(df.columns[0]).startswith("Unnamed"):
+            df = df.rename(columns={df.columns[0]: "sample"})
+        elif df.columns.size and str(df.columns[0]) == "":
+            df = df.rename(columns={df.columns[0]: "sample"})
+
+        tables.append(
+            {
+                "path": str(path.relative_to(root).as_posix()),
+                "rows": int(df.shape[0]),
+                "columns": [str(c) for c in df.columns[:20]],
+                "numeric_summary": _numeric_summary_for_prompt(df),
+                "sample_rows": _json_safe_records(df, max_rows=20, max_cols=14),
+            }
+        )
+
+    return {
+        "available": bool(tables),
+        "table_count": len(tables),
+        "tables": tables,
+        "group_summary_available": False,
+        "group_summary": None,
+        "group_summary_note": (
+            "Metrics tables are summarized overall only. Do not compare apparent groups "
+            "from sample names unless an explicit group_summary is present."
+        ),
+    }
+
+
+def _parse_matrix_shape_from_text(value: str) -> Optional[Dict[str, int]]:
+    match = re.search(r"(?<![A-Za-z0-9])(\d{1,7})x(\d{1,5})(?![A-Za-z0-9])", str(value))
+    if not match:
+        return None
+    return {"rows": int(match.group(1)), "columns": int(match.group(2))}
+
+
+def _cluster_scaling_note_from_paths(paths: Sequence[str]) -> Optional[str]:
+    text = " ".join(str(path) for path in paths)
+    if re.search(r"(?<![A-Za-z0-9])z_0(?![A-Za-z0-9])", text):
+        return "Heatmap values are row z-scored: each feature/gene is mean-centered and scaled across samples."
+    if re.search(r"(?<![A-Za-z0-9])z_1(?![A-Za-z0-9])", text):
+        return "Heatmap values are column z-scored: each sample column is mean-centered and scaled across features."
+    if re.search(r"(?<![A-Za-z0-9])scale_row(?![A-Za-z0-9])", text):
+        return "Heatmap values are row-scaled for visualization."
+    if re.search(r"(?<![A-Za-z0-9])scale_col(?![A-Za-z0-9])", text):
+        return "Heatmap values are column-scaled for visualization."
+    return None
+
+
+def _compact_top_hits(top_hits: Sequence[Mapping[str, Any]], *, max_hits: int = 12) -> List[Dict[str, Any]]:
+    keep = [
+        "GeneID",
+        "GeneSymbol",
+        "GeneDescription",
+        "FunCats",
+        "log2_FC",
+        "pValue",
+        "pAdj",
+        "_pAdj",
+        "signedlogP",
+        "t",
+        "highlight",
+    ]
+    out: List[Dict[str, Any]] = []
+    for row in list(top_hits or [])[: int(max_hits)]:
+        compact = {
+            key: _json_safe_scalar(row.get(key))
+            for key in keep
+            if key in row and _json_safe_scalar(row.get(key)) is not None
+        }
+        if compact:
+            out.append(compact)
+    return out
+
+
+def _summarize_volcano_ai_context(items: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    tables: List[Dict[str, Any]] = []
+    notable: List[Dict[str, Any]] = []
+    for item in list(items or [])[:20]:
+        hits = list(item.get("top_hits") or [])
+        compact_hits = _compact_top_hits(hits, max_hits=10)
+        direction_counts = {"up": 0, "down": 0}
+        for hit in hits:
+            try:
+                fc = float(hit.get("log2_FC"))
+            except Exception:
+                continue
+            if fc > 0:
+                direction_counts["up"] += 1
+            elif fc < 0:
+                direction_counts["down"] += 1
+        tables.append(
+            {
+                "tsv": item.get("tsv"),
+                "meta": item.get("meta") or {},
+                "top_hit_count_provided": len(hits),
+                "direction_counts_in_preview": direction_counts,
+                "top_hits": compact_hits,
+                "note": item.get("note"),
+            }
+        )
+        notable.extend(compact_hits[:3])
+
+    return {
+        "table_count": len(tables),
+        "tables": tables,
+        "notable_preview_hits": notable[:12],
+    }
+
+
+def _summarize_topdiff_ai_context(contrasts: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    out_contrasts: List[Dict[str, Any]] = []
+    for contrast in list(contrasts or [])[:20]:
+        groups: List[Dict[str, Any]] = []
+        for group in list(contrast.get("groups") or [])[:20]:
+            paths = [str(p) for p in (group.get("plot_paths") or [])]
+            parsed: List[Dict[str, Any]] = []
+            topn_values = set()
+            metrics = set()
+            for path in paths[:30]:
+                shape = _parse_matrix_shape_from_text(path)
+                if shape:
+                    topn_values.add(shape["rows"])
+                metric = None
+                for candidate in ("log2_FC", "pValue", "pAdj", "signedlogP"):
+                    if candidate in path:
+                        metric = candidate
+                        metrics.add(candidate)
+                        break
+                parsed.append(
+                    {
+                        "path_tail": Path(path).name,
+                        "matrix_shape": shape,
+                        "ranking_metric": metric,
+                        "has_peptide_count_annotation": "_annot_PeptideCount_" in path,
+                    }
+                )
+            groups.append(
+                {
+                    "key": group.get("key"),
+                    "label": group.get("label"),
+                    "plot_count": group.get("count"),
+                    "scaling_note": _cluster_scaling_note_from_paths(paths),
+                    "topn_values": sorted(topn_values),
+                    "ranking_metrics": sorted(metrics),
+                    "plots": parsed,
+                }
+            )
+        out_contrasts.append(
+            {
+                "key": contrast.get("key"),
+                "label": contrast.get("label"),
+                "plot_count": contrast.get("count"),
+                "groups": groups,
+            }
+        )
+    return {"contrast_count": len(out_contrasts), "contrasts": out_contrasts}
+
+
+def _section_factual_skeleton(
+    *,
+    key: str,
+    section_label: str,
+    prompt_obj: Mapping[str, Any],
+) -> List[str]:
+    section = dict(prompt_obj.get("section") or {})
+    label = str(section.get("label") or section_label or key)
+    count = section.get("count")
+    skeleton = [f"{label}: {count} plot artifact(s) discovered."] if count is not None else [f"{label} section."]
+
+    if key == "metrics":
+        metrics = prompt_obj.get("metrics") or {}
+        tables = metrics.get("tables") or []
+        if tables:
+            first = tables[0]
+            skeleton.append(
+                f"Metrics table {first.get('path')} has {first.get('rows')} sample row(s)."
+            )
+            numeric = first.get("numeric_summary") or {}
+            for metric_name in ("GPGroups", "Total_psms", "Total_peptides", "Strict"):
+                if metric_name in numeric:
+                    vals = numeric[metric_name]
+                    skeleton.append(
+                        f"{metric_name}: median {vals.get('median')}, range {vals.get('min')} to {vals.get('max')}."
+                    )
+    elif key == "pca":
+        pca = prompt_obj.get("pca") or {}
+        if pca:
+            skeleton.append("PCA numeric context is provided from score and variance tables when available.")
+            skeleton.append("Use cautious descriptive language for separation unless an explicit statistical separation test is present.")
+    elif key == "volcano" or key == "volcano-tables":
+        volcano = prompt_obj.get("volcano") or prompt_obj.get("volcano_unmatched_summary") or {}
+        table_count = volcano.get("table_count")
+        if table_count is not None:
+            skeleton.append(f"Volcano table count summarized for AI: {table_count}.")
+        notable = volcano.get("notable_preview_hits") or []
+        if notable:
+            symbols = [str(x.get("GeneSymbol") or x.get("GeneID")) for x in notable[:6]]
+            skeleton.append("Preview notable genes include: " + ", ".join([s for s in symbols if s]) + ".")
+    elif key == "topdiff-cluster":
+        topdiff = prompt_obj.get("topdiff_summary") or {}
+        skeleton.append(
+            f"Top-diff summary covers {topdiff.get('contrast_count', 0)} contrast group(s)."
+        )
+    elif key == "cluster":
+        paths = (prompt_obj.get("section") or {}).get("plot_paths") or []
+        scaling_note = _cluster_scaling_note_from_paths(paths)
+        if scaling_note:
+            skeleton.append(scaling_note)
+    return skeleton
 
 
 def _build_ai_summary_prompt(
@@ -1001,12 +1318,15 @@ def _build_ai_summary_prompt(
     unmatched_volcano_tables: bool = False,
 ) -> str:
     base_rules = [
-        "Write a concise summary for this Tackle HTML report section.",
-        "Use 4-7 short bullets.",
-        "Begin with factual description grounded in the provided JSON: counts, files, tables, contrasts, sample/group labels, and numeric values when available.",
+        "Write a concise, user-facing summary for this Tackle HTML report section.",
+        "Use short bullets, and optionally end with one short takeaway paragraph if it adds value.",
+        "Prioritize factual_skeleton and numeric tables over filenames.",
+        "Begin with concrete facts grounded in the provided JSON: counts, tables, contrasts, sample/group labels, genes, and numeric values when available.",
         "Do not claim to see or interpret PNG image contents directly.",
         "If the JSON supports it, add one clearly hedged interpretation bullet using language like 'suggests', 'is consistent with', or 'may indicate'.",
-        "Prefer describing the generated files and exported measurements over repeating long file paths.",
+        "Do not repeat long file paths; describe artifact categories and identifiers instead.",
+        "Do not expand domain acronyms or filename tokens unless the JSON explicitly defines them.",
+        "Do not include assistant workflow phrases such as 'let me know how to proceed' or offers to save notes.",
         "If evidence is weak or incomplete, say so plainly instead of guessing.",
     ]
 
@@ -1015,7 +1335,7 @@ def _build_ai_summary_prompt(
     if unmatched_volcano_tables or key == "volcano-tables":
         section_rules.extend(
             [
-                "For unmatched volcano tables, summarize which TSV outputs are present, what contrasts they appear to represent, and any top-hit patterns visible in the exported rows.",
+                "For unmatched volcano tables, summarize which TSV outputs are present, what contrasts they appear to represent, and top-hit patterns visible in the exported rows.",
                 "Do not imply that a missing PNG was reviewed.",
             ]
         )
@@ -1036,14 +1356,39 @@ def _build_ai_summary_prompt(
     elif key == "topdiff-cluster":
         section_rules.extend(
             [
-                "For top-diff heatmaps, describe the contrasts, top-N variants, and output organization from the file names and metadata.",
-                "Do not claim clustering patterns unless they are supported by accompanying numeric context.",
+                "For top-diff heatmaps, describe the contrasts, top-N variants, ranking metrics, and output organization from the structured summary.",
+                "Describe heatmap scaling when scaling_note is present.",
+                "Do not claim clustering patterns or biological group separation unless they are supported by accompanying numeric context.",
             ]
         )
-    elif key in {"metrics", "cluster", "umap"}:
+    elif key == "metrics":
+        section_rules.extend(
+            [
+                "For Metrics, summarize overall numeric metric values and available tables.",
+                "Do not compare apparent groups such as WT/KO from sample names unless metrics.group_summary_available is true and metrics.group_summary is present.",
+                "If no group_summary is present, explicitly frame metrics as overall QC/sample-level summaries rather than group differences.",
+            ]
+        )
+    elif key == "cluster":
+        section_rules.extend(
+            [
+                "For Clustering, describe artifact counts and heatmap preprocessing only.",
+                "Treat labels such as geno as metadata/coloring/cut variables, not proof that the data are genotyping measurements.",
+                "Describe centered/scaled heatmap values when the factual_skeleton includes a scaling note.",
+                "Do not infer biological groups, cluster membership, or separation from filenames alone.",
+            ]
+        )
+    elif key in {"umap"}:
         section_rules.append(
             f"For {section_label or section_key}, describe what artifacts were produced and any concrete numeric context present in the provided JSON."
         )
+
+    prompt_obj = dict(prompt_obj)
+    prompt_obj["factual_skeleton"] = _section_factual_skeleton(
+        key=key,
+        section_label=section_label,
+        prompt_obj=prompt_obj,
+    )
 
     prompt_json = json.dumps(prompt_obj, ensure_ascii=False)
     prompt_json = _truncate_text(prompt_json, max_chars=16000)
@@ -1499,6 +1844,7 @@ def build_html_overview(
     pandas_low_memory: bool = False,
     ai_summary: bool = False,
     ai_model_label: Optional[str] = None,
+    ai_timeout_seconds: Optional[float] = 60.0,
     force_ai_summary: bool = False,
     pngquant: bool = False,
     pngquant_quality: Optional[str] = "65-85",
@@ -1889,6 +2235,11 @@ def build_html_overview(
             tsv_engine=tsv_engine,
             pandas_low_memory=pandas_low_memory,
         )
+        metrics_context = _collect_metrics_ai_context(
+            root=root,
+            tsv_engine=tsv_engine,
+            pandas_low_memory=pandas_low_memory,
+        )
 
         volcano_items = [
             {
@@ -1908,6 +2259,8 @@ def build_html_overview(
             }
             for t in unmatched_tables[:20]
         ]
+        volcano_summary = _summarize_volcano_ai_context(volcano_items)
+        volcano_unmatched_summary = _summarize_volcano_ai_context(volcano_unmatched_items)
 
         def _ensure_ai_client():
             nonlocal cfg, support_chat_func, session_base, telemetry_client
@@ -1934,7 +2287,9 @@ def build_html_overview(
             )
             cfg = replace(
                 cfg,
-                timeout_seconds=_effective_html_ai_timeout_seconds(cfg.timeout_seconds),
+                timeout_seconds=_effective_html_ai_timeout_seconds(
+                    ai_timeout_seconds if ai_timeout_seconds is not None else cfg.timeout_seconds
+                ),
             )
             support_chat_func = support_chat
             session_base = f"tackle-make-html:{uuid.uuid4().hex}"
@@ -2088,8 +2443,10 @@ def build_html_overview(
             }
             if key == "pca":
                 prompt_obj["pca"] = pca_context
+            if key == "metrics":
+                prompt_obj["metrics"] = metrics_context
             if key == "volcano":
-                prompt_obj["volcano"] = volcano_items
+                prompt_obj["volcano"] = volcano_summary
             if key == "topdiff-cluster":
                 contrasts_prompt: List[Dict[str, Any]] = []
                 for c in sec.get("contrasts", []) or []:
@@ -2116,6 +2473,7 @@ def build_html_overview(
                         }
                     )
                 prompt_obj["topdiff"] = contrasts_prompt
+                prompt_obj["topdiff_summary"] = _summarize_topdiff_ai_context(contrasts_prompt)
 
             msg = _build_ai_summary_prompt(
                 section_key=key,
@@ -2151,6 +2509,7 @@ def build_html_overview(
                     "count": len(unmatched_tables),
                 },
                 "volcano_unmatched": volcano_unmatched_items,
+                "volcano_unmatched_summary": volcano_unmatched_summary,
             }
             msg = _build_ai_summary_prompt(
                 section_key=key,
@@ -2214,6 +2573,18 @@ def build_html_overview(
     )
 
     out_html.write_text(html_text, encoding="utf-8")
+    methods_md: Optional[Path] = None
+    methods_context_json: Optional[Path] = None
+    try:
+        methods_outputs = write_methods_references(
+            base_dir=root,
+            out_dir=out_root,
+            title=f"{report_title} methods and references",
+        )
+        methods_md = methods_outputs.markdown_path
+        methods_context_json = methods_outputs.context_path
+    except Exception as e:
+        logger.warning("Methods/reference document generation failed: %s: %s", type(e).__name__, e)
     return HtmlOverviewOutputs(
         out_dir=out_root,
         out_html=out_html,
@@ -2221,4 +2592,6 @@ def build_html_overview(
         self_contained=bool(self_contained),
         total_plots=len(plots),
         total_volcano_tables=len(volcano_tables),
+        methods_md=methods_md,
+        methods_context_json=methods_context_json,
     )

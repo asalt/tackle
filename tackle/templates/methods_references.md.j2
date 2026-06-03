@@ -1,0 +1,31 @@
+# {{ title }}
+
+Generated: {{ generated_at }}
+
+Analysis directory: `{{ analysis_base_dir }}`
+
+This document is generated from detected tackle outputs. It is intended as a lightweight methods and citation scaffold, not as a replacement for checking the exact run configuration before publication.
+
+{% for section in sections %}
+## {{ section.title }}
+
+{% for line in section.lines %}
+- {{ line }}
+{% endfor %}
+
+{% endfor %}
+## References
+
+{% if references %}
+{% for ref in references %}
+- {{ ref.label }}{% if ref.pmid %}. PMID: {{ ref.pmid }}{% endif %}{% if ref.doi %}. DOI: {{ ref.doi }}{% endif %}{% if ref.url %}. URL: {{ ref.url }}{% endif %}
+{% endfor %}
+{% else %}
+- No method-specific references were detected from the current output set.
+{% endif %}
+
+## Notes
+
+{% for note in notes %}
+- {{ note }}
+{% endfor %}

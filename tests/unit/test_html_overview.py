@@ -41,6 +41,119 @@ def _extract_resource_manifest(html_text: str) -> dict:
     return json.loads(html_lib.unescape(match.group(1)))
 
 
+def test_ai_timeout_default_is_sixty_seconds_and_env_can_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TACKLE_HTML_AI_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("TACKLE_MAKE_HTML_AI_TIMEOUT_SECONDS", raising=False)
+
+    assert html_overview._effective_html_ai_timeout_seconds(60.0) == 60.0
+
+    monkeypatch.setenv("TACKLE_HTML_AI_TIMEOUT_SECONDS", "90")
+    assert html_overview._effective_html_ai_timeout_seconds(60.0) == 90.0
+
+
+def test_collect_metrics_ai_context_reads_numeric_values(tmp_path: Path) -> None:
+    base = tmp_path / "analysis"
+    metrics_dir = base / "metrics"
+    metrics_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "sample": ["WT-1", "KO-1"],
+            "GPGroups": [1200, 1500],
+            "Total_psms": [25000, 30000],
+            "Total_peptides": [4100, 4600],
+        }
+    ).to_csv(metrics_dir / "run_metrics_nz1_med.tsv", sep="\t", index=False)
+
+    ctx = html_overview._collect_metrics_ai_context(root=base)
+
+    assert ctx["available"] is True
+    assert ctx["table_count"] == 1
+    assert ctx["group_summary_available"] is False
+    assert ctx["group_summary"] is None
+    table = ctx["tables"][0]
+    assert table["rows"] == 2
+    assert table["numeric_summary"]["GPGroups"]["median"] == 1350.0
+    assert table["sample_rows"][0]["sample"] == "WT-1"
+    assert table["sample_rows"][1]["Total_psms"] == 30000
+
+
+def test_ai_summary_prompt_uses_factual_skeleton_and_allows_takeaway() -> None:
+    msg = html_overview._build_ai_summary_prompt(
+        section_key="metrics",
+        section_label="Metrics",
+        prompt_obj={
+            "section": {"key": "metrics", "label": "Metrics", "count": 3},
+            "metrics": {
+                "tables": [
+                    {
+                        "path": "metrics/run_metrics.tsv",
+                        "rows": 2,
+                        "numeric_summary": {
+                            "GPGroups": {"median": 1350.0, "min": 1200.0, "max": 1500.0}
+                        },
+                    }
+                ]
+            },
+        },
+    )
+
+    assert "factual_skeleton" in msg
+    assert "GPGroups: median 1350.0, range 1200.0 to 1500.0." in msg
+    assert "Do not compare apparent groups such as WT/KO from sample names" in msg
+    assert "optionally end with one short takeaway paragraph" in msg
+    assert "Use 4-7 short bullets" not in msg
+
+
+def test_ai_summary_prompt_labels_cluster_heatmap_scaling_without_inference() -> None:
+    msg = html_overview._build_ai_summary_prompt(
+        section_key="cluster",
+        section_label="Clustering",
+        prompt_obj={
+            "section": {
+                "key": "cluster",
+                "label": "Clustering",
+                "count": 1,
+                "plot_paths": [
+                    "clustermap/clustermap_nz1_ccT_cut_geno_lward.D2_med_rcT_rdsl_z_0_9401x10.png"
+                ],
+            }
+        },
+    )
+
+    assert "row z-scored" in msg
+    assert "mean-centered and scaled across samples" in msg
+    assert "geno as metadata/coloring/cut variables" in msg
+    assert "not proof that the data are genotyping measurements" in msg
+
+
+def test_summarize_topdiff_ai_context_extracts_topn_and_metric() -> None:
+    summary = html_overview._summarize_topdiff_ai_context(
+        [
+            {
+                "key": "genoKO_minus_genoWT",
+                "label": "genoKO minus genoWT",
+                "count": 2,
+                "groups": [
+                    {
+                        "key": "default",
+                        "label": "default",
+                        "count": 2,
+                        "plot_paths": [
+                            "topdiff/genoKO_minus_genoWT/clustermap_dir_b_log2_FC_z_0_100x10.png",
+                            "topdiff/genoKO_minus_genoWT/clustermap_dir_b_pValue_z_0_50x10.png",
+                        ],
+                    }
+                ],
+            }
+        ]
+    )
+
+    group = summary["contrasts"][0]["groups"][0]
+    assert group["topn_values"] == [50, 100]
+    assert group["ranking_metrics"] == ["log2_FC", "pValue"]
+    assert "row z-scored" in group["scaling_note"]
+
+
 @pytest.fixture(autouse=True)
 def _disable_tabulator_vendor_download(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(html_overview, "_find_tabulator_bundle_paths", lambda: None)
