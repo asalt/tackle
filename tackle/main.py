@@ -314,12 +314,6 @@ def _install_command_telemetry_hooks():
 def run(data_obj):
     # if 'scatter' in plots or 'all' in data_obj.plots:
     if data_obj.make_plot("scatter"):
-        g = scatterplot(
-            data_obj.areas_log_shifted,
-            stat=data_obj.stat,
-            colors_only=data_obj.colors_only,
-            shade_correlation=data_obj.shade_correlation,
-        )
         outname = get_outname(
             "scatter",
             name=data_obj.outpath_name,
@@ -328,7 +322,17 @@ def run(data_obj):
             colors_only=data_obj.colors_only,
             outpath=data_obj.outpath,
         )
-        save_multiple(g, outname, ".png", dpi=96)
+        g = scatterplot(
+            data_obj.areas_log_shifted,
+            stat=data_obj.stat,
+            colors_only=data_obj.colors_only,
+            shade_correlation=data_obj.shade_correlation,
+            outname=outname,
+            file_fmts=(".png",),
+            export_corr=False,
+        )
+        if g is not None:
+            save_multiple(g, outname, ".png", dpi=96)
 
     # ibaqs_zscore = (ibaqs_log_shifted - ibaqs_log_shifted.mean(axis=1)) / ibaqs_log_shifted.std(axis=1)
     # ibaqs_log_shifted
@@ -2289,13 +2293,27 @@ def make_search_report(run_dirs, out_html, out_mzml_tsv, workspace_root):
     default="pearson",
     show_default=True,
 )
+@click.option(
+    "--export-corr/--no-export-corr",
+    default=False,
+    show_default=True,
+    help="Export the sample-by-sample scatter correlation TSV. Disabled by default because older behavior could create very large files.",
+)
+@click.option(
+    "--scatter-format",
+    "scatter_file_fmts",
+    type=click.Choice((".png", ".pdf", ".svg")),
+    multiple=True,
+    default=(),
+    help="Output format(s) for this scatter plot. Defaults to global --file-format.",
+)
 @click.pass_context
-def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
+def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_corr, scatter_file_fmts):
 
     import rpy2.robjects as robjects
 
     data_obj = ctx.obj["data_obj"]
-    file_fmts = ctx.obj["file_fmts"]
+    file_fmts = tuple(scatter_file_fmts) if scatter_file_fmts else tuple(ctx.obj["file_fmts"])
 
     _ = data_obj.areas_log_shifted
     outname = get_outname(
@@ -2328,7 +2346,9 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat):
         shade_correlation=shade_correlation,
         plt_size=size or robjects.NULL,
         outname=outname,
-        file_fmts=('.pdf', ), # file_fmts, # pnj doesmt work its too big
+        file_fmts=file_fmts,
+        export_corr=export_corr,
+        png_res=ctx.obj.get("png_res", 300),
         mask=data_obj.mask,
         histogram=histogram,
     )

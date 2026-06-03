@@ -16,6 +16,11 @@ sb.set_context("paper", font_scale=0.8)
 sb.set_style("white", rc)
 
 
+def scatter_sample_correlation(ibaqs_log_shifted, *, stat="pearson"):
+    """Return sample-by-sample correlations for a genes/features x samples matrix."""
+    return ibaqs_log_shifted.corr(method=stat)
+
+
 def scatterplot(
     ibaqs_log_shifted,
     mask=None,
@@ -24,6 +29,8 @@ def scatterplot(
     shade_correlation=True,
     outname="name",
     file_fmts=None,
+    export_corr=False,
+    png_res=300,
     plt_size=None,
     **kwargs
 ):
@@ -37,9 +44,10 @@ def scatterplot(
     except ModuleNotFoundError:
         _viaR = False
 
-    cor_mat = ibaqs_log_shifted.T.corr(method=stat)
-    f = outname + "_corr.tsv"
-    cor_mat.to_csv(f, sep="\t")
+    if export_corr:
+        cor_mat = scatter_sample_correlation(ibaqs_log_shifted, stat=stat)
+        f = outname + "_sample_corr.tsv"
+        cor_mat.to_csv(f, sep="\t")
 
     if _viaR:
         pandas2ri.activate()
@@ -54,15 +62,14 @@ def scatterplot(
         if plt_size is None:
             plt_size = ibaqs_log_shifted.shape[1] * 0.75
         if file_fmts is None:
-            file_fmts = (".pdf",)
-        # file_fmts = (".png",)
+            file_fmts = (".png",)
         gr_devices = {
             ".png": grdevices.png,
             ".pdf": grdevices.pdf,
             ".svg": grdevices.svg,
         }
         gr_kws = {
-            ".png": dict(width=plt_size, height=plt_size, units="in", res=300),
+            ".png": dict(width=plt_size, height=plt_size, units="in", res=int(png_res)),
             ".pdf": dict(
                 width=plt_size,
                 height=plt_size,
