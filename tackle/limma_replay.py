@@ -56,6 +56,11 @@ def _json_default(obj: Any) -> Any:
     return str(obj)
 
 
+def _relative_path(path: Path, start: Path) -> str:
+    rel = os.path.relpath(Path(path).resolve(), Path(start).resolve()).replace("\\", "/")
+    return "." if rel == "." else rel
+
+
 def _compute_run_id(params: Mapping[str, Any]) -> str:
     payload = json.dumps(params, sort_keys=True, separators=(",", ":"), default=_json_default)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
@@ -171,8 +176,8 @@ def _write_gct(
 
     with localconverter(robjects.default_converter + pandas2ri.converter):
         robjects.r.assign("m", mat.astype(float))
-        robjects.r.assign("rid", rid)
-        robjects.r.assign("cid", cid)
+        robjects.r.assign("rid", robjects.StrVector(rid))
+        robjects.r.assign("cid", robjects.StrVector(cid))
         robjects.r.assign("cdesc", cdesc)
         robjects.r.assign("rdesc", rdesc)
         robjects.r.assign("outname", os.path.normpath(os.path.abspath(str(out_base))))
@@ -550,9 +555,10 @@ def write_limma_replay_files(
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     context = {
         "generated_at": now,
-        "analysis_dir": str(analysis_root),
-        "volcano_dir": str(volcano_root),
-        "replay_dir": str(replay_dir),
+        "path_base": "replay_dir",
+        "analysis_dir": _relative_path(analysis_root, replay_dir),
+        "volcano_dir": _relative_path(volcano_root, replay_dir),
+        "replay_dir": ".",
         "run_id": run_id,
         "matrix_shape": [int(edata.shape[0]), int(edata.shape[1])],
         "stored_matrix_role": (
@@ -579,8 +585,12 @@ def write_limma_replay_files(
         "taxon": taxon,
         "batch_applied": batch_applied,
         "batch_method": batch_method,
-        "gct_path": str(gct_path),
-        "pre_impute_gct_path": str(pre_impute_gct_path) if pre_impute_gct_path else None,
+        "gct_path": _relative_path(gct_path, replay_dir),
+        "pre_impute_gct_path": (
+            _relative_path(pre_impute_gct_path, replay_dir)
+            if pre_impute_gct_path
+            else None
+        ),
         "recompute_imputation_supported": bool(
             impute_missing_values
             and imputation_backend == "gaussian"
@@ -591,9 +601,9 @@ def write_limma_replay_files(
             if imputation_backend == "gaussian"
             else "Stored matrix replay is authoritative; non-Gaussian backends are not recomputed in the Rmd."
         ),
-        "replay_explore_rmd_path": str(replay_rmd_path),
-        "replay_explore_render_path": str(replay_render_path),
-        "replay_explore_html_path": str(replay_html_path),
+        "replay_explore_rmd_path": _relative_path(replay_rmd_path, replay_dir),
+        "replay_explore_render_path": _relative_path(replay_render_path, replay_dir),
+        "replay_explore_html_path": _relative_path(replay_html_path, replay_dir),
         "result_labels": list(results.keys()),
         "direct_coefs": direct_coefs,
         "contrast_expressions": contrast_exprs,
@@ -622,13 +632,18 @@ def write_limma_replay_files(
     pointer_path = analysis_root / "context" / "last_volcano_replay.json"
     pointer_payload = {
         "updated_at": now,
-        "analysis_dir": str(analysis_root),
-        "volcano_dir": str(volcano_root),
-        "replay_dir": str(replay_dir),
+        "path_base": "analysis_dir",
+        "analysis_dir": ".",
+        "volcano_dir": _relative_path(volcano_root, analysis_root),
+        "replay_dir": _relative_path(replay_dir, analysis_root),
         "run_id": run_id,
-        "gct_path": str(gct_path),
-        "pre_impute_gct_path": str(pre_impute_gct_path) if pre_impute_gct_path else None,
-        "context_path": str(context_path),
+        "gct_path": _relative_path(gct_path, analysis_root),
+        "pre_impute_gct_path": (
+            _relative_path(pre_impute_gct_path, analysis_root)
+            if pre_impute_gct_path
+            else None
+        ),
+        "context_path": _relative_path(context_path, analysis_root),
     }
     _write_json(pointer_path, pointer_payload, force=True)
 

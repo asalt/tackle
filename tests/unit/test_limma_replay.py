@@ -141,6 +141,11 @@ def test_write_limma_replay_files_prefers_explicit_expression_matrix(tmp_path: P
     assert context["impute_missing_values"] is True
     assert context["imputation_backend"] == "gaussian"
     assert context["gaussian_method"] == "legacy"
+    assert context["path_base"] == "replay_dir"
+    assert context["analysis_dir"] == "../../.."
+    assert context["volcano_dir"] == "../.."
+    assert context["replay_dir"] == "."
+    assert context["gct_path"] == "limma_input.gct"
     assert context["stored_matrix_is_authoritative"] is True
     assert context["stored_matrix_role"] == "limma_input_imputed"
     assert context["has_pre_impute_matrix"] is False
@@ -199,12 +204,20 @@ def test_write_limma_replay_files_writes_pre_impute_matrix_for_recompute(tmp_pat
 
     context = json.loads(files.context_path.read_text(encoding="utf-8"))
     assert context["has_pre_impute_matrix"] is True
-    assert context["pre_impute_gct_path"].endswith("limma_input_pre_impute.gct")
+    assert context["gct_path"] == "limma_input.gct"
+    assert context["pre_impute_gct_path"] == "limma_input_pre_impute.gct"
     assert context["pre_impute_matrix_shape"] == [2, 2]
     assert context["recompute_imputation_supported"] is True
 
     pointer = json.loads(files.pointer_path.read_text(encoding="utf-8"))
-    assert pointer["pre_impute_gct_path"].endswith("limma_input_pre_impute.gct")
+    assert pointer["path_base"] == "analysis_dir"
+    assert pointer["analysis_dir"] == "."
+    assert pointer["replay_dir"].startswith("volcano/mouse/replay/")
+    assert pointer["gct_path"].endswith("/limma_input.gct")
+    assert pointer["pre_impute_gct_path"].endswith("/limma_input_pre_impute.gct")
+    assert not Path(pointer["replay_dir"]).is_absolute()
+    assert not Path(pointer["gct_path"]).is_absolute()
+    assert not Path(pointer["pre_impute_gct_path"]).is_absolute()
 
     rmd = (files.replay_dir / "replay_explore.Rmd").read_text(encoding="utf-8")
     assert 'pre_impute_gct_path <- "limma_input_pre_impute.gct"' in rmd
