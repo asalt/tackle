@@ -455,14 +455,110 @@ HELP_NOTICES = (
         command_paths=("make-html",),
     ),
     HelpNotice(
+        "make-run can generate a reusable shell run file from a config; try `tackle help make-run` for the standalone pattern.",
+        command_paths=("make-run",),
+    ),
+    HelpNotice(
         "make-xls accepts --base-dir and --basedir for standalone workbook generation from an existing analysis directory.",
         command_paths=("make-xls",),
+    ),
+    HelpNotice(
+        "make-rmd builds a local replay report from volcano replay inputs; this is separate from the HTML overview.",
+        command_paths=("make-rmd",),
     ),
     HelpNotice(
         "Scatter correlation TSV export is opt-in with --export-corr so large companion files are not written by default.",
         command_paths=("scatter",),
     ),
+    HelpNotice(
+        "Use --no-help-notices before the config/subcommand position to suppress these rotating help notes.",
+    ),
 )
+
+
+HELP_TOPICS = {
+    "make-run": {
+        "title": "make-run",
+        "summary": (
+            "Generate a reusable shell script from an EXPERIMENTS.conf file. "
+            "This is useful when you want to inspect or edit a standard tackle run before executing it."
+        ),
+        "examples": (
+            "tackle make-run -c EXPERIMENTS.conf --out tacklerun_EXPERIMENTS.sh",
+            "bash tacklerun_EXPERIMENTS.sh",
+        ),
+        "notes": (
+            "The -c/--conf/--config option points to the tackle config file.",
+            "Generated scripts are intentionally editable; they are a starting point, not a hidden execution path.",
+        ),
+    },
+    "make-xls": {
+        "title": "make-xls",
+        "summary": (
+            "Build a human-facing Excel workbook from export and volcano TSV outputs. "
+            "This is intended for review, filtering, and sharing without changing the source result tables."
+        ),
+        "examples": (
+            "tackle make-xls --basedir ./results/project/run --out summary.xlsx",
+            "tackle EXPERIMENTS.conf make-xls --out summary.xlsx",
+        ),
+        "notes": (
+            "--base-dir and --basedir are aliases for standalone use.",
+            "Styling options affect workbook readability only; they do not change the analytical data.",
+        ),
+    },
+    "make-html": {
+        "title": "make-html",
+        "summary": (
+            "Create a static HTML overview from an existing analysis directory, including plots, volcano previews, "
+            "optional AI summaries, and generated methods/reference sidecars."
+        ),
+        "examples": (
+            "tackle make-html --base-dir ./results/project/run --force",
+            "tackle make-html --base-dir ./results/project/run --ai-summary --ai-timeout-seconds 60",
+        ),
+        "notes": (
+            "The generated methods_references.md is a lightweight scaffold, not a publication-ready manuscript section.",
+            "Use --force-ai-summary to refresh cached AI summaries.",
+        ),
+    },
+    "make-rmd": {
+        "title": "make-rmd",
+        "summary": (
+            "Create an R Markdown replay bundle from volcano replay inputs. "
+            "This is focused on local reproducibility of the stored limma input matrix."
+        ),
+        "examples": (
+            "tackle make-rmd --base-dir ./results/project/run --force",
+            "tackle make-rmd --base-dir ./results/project/run --render",
+        ),
+        "notes": (
+            "Replay JSON paths are relative so the bundle can move with the analysis directory.",
+            "The stored GCT matrix is the authoritative replay input.",
+        ),
+    },
+    "scatter": {
+        "title": "scatter",
+        "summary": (
+            "Create sample scatter/correlation plots. Defaults are kept lightweight so large companion TSVs are not written unless requested."
+        ),
+        "examples": (
+            "tackle EXPERIMENTS.conf scatter --scatter-format .png",
+            "tackle EXPERIMENTS.conf scatter --export-corr",
+        ),
+        "notes": (
+            "--export-corr writes the sample-by-sample correlation TSV.",
+            "--scatter-format can override global file-format settings for this plot.",
+        ),
+    },
+}
+
+HELP_ALIASES = {
+    "xls": "make-xls",
+    "html": "make-html",
+    "rmd": "make-rmd",
+    "run": "make-run",
+}
 
 
 def _notice_matches_command(notice, command_path):
@@ -518,7 +614,7 @@ class NoticeGroup(click.Group):
         if notice is None:
             return
 
-        with formatter.section("Notice"):
+        with formatter.section("Note"):
             formatter.write_text(notice.text)
 
 
@@ -527,6 +623,8 @@ class Path_or_Subcommand(click.Path):
         "make_config",
         "replot_gsea",
         "make-xls",
+        "help",
+        "moreinfo",
         "make-deck",
         "make-pptx",
         "make-run",
@@ -1597,7 +1695,9 @@ def make_config(
 
 @main.command("make-run")
 @click.option(
+    "-c",
     "--conf",
+    "--config",
     "conf_path",
     type=click.Path(exists=True, dir_okay=False),
     required=True,
@@ -1857,6 +1957,65 @@ def cluster_summary(ctx, cluster_files, out, per_cluster_out, sort_by, descendin
     out_path.parent.mkdir(parents=True, exist_ok=True)
     clusters.to_csv(out_path, sep="\t", index=False)
     click.echo(f"Wrote {out_path}")
+
+
+def _normalize_help_topic(topic):
+    if topic is None:
+        return None
+    key = str(topic).strip().lower().replace("_", "-")
+    return HELP_ALIASES.get(key, key)
+
+
+def _echo_moreinfo_topic(topic=None):
+    key = _normalize_help_topic(topic)
+    if key is None:
+        click.echo("Available tackle help topics:")
+        for topic_key in sorted(HELP_TOPICS):
+            click.echo(f"- {topic_key}: {HELP_TOPICS[topic_key]['summary']}")
+        click.echo("\nUse `tackle help TOPIC` for details, for example `tackle help make-run`.")
+        return
+
+    item = HELP_TOPICS.get(key)
+    if item is None:
+        click.echo(f"Unknown help topic: {topic}")
+        click.echo("Available topics: " + ", ".join(sorted(HELP_TOPICS)))
+        raise click.Abort()
+
+    click.echo(item["title"])
+    click.echo("")
+    click.echo(item["summary"])
+
+    examples = item.get("examples") or ()
+    if examples:
+        click.echo("")
+        click.echo("Examples:")
+        for example in examples:
+            click.echo(f"  {example}")
+
+    notes = item.get("notes") or ()
+    if notes:
+        click.echo("")
+        click.echo("Notes:")
+        for note in notes:
+            click.echo(f"- {note}")
+
+
+@main.command("help")
+@click.argument("topic", required=False)
+def help_topic(topic):
+    """
+    Show practical notes for common tackle workflows.
+    """
+    _echo_moreinfo_topic(topic)
+
+
+@main.command("moreinfo")
+@click.argument("topic", required=False)
+def moreinfo(topic):
+    """
+    Alias for `help` with workflow-oriented tackle notes.
+    """
+    _echo_moreinfo_topic(topic)
 
 
 @main.command("make-rmd")
