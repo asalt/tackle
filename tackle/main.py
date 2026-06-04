@@ -443,6 +443,85 @@ class Path_or_Geneset(click.Path):
             # try hallmark first
 
 
+class HelpNotice:
+    def __init__(self, text, command_paths=()):
+        self.text = str(text)
+        self.command_paths = tuple(command_paths or ())
+
+
+HELP_NOTICES = (
+    HelpNotice(
+        "make-html now writes methods_references.md and methods_references.json next to index.html for portable methods/provenance notes.",
+        command_paths=("make-html",),
+    ),
+    HelpNotice(
+        "make-xls accepts --base-dir and --basedir for standalone workbook generation from an existing analysis directory.",
+        command_paths=("make-xls",),
+    ),
+    HelpNotice(
+        "Scatter correlation TSV export is opt-in with --export-corr so large companion files are not written by default.",
+        command_paths=("scatter",),
+    ),
+)
+
+
+def _notice_matches_command(notice, command_path):
+    paths = getattr(notice, "command_paths", ()) or ()
+    if not paths:
+        return True
+    if not command_path:
+        return False
+    return any(command_path == path or command_path.startswith(f"{path} ") for path in paths)
+
+
+def choose_notice(notices, *, command_path=None, app_version=None, rotation_key=None):
+    candidates = [
+        notice
+        for notice in notices
+        if _notice_matches_command(notice, command_path)
+    ]
+    if not candidates:
+        candidates = [notice for notice in notices if not getattr(notice, "command_paths", ())]
+    if not candidates:
+        candidates = list(notices)
+    if not candidates:
+        return None
+
+    seed = rotation_key
+    if seed is None:
+        seed = os.environ.get("TACKLE_HELP_NOTICE_ROTATION_KEY", "")
+    token = "|".join(str(x or "") for x in (command_path, app_version, seed))
+    idx = sum((i + 1) * ord(ch) for i, ch in enumerate(token)) % len(candidates)
+    return candidates[idx]
+
+
+class NoticeGroup(click.Group):
+    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        super().format_help(ctx, formatter)
+
+        show_notices = ctx.params.get("show_help_notices", True)
+        if ctx.obj is not None:
+            show_notices = ctx.obj.get("show_notices", show_notices)
+
+        if not show_notices:
+            return
+
+        command_path = ctx.command_path
+        parts = command_path.split()
+        subcommand_path = " ".join(parts[1:]) if len(parts) > 1 else None
+        notice = choose_notice(
+            HELP_NOTICES,
+            command_path=subcommand_path,
+            app_version=os.environ.get("TACKLE_HELP_NOTICE_VERSION", "dev"),
+        )
+
+        if notice is None:
+            return
+
+        with formatter.section("Notice"):
+            formatter.write_text(notice.text)
+
+
 class Path_or_Subcommand(click.Path):
     EXCEPTIONS = (
         "make_config",
@@ -716,7 +795,14 @@ ANNOTATION_CHOICES = _annotation_choices()
 
 
 # @gui_option
-@click.group(chain=True)
+@click.group(chain=True, cls=NoticeGroup)
+@click.option(
+    "--help-notices/--no-help-notices",
+    "show_help_notices",
+    default=True,
+    show_default=True,
+    help="Show rotating notices in top-level help output.",
+)
 @click.option(
     "--additional-info",
     type=click.Path(exists=True, dir_okay=False),
@@ -1049,6 +1135,7 @@ ANNOTATION_CHOICES = _annotation_choices()
 @click.pass_context
 def main(
     ctx,
+    show_help_notices,
     additional_info,
     annotations,
     batch,
@@ -2463,6 +2550,8 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
 )
 @click.option(
     "--base-dir",
+    "--basedir",
+    "base_dir",
     type=str,
     default=None,
     help="Optional analysis output directory to scan when not running after data load.",
