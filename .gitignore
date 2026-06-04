@@ -38,3 +38,6 @@ scripts/*.txt
 *.gmt
 *.zip
 examples/*
+.codex
+tackle-freeze/target/
+tackle-freeze/.cargo-home/
