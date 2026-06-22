@@ -67,3 +67,26 @@ def test_add_annotations_handles_missing_genesymbol(monkeypatch):
     assert "GeneSymbol" in out.columns
     assert "SECRETED" in out.columns
     assert "value" in out.columns
+
+
+def test_synthetic_symbol_from_header_prefers_embedded_symbol():
+    from tackle.utils import synthetic_symbol_from_header
+
+    header = "CustomPart|geneid|990000001|taxon|32630|symbol|CustomPart|orig_id|part1|"
+    assert synthetic_symbol_from_header(header) == "CustomPart"
+
+
+def test_synthetic_symbol_from_header_uses_local_alias_map(tmp_path, monkeypatch):
+    from tackle import utils
+
+    alias_file = tmp_path / "synthetic-symbols.txt"
+    alias_file.write_text(
+        "vector_part=Vector_Part\n"
+        "sp_vector_part_vector_part=Vector_Part\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TACKLE_SYNTHETIC_SYMBOL_MAP", str(alias_file))
+    monkeypatch.setattr(utils, "_SYNTHETIC_SYMBOL_MAP_CACHE", None)
+
+    header = "meta:p:sp_vector_part_vector_part_geneid_990000001_taxon_32630_"
+    assert utils.synthetic_symbol_from_header(header) == "Vector_Part"

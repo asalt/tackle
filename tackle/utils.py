@@ -1247,6 +1247,186 @@ def fillna_meta(df, index_col):
     # )
 
 
+_SYNTHETIC_SYMBOL_MAP_CACHE = None
+_SYNTHETIC_SYMBOL_MAP_FILENAMES = (".tackle-synthetic-symbols",)
+
+
+def _synthetic_symbol_key(value):
+    if value is None:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")
+
+
+def _load_synthetic_symbol_map():
+    """Load optional local aliases for project-specific synthetic symbols.
+
+    Files are plain text with ``key=value`` or ``key<TAB>value`` rows. They are
+    intentionally local inputs rather than tracked project-specific code.
+    """
+    global _SYNTHETIC_SYMBOL_MAP_CACHE
+    if _SYNTHETIC_SYMBOL_MAP_CACHE is not None:
+        return _SYNTHETIC_SYMBOL_MAP_CACHE
+
+    import os
+
+    paths = []
+    env_paths = os.environ.get("TACKLE_SYNTHETIC_SYMBOL_MAP", "")
+    if env_paths:
+        paths.extend([x for x in env_paths.split(os.pathsep) if x.strip()])
+    paths.extend(_SYNTHETIC_SYMBOL_MAP_FILENAMES)
+
+    aliases = {}
+    for path in paths:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                    elif "\t" in line:
+                        key, value = line.split("\t", 1)
+                    else:
+                        continue
+                    key = key.strip()
+                    value = value.strip()
+                    if key and value:
+                        aliases[_synthetic_symbol_key(key)] = value
+        except OSError as exc:
+            logger.warning(f"Could not read synthetic symbol map {path}: {exc}")
+
+    _SYNTHETIC_SYMBOL_MAP_CACHE = aliases
+    return aliases
+
+
+def _collapse_repeated_symbol_candidate(value):
+    parts = str(value).strip("_").split("_")
+    if len(parts) % 2:
+        return value
+    half = len(parts) // 2
+    if parts[:half] == parts[half:]:
+        return "_".join(parts[:half])
+    return value
+
+
+def _synthetic_symbol_alias_candidates(first_header):
+    aliases = []
+
+    def add(value):
+        if value is None:
+            return
+        value = str(value).strip().strip("_")
+        if value and value not in aliases:
+            aliases.append(value)
+
+    first = str(first_header).strip().lstrip(">")
+    add(first)
+
+    pipe_tokens = [x for x in first.split("|") if x != ""]
+    lower_tokens = [x.lower() for x in pipe_tokens]
+    if "symbol" in lower_tokens:
+        i = lower_tokens.index("symbol")
+        if i + 1 < len(pipe_tokens):
+            add(pipe_tokens[i + 1])
+
+    no_meta = re.sub(r"^meta:p:", "", first, flags=re.I)
+    add(no_meta)
+
+    before_geneid = re.split(
+        r"(?:_|\|)geneid(?:_|\|)", no_meta, maxsplit=1, flags=re.I
+    )[0]
+    add(before_geneid)
+
+    no_species = re.sub(r"^(?:sp|tr)[_-]", "", before_geneid, flags=re.I)
+    add(no_species)
+    add(_collapse_repeated_symbol_candidate(no_species))
+
+    return aliases
+
+
+def synthetic_symbol_from_header(value):
+    """Extract a compact synthetic construct symbol from FASTA/gpGrouper metadata.
+
+    DIA-NN/gpGrouper-derived rows for custom vector entries can arrive with a
+    normalized protein header in place of GeneID/GeneSymbol, e.g.
+    ``meta:p:sp_custom_symbol_custom_symbol_geneid_990000_taxon_32630_``.
+    For display/export purposes, keep the stable synthetic component symbol
+    instead of propagating the full normalized header. Project-specific casing
+    or aliases should be supplied through a local key=value map, not hardcoded.
+    """
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    text = str(value).strip()
+    if not text:
+        return None
+
+    first = text.split(";", 1)[0].lstrip(">")
+    aliases = _synthetic_symbol_alias_candidates(first)
+    alias_map = _load_synthetic_symbol_map()
+    for alias in aliases:
+        mapped = alias_map.get(_synthetic_symbol_key(alias))
+        if mapped:
+            return mapped
+
+    pipe_tokens = [x for x in first.split("|") if x != ""]
+    lower_tokens = [x.lower() for x in pipe_tokens]
+    if "symbol" in lower_tokens:
+        i = lower_tokens.index("symbol")
+        if i + 1 < len(pipe_tokens):
+            symbol = pipe_tokens[i + 1].strip()
+            if symbol:
+                return symbol
+
+    if "geneid" in lower_tokens and pipe_tokens:
+        first_token = pipe_tokens[0].strip()
+        if first_token and not first_token.lower().startswith(("ensp", "enst", "ensg")):
+            return first_token
+
+    for alias in reversed(aliases):
+        if (
+            alias
+            and len(alias) <= 80
+            and not alias.lower().startswith("meta:p:")
+            and not re.search(r"(?:_|\|)geneid(?:_|\|)", alias, flags=re.I)
+            and not re.search(r"(?:_|\|)taxon(?:_|\|)", alias, flags=re.I)
+        ):
+            return alias
+
+    return None
+
+
+def _missing_gene_symbol(value):
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except TypeError:
+        pass
+    text = str(value).strip()
+    return text == "" or text.lower() in {"0", "na", "nan", "none"}
+
+
+def _header_like_gene_symbol(value):
+    if _missing_gene_symbol(value):
+        return False
+    text = str(value).strip().lower()
+    return (
+        text.startswith("meta:p:")
+        or "_geneid_" in text
+        or "|geneid|" in text
+        or "|taxon|" in text
+    )
+
+
 def standardize_meta(df):
     # gm = GeneMapper()
     from .containers import get_gene_mapper
@@ -1254,6 +1434,35 @@ def standardize_meta(df):
     # df["GeneSymbol"] = df.index.map(lambda x: gm.symbol.get(str(x), x))
     df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
+
+    geneid_values = df["GeneID"] if "GeneID" in df else pd.Series(df.index, index=df.index)
+    synthetic_symbols = geneid_values.map(synthetic_symbol_from_header)
+    if "Description" in df:
+        synthetic_symbols = synthetic_symbols.fillna(
+            df["Description"].map(synthetic_symbol_from_header)
+        )
+    if "GeneDescription" in df:
+        synthetic_symbols = synthetic_symbols.fillna(
+            df["GeneDescription"].map(synthetic_symbol_from_header)
+        )
+
+    if "GeneSymbol" not in df:
+        df["GeneSymbol"] = geneid_values.map(lambda x: gm.symbol.get(str(x), x))
+
+    if "Symbol" in df:
+        symbol_values = df["Symbol"]
+        replace_from_symbol = df["GeneSymbol"].map(_missing_gene_symbol) & ~symbol_values.map(
+            _missing_gene_symbol
+        )
+        df.loc[replace_from_symbol, "GeneSymbol"] = symbol_values.loc[replace_from_symbol]
+
+    replace_from_synthetic = (
+        df["GeneSymbol"].map(_missing_gene_symbol)
+        | df["GeneSymbol"].map(_header_like_gene_symbol)
+    ) & synthetic_symbols.notna()
+    df.loc[replace_from_synthetic, "GeneSymbol"] = synthetic_symbols.loc[
+        replace_from_synthetic
+    ]
 
     if "TaxonID" not in df:
         logger.warning(f"TaxonID not in df")
@@ -1284,6 +1493,13 @@ def standardize_meta(df):
             df["GeneSymbol"] = df.index.map(
                 lambda x: lookup_dict.get(x, gm.symbol.get(str(x), x))
             )
+        replace_from_synthetic = (
+            df["GeneSymbol"].map(_missing_gene_symbol)
+            | df["GeneSymbol"].map(_header_like_gene_symbol)
+        ) & synthetic_symbols.notna()
+        df.loc[replace_from_synthetic, "GeneSymbol"] = synthetic_symbols.loc[
+            replace_from_synthetic
+        ]
     # df["FunCats"] = df.index.map(lambda x: gm.funcat.get(x, ""))
     # df["GeneDescription"] = df.index.map(lambda x: gm.description.get(str(x), ""))
     return df

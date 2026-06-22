@@ -2835,7 +2835,8 @@ class Data:
             export["GeneSymbol"] = export.index.map(
                 lambda x: self.gid_symbol.get(
                     x,
-                    get_gene_mapper().symbol.get(str(x), x),
+                    synthetic_symbol_from_header(x)
+                    or get_gene_mapper().symbol.get(str(x), x),
                 )
             )
 
@@ -3009,7 +3010,7 @@ class Data:
                     x,
                     # _genemapper.symbol.get(x, '?')
                     # _genemapper.symbol.get(str(int(x)), x),
-                    _genemapper.symbol.get(x, x),
+                    synthetic_symbol_from_header(x) or _genemapper.symbol.get(x, x),
                 )
             )
             order = ["GeneID", "GeneSymbol"]  # add GeneSymbol
