@@ -222,3 +222,44 @@ def test_write_limma_replay_files_writes_pre_impute_matrix_for_recompute(tmp_pat
     rmd = (files.replay_dir / "replay_explore.Rmd").read_text(encoding="utf-8")
     assert 'pre_impute_gct_path <- "limma_input_pre_impute.gct"' in rmd
     assert "mat_stored" in rmd
+
+
+def test_write_limma_replay_files_reuses_existing_gct_for_same_inputs(tmp_path: Path, monkeypatch) -> None:
+    calls = []
+
+    def fake_write_gct(*, out_path, mat, cdesc, rdesc, precision=4):
+        calls.append(out_path.name)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text("# dummy gct\n", encoding="utf-8")
+        return out_path
+
+    monkeypatch.setattr("tackle.limma_replay._write_gct", fake_write_gct)
+
+    analysis = tmp_path / "analysis"
+    volcano = analysis / "volcano" / "mouse"
+    sample_metadata = pd.DataFrame({"group": ["A", "B"]}, index=["S1", "S2"])
+    edata = pd.DataFrame({"S1": [10.5, 20.5], "S2": [30.5, 40.5]}, index=["101", "202"])
+    result_df = pd.DataFrame(
+        {"S1": [1.0, 2.0], "S2": [3.0, 4.0], "pAdj": [0.01, 0.02]},
+        index=["101", "202"],
+    )
+
+    first = write_limma_replay_files(
+        analysis_dir=str(analysis),
+        volcano_dir=str(volcano),
+        results={"A-B=A-B": result_df},
+        sample_metadata=sample_metadata,
+        expression_matrix=edata,
+        force=True,
+    )
+    second = write_limma_replay_files(
+        analysis_dir=str(analysis),
+        volcano_dir=str(volcano),
+        results={"A-B=A-B": result_df},
+        sample_metadata=sample_metadata,
+        expression_matrix=edata,
+        force=True,
+    )
+
+    assert first.replay_dir == second.replay_dir
+    assert calls == ["limma_input.gct"]

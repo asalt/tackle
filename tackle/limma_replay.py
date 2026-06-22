@@ -66,6 +66,40 @@ def _compute_run_id(params: Mapping[str, Any]) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
 
 
+def _hash_frame(frame: pd.DataFrame) -> str:
+    stable = frame.copy()
+    stable.index = stable.index.astype(str)
+    stable.columns = stable.columns.astype(str)
+    payload = stable.to_csv(sep="\t", na_rep="<NA>", float_format="%.17g")
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _gct_output_base(out_path: Path) -> Path:
+    base = str(out_path)
+    base_lower = base.lower()
+    for suffix in (".gct.gz", ".gct"):
+        if base_lower.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return Path(base)
+
+
+def _find_existing_gct(out_path: Path) -> Optional[Path]:
+    out_base = _gct_output_base(Path(out_path))
+    candidates = []
+    exact = out_base.with_suffix(".gct")
+    if exact.exists() and exact.stat().st_size > 0:
+        candidates.append(exact)
+    candidates.extend(
+        p
+        for p in out_base.parent.glob(out_base.name + "*.gct")
+        if p.exists() and p.stat().st_size > 0
+    )
+    if not candidates:
+        return None
+    return max(set(candidates), key=lambda p: p.stat().st_mtime)
+
+
 def _split_result_label(label: str) -> Tuple[str, str]:
     text = str(label)
     if "=" in text:
@@ -157,13 +191,7 @@ def _write_gct(
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    base = str(out_path)
-    base_lower = base.lower()
-    for suffix in (".gct.gz", ".gct"):
-        if base_lower.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    out_base = Path(base)
+    out_base = _gct_output_base(out_path)
 
     # Ensure aligned ordering.
     cid = [str(c) for c in mat.columns]
@@ -203,6 +231,27 @@ write_gct(my_ds, outname, precision=as.integer(%d))
     if candidates:
         return max(candidates, key=lambda p: p.stat().st_mtime)
     raise FileNotFoundError(f"Failed to write GCT under: {out_base.parent}")
+
+
+def _write_gct_reuse_existing(
+    *,
+    out_path: Path,
+    mat: pd.DataFrame,
+    cdesc: pd.DataFrame,
+    rdesc: pd.DataFrame,
+    precision: int = 4,
+) -> Path:
+    existing = _find_existing_gct(out_path)
+    if existing is not None:
+        logger.info("Limma replay: reusing existing GCT %s", existing)
+        return existing
+    return _write_gct(
+        out_path=out_path,
+        mat=mat,
+        cdesc=cdesc,
+        rdesc=rdesc,
+        precision=precision,
+    )
 
 
 def _write_json(path: Path, payload: Mapping[str, Any], *, force: bool) -> None:
@@ -513,8 +562,24 @@ def write_limma_replay_files(
     # Parse resolved coefficient/contrast lists from result labels.
     direct_coefs, contrast_exprs = parse_limma_result_labels(results.keys())
 
+    pre_edata = None
+    pre_impute_shape: Optional[List[int]] = None
+    if pre_impute_expression_matrix is not None:
+        pre_edata = pre_impute_expression_matrix.copy()
+        pre_edata = pre_edata.reindex(index=edata.index, columns=edata.columns)
+        pre_impute_shape = [int(pre_edata.shape[0]), int(pre_edata.shape[1])]
+
+    matrix_hash = _hash_frame(edata)
+    pre_impute_matrix_hash = _hash_frame(pre_edata) if pre_edata is not None else None
+    cdesc_hash = _hash_frame(cdesc)
+    rdesc_hash = _hash_frame(rdesc)
+
     # Stable run id derived from the resolved replay inputs (not timestamps).
     run_params = {
+        "matrix_hash": matrix_hash,
+        "pre_impute_matrix_hash": pre_impute_matrix_hash,
+        "cdesc_hash": cdesc_hash,
+        "rdesc_hash": rdesc_hash,
         "group": group,
         "formula_effective": formula_effective,
         "formula_rewritten": formula_rewritten,
@@ -535,14 +600,15 @@ def write_limma_replay_files(
     replay_dir = volcano_root / "replay" / run_id
     replay_dir.mkdir(parents=True, exist_ok=True)
 
-    gct_path = _write_gct(out_path=replay_dir / "limma_input.gct", mat=edata, cdesc=cdesc, rdesc=rdesc)
+    gct_path = _write_gct_reuse_existing(
+        out_path=replay_dir / "limma_input.gct",
+        mat=edata,
+        cdesc=cdesc,
+        rdesc=rdesc,
+    )
     pre_impute_gct_path: Optional[Path] = None
-    pre_impute_shape: Optional[List[int]] = None
-    if pre_impute_expression_matrix is not None:
-        pre_edata = pre_impute_expression_matrix.copy()
-        pre_edata = pre_edata.reindex(index=edata.index, columns=edata.columns)
-        pre_impute_shape = [int(pre_edata.shape[0]), int(pre_edata.shape[1])]
-        pre_impute_gct_path = _write_gct(
+    if pre_edata is not None:
+        pre_impute_gct_path = _write_gct_reuse_existing(
             out_path=replay_dir / "limma_input_pre_impute.gct",
             mat=pre_edata,
             cdesc=cdesc,
@@ -561,6 +627,10 @@ def write_limma_replay_files(
         "replay_dir": ".",
         "run_id": run_id,
         "matrix_shape": [int(edata.shape[0]), int(edata.shape[1])],
+        "matrix_hash": matrix_hash,
+        "pre_impute_matrix_hash": pre_impute_matrix_hash,
+        "cdesc_hash": cdesc_hash,
+        "rdesc_hash": rdesc_hash,
         "stored_matrix_role": (
             "limma_input_imputed" if bool(impute_missing_values) else "limma_input"
         ),
