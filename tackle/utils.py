@@ -85,14 +85,13 @@ def get_default_color_mapping(s: pd.Series) -> dict:
 def normalize_metadata_str_values(s: pd.Series, na_value: str = "NA") -> pd.Series:
     """Normalize metadata values to stable strings for plotting.
 
-    - Ensures missing/blank/None-like values become `na_value`
+    - Ensures missing/blank/null-like values become `na_value`
     - Applies STR_DTYPE_COERCION (e.g. TRUE/FALSE/nan/<NA> -> True/False/NA)
+    - Preserves literal "none" metadata values as categories
     """
     s = s.fillna(na_value).astype(str)
     s = s.replace(STR_DTYPE_COERCION).replace(
         {
-            "None": na_value,
-            "none": na_value,
             "NULL": na_value,
             "null": na_value,
             "": na_value,

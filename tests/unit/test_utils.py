@@ -71,6 +71,12 @@ def test_normalize_metadata_str_values_coerces_missing_and_blank_to_NA():
     assert out.tolist() == ["NA", "NA", "NA", "NA", "NA", "True", "False"]
 
 
+def test_normalize_metadata_str_values_preserves_none_category():
+    series = pd.Series(["none", "None", None])
+    out = normalize_metadata_str_values(series)
+    assert out.tolist() == ["none", "None", "NA"]
+
+
 def test_get_color_mapping_with_defaults_merges_user_mapping_keys_as_strings():
     series = pd.Series([1, 2, 3])
     mapping = get_color_mapping_with_defaults(series, overrides={"1": "#111111"})
