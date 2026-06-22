@@ -2856,8 +2856,6 @@ class Data:
 
             annot_mapper = get_annotation_mapper()
             if level in ("gct", "gct_pca"):
-                from rpy2.robjects.packages import importr
-
                 # NOTE: `.strip(".tsv")` will also strip leading '.' (e.g. "./results.tsv" -> "/results")
                 # which can break relative paths. Only remove the *suffix* (case-insensitive).
                 outname = str(outname)
@@ -2866,7 +2864,83 @@ class Data:
                     if outname_lower.endswith(_suffix):
                         outname = outname[: -len(_suffix)]
                         break
-                cmapR = importr("cmapR")
+                outname = os.path.normpath(os.path.abspath(outname))
+                os.makedirs(os.path.dirname(outname), exist_ok=True)
+                gct_path = outname + ".gct"
+                if not force:
+                    candidates = []
+                    if os.path.exists(gct_path) and os.path.getsize(gct_path) > 0:
+                        candidates.append(gct_path)
+                    candidates.extend(
+                        p
+                        for p in glob.glob(outname + "*.gct")
+                        if os.path.exists(p) and os.path.getsize(p) > 0
+                    )
+                    if candidates:
+                        existing = max(set(candidates), key=os.path.getmtime)
+                        logger.info(
+                            f"Skipping existing GCT export {existing} (use --force to overwrite)"
+                        )
+                        return existing
+
+                def _format_gct_cell(value, *, numeric=False):
+                    if pd.isna(value):
+                        return "NA"
+                    if numeric:
+                        try:
+                            value = float(value)
+                        except Exception:
+                            return str(value).replace("\t", " ").replace("\n", " ")
+                        if not np.isfinite(value):
+                            return "NA"
+                        text = f"{round(value, 4):.4f}".rstrip("0").rstrip(".")
+                        return text if text else "0"
+                    return str(value).replace("\t", " ").replace("\n", " ")
+
+                def _write_gct_v13(path, mat, cdesc, rdesc):
+                    mat = mat.copy()
+                    mat.index = mat.index.astype(str)
+                    mat.columns = mat.columns.astype(str)
+
+                    rdesc = rdesc.copy()
+                    rdesc.index = rdesc.index.astype(str)
+                    rdesc = rdesc.reindex(mat.index).drop(columns=["id"], errors="ignore")
+                    rdesc = rdesc.fillna("")
+
+                    cdesc = cdesc.copy()
+                    cdesc.index = cdesc.index.astype(str)
+                    cdesc = cdesc.reindex(mat.columns).drop(columns=["id"], errors="ignore")
+
+                    nr, nc = mat.shape
+                    nrdesc = rdesc.shape[1]
+                    ncdesc = cdesc.shape[1]
+
+                    with open(path, "w", encoding="utf-8", newline="") as handle:
+                        handle.write("#1.3\n")
+                        handle.write(f"{nr}\t{nc}\t{nrdesc}\t{ncdesc}\n")
+                        handle.write(
+                            "\t".join(["id", *map(str, rdesc.columns), *map(str, mat.columns)])
+                            + "\n"
+                        )
+                        for col in cdesc.columns:
+                            numeric_col = pd.api.types.is_numeric_dtype(cdesc[col])
+                            values = [
+                                _format_gct_cell(v, numeric=numeric_col)
+                                for v in cdesc[col].tolist()
+                            ]
+                            handle.write(
+                                "\t".join([str(col), *("na" for _ in range(nrdesc)), *values])
+                                + "\n"
+                            )
+                        for rid, row in mat.iterrows():
+                            rmeta = [
+                                _format_gct_cell(v, numeric=False)
+                                for v in rdesc.loc[rid].tolist()
+                            ]
+                            values = [_format_gct_cell(v, numeric=True) for v in row.tolist()]
+                            handle.write("\t".join([str(rid), *rmeta, *values]) + "\n")
+                    return path
+
                 # data_obj = ctx.obj["data_obj"]
                 _export = export.reset_index().merge(
                     annot_mapper.df[
@@ -2901,22 +2975,6 @@ class Data:
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
-                from rpy2 import robjects
-                from rpy2.robjects import pandas2ri
-
-                # pandas2ri.activate()
-                r = robjects.r
-                r.assign("m", _m)
-                r.assign("rid", _m.index)
-                r.assign(
-                    "rdesc",
-                    rdesc,
-                    # (
-                    #    export.GeneSymbol
-                    #    if "GeneSymbol" in export.columns
-                    #    else export.index
-                    # ),
-                )
                 cdesc = self.col_metadata.copy()
                 # Optionally embed continuous covariate(s) as cdesc columns
                 try:
@@ -2959,10 +3017,34 @@ class Data:
                 except Exception as e:
                     logger.warning(f"GCT export: embedding covariates failed: {e}")
                 cdesc["id"] = cdesc.index
+
+                try:
+                    outname = _write_gct_v13(gct_path, _m, cdesc, rdesc)
+                    logger.info(f"Wrote {outname}")
+                    return outname
+                except Exception as e:
+                    logger.warning(f"GCT export: native writer failed, falling back to cmapR: {e}")
+
+                from rpy2.robjects.packages import importr
+                from rpy2 import robjects
+                from rpy2.robjects import pandas2ri
+
+                cmapR = importr("cmapR")
+                # pandas2ri.activate()
+                r = robjects.r
+                r.assign("m", _m)
+                r.assign("rid", _m.index)
+                r.assign(
+                    "rdesc",
+                    rdesc,
+                    # (
+                    #    export.GeneSymbol
+                    #    if "GeneSymbol" in export.columns
+                    #    else export.index
+                    # ),
+                )
                 r.assign("cdesc", cdesc)
                 r.assign("cid", self.col_metadata.index)
-                outname = os.path.normpath(os.path.abspath(outname))
-                os.makedirs(os.path.dirname(outname), exist_ok=True)
                 r.assign("outname", outname)
 
                 # my_new_ds <- new("GCT", mat=m)
