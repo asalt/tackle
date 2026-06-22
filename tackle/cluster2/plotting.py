@@ -56,7 +56,7 @@ class Cluster2FigsizeResult:
 
 
 def _base_dims(n_rows: int, n_cols: int, *, add_title: bool) -> tuple[float, float]:
-    row_slope = 0.24 if n_rows <= 250 else 0.18
+    row_slope = 0.22 if n_rows <= 250 else 0.18
     col_slope = 0.24 if n_cols <= 35 else 0.18
     base_h = 4.2 + (n_rows * row_slope)
     if add_title:

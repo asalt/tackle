@@ -151,7 +151,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      circle_col_marker_size = 12,
                      #force_plot_genes = FALSE,
                      main_title = "",
-                     title_fontsize = 9,
+                     title_fontsize = 11,
                      cluster_row_slices = TRUE,
                      cluster_col_slices = TRUE,
                      cut_by = NULL,
@@ -888,13 +888,13 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     row_dend_reorder = FALSE, #? need this??
     row_labels = toplot$GeneSymbol,
     row_names_gp = gpar(fontsize = gene_symbol_fontsize, fontface = "bold"),
-    column_names_gp = gpar(fontsize = 9),
+    column_names_gp = gpar(fontsize = 11),
     #column_title_rot = 0, # 45 used to work
     column_title_rot = 40, # 45 used to work
     column_names_rot = 90,
     ## border = FALSE,
     # column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = 60) ,
-    column_title_gp = gpar(fontsize = 9),
+    column_title_gp = gpar(fontsize = 11),
     column_title_side = "top",
     column_names_side = "top",
     show_parent_dend_line = TRUE,
@@ -927,7 +927,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   ht <- ComplexHeatmap::draw(ht,
     column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = str_wrap_size),
-    column_title_gp = gpar(fontsize = 13, fontface = "bold", just = "left"),
+    column_title_gp = gpar(fontsize = 15, fontface = "bold", just = "left"),
     heatmap_legend_side = "bottom",
     padding = unit(c(10, 10, 2, 8), "mm") # bottom, left, top, right
   ) # top right bottom left
