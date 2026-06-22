@@ -1348,24 +1348,11 @@ class Data:
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
 
-        histone_info_object = HistoneInfo()
+        from .histone_dedupe import dedupe_histone_rows
 
-        for histone_info in histone_info_object:
-            histone_values = self.data[
-                self.data.GeneID.isin(histone_info.df.GeneID)
-            ].query("Metric=='AreaSum_dstrAdj'")
-            _value_cols = [
-                x for x in self.data.columns if x != "GeneID" and x != "Metric"
-            ]
-            histone_values["geneid_sortable"] = [
-                int(x) if x.isnumeric() else x for x in histone_values.GeneID
-            ]
-            histone_values = histone_values.sort_values(
-                by=[_value_cols[0], "geneid_sortable"]
-            )
-            histone_vals_nodups = histone_values.drop_duplicates(_value_cols)
-            _to_remove = set(histone_values.GeneID) - set(histone_vals_nodups.GeneID)
-            self.data = self.data[~self.data.GeneID.isin(_to_remove)]
+        self.data = dedupe_histone_rows(
+            self.data, HistoneInfo(), self.outpath, logger=logger
+        )
 
         print("done", flush=True)
 
