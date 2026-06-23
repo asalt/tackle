@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import textwrap
@@ -14,6 +15,15 @@ from .exporter import _collect_tsvs, _read_tsv
 from .utils import _get_logger
 
 logger = _get_logger(__name__)
+
+
+PLOT_CATEGORY_ORDER = {
+    "metrics": 0,
+    "cluster": 1,
+    "pca": 2,
+    "volcano": 3,
+    "topdiff-cluster": 4,
+}
 
 
 @dataclass(frozen=True)
@@ -111,7 +121,7 @@ def collect_plot_image_assets(
     # Always exclude report/deck outputs to avoid re-ingesting generated assets.
     excluded.append((root / "report" / "deck").resolve())
 
-    assets: List[DeckImageAsset] = []
+    candidates: List[tuple[DeckImageAsset, str]] = []
     for png in root.rglob("*.png"):
         png_resolved = png.resolve()
         if any(_is_under(png_resolved, ex) for ex in excluded):
@@ -126,17 +136,35 @@ def collect_plot_image_assets(
         if not category or category not in include:
             continue
 
-        assets.append(
-            DeckImageAsset(
-                title=_readable_title_from_png_rel(rel_str, category=category),
-                source_relpath=rel_str,
-                source_path=str(png_resolved),
-                png_path=str(png_resolved),
-                category=category,
+        try:
+            digest = hashlib.sha256(png_resolved.read_bytes()).hexdigest()
+        except Exception:
+            digest = ""
+
+        candidates.append(
+            (
+                DeckImageAsset(
+                    title=_readable_title_from_png_rel(rel_str, category=category),
+                    source_relpath=rel_str,
+                    source_path=str(png_resolved),
+                    png_path=str(png_resolved),
+                    category=category,
+                ),
+                digest,
             )
         )
 
-    assets.sort(key=lambda a: a.source_relpath)
+    candidates.sort(key=lambda x: (PLOT_CATEGORY_ORDER.get(x[0].category, 99), x[0].source_relpath))
+
+    assets: List[DeckImageAsset] = []
+    seen_hashes: set[str] = set()
+    for asset, digest in candidates:
+        if digest:
+            if digest in seen_hashes:
+                continue
+            seen_hashes.add(digest)
+        assets.append(asset)
+
     return assets
 
 
@@ -533,7 +561,7 @@ def build_pptx_deck(
         tf.clear()
         p = tf.paragraphs[0]
         run = p.add_run()
-        run.text = text
+        run.text = '\n'.join(textwrap.wrap(text, 68))
         run.font.size = Pt(28)
         run.font.bold = True
 

@@ -632,6 +632,7 @@ class Path_or_Subcommand(click.Path):
         "make-rmd",
         "make-html",
         "make-search-report",
+        "stage-upload-slim",
         "cluster-summary",
     )  # run as standalone subcommands
 
@@ -2947,7 +2948,13 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
     type=click.Choice(["png", "pdf"]),
     default=("png", "pdf"),
     show_default=True,
-    help="Table image formats to write for each volcano result.",
+    help="Table image formats to write for each volcano result when --table-summaries is enabled.",
+)
+@click.option(
+    "--table-summaries/--no-table-summaries",
+    default=False,
+    show_default=True,
+    help="Generate volcano top-hit table summary images and include them in the deck.",
 )
 @click.option(
     "--dpi",
@@ -3049,9 +3056,15 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
     "plot_kinds",
     multiple=True,
     type=click.Choice(["volcano", "pca", "metrics", "cluster", "topdiff-cluster"]),
-    default=("volcano", "pca", "metrics", "cluster", "topdiff-cluster"),
+    default=("metrics", "pca", "cluster", "volcano"),
     show_default=True,
-    help="Plot categories to include when --include-plot-images is enabled.",
+    help="Plot categories to include when --include-plot-images is enabled. If any --plot-kind is provided, it replaces the default list.",
+)
+@click.option(
+    "--include-topdiff-clusters/--no-include-topdiff-clusters",
+    default=False,
+    show_default=True,
+    help="Also include topdiff heatmap PNGs in addition to the selected plot kinds.",
 )
 @click.pass_context
 def make_deck(
@@ -3059,6 +3072,7 @@ def make_deck(
     outdir,
     base_dir,
     formats,
+    table_summaries,
     dpi,
     filter_contains,
     topn,
@@ -3074,10 +3088,11 @@ def make_deck(
     pandas_low_memory,
     include_plot_images,
     plot_kinds,
+    include_topdiff_clusters,
 ):
     """
-    Generate slide-ready table summaries (PNG/PDF) from volcano TSV outputs,
-    and optionally assemble a PowerPoint deck embedding the tables.
+    Generate a quick PowerPoint deck from existing tackle plot PNGs, optionally
+    adding slide-ready volcano top-hit table summaries.
     """
     from pathlib import Path
 
@@ -3101,37 +3116,41 @@ def make_deck(
         outdir = str(base_dir_path / "report" / "deck")
 
     out_root = Path(outdir)
-    tables_dir = out_root / "tables"
-    tables_dir.mkdir(parents=True, exist_ok=True)
 
     # Coerce formats to extensions expected by deckgen
     fmts = tuple(f".{f}" for f in formats)
 
     # If building a pptx, ensure we have PNGs to embed.
-    if pptx and ".png" not in fmts:
+    if table_summaries and pptx and ".png" not in fmts:
         fmts = fmts + (".png",)
 
     p_cut = None if (p_cutoff is None or float(p_cutoff) <= 0) else float(p_cutoff)
 
-    table_assets = build_volcano_table_assets(
-        base_dir=str(base_dir_path),
-        out_dir=str(tables_dir),
-        filter_contains=filter_contains,
-        topn=int(topn),
-        direction=direction,
-        p_cutoff=p_cut,
-        fc_cutoff=fc_cutoff,
-        formats=fmts,
-        dpi=int(dpi),
-        tsv_engine=tsv_engine,
-        pandas_low_memory=pandas_low_memory,
-        force=force,
-    )
+    table_assets = []
+    if table_summaries:
+        tables_dir = out_root / "tables"
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        table_assets = build_volcano_table_assets(
+            base_dir=str(base_dir_path),
+            out_dir=str(tables_dir),
+            filter_contains=filter_contains,
+            topn=int(topn),
+            direction=direction,
+            p_cutoff=p_cut,
+            fc_cutoff=fc_cutoff,
+            formats=fmts,
+            dpi=int(dpi),
+            tsv_engine=tsv_engine,
+            pandas_low_memory=pandas_low_memory,
+            force=force,
+        )
 
-    click.echo(f"Wrote {len(table_assets)} table summaries under: {tables_dir}")
+        click.echo(f"Wrote {len(table_assets)} table summaries under: {tables_dir}")
 
     plot_assets = []
     if include_plot_images:
+        if include_topdiff_clusters and "topdiff-cluster" not in plot_kinds:
+            plot_kinds = tuple(plot_kinds) + ("topdiff-cluster",)
         plot_assets = collect_plot_image_assets(
             base_dir=str(base_dir_path),
             filter_contains=filter_contains,
@@ -3143,9 +3162,13 @@ def make_deck(
             f"({', '.join(plot_kinds)}) under: {base_dir_path}"
         )
 
-    deck_assets = [*table_assets, *plot_assets]
+    deck_assets = [*plot_assets, *table_assets]
 
     if not pptx:
+        return
+
+    if not deck_assets:
+        click.echo("No deck assets found; no PowerPoint written.")
         return
 
     deck_out = pptx_out or str(out_root / "deck.pptx")
@@ -3175,6 +3198,186 @@ def make_deck(
 
 # Convenience alias (same options/behavior as make-deck).
 main.add_command(make_deck, "make-pptx")
+
+
+@main.command("stage-upload-slim")
+@click.option(
+    "--base-dir",
+    type=str,
+    default="./results",
+    show_default=True,
+    help="Result root to scan.",
+)
+@click.option(
+    "--outdir",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Destination staging directory. Default: <base-dir>/for-upload.",
+)
+@click.option(
+    "--include",
+    "include_dirs",
+    multiple=True,
+    default=("context", "clustermap", "export", "metrics", "pca", "volcano"),
+    show_default=True,
+    help="Directory basename to include in the staged tree. Repeatable.",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["auto", "hardlink", "symlink", "copy"]),
+    default="auto",
+    show_default=True,
+    help="How to stage files. auto tries hardlinks and falls back to copies.",
+)
+@click.option(
+    "--clean/--no-clean",
+    default=False,
+    show_default=True,
+    help="Remove the destination staging directory before rebuilding.",
+)
+@click.option(
+    "--dry-run/--no-dry-run",
+    default=False,
+    show_default=True,
+    help="Print what would be staged without writing files.",
+)
+def stage_upload_slim(base_dir, outdir, include_dirs, mode, clean, dry_run):
+    """
+    Stage an upload-ready slim result tree with only selected analysis folders.
+    """
+    import errno
+    import shutil
+
+    base = Path(base_dir).resolve()
+    if not base.exists() or not base.is_dir():
+        raise click.ClickException(f"base-dir does not exist or is not a directory: {base_dir}")
+
+    out = Path(outdir).resolve() if outdir else (base / "for-upload").resolve()
+    include = {str(x).strip() for x in include_dirs if str(x).strip()}
+    if not include:
+        raise click.ClickException("At least one --include directory name is required.")
+
+    def is_under(path: Path, parent: Path) -> bool:
+        try:
+            path.resolve().relative_to(parent.resolve())
+            return True
+        except Exception:
+            return False
+
+    def remove_any(path: Path) -> None:
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.exists():
+            shutil.rmtree(path)
+
+    def hardlink_or_copy_file(src: Path, dest: Path, *, allow_copy_fallback: bool) -> str:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists() or dest.is_symlink():
+            remove_any(dest)
+        try:
+            os.link(src, dest)
+            return "hardlink"
+        except OSError as e:
+            if not allow_copy_fallback:
+                raise
+            if e.errno not in {
+                errno.EXDEV,
+                errno.EPERM,
+                errno.EACCES,
+                errno.EOPNOTSUPP,
+                errno.ENOSYS,
+                errno.EMLINK,
+            }:
+                logger.info("stage-upload-slim: hardlink failed for %s (%s); copying", src, e)
+            shutil.copy2(src, dest)
+            return "copy"
+
+    def stage_tree(src: Path, dest: Path) -> tuple[int, int, int]:
+        if dest.exists() or dest.is_symlink():
+            remove_any(dest)
+
+        hardlinked = 0
+        copied = 0
+        symlinked = 0
+
+        if mode == "symlink":
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.symlink_to(src.resolve(), target_is_directory=True)
+            return (0, 0, 1)
+
+        for root_dir, dirnames, filenames in os.walk(src):
+            root_path = Path(root_dir)
+            rel_root = root_path.relative_to(src)
+            dest_root = dest / rel_root
+            dest_root.mkdir(parents=True, exist_ok=True)
+            for dirname in dirnames:
+                (dest_root / dirname).mkdir(exist_ok=True)
+            for filename in filenames:
+                src_file = root_path / filename
+                dest_file = dest_root / filename
+                if src_file.is_symlink():
+                    # Preserve symlink targets as links inside the staged tree.
+                    if dest_file.exists() or dest_file.is_symlink():
+                        remove_any(dest_file)
+                    target = os.readlink(src_file)
+                    dest_file.symlink_to(target)
+                    symlinked += 1
+                    continue
+                used = hardlink_or_copy_file(
+                    src_file,
+                    dest_file,
+                    allow_copy_fallback=(mode == "auto"),
+                )
+                if used == "hardlink":
+                    hardlinked += 1
+                else:
+                    copied += 1
+        return (hardlinked, copied, symlinked)
+
+    selected: list[tuple[Path, Path]] = []
+    for candidate in sorted(base.rglob("*")):
+        if not candidate.is_dir() or candidate.name not in include:
+            continue
+        if is_under(candidate, out):
+            continue
+        rel_parts = candidate.relative_to(base).parts
+        if (
+            "report" in rel_parts
+            or "_telemetry" in rel_parts
+            or any(str(part).startswith("for-upload") for part in rel_parts)
+        ):
+            continue
+        selected.append((candidate, out / candidate.relative_to(base)))
+
+    if dry_run:
+        for src, dest in selected:
+            click.echo(f"[dry-run] {src} -> {dest} ({mode})")
+        click.echo(
+            f"Dry run: {len(selected)} selected folders would be staged under {out} using mode={mode}"
+        )
+        return
+
+    if clean and out.exists():
+        if out == base:
+            raise click.ClickException("Refusing to clean because outdir equals base-dir.")
+        shutil.rmtree(out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    total_hardlinked = 0
+    total_copied = 0
+    total_symlinked = 0
+    for src, dest in selected:
+        hardlinked, copied, symlinked = stage_tree(src, dest)
+        total_hardlinked += hardlinked
+        total_copied += copied
+        total_symlinked += symlinked
+
+    click.echo(
+        "Staged "
+        f"{len(selected)} folders under {out} "
+        f"(hardlinked_files={total_hardlinked}, copied_files={total_copied}, symlinks={total_symlinked})"
+    )
 
 
 @main.command("cluster")
