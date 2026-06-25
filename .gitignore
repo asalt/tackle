@@ -39,6 +39,7 @@ scripts/*.txt
 *.zip
 examples/*
 .codex
+.codex-session*
 .tackle-synthetic-symbols
 tackle/data/annotations/generated/
 tackle/data/annotations/source_cache/
