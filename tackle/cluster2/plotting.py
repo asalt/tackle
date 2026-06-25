@@ -7,6 +7,9 @@ from typing import Any, Optional
 import pandas as pd
 
 
+DEFAULT_CLUSTER2_FIGHEIGHT = 11.8
+
+
 def _safe_float(value: Any, default: float) -> float:
     try:
         return float(value)
@@ -260,7 +263,7 @@ def compute_cluster2_figsize(
         if optimal_figsize:
             base_h, base_w = _base_dims(n_rows, n_cols, add_title=has_title)
         else:
-            base_h = 12.0
+            base_h = DEFAULT_CLUSTER2_FIGHEIGHT
             base_w = _ensure_min_w(min(n_cols / 2.0, 16.0), env.min_figwidth)
         h, w, extra_info = _apply_extras(
             base_h,
@@ -276,7 +279,7 @@ def compute_cluster2_figsize(
         h = h + legend_height_extra
         w_pre = (w + legend_width_extra + cut_by_extra) * env.width_scale
         figwidth = _clamp_w(w_pre, env.min_figwidth, env.max_figwidth)
-        figheight = float(h)
+        figheight = float(h) if optimal_figsize else DEFAULT_CLUSTER2_FIGHEIGHT
 
     # Case C: both provided
     else:

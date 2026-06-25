@@ -3449,7 +3449,7 @@ def stage_upload_slim(base_dir, outdir, include_dirs, mode, clean, dry_run):
     help="Show Gene Symbols on clustermap",
 )
 @click.option(
-    "--gene-symbol-fontsize", default=8, show_default=True, help="Gene Symbol font size"
+    "--gene-symbol-fontsize", default=9.5, show_default=True, help="Gene Symbol font size"
 )
 @click.option(
     "--highlight-geneids",
@@ -4650,7 +4650,7 @@ def umap(
 )
 @click.option(
     "--gene-symbol-fontsize",
-    default=8,
+    default=9.5,
     show_default=True,
     type=float,
     help="Gene Symbol font size",

@@ -114,3 +114,23 @@ def test_compute_cluster2_figsize_counts_legend_groups_and_cut_by():
     assert int(res.debug["legend_groups"]) == 4
     assert res.debug["cut_by_extra"] == 0.4
 
+
+def test_compute_cluster2_figsize_uses_fixed_nonoptimal_default_height():
+    res = compute_cluster2_figsize(
+        n_rows=75,
+        n_cols=20,
+        figsize=None,
+        optimal_figsize=False,
+        has_title=True,
+        col_cluster=True,
+        row_annot_df=pd.DataFrame({"annot": ["x", "y", "z"]}),
+        col_meta=pd.DataFrame({"name": ["s1", "s2"], "treatment": ["A", "B"]}),
+        add_description=True,
+        row_annot_side="left",
+        row_names_side="right",
+        show_gene_symbols=False,
+        gene_symbol_fontsize=12,
+        has_cut_by=True,
+        env=_env(),
+    )
+    assert res.figheight == 11.8
