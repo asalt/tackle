@@ -551,9 +551,11 @@ def run(
 
     if standard_scale is not None and standard_scale != "None":
         if standard_scale == 1 or standard_scale == "1":
-            X = ((X.T / X.max(1)).T).fillna(0)
+            row_sums = X.sum(axis=1)
+            X = X.div(row_sums.where(row_sums != 0), axis=0).fillna(0)
         elif standard_scale == 0 or standard_scale == "0":
-            X = (X / X.max(0)).fillna(0)
+            col_sums = X.sum(axis=0)
+            X = X.div(col_sums.where(col_sums != 0), axis=1).fillna(0)
 
     symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
 

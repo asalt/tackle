@@ -766,7 +766,16 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # {
   #   heatmap_legend_param$title <- paste0("zscore ", heatmap_legend_param$title)
   # }
-  if (!is.null(standard_scale) && standard_scale == TRUE) .title <- paste0(.title, " (standardized)")
+  if (!is.null(standard_scale)) {
+    .standard_scale <- as.character(standard_scale)
+    if (.standard_scale == "1") {
+      .title <- paste0(.title, " (row-sum scaled)")
+    } else if (.standard_scale == "0") {
+      .title <- paste0(.title, " (column-sum scaled)")
+    } else {
+      .title <- paste0(.title, " (standardized)")
+    }
+  }
 
   .legend_width <- if (is.null(z_score_by)) unit(3.0, "cm") else unit(4.4, "cm")
   heatmap_legend_param <- list(
