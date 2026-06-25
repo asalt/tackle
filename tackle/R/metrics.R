@@ -35,15 +35,39 @@ metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...)
     )
   )
 
-  ## thewidth <- dim(df)[1] %/% 2 %>% max(9)
-  thewidth <- dim(df)[1] %/% 2 %>%
-    max(9) %>%
-    min(24)
+  n_samples <- dim(df)[1]
+  if (n_samples <= 4) {
+    thewidth <- max(6.5, min(9, 2 + (n_samples * 1.6)))
+    theheight <- 7.5
+  } else if (n_samples <= 8) {
+    thewidth <- max(8, min(11, 2 + (n_samples * 1.2)))
+    theheight <- 8
+  } else {
+    ## thewidth <- dim(df)[1] %/% 2 %>% max(9)
+    thewidth <- dim(df)[1] %/% 2 %>%
+      max(9) %>%
+      min(24)
+    theheight <- 9
+  }
   annot_scale <- (15 / thewidth)
   # print(thewidth, annot_scale)
   overflow_width <- (24 / (dim(df)[1] %/% 2)) %>% min(1)
   legend_text_size <- 10
   axis_text_size <- 18
+  bar_width <- dplyr::case_when(
+    n_samples <= 3 ~ 0.52,
+    n_samples <= 6 ~ 0.62,
+    n_samples <= 12 ~ 0.72,
+    TRUE ~ 0.88
+  )
+  dodge_width <- min(0.85, bar_width + 0.12)
+  value_text_size <- dplyr::case_when(
+    n_samples <= 4 ~ 5.2,
+    n_samples <= 8 ~ 4.6,
+    n_samples <= 16 ~ 3.8,
+    TRUE ~ max(2.6, 1.44 * annot_scale)
+  )
+  stacked_text_size <- max(3.2, min(5.0, value_text_size * 0.82))
   # print(dim(df)[1])
   # print(overflow_width)
 
@@ -54,13 +78,14 @@ metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...)
     y = SRA,
     fill = factor(SRA_metric, levels = c("A", "R", "S"))
   )) +
-    geom_bar(stat = "identity") +
+    geom_bar(stat = "identity", width = bar_width) +
     scale_fill_manual(values = c("firebrick", "gold", "darkgreen")) +
     guides(fill = guide_legend(reverse = TRUE)) +
     geom_text(aes(y = cumsum, label = SRA, color = SRA_metric),
-      size = 1.44 * annot_scale,
+      size = stacked_text_size,
       vjust = 1.3, show.legend = FALSE
     ) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
     scale_colour_manual(values = c("white", "black", "white")) +
     theme_classic() +
     theme(
@@ -78,11 +103,12 @@ metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...)
 
 
   p1 <- ggplot(data = df, aes(x = factor(Sample, levels = df$Sample), y = GPGroups)) +
-    geom_bar(stat = "identity") +
-    geom_text(aes(label = GPGroups),
-      vjust = 1.4, color = "white", size = 1.44 * annot_scale,
+    geom_bar(stat = "identity", width = bar_width, fill = "grey40") +
+    geom_text(aes(y = GPGroups, label = GPGroups),
+      vjust = -0.35, color = "grey20", size = value_text_size,
       show.legend = FALSE
     ) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.10))) +
     theme_classic() +
     theme(
       text = element_text(size = axis_text_size + 2),
@@ -95,7 +121,7 @@ metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...)
 
 
   p2 <- ggplot(data = df_psms, aes(x = factor(Sample, levels = df$Sample), y = PSMs, fill = PSM_metric)) +
-    geom_bar(stat = "identity", position = position_dodge()) +
+    geom_bar(stat = "identity", width = bar_width, position = position_dodge(width = dodge_width)) +
     theme_classic() +
     theme(
       text = element_text(size = axis_text_size + 2),
@@ -112,7 +138,7 @@ metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...)
 
 
   p3 <- ggplot(data = df_pepts, aes(x = factor(Sample, levels = df$Sample), y = Peptides, fill = Peptide_metric)) +
-    geom_bar(stat = "identity", position = position_dodge()) +
+    geom_bar(stat = "identity", width = bar_width, position = position_dodge(width = dodge_width)) +
     theme_classic() +
     theme(
       text = element_text(size = axis_text_size + 2),
@@ -155,17 +181,17 @@ metrics <- function(df, savename = NULL, exts = NULL, return_plots = FALSE, ...)
 
     for (ext in exts) {
       ggsave(make_outname("SRA", ext),
-        plot = print(p0), height = 9, width = thewidth, units = "in", limitsize = FALSE, dpi = 300
+        plot = print(p0), height = theheight, width = thewidth, units = "in", limitsize = FALSE, dpi = 300
       )
 
-      ggsave(make_outname("GPGroups", ext), plot = print(p1), height = 9, width = thewidth, units = "in", limitsize = FALSE, dpi = 300)
+      ggsave(make_outname("GPGroups", ext), plot = print(p1), height = theheight, width = thewidth, units = "in", limitsize = FALSE, dpi = 300)
 
       ggsave(make_outname("PSMs", ext),
-        plot = p2, height = 9, width = thewidth, units = "in", limitsize = FALSE, dpi = 300
+        plot = p2, height = theheight, width = thewidth, units = "in", limitsize = FALSE, dpi = 300
       )
 
       ggsave(make_outname("Peptides", ext),
-        plot = p3, height = 9, width = thewidth, units = "in", limitsize = FALSE, dpi = 300
+        plot = p3, height = theheight, width = thewidth, units = "in", limitsize = FALSE, dpi = 300
       )
 
       # ggsave(outname, height=9, width=thewidth, units='in', limitsize = FALSE, dpi = 300)

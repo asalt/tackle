@@ -304,3 +304,8 @@ def test_make_metrics_includes_dist_and_genecount_pngs_in_html(
     html_text = outputs["metrics_html"].read_text(encoding="utf-8")
     assert "Metrics Dist" in html_text
     assert "Metrics Genecounts" in html_text
+
+
+def test_metrics_plot_dimensions_shrink_for_small_sample_counts() -> None:
+    assert metrics_module._metrics_plot_dimensions(3) == (6.8, 7.5)
+    assert metrics_module._metrics_plot_dimensions(12) == (9.0, 9.0)

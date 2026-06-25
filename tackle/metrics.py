@@ -131,6 +131,15 @@ def _append_plot_png(plot_png_paths, plot_root: str) -> None:
         plot_png_paths.append(plot_path)
 
 
+def _metrics_plot_dimensions(num_samples: int) -> tuple[float, float]:
+    """Return default metrics plot device size in inches."""
+    if num_samples <= 4:
+        return round(max(6.5, min(9.0, 2.0 + (num_samples * 1.6))), 1), 7.5
+    if num_samples <= 8:
+        return round(max(8.0, min(11.0, 2.0 + (num_samples * 1.2))), 1), 8.0
+    return min(24.0, max(9.0, float(num_samples // 2))), 9.0
+
+
 def make_metrics(
     data_obj, file_fmts, png_res=300, before_filter=False, before_norm=False, full=False
 ):
@@ -279,8 +288,7 @@ def make_metrics(
     r_print = robjects.r["print"]
     grdevices = importr("grDevices")
     num_samples = to_export.shape[0]
-    plot_width = min(24, max(9, num_samples // 2))
-    plot_height = 9
+    plot_width, plot_height = _metrics_plot_dimensions(num_samples)
     plot_png_paths = []
 
     for plot_name, plot_obj in iter_named_items(metrics_plots):
