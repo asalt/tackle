@@ -2618,6 +2618,7 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_c
 	            "PSMs",
 	            "PeptideCount",
 	            "PeptideCount_u2g",
+	            "evidence",
 	            "AreaSum_dstrAdj",
 	            "AreaSum_u2g_0",
 	            "AreaSum_u2g_max",
@@ -2633,13 +2634,8 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_c
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
+              `evidence` returns compact cells as PSMs|PeptideCount|PeptideCount_u2g
               """,
-)
-@click.option(
-    "--base-matrices/--no-base-matrices",
-    default=True,
-    show_default=True,
-    help="Export the default matrices (area + gct + MSPC) in addition to any `--level` targets.",
 )
 @click.option(
     "--force/--no-force",
@@ -2663,13 +2659,14 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_c
 )
 @click.option("--gene-symbols", default=False, is_flag=True, show_default=True)
 @click.option(
-    "--covariate",
+    "--gct-gene-covariate",
+    "gct_gene_covariate",
     multiple=True,
     default=(),
-    help="Add continuous covariate(s) to GCT cdesc by specifying GeneID or symbol; can be repeated.",
+    help="Add gene abundance covariate(s) to GCT cdesc by specifying GeneID or symbol; can be repeated.",
 )
 @click.pass_context
-def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, covariate):
+def export(ctx, level, force, genesymbols, gene_symbols, linear, gct_gene_covariate):
     # =====
 
     # =====
@@ -2677,13 +2674,11 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
     data_obj = ctx.obj["data_obj"]
 
     levels = list(level)
-    if base_matrices:
-        levels = ["area", "gct", "MSPC", *levels]
+    if not levels:
+        levels = ["area", "gct", "MSPC"]
     # De-duplicate while preserving order.
     seen = set()
     levels = [x for x in levels if not (x in seen or seen.add(x))]
-    if not levels:
-        raise click.BadParameter("No export targets requested (use `--level` or enable `--base-matrices`).")
 
     exported = []
     for l in levels:
@@ -2691,7 +2686,7 @@ def export(ctx, level, base_matrices, force, genesymbols, gene_symbols, linear, 
             l,
             genesymbols=genesymbols or gene_symbols,
             linear=linear,
-            covariates=covariate,
+            covariates=gct_gene_covariate,
             force=force,
         )
         exported.append((l, out))

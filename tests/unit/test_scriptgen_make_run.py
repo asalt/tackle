@@ -46,6 +46,10 @@ def test_make_run_skeleton_includes_config_summary(tmp_path: Path):
     assert "run_cluster() {" in script
     assert 'pca2 --annotate --color "$DESIGN_COL" --max-pc 4' in script
     assert 'cluster2 --cut-by "$DESIGN_COL"' in script
+    assert "EXPORT_NON_ZEROS=1" in script
+    assert "HEAD_EXPORT_MSPC=(" in script
+    assert "export --level area --level gct" in script
+    assert "export --level MSPC --level evidence" in script
     assert "# run_pca && run_cluster" in script
     assert "mapfile -d '' -t files" in script
     assert "find \"$qstr\" -type f -name '*.tsv' -print0" in script

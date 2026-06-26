@@ -2844,6 +2844,14 @@ class Data:
                 export_out = export.reset_index()
                 if "GeneID" not in export_out.columns and len(export_out.columns) > 0:
                     export_out = export_out.rename(columns={export_out.columns[0]: "GeneID"})
+                if not linear:
+                    log_renamer = {
+                        col: f"log10_{col}"
+                        for col in self.col_metadata.index
+                        if col in export_out.columns
+                        and not str(col).startswith("log10_")
+                    }
+                    export_out = export_out.rename(columns=log_renamer)
                 export_out["GeneID"] = export_out["GeneID"].apply(maybe_int)
                 if self.annotations:
                     try:
@@ -3068,6 +3076,59 @@ class Data:
 
         # elif level == 'SRA':
         #     export = self.data.loc[ self.data.Metric=='SRA' ]
+        elif level == "evidence":
+            evidence_metrics = ("PSMs", "PeptideCount", "PeptideCount_u2g")
+            evidence = self.data.loc[self.data.Metric.isin(evidence_metrics)].copy()
+            sample_cols = [c for c in self.col_metadata.index if c in evidence.columns]
+            geneids = pd.Index(self.data["GeneID"].drop_duplicates())
+
+            def _format_count(value):
+                if pd.isna(value):
+                    return "0"
+                try:
+                    value = float(value)
+                except Exception:
+                    return "0"
+                if not np.isfinite(value):
+                    return "0"
+                if value.is_integer():
+                    return str(int(value))
+                return f"{value:g}"
+
+            out = pd.DataFrame({"GeneID": geneids})
+            gm = get_gene_mapper()
+            out["GeneSymbol"] = out["GeneID"].map(
+                lambda x: self.gid_symbol.get(
+                    x,
+                    synthetic_symbol_from_header(x) or gm.symbol.get(str(x), x),
+                )
+            )
+
+            for sample in sample_cols:
+                wide = evidence.pivot_table(
+                    index="GeneID",
+                    columns="Metric",
+                    values=sample,
+                    aggfunc="first",
+                ).reindex(geneids)
+                for metric in evidence_metrics:
+                    if metric not in wide:
+                        wide[metric] = 0
+                counts = wide.loc[:, list(evidence_metrics)].apply(
+                    pd.to_numeric, errors="coerce"
+                ).fillna(0)
+                out[sample] = counts.apply(
+                    lambda row: "|".join(
+                        _format_count(row[metric]) for metric in evidence_metrics
+                    ),
+                    axis=1,
+                ).values
+
+            out["GeneID"] = out["GeneID"].apply(maybe_int)
+            out.to_csv(outname, sep="\t", index=False)
+            logger.info(f"Wrote {outname}")
+            return outname
+
         elif level == "zscore":  # export zscore of the data
             # do sturf
             export = (

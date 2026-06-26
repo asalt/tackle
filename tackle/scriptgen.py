@@ -152,6 +152,20 @@ HEADMAIN=(
     # --group "$DESIGN_COL"   # only for simple 2-group volcano; can block formula-based designs
 )
 
+# Keep broad inspection exports separate from analysis-matrix settings. The
+# analysis run may use stricter --non-zeros, but MSPC/evidence review tables are
+# most useful with a permissive nonzero threshold.
+EXPORT_NON_ZEROS=1
+HEAD_EXPORT_MSPC=(
+    --name "$NAME"
+    --result-dir "$RESULT_DIR"
+    --data-dir "$DATA_DIR"
+{file_format_flags}
+    {normalization_flag}
+    --non-zeros "$EXPORT_NON_ZEROS"
+{only_local_flag}
+)
+
 # ---- Volcano settings ----
 VOLCANO_FOLDCHANGE=2
 VOLCANO_NUMBER_BY="pValue"
@@ -265,8 +279,11 @@ plot_topdiff() {{
 
 run_export_and_metrics() {{
     tackle "${{HEADMAIN[@]}}" "$CONF" \\
-        export --level gct \\
+        export --level area --level gct \\
         metrics
+
+    tackle "${{HEAD_EXPORT_MSPC[@]}}" "$CONF" \\
+        export --level MSPC --level evidence
 }}
 
 main() {{
