@@ -53,6 +53,7 @@ def test_cluster2_with_volcano_filter(ctx):
             genesymbols=True,
             gene_symbol_fontsize=8.0,
             gene_annot=None,
+            gene_covariate=(),
             gsea_input=None,
             highlight_geneids=(),
             highlight_geneids_table=None,

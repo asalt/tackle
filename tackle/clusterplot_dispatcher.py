@@ -2,6 +2,7 @@
 
 # from . import rutils
 import hashlib
+import json
 import os
 import re
 from copy import deepcopy
@@ -31,6 +32,43 @@ from .containers import (
 )
 
 logger = _get_logger(__name__)
+
+
+def _json_safe_metadata_color_mapping(mapping):
+    colors = {}
+    for key, value in mapping.items():
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, np.ndarray, pd.Series)):
+            if len(value) == 0:
+                continue
+            value = value[0]
+        colors[str(key)] = str(value)
+    return colors
+
+
+def _metadata_color_json_path(plot_path):
+    stem, _ext = os.path.splitext(plot_path)
+    return stem + "_metadata_colors.json"
+
+
+def _write_metadata_colors_json(metadata_colors, plot_path):
+    if not metadata_colors:
+        return
+
+    payload = {
+        "schema_version": 1,
+        "source": "tackle.cluster2",
+        "plot_file": os.path.basename(plot_path),
+        "metadata_colors": metadata_colors,
+    }
+    outpath = _metadata_color_json_path(plot_path)
+    try:
+        with open(outpath, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+    except OSError as exc:
+        logger.warning("Failed to write cluster2 metadata colors JSON %s: %s", outpath, exc)
 
 
 def extract_contrast_from_volcano_filename(volcano_basename: str) -> str:
@@ -219,6 +257,7 @@ def run(
     genesymbols,
     gene_symbol_fontsize,
     gene_annot,
+    gene_covariate,
     gsea_input,
     highlight_geneids,
     highlight_geneids_table,
@@ -365,6 +404,9 @@ def run(
         ]  # use a list instead of set to preserve order
         col_meta = col_meta.loc[to_keep]
         X = X[col_meta.index]
+
+    gene_covariate = tuple(gene_covariate or ())
+    covariate_source = X.copy()
 
     genes = None
     column_title = None
@@ -548,6 +590,7 @@ def run(
 
     if linear:
         X = 10**X
+        covariate_source = 10**covariate_source
 
     if standard_scale is not None and standard_scale != "None":
         if standard_scale == 1 or standard_scale == "1":
@@ -627,6 +670,59 @@ def run(
     # data_obj.z_score           = data_obj.clean_input(z_score)
 
     # col_meta = data_obj.col_metadata.copy().pipe(clean_categorical)
+
+    if gene_covariate:
+        present_geneids = [str(x) for x in covariate_source.index]
+        present_geneid_set = set(present_geneids)
+
+        def _resolve_gene_covariate_ids(token):
+            token_text = str(token)
+            if token_text in present_geneid_set:
+                return [token_text]
+            token_lower = token_text.lower()
+            hits = []
+            for gid in present_geneids:
+                symbol = data_obj.gid_symbol.get(
+                    gid, genemapper.symbol.get(str(gid), "")
+                )
+                if symbol and str(symbol).lower() == token_lower:
+                    hits.append(gid)
+            return list(dict.fromkeys(hits))
+
+        def _safe_covariate_column(label):
+            safe = re.sub(r"[^A-Za-z0-9_.]+", "_", str(label)).strip("._")
+            return safe or "gene"
+
+        added_covariates = []
+        for cov in gene_covariate:
+            gids = _resolve_gene_covariate_ids(cov)
+            if not gids:
+                logger.info(
+                    "cluster2 gene covariate '%s' not found in expression matrix; skipping",
+                    cov,
+                )
+                continue
+            for gid in gids:
+                symbol = data_obj.gid_symbol.get(
+                    gid, genemapper.symbol.get(str(gid), str(gid))
+                )
+                base_colname = "gene_cov_" + _safe_covariate_column(symbol or gid)
+                colname = base_colname
+                suffix = 2
+                while colname in col_meta.columns:
+                    colname = f"{base_colname}_{suffix}"
+                    suffix += 1
+                series = covariate_source.loc[gid]
+                if isinstance(series, pd.DataFrame):
+                    series = series.iloc[0]
+                series = pd.to_numeric(series.reindex(col_meta.index), errors="coerce")
+                col_meta[colname] = series.values
+                added_covariates.append(colname)
+
+        if added_covariates:
+            outname_kws["gcov"] = "_".join(
+                c.replace("gene_cov_", "") for c in added_covariates
+            )[:80]
 
     if add_human_ratios:
         col_meta["HS_ratio"] = data_obj.taxon_ratios["9606"]
@@ -819,15 +915,20 @@ def run(
         metacats = set(metacats) | set(row_annot_df.columns)
 
     metadata_color_list = list()
+    metadata_color_manifest = {}
     for metacat in metacats:
+        themapping = None
         if data_obj.metadata_colors is not None and metacat in data_obj.metadata_colors:
             # metadata_colorsR = robjects.ListVector([])
             # TODO handle when there is not a color for a category
-            mapping = data_obj.metadata_colors[metacat]
+            themapping = data_obj.metadata_colors[metacat]
             entry = robjects.vectors.ListVector(
-                {metacat: robjects.vectors.ListVector(mapping)}
+                {metacat: robjects.vectors.ListVector(themapping)}
             )
             metadata_color_list.append(entry)
+            safe_mapping = _json_safe_metadata_color_mapping(themapping)
+            if safe_mapping:
+                metadata_color_manifest[str(metacat)] = safe_mapping
             # for value in :  # value is a key-value mapping
             # returns a numpy array with loss of names..
             # entry = robjects.vectors.ListVector({key: robjects.vectors.ListVector(x)})
@@ -853,6 +954,9 @@ def run(
                     {metacat: robjects.vectors.ListVector(themapping)}
                 )
                 metadata_color_list.append(entry)
+                safe_mapping = _json_safe_metadata_color_mapping(themapping)
+                if safe_mapping:
+                    metadata_color_manifest[str(metacat)] = safe_mapping
             else:
                 pass  # for numeric
 
@@ -1188,6 +1292,7 @@ def run(
             ret = cluster2(**call_kws)  # draw
             # print(ret[0])
             grdevices.dev_off()  # close file
+            _write_metadata_colors_json(metadata_color_manifest, out)
             print(".done", flush=True)
 
         sil_df, row_orders = _extract_silhouette_and_row_order(ret)

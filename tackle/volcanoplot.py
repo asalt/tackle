@@ -653,6 +653,7 @@ def volcanoplot(
                         gene_symbols=True,
                         genesymbols=True,
                         gene_annot=None,
+                        gene_covariate=(),
                         gsea_input=None,
                         highlight_geneids=(),
                         highlight_geneids_table=None,

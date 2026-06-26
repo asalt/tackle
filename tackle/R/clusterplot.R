@@ -307,6 +307,22 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
 
   ## ===============  ROW ANNOTATION ============================================
+  legend_ncol_for_values <- function(x) {
+    x <- as.character(x)
+    x <- x[!is.na(x) & nzchar(x)]
+    nvals <- length(unique(x))
+    if (nvals <= 8) {
+      return(1)
+    }
+    if (nvals <= 16) {
+      return(2)
+    }
+    if (nvals <= 32) {
+      return(3)
+    }
+    return(4)
+  }
+
   row_data_args <- NULL
   if (!is.null(row_annot_df)) {
     row_annot_df[["GeneID"]] <- rownames(row_annot_df)
@@ -324,7 +340,10 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
 
     for (thename in names(select(row_annot_df, -GeneID))) {
-      row_data_args[["annotation_legend_param"]][[thename]] <- list(direction = "horizontal", ncol = 1)
+      row_data_args[["annotation_legend_param"]][[thename]] <- list(
+        direction = "horizontal",
+        ncol = legend_ncol_for_values(row_annot_df[[thename]])
+      )
       row_data_args[["show_legend"]][thename] <- T
       if (length(setdiff(unique(row_annot_df[[thename]]), c(""))) < 1) {
         row_data_args[["show_legend"]][thename] <- F
@@ -938,6 +957,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     column_title = main_title %>% stringr::str_replace_all("_", " ") %>% str_wrap(width = str_wrap_size),
     column_title_gp = gpar(fontsize = 15, fontface = "bold", just = "left"),
     heatmap_legend_side = "bottom",
+    annotation_legend_side = "bottom",
     padding = unit(c(10, 10, 2, 8), "mm") # bottom, left, top, right
   ) # top right bottom left
   ht_row_order <- row_order(ht)

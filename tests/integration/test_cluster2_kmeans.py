@@ -37,6 +37,7 @@ def test_cluster2_kmeans_writes_outputs(ctx):
             genesymbols=True,
             gene_symbol_fontsize=8.0,
             gene_annot=None,
+            gene_covariate=(),
             gsea_input=None,
             highlight_geneids=(),
             highlight_geneids_table=None,

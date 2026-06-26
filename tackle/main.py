@@ -4656,6 +4656,12 @@ def umap(
     help="annotate genes with provided file",
 )
 @click.option(
+    "--gene-covariate",
+    multiple=True,
+    default=(),
+    help="Add gene abundance covariate(s) to cluster2 column metadata by GeneID or symbol; can be repeated.",
+)
+@click.option(
     "--gsea-input", type=Path_or_Glob(exists=True, dir_okay=True), default=None
 )
 # @click.option("--colorbar-direction", click.Choice(["horizontal", "vertical"]))
@@ -4933,6 +4939,7 @@ def cluster2(
     genesymbols,
     gene_symbol_fontsize,
     gene_annot,
+    gene_covariate,
     gsea_input,
     highlight_geneids,
     highlight_geneids_table,
@@ -5016,6 +5023,7 @@ def cluster2(
         genesymbols,
         gene_symbol_fontsize,
         gene_annot,
+        gene_covariate,
         gsea_input,
         highlight_geneids,
         highlight_geneids_table,
