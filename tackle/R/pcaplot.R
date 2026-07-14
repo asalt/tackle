@@ -28,6 +28,7 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  fig_height = 8,
                  export_tables = TRUE,
                  return_plots = FALSE,
+                 return_data = FALSE,
                  ...) {
   fillna <- match.arg(fillna)
 
@@ -139,7 +140,13 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   # if (!is.null(color) && any(names(forpca) == color)) {
   if (!is.null(color)) {
     .forpca <- .forpca %>%
-      mutate(!!color := factor(!!sym(color), levels = sort(unique(!!sym(color)))), ordered = TRUE)
+      mutate(
+        !!color := factor(
+          !!sym(color),
+          levels = sort(unique(!!sym(color))),
+          ordered = TRUE
+        )
+      )
   }
 
   # .forpca <- .forpca %>% select(-variable, -!!color, -!!shape)
@@ -161,6 +168,13 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
 
   loading_scores <- as.data.frame(pca_res$rotation)
   loading_scores$feature <- rownames(loading_scores)
+  variance_df <- data.frame(
+    pc = seq_along(variance),
+    stdev = pca_res$sdev,
+    variance = variance,
+    variance_ratio = variance_ratio,
+    variance_ratio_cum = cumsum(variance_ratio)
+  )
 
   if (!is.null(export_tables) && export_tables == TRUE &&
       !is.null(outname) && !is.na(outname) && outname != "") {
@@ -176,14 +190,6 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       tibble::rownames_to_column("variable") %>%
       left_join(meta_df, by = "variable") %>%
       select(any_of(meta_cols), everything())
-
-    variance_df <- data.frame(
-      pc = seq_along(variance),
-      stdev = pca_res$sdev,
-      variance = variance,
-      variance_ratio = variance_ratio,
-      variance_ratio_cum = cumsum(variance_ratio)
-    )
 
     scores_out <- paste0(outname, "_scores.tsv")
     variance_out <- paste0(outname, "_variance.tsv")
@@ -503,6 +509,14 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
   }
 
   if (isTRUE(return_plots)) {
+    if (isTRUE(return_data)) {
+      return(list(
+        plots = plots,
+        pca_mat = pca_mat,
+        scores = pca_res$x,
+        variance = variance_df
+      ))
+    }
     return(plots)
   }
 
