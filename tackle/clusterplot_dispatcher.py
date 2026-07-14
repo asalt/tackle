@@ -48,8 +48,7 @@ def _json_safe_metadata_color_mapping(mapping):
 
 
 def _metadata_color_json_path(plot_path):
-    stem, _ext = os.path.splitext(plot_path)
-    return stem + "_metadata_colors.json"
+    return os.path.join(os.path.dirname(plot_path), "metadata_colors.json")
 
 
 def _write_metadata_colors_json(metadata_colors, plot_path):
