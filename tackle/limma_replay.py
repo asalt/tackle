@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import re
-import textwrap
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,9 +11,21 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from .gct_io import (
+    dataframe_content_hash,
+    gct_io_contracts,
+    read_gctx_content_hash,
+    selected_content_hash_algorithm,
+    write_gctx,
+)
+from .limma_replay_rmd import render_limma_replay_rmd, render_limma_replay_sh
 from .utils import _get_logger
 
 logger = _get_logger(__name__)
+
+REPLAY_CONTRACT_VERSION = 4
+REPLAY_GCT_PRECISION = 17  # Retained for legacy text-GCT discovery/context readers.
+REPLAY_MATRIX_DTYPE = "float64"
 
 
 @dataclass(frozen=True)
@@ -67,17 +78,17 @@ def _compute_run_id(params: Mapping[str, Any]) -> str:
 
 
 def _hash_frame(frame: pd.DataFrame) -> str:
-    stable = frame.copy()
-    stable.index = stable.index.astype(str)
-    stable.columns = stable.columns.astype(str)
-    payload = stable.to_csv(sep="\t", na_rep="<NA>", float_format="%.17g")
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    return dataframe_content_hash(
+        frame,
+        serialization_contract="tackle-limma-replay-frame-v2",
+        float_format="%.17g",
+    )
 
 
 def _gct_output_base(out_path: Path) -> Path:
     base = str(out_path)
     base_lower = base.lower()
-    for suffix in (".gct.gz", ".gct"):
+    for suffix in (".gct.gz", ".gctx", ".gct"):
         if base_lower.endswith(suffix):
             base = base[: -len(suffix)]
             break
@@ -87,14 +98,22 @@ def _gct_output_base(out_path: Path) -> Path:
 def _find_existing_gct(out_path: Path) -> Optional[Path]:
     out_base = _gct_output_base(Path(out_path))
     candidates = []
-    exact = out_base.with_suffix(".gct")
-    if exact.exists() and exact.stat().st_size > 0:
-        candidates.append(exact)
-    candidates.extend(
-        p
-        for p in out_base.parent.glob(out_base.name + "*.gct")
-        if p.exists() and p.stat().st_size > 0
-    )
+    for suffix in (".gctx", ".gct"):
+        exact = out_base.with_suffix(suffix)
+        if exact.exists() and exact.stat().st_size > 0:
+            candidates.append(exact)
+        for path in out_base.parent.glob(out_base.name + "*" + suffix):
+            if not path.exists() or path.stat().st_size <= 0:
+                continue
+            # ``limma_input*`` also matches the separately written
+            # ``limma_input_pre_impute*`` audit artifact. Never select that as
+            # the authoritative modeled matrix.
+            if (
+                out_base.name == "limma_input"
+                and path.name.startswith("limma_input_pre_impute")
+            ):
+                continue
+            candidates.append(path)
     if not candidates:
         return None
     return max(set(candidates), key=lambda p: p.stat().st_mtime)
@@ -177,60 +196,20 @@ def _write_gct(
     mat: pd.DataFrame,
     cdesc: pd.DataFrame,
     rdesc: pd.DataFrame,
-    precision: int = 4,
+    precision: int = REPLAY_GCT_PRECISION,
 ) -> Path:
-    """Write a .gct using cmapR via rpy2; returns the written .gct path."""
-    from rpy2 import robjects
-    from rpy2.robjects import pandas2ri
-    from rpy2.robjects.conversion import localconverter
-    from rpy2.robjects.packages import importr
+    """Write a content-addressed float64 replay GCTX and return its exact path."""
 
-    cmapR = importr("cmapR")
-    _ = cmapR  # quiet lint
-
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    out_base = _gct_output_base(out_path)
-
-    # Ensure aligned ordering.
-    cid = [str(c) for c in mat.columns]
-    rid = [str(r) for r in mat.index]
-    cdesc = cdesc.copy()
-    if "id" not in cdesc.columns:
-        cdesc["id"] = [str(x) for x in cdesc.index]
-    if list(cdesc.index.astype(str)) != cid:
-        cdesc = cdesc.reindex(cid)
-
-    with localconverter(robjects.default_converter + pandas2ri.converter):
-        robjects.r.assign("m", mat.astype(float))
-        robjects.r.assign("rid", robjects.StrVector(rid))
-        robjects.r.assign("cid", robjects.StrVector(cid))
-        robjects.r.assign("cdesc", cdesc)
-        robjects.r.assign("rdesc", rdesc)
-        robjects.r.assign("outname", os.path.normpath(os.path.abspath(str(out_base))))
-
-    robjects.r(
-        """
-my_ds <- new("GCT",
-             mat=as.matrix(m),
-             rid=rid,
-             cid=cid,
-             cdesc=cdesc,
-             rdesc=as.data.frame(rdesc))
-write_gct(my_ds, outname, precision=as.integer(%d))
-"""
-        % int(precision)
+    _ = precision  # Compatibility with older internal callers/tests.
+    out_path = _gct_output_base(Path(out_path)).with_suffix(".gctx")
+    return write_gctx(
+        mat,
+        out_path,
+        row_metadata=rdesc,
+        col_metadata=cdesc,
+        matrix_dtype=REPLAY_MATRIX_DTYPE,
+        content_addressed=True,
     )
-
-    written = out_base.with_suffix(".gct")
-    if written.exists():
-        return written
-    # cmapR may append timestamps; best-effort find newest candidate.
-    candidates = list(out_base.parent.glob(out_base.name + "*.gct"))
-    if candidates:
-        return max(candidates, key=lambda p: p.stat().st_mtime)
-    raise FileNotFoundError(f"Failed to write GCT under: {out_base.parent}")
 
 
 def _write_gct_reuse_existing(
@@ -239,12 +218,11 @@ def _write_gct_reuse_existing(
     mat: pd.DataFrame,
     cdesc: pd.DataFrame,
     rdesc: pd.DataFrame,
-    precision: int = 4,
+    precision: int = REPLAY_GCT_PRECISION,
 ) -> Path:
-    existing = _find_existing_gct(out_path)
-    if existing is not None:
-        logger.info("Limma replay: reusing existing GCT %s", existing)
-        return existing
+    # The first-class writer checks the full root-attribute digest and its
+    # recorded algorithm, then skips I/O only for the exact requested payload.
+    # Broad filename/mtime reuse is reserved for legacy replay discovery.
     return _write_gct(
         out_path=out_path,
         mat=mat,
@@ -268,240 +246,6 @@ def _write_text(path: Path, content: str, *, force: bool) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _render_replay_explore_rmd(
-    *,
-    gct_relpath: str,
-    context_relpath: str,
-    pre_impute_gct_relpath: Optional[str] = None,
-) -> str:
-    pre_impute_gct_literal = json.dumps(pre_impute_gct_relpath) if pre_impute_gct_relpath else "NULL"
-    return textwrap.dedent(
-        f"""\
-        ---
-        title: "Volcano Replay Explore"
-        output:
-          html_document:
-            toc: true
-            toc_float: true
-        ---
-
-        ```{{r setup, include=FALSE}}
-        knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-        ```
-
-        ```{{r load}}
-        if (!requireNamespace("jsonlite", quietly = TRUE)) {{
-          stop("Missing dependency: jsonlite")
-        }}
-        if (!requireNamespace("cmapR", quietly = TRUE)) {{
-          stop("Missing dependency: cmapR")
-        }}
-        ctx <- jsonlite::read_json("{context_relpath}", simplifyVector = TRUE)
-        suppressPackageStartupMessages(library(cmapR))
-
-        parse_gct_any <- function(path) {{
-          exports <- getNamespaceExports("cmapR")
-          if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
-          if ("parse_gctx" %in% exports) return(cmapR::parse_gctx(path))
-          stop("cmapR does not export parse.gctx / parse_gctx")
-        }}
-
-        stored_ds <- parse_gct_any("{gct_relpath}")
-        mat_stored <- stored_ds@mat
-        cdesc <- stored_ds@cdesc
-        rdesc <- stored_ds@rdesc
-        mat <- mat_stored
-
-        pre_impute_gct_path <- {pre_impute_gct_literal}
-        mat_pre_impute <- NULL
-        if (!is.null(pre_impute_gct_path) && nzchar(pre_impute_gct_path) && file.exists(pre_impute_gct_path)) {{
-          pre_ds <- parse_gct_any(pre_impute_gct_path)
-          mat_pre_impute <- pre_ds@mat
-        }}
-        ```
-
-        ## Replay Context
-
-        ```{{r context}}
-        key_fields <- c(
-          "run_id", "matrix_shape", "stored_matrix_role",
-          "group", "formula_in", "formula_effective", "formula_rewritten",
-          "contrasts_spec", "block",
-          "has_pre_impute_matrix", "recompute_imputation_supported",
-          "impute_missing_values", "imputation_backend", "gaussian_method", "lupine_mode",
-          "limma_robust", "limma_trend",
-          "normtype", "non_zeros", "taxon", "batch_applied", "batch_method"
-        )
-        present <- intersect(key_fields, names(ctx))
-        as.data.frame(t(unlist(ctx[present])), stringsAsFactors = FALSE)
-        ```
-
-        ## Stored Matrix Replay
-
-        ```{{r stored-matrix-replay}}
-        cat("The stored limma_input.gct matrix is the authoritative replay matrix.\\n")
-        cat("All summary plots below use mat_stored as written by tackle.\\n")
-        if (!is.null(mat_pre_impute)) {{
-          cat("A pre-imputation matrix is also available at: ", pre_impute_gct_path, "\\n", sep = "")
-          cat("Pre-impute matrix dimensions: ", paste(dim(mat_pre_impute), collapse = " x "), "\\n", sep = "")
-        }} else {{
-          cat("No pre-imputation matrix was exported for this replay bundle.\\n")
-        }}
-        ```
-
-        ## Optional Gaussian Recompute
-
-        ```{{r optional-gaussian-recompute}}
-        deterministic_gaussian_impute <- function(x, downshift = 1.8, width = 0.3, seed = 1234) {{
-          out <- as.matrix(x)
-          out[out == 0] <- NA_real_
-          obs <- as.numeric(out[is.finite(out)])
-          miss <- is.na(out)
-          if (!any(miss) || length(obs) < 2) return(out)
-          obs_sd <- stats::sd(obs)
-          if (!is.finite(obs_sd) || obs_sd <= 0) obs_sd <- 1
-          set.seed(seed)
-          out[miss] <- stats::rnorm(
-            sum(miss),
-            mean = mean(obs) - downshift * obs_sd,
-            sd = max(.Machine$double.eps, width * obs_sd)
-          )
-          out
-        }}
-
-        can_recompute <- isTRUE(ctx$impute_missing_values) &&
-          identical(ctx$imputation_backend, "gaussian") &&
-          !is.null(mat_pre_impute)
-
-        if (can_recompute) {{
-          method <- ctx$gaussian_method
-          if (is.null(method) || !nzchar(method)) method <- "legacy"
-          width <- if (identical(method, "mqish")) 0.3 else 0.8
-          mat_recomputed <- deterministic_gaussian_impute(
-            mat_pre_impute,
-            downshift = 1.8,
-            width = width,
-            seed = 1234
-          )
-          common_rows <- intersect(rownames(mat_recomputed), rownames(mat_stored))
-          common_cols <- intersect(colnames(mat_recomputed), colnames(mat_stored))
-          delta <- mat_recomputed[common_rows, common_cols, drop = FALSE] -
-            mat_stored[common_rows, common_cols, drop = FALSE]
-          finite_delta <- as.numeric(delta[is.finite(delta)])
-          cat("R-side deterministic Gaussian recompute completed for inspection.\\n")
-          cat("Exact replay should use mat_stored; this chunk is a reproducibility diagnostic.\\n")
-          if (length(finite_delta) > 0) {{
-            knitr::kable(data.frame(
-              metric = c("mean_abs_delta", "max_abs_delta", "correlation"),
-              value = c(
-                mean(abs(finite_delta)),
-                max(abs(finite_delta)),
-                suppressWarnings(stats::cor(
-                  as.numeric(mat_recomputed[common_rows, common_cols]),
-                  as.numeric(mat_stored[common_rows, common_cols]),
-                  use = "complete.obs"
-                ))
-              )
-            ))
-          }} else {{
-            cat("No finite overlapping values were available for comparison.\\n")
-          }}
-        }} else {{
-          cat("Gaussian recompute skipped. This requires imputation_backend == 'gaussian' and limma_input_pre_impute.gct.\\n")
-          if (identical(ctx$imputation_backend, "lupine")) {{
-            cat("Lupine replay uses the stored matrix; model-side recompute is intentionally not attempted here.\\n")
-          }}
-        }}
-        ```
-
-        ## Matrix Summary
-
-        ```{{r matrix-summary}}
-        summary(as.vector(mat))
-        sample_summary <- data.frame(
-          sample = colnames(mat),
-          mean = colMeans(mat, na.rm = TRUE),
-          median = apply(mat, 2, median, na.rm = TRUE),
-          sd = apply(mat, 2, sd, na.rm = TRUE),
-          na_count = colSums(is.na(mat)),
-          stringsAsFactors = FALSE
-        )
-        knitr::kable(sample_summary)
-        ```
-
-        ## Global Distribution
-
-        ```{{r global-distribution}}
-        hist(as.vector(mat), breaks = 80, main = "Global expression distribution", xlab = "Expression")
-        lines(density(as.vector(mat), na.rm = TRUE), col = "steelblue", lwd = 2)
-        ```
-
-        ## Per-sample Distributions
-
-        ```{{r sample-distributions, fig.width=10, fig.height=5}}
-        boxplot(as.data.frame(mat), las = 2, outline = FALSE, main = "Per-sample distributions", ylab = "Expression")
-        ```
-
-        ## Sample Correlation
-
-        ```{{r sample-correlation, fig.width=7, fig.height=7}}
-        corr <- cor(mat, use = "pairwise.complete.obs")
-        heatmap(corr, symm = TRUE, margins = c(8, 8), main = "Sample correlation")
-        ```
-
-        ## PCA
-
-        ```{{r pca}}
-        complete_rows <- complete.cases(mat)
-        if (sum(complete_rows) >= 2 && ncol(mat) >= 2) {{
-          mat_complete <- mat[complete_rows, , drop = FALSE]
-          pcs <- prcomp(t(mat_complete), center = TRUE, scale. = TRUE)
-          pct <- round(100 * summary(pcs)$importance[2, 1:2], 1)
-          plot(
-            pcs$x[, 1], pcs$x[, 2],
-            pch = 19,
-            xlab = paste0("PC1 (", pct[[1]], "%)"),
-            ylab = paste0("PC2 (", pct[[2]], "%)"),
-            main = "Sample PCA"
-          )
-          text(pcs$x[, 1], pcs$x[, 2], labels = rownames(pcs$x), pos = 3, cex = 0.7)
-        }} else {{
-          cat("Not enough complete rows to compute PCA.\\n")
-        }}
-        ```
-
-        ## Top Variable Genes
-
-        ```{{r top-variable-genes}}
-        rv <- apply(mat, 1, var, na.rm = TRUE)
-        rv <- rv[is.finite(rv)]
-        if (length(rv) > 0) {{
-          top_ids <- names(sort(rv, decreasing = TRUE))[seq_len(min(20, length(rv)))]
-          gene_symbol <- if ("GeneSymbol" %in% colnames(rdesc)) rdesc[top_ids, "GeneSymbol"] else rep("", length(top_ids))
-          out <- data.frame(
-            GeneID = top_ids,
-            GeneSymbol = gene_symbol,
-            Variance = unname(rv[top_ids]),
-            stringsAsFactors = FALSE
-          )
-          knitr::kable(out)
-        }} else {{
-          cat("No finite row variances were available.\\n")
-        }}
-        ```
-        """
-    )
-
-
-def _render_replay_explore_sh(*, rmd_name: str, html_name: str) -> str:
-    return textwrap.dedent(
-        f"""\
-        #!/usr/bin/env bash
-        set -euo pipefail
-        cd "$(dirname "$0")"
-        Rscript -e "rmarkdown::render('{rmd_name}', output_file = '{html_name}')"
-        """
-    )
 
 
 def write_limma_replay_files(
@@ -511,6 +255,7 @@ def write_limma_replay_files(
     results: Mapping[str, pd.DataFrame],
     sample_metadata: pd.DataFrame,
     expression_matrix: Optional[pd.DataFrame] = None,
+    expression_matrix_source: Optional[str] = None,
     pre_impute_expression_matrix: Optional[pd.DataFrame] = None,
     gene_symbols: Optional[Mapping[Any, Any]] = None,
     gene_descriptions: Optional[Mapping[str, str]] = None,
@@ -540,9 +285,11 @@ def write_limma_replay_files(
 
     if expression_matrix is not None:
         edata = expression_matrix.copy()
+        matrix_source = expression_matrix_source or "provided_expression_matrix"
     else:
         sample_ids = list(sample_metadata.index.astype(str))
         edata = _extract_limma_input_from_results(results, sample_ids=sample_ids)
+        matrix_source = expression_matrix_source or "limma_result_table_sample_columns"
 
     # Make a replay-specific cdesc that matches the matrix columns (and include injected covariates if present).
     cdesc = sample_metadata.copy()
@@ -576,7 +323,12 @@ def write_limma_replay_files(
 
     # Stable run id derived from the resolved replay inputs (not timestamps).
     run_params = {
+        "replay_contract_version": REPLAY_CONTRACT_VERSION,
+        "matrix_storage_format": "gctx",
+        "matrix_storage_dtype": REPLAY_MATRIX_DTYPE,
+        "gctx_writer_contract": gct_io_contracts()["gctx"]["writer_contract"],
         "matrix_hash": matrix_hash,
+        "frame_hash_algorithm": selected_content_hash_algorithm(),
         "pre_impute_matrix_hash": pre_impute_matrix_hash,
         "cdesc_hash": cdesc_hash,
         "rdesc_hash": rdesc_hash,
@@ -601,18 +353,20 @@ def write_limma_replay_files(
     replay_dir.mkdir(parents=True, exist_ok=True)
 
     gct_path = _write_gct_reuse_existing(
-        out_path=replay_dir / "limma_input.gct",
+        out_path=replay_dir / "limma_input.gctx",
         mat=edata,
         cdesc=cdesc,
         rdesc=rdesc,
+        precision=REPLAY_GCT_PRECISION,
     )
     pre_impute_gct_path: Optional[Path] = None
     if pre_edata is not None:
         pre_impute_gct_path = _write_gct_reuse_existing(
-            out_path=replay_dir / "limma_input_pre_impute.gct",
+            out_path=replay_dir / "limma_input_pre_impute.gctx",
             mat=pre_edata,
             cdesc=cdesc,
             rdesc=rdesc,
+            precision=REPLAY_GCT_PRECISION,
         )
     replay_rmd_path = replay_dir / "replay_explore.Rmd"
     replay_render_path = replay_dir / "render_replay_explore.sh"
@@ -621,6 +375,8 @@ def write_limma_replay_files(
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     context = {
         "generated_at": now,
+        "replay_contract_version": REPLAY_CONTRACT_VERSION,
+        "replay_scope": "limma_only",
         "path_base": "replay_dir",
         "analysis_dir": _relative_path(analysis_root, replay_dir),
         "volcano_dir": _relative_path(volcano_root, replay_dir),
@@ -628,6 +384,8 @@ def write_limma_replay_files(
         "run_id": run_id,
         "matrix_shape": [int(edata.shape[0]), int(edata.shape[1])],
         "matrix_hash": matrix_hash,
+        "frame_hash_algorithm": selected_content_hash_algorithm(),
+        "expression_matrix_source": matrix_source,
         "pre_impute_matrix_hash": pre_impute_matrix_hash,
         "cdesc_hash": cdesc_hash,
         "rdesc_hash": rdesc_hash,
@@ -635,7 +393,20 @@ def write_limma_replay_files(
             "limma_input_imputed" if bool(impute_missing_values) else "limma_input"
         ),
         "stored_matrix_is_authoritative": True,
+        "matrix_storage_format": "gctx",
+        "matrix_storage_dtype": REPLAY_MATRIX_DTYPE,
+        "gctx_writer_contract": gct_io_contracts()["gctx"]["writer_contract"],
+        "gctx_content_hash_algorithm": selected_content_hash_algorithm(),
+        "gctx_content_hash": read_gctx_content_hash(gct_path),
+        "pre_impute_gctx_content_hash": (
+            read_gctx_content_hash(pre_impute_gct_path)
+            if pre_impute_gct_path is not None
+            else None
+        ),
         "has_pre_impute_matrix": pre_impute_gct_path is not None,
+        "pre_impute_matrix_role": (
+            "audit_only" if pre_impute_gct_path is not None else None
+        ),
         "pre_impute_matrix_shape": pre_impute_shape,
         "group": group,
         "formula_in": formula_in,
@@ -661,15 +432,13 @@ def write_limma_replay_files(
             if pre_impute_gct_path
             else None
         ),
-        "recompute_imputation_supported": bool(
-            impute_missing_values
-            and imputation_backend == "gaussian"
-            and pre_impute_gct_path is not None
-        ),
+        "recompute_imputation_supported": False,
         "recompute_imputation_note": (
-            "R-side Gaussian recompute is a diagnostic; exact replay uses the stored limma_input.gct matrix."
-            if imputation_backend == "gaussian"
-            else "Stored matrix replay is authoritative; non-Gaussian backends are not recomputed in the Rmd."
+            "Disabled by design: limma replay always consumes the stored modeled matrix and never re-imputes."
+        ),
+        "pca_included": False,
+        "pca_replay_note": (
+            "PCA is outside this limma replay contract and requires its own saved input and pca2 options."
         ),
         "replay_explore_rmd_path": _relative_path(replay_rmd_path, replay_dir),
         "replay_explore_render_path": _relative_path(replay_render_path, replay_dir),
@@ -682,16 +451,18 @@ def write_limma_replay_files(
     _write_json(context_path, context, force=force)
     _write_text(
         replay_rmd_path,
-        _render_replay_explore_rmd(
+        render_limma_replay_rmd(
+            title="Tackle limma replay",
+            generated_at=now,
             gct_relpath=gct_path.name,
             context_relpath=context_path.name,
-            pre_impute_gct_relpath=pre_impute_gct_path.name if pre_impute_gct_path else None,
+            outputs_rel_dir="replay_outputs",
         ),
         force=force,
     )
     _write_text(
         replay_render_path,
-        _render_replay_explore_sh(
+        render_limma_replay_sh(
             rmd_name=replay_rmd_path.name,
             html_name=replay_html_path.name,
         ),
@@ -794,14 +565,40 @@ def validate_replay_dir(replay_dir: Path) -> Tuple[Path, Path]:
     if not context_path.exists():
         raise FileNotFoundError(str(context_path))
 
-    # GCT may be written as limma_input.gct (expected), or with a timestamp; prefer exact.
-    gct_path = replay_dir / "limma_input.gct"
-    if not gct_path.exists():
-        candidates = sorted(replay_dir.glob("limma_input*.gct"))
+    # The context records the exact content-addressed GCTX (or legacy GCT), so
+    # it is the authoritative selector. This also prevents the pre-imputation
+    # audit matrix from winning a broad fallback glob.
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    context_gct = context.get("gct_path")
+    gct_path: Optional[Path] = None
+    if context_gct:
+        candidate = Path(str(context_gct)).expanduser()
+        if not candidate.is_absolute():
+            candidate = replay_dir / candidate
+        candidate = candidate.resolve()
+        if (
+            candidate.exists()
+            and candidate.is_file()
+            and not candidate.name.startswith("limma_input_pre_impute")
+        ):
+            gct_path = candidate
+
+    if gct_path is None:
+        candidates = []
+        for suffix in (".gctx", ".gct"):
+            exact = replay_dir / f"limma_input{suffix}"
+            if exact.exists():
+                candidates.append(exact)
+            candidates.extend(
+                path
+                for path in replay_dir.glob(f"limma_input*{suffix}")
+                if not path.name.startswith("limma_input_pre_impute")
+            )
+        candidates = [path for path in set(candidates) if path.is_file()]
         if candidates:
             gct_path = max(candidates, key=lambda p: p.stat().st_mtime)
         else:
-            raise FileNotFoundError(str(gct_path))
+            raise FileNotFoundError(str(replay_dir / "limma_input.gctx"))
     return gct_path, context_path
 
 

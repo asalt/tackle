@@ -346,11 +346,13 @@ def volcanoplot(
             edata = getattr(data_obj, "_last_stat_model_expression_data", None)
             if isinstance(edata, pd.DataFrame) and not edata.empty:
                 edata = edata.copy()
+                expression_matrix_source = "stat_model_modeled_matrix"
             else:
                 sample_ids = list(meta.index.astype(str))
                 first_df = next(iter(results.values()))
                 expr_cols = [c for c in sample_ids if c in first_df.columns]
                 edata = first_df[expr_cols].copy()
+                expression_matrix_source = "limma_result_table_sample_columns"
             pre_impute_edata = getattr(data_obj, "_last_stat_model_expression_data_pre_impute", None)
             if isinstance(pre_impute_edata, pd.DataFrame) and not pre_impute_edata.empty:
                 pre_impute_edata = pre_impute_edata.reindex(index=edata.index, columns=edata.columns).copy()
@@ -383,6 +385,7 @@ def volcanoplot(
                 results=results,
                 sample_metadata=pheno,
                 expression_matrix=edata,
+                expression_matrix_source=expression_matrix_source,
                 pre_impute_expression_matrix=pre_impute_edata,
                 gene_symbols=data_obj.gid_symbol,
                 gene_descriptions=gene_descriptions,
