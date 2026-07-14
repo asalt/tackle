@@ -982,7 +982,11 @@ def read_config(configfile, enforce=True):
     # as of py3.7 I believe it does
     for section_key in sections:
         section = config[section_key]
-        other_fields = set(section.keys()) - set(FIELDS)
+        # ConfigParser preserves option order. Keep that order here as well:
+        # using a set made user metadata columns vary with Python's per-process
+        # hash seed, which in turn made otherwise identical GCT/GCTX payloads
+        # non-reproducible.
+        other_fields = [field for field in section.keys() if field not in FIELDS]
         for field in FIELDS:
             value = section.get(field)
             if value is None:

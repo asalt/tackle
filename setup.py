@@ -19,9 +19,13 @@ setup(
     py_modules=['main', 'utils', 'clusterplot', 'scatterplot', 'pcaplot', 'containers'],
     install_requires=[
         'Click',
+        'h5py>=3.8',
         'Jinja2',
     ],
     extras_require={
+        'fast-hash': [
+            'blake3>=1.0',
+        ],
         'excel': [
             'openpyxl',
             'xlsxwriter',

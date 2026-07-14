@@ -6,7 +6,44 @@ from tackle.utils import (
     get_default_color_mapping,
     get_color_mapping_with_defaults,
     normalize_metadata_str_values,
+    parse_metadata,
+    read_config,
 )
+
+
+def test_read_config_preserves_user_metadata_field_order(tmp_path):
+    config_path = tmp_path / "ordered.conf"
+    config_path.write_text(
+        """\
+[sample_a]
+recno = 12345
+runno = 1
+searchno = 4
+assay = DIA
+tissue = brain
+fraction = lEV
+treatment = BR
+group = lEV_BR
+replicate = R1
+""",
+        encoding="utf-8",
+    )
+
+    config = read_config(str(config_path))
+    metadata = parse_metadata(config)
+
+    assert list(metadata.columns) == [
+        "runno",
+        "searchno",
+        "label",
+        "recno",
+        "assay",
+        "tissue",
+        "fraction",
+        "treatment",
+        "group",
+        "replicate",
+    ]
 
 
 def test_get_default_color_mapping_integer_like_series_uses_light_palette():

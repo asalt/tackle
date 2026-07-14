@@ -14,6 +14,7 @@ import hashlib, re
 
 # from . import utils
 from .utils import read_config
+from .zscore import my_zscore  # re-exported for export --level zscore compatibility
 from scipy.cluster import hierarchy
 from seaborn.matrix import _matrix_mask, axis_ticklabels_overlap
 from seaborn import despine
@@ -74,21 +75,8 @@ except AttributeError:
     pd.NA = "NA"
 
 z_score = ClusterGrid.z_score
-# python implementation of my R implementation
 
 rprint = lambda x: robjects.r("print")(x)
-
-
-def my_zscore(x, minval=None, remask=True):
-    mask = x.isna()
-
-    if minval is None:
-        minval = x.dropna().min()
-    x = x.fillna(minval)
-    ret = z_score(x)
-    if remask:
-        ret.loc[mask] = np.nan
-    return ret
 
 
 logger = get_logger(__name__)
@@ -2874,22 +2862,6 @@ class Data:
                         break
                 outname = os.path.normpath(os.path.abspath(outname))
                 os.makedirs(os.path.dirname(outname), exist_ok=True)
-                gct_path = outname + ".gct"
-                if not force:
-                    candidates = []
-                    if os.path.exists(gct_path) and os.path.getsize(gct_path) > 0:
-                        candidates.append(gct_path)
-                    candidates.extend(
-                        p
-                        for p in glob.glob(outname + "*.gct")
-                        if os.path.exists(p) and os.path.getsize(p) > 0
-                    )
-                    if candidates:
-                        existing = max(set(candidates), key=os.path.getmtime)
-                        logger.info(
-                            f"Skipping existing GCT export {existing} (use --force to overwrite)"
-                        )
-                        return existing
 
                 def _format_gct_cell(value, *, numeric=False):
                     if pd.isna(value):
@@ -2906,48 +2878,19 @@ class Data:
                     return str(value).replace("\t", " ").replace("\n", " ")
 
                 def _write_gct_v13(path, mat, cdesc, rdesc):
-                    mat = mat.copy()
-                    mat.index = mat.index.astype(str)
-                    mat.columns = mat.columns.astype(str)
+                    from .gct_io import write_gct
 
-                    rdesc = rdesc.copy()
-                    rdesc.index = rdesc.index.astype(str)
-                    rdesc = rdesc.reindex(mat.index).drop(columns=["id"], errors="ignore")
-                    rdesc = rdesc.fillna("")
-
-                    cdesc = cdesc.copy()
-                    cdesc.index = cdesc.index.astype(str)
-                    cdesc = cdesc.reindex(mat.columns).drop(columns=["id"], errors="ignore")
-
-                    nr, nc = mat.shape
-                    nrdesc = rdesc.shape[1]
-                    ncdesc = cdesc.shape[1]
-
-                    with open(path, "w", encoding="utf-8", newline="") as handle:
-                        handle.write("#1.3\n")
-                        handle.write(f"{nr}\t{nc}\t{nrdesc}\t{ncdesc}\n")
-                        handle.write(
-                            "\t".join(["id", *map(str, rdesc.columns), *map(str, mat.columns)])
-                            + "\n"
+                    return str(
+                        write_gct(
+                            mat,
+                            path,
+                            row_metadata=rdesc,
+                            col_metadata=cdesc,
+                            precision=4,
+                            content_addressed=False,
+                            overwrite=bool(force),
                         )
-                        for col in cdesc.columns:
-                            numeric_col = pd.api.types.is_numeric_dtype(cdesc[col])
-                            values = [
-                                _format_gct_cell(v, numeric=numeric_col)
-                                for v in cdesc[col].tolist()
-                            ]
-                            handle.write(
-                                "\t".join([str(col), *("na" for _ in range(nrdesc)), *values])
-                                + "\n"
-                            )
-                        for rid, row in mat.iterrows():
-                            rmeta = [
-                                _format_gct_cell(v, numeric=False)
-                                for v in rdesc.loc[rid].tolist()
-                            ]
-                            values = [_format_gct_cell(v, numeric=True) for v in row.tolist()]
-                            handle.write("\t".join([str(rid), *rmeta, *values]) + "\n")
-                    return path
+                    )
 
                 # data_obj = ctx.obj["data_obj"]
                 _export = export.reset_index().merge(
@@ -2983,6 +2926,24 @@ class Data:
 
                 _m = export[self.col_metadata.index]
                 _m = _m.astype(float)
+                shape_suffix = f"_n{_m.shape[1]}x{_m.shape[0]}"
+                outname = re.sub(r"_n\d+x\d+$", "", outname) + shape_suffix
+                gct_path = outname + ".gct"
+                if not force:
+                    candidates = []
+                    if os.path.exists(gct_path) and os.path.getsize(gct_path) > 0:
+                        candidates.append(gct_path)
+                    candidates.extend(
+                        p
+                        for p in glob.glob(outname + "*.gct")
+                        if os.path.exists(p) and os.path.getsize(p) > 0
+                    )
+                    if candidates:
+                        existing = max(set(candidates), key=os.path.getmtime)
+                        logger.info(
+                            f"Skipping existing GCT export {existing} (use --force to overwrite)"
+                        )
+                        return existing
                 cdesc = self.col_metadata.copy()
                 # Optionally embed continuous covariate(s) as cdesc columns
                 try:
@@ -3130,12 +3091,12 @@ class Data:
             return outname
 
         elif level == "zscore":  # export zscore of the data
-            # do sturf
-            export = (
-                self.df_filtered.loc[idx[:, "area"], :]
-                .apply(my_zscore, axis=1)
-                .reset_index()
-            )
+            # Match correlation/cluster2: z-score the logged matrix while
+            # allowing nondetections to anchor scaling, then restore the mask.
+            zscore_input = self.areas_log.copy()
+            zscore_input[self.mask] = np.nan
+            export = zscore_input.apply(my_zscore, axis=1).reset_index()
+            export.insert(1, "Metric", "zscore")
             export.to_csv(outname, sep="\t", index=False)
             logger.info(f"Wrote {outname}")
             return outname

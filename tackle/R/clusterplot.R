@@ -29,44 +29,25 @@ ht_opt$message <- FALSE
 # }
 
 myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
-  mask <- is.na(value)
-
-  if (all(is.na(c(value))) && is.na(minval)) {
-    minval <- 0
-    value[1] <- 0
+  mask <- is.na(value) | !is.finite(value)
+  observed <- value[!mask]
+  if (length(observed) == 0) {
+    return(matrix(NA_real_, nrow = length(value), ncol = 1))
   }
 
   if (is.na(minval)) {
-    .sd <- -sd(value, na.rm = T)
-    if (is.na(.sd)) .sd <- 0
-    minval <- min(value, na.rm = TRUE) - .sd
+    observed_sd <- stats::sd(observed)
+    offset <- if (is.finite(observed_sd) && observed_sd > 0) observed_sd else 1
+    minval <- min(observed) - offset
   }
+  if (!is.finite(minval)) minval <- 0
 
-
-  if (minval == Inf) {
-    minval <- 0
-  }
-
-  if (fillna) value[is.na(value)] <- minval
-  # todo make smaller than min val
-  # done
+  value[mask] <- NA_real_
+  if (isTRUE(fillna)) value[mask] <- minval
   out <- scale(value)
-
-  # value[is.na(value)] <- 0 if you wanted to put all NA in the middle
-
-  # if all NA:
-  if (sum(!is.finite(out)) == length(out)) {
-    out[, 1] <- 0
-  }
-
-  ## if (sum(!is.finite(value)) == length(value)) {
-  ##   value[!is.finite(value)] <- 0
-  ## }
-
-  if (remask == TRUE) {
-    out[mask] <- NA
-  }
-  return(out)
+  if (all(!is.finite(out))) out[] <- 0
+  if (isTRUE(remask)) out[mask] <- NA_real_
+  out
 }
 
 
