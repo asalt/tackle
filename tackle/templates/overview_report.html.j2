@@ -155,8 +155,10 @@
     .plot-path { margin: 0.2rem 0 0.6rem 0; }
     .plot-img {
       display: block;
-      max-width: 100%;
+      max-width: {% if plot_max_width_px > 0 %}min(100%, {{ plot_max_width_px }}px){% else %}100%{% endif %};
       height: auto;
+      margin-left: auto;
+      margin-right: auto;
       border: 1px solid var(--line);
       border-radius: 10px;
       box-shadow: 0 1px 12px rgba(0,0,0,0.25);

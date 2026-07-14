@@ -6,6 +6,8 @@ import html as html_lib
 import json
 import os
 import re
+import threading
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -225,6 +227,41 @@ def test_build_html_overview_bundle(tmp_path: Path) -> None:
     assert (out_dir / "assets" / "data" / "volcano" / "mouse" / tsv_path.name).exists()
 
 
+def test_build_html_overview_adds_correlation_plots_after_metrics(tmp_path: Path) -> None:
+    base = tmp_path / "analysis"
+    _write_dummy_png(base / "metrics" / "qc_plot.png")
+    correlation_plot = base / "correlation" / "run_correlation_metric_l2.png"
+    _write_dummy_png(correlation_plot)
+    (base / "correlation" / "ignored_matrix.gctx").write_bytes(b"not inspected")
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(base_dir=str(base), out_dir=str(out_dir), force=True)
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+
+    metrics_tab = html_text.index('data-tab="metrics"')
+    correlation_tab = html_text.index('data-tab="correlation"')
+    assert metrics_tab < correlation_tab
+    assert "Correlation (1)" in html_text
+    assert correlation_plot.name in html_text
+    assert "ignored_matrix.gctx" not in html_text
+    assert "GCTX Artifacts" not in html_text
+
+
+def test_build_html_overview_caps_displayed_plot_width(tmp_path: Path) -> None:
+    base = tmp_path / "analysis"
+    _write_dummy_png(base / "metrics" / "qc_plot.png")
+
+    outputs = build_html_overview(
+        base_dir=str(base),
+        out_dir=str(tmp_path / "report" / "html"),
+        force=True,
+        plot_max_width_px=900,
+    )
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+
+    assert "max-width: min(100%, 900px);" in html_text
+
+
 def test_build_html_overview_groups_volcano_by_sort_metric(tmp_path: Path) -> None:
     base = tmp_path / "analysis"
     volcano_dir = base / "volcano" / "mouse"
@@ -368,6 +405,42 @@ def test_build_html_overview_pngquant_topdiff_quality_override(tmp_path: Path, m
     assert outputs.out_html.exists()
     assert seen_quality[volcano_png.name] == "60-70"
     assert seen_quality[topdiff_png.name] == "88-92"
+
+
+def test_build_html_overview_runs_pngquant_jobs_concurrently(tmp_path: Path, monkeypatch) -> None:
+    base = tmp_path / "analysis"
+    for index in range(4):
+        _write_dummy_png(base / "metrics" / f"qc_plot_{index}.png")
+
+    monkeypatch.setattr(html_overview, "_pngquant_available", lambda: True)
+    lock = threading.Lock()
+    active = 0
+    peak_active = 0
+
+    def _fake_opt(src, dst, **kwargs):
+        nonlocal active, peak_active
+        with lock:
+            active += 1
+            peak_active = max(peak_active, active)
+        time.sleep(0.05)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(Path(src).read_bytes())
+        with lock:
+            active -= 1
+        return True
+
+    monkeypatch.setattr(html_overview, "_pngquant_optimize", _fake_opt)
+
+    outputs = build_html_overview(
+        base_dir=str(base),
+        out_dir=str(tmp_path / "report" / "html"),
+        force=True,
+        pngquant=True,
+        pngquant_workers=4,
+    )
+
+    assert outputs.out_html.exists()
+    assert peak_active > 1
 
 
 def test_build_html_overview_embeds_interactive_payload_gz_json(tmp_path: Path) -> None:

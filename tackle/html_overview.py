@@ -14,10 +14,11 @@ import subprocess
 import tempfile
 import uuid
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from urllib.request import Request, urlopen
 import gzip
 
@@ -75,6 +76,7 @@ class HtmlOverviewOutputs:
 
 _CATEGORY_LABELS: Dict[str, str] = {
     "metrics": "Metrics",
+    "correlation": "Correlation",
     "cluster": "Clustering",
     "pca": "PCA",
     "umap": "UMAP",
@@ -82,7 +84,15 @@ _CATEGORY_LABELS: Dict[str, str] = {
     "topdiff-cluster": "Top Diff Heatmaps",
 }
 
-_DEFAULT_ORDER: Tuple[str, ...] = ("metrics", "cluster", "pca", "umap", "volcano", "topdiff-cluster")
+_DEFAULT_ORDER: Tuple[str, ...] = (
+    "metrics",
+    "correlation",
+    "cluster",
+    "pca",
+    "umap",
+    "volcano",
+    "topdiff-cluster",
+)
 
 _PROTEIN_META_BASE_FIELDS: Tuple[str, ...] = (
     "GeneID",
@@ -151,8 +161,11 @@ def _is_under(path: Path, parent: Path) -> bool:
 
 def _classify_plot_png(relpath: str) -> Optional[str]:
     rel_lower = str(relpath).lower().replace("\\", "/")
+    path_parts = {part for part in rel_lower.split("/") if part}
     if rel_lower.startswith("topdiff/") or "/topdiff/" in rel_lower:
         return "topdiff-cluster"
+    if "correlation" in path_parts:
+        return "correlation"
     if "umap" in rel_lower:
         return "umap"
     if "volcano" in rel_lower:
@@ -179,6 +192,7 @@ def _readable_title_from_png_rel(relpath: str, *, category: str) -> str:
         "pcaplot",
         "umap",
         "metrics",
+        "correlation",
         "cluster",
         "clustermap",
         "topdiff",
@@ -1502,6 +1516,56 @@ def _pngquant_quality_for_item(
     return str(default_quality) if default_quality else None
 
 
+def _pngquant_optimize_many(
+    jobs: Sequence[Tuple[str, Path, Path, Optional[str]]],
+    *,
+    speed: int,
+    strip: bool,
+    workers: int,
+) -> Dict[str, Tuple[bool, int, int]]:
+    """Run independent pngquant subprocesses with bounded concurrency."""
+
+    if not jobs:
+        return {}
+    requested_workers = int(workers)
+    if requested_workers < 0:
+        raise ValueError("pngquant_workers must be zero or a positive integer")
+    if requested_workers == 0:
+        requested_workers = min(8, os.cpu_count() or 1)
+    effective_workers = max(1, min(requested_workers, len(jobs)))
+
+    def optimize_one(
+        job: Tuple[str, Path, Path, Optional[str]],
+    ) -> Tuple[str, Tuple[bool, int, int]]:
+        key, source_png, optimized_png, quality = job
+        optimized = _pngquant_optimize(
+            source_png,
+            optimized_png,
+            quality=quality,
+            speed=int(speed),
+            strip=bool(strip),
+        )
+        before = source_png.stat().st_size if optimized else 0
+        after = optimized_png.stat().st_size if optimized else 0
+        return key, (optimized, before, after)
+
+    logger.info(
+        "PNG compression: %d files with %d concurrent pngquant worker(s)",
+        len(jobs),
+        effective_workers,
+    )
+    if effective_workers == 1:
+        completed = map(optimize_one, jobs)
+        return dict(tqdm(completed, total=len(jobs), desc="compressing"))
+
+    with ThreadPoolExecutor(
+        max_workers=effective_workers,
+        thread_name_prefix="tackle-pngquant",
+    ) as executor:
+        completed = executor.map(optimize_one, jobs)
+        return dict(tqdm(completed, total=len(jobs), desc="compressing"))
+
+
 def _render_j2_template(template_name: str, **context: object) -> str:
     try:
         from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -1850,7 +1914,9 @@ def build_html_overview(
     pngquant_quality: Optional[str] = "65-85",
     pngquant_topdiff_quality: Optional[str] = "85-90",
     pngquant_speed: int = 3,
+    pngquant_workers: int = 0,
     pngquant_strip: bool = True,
+    plot_max_width_px: int = 1200,
 ) -> HtmlOverviewOutputs:
     root = Path(base_dir).expanduser().resolve()
     if not root.exists() or not root.is_dir():
@@ -1863,6 +1929,10 @@ def build_html_overview(
         self_contained=bool(self_contained),
         interactive_resource_mode=str(interactive_resource_mode),
     )
+    if int(pngquant_workers) < 0:
+        raise ValueError("pngquant_workers must be zero or a positive integer")
+    if int(plot_max_width_px) < 0:
+        raise ValueError("plot_max_width_px must be zero or a positive integer")
 
     out_root = Path(out_dir).expanduser().resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -1881,7 +1951,7 @@ def build_html_overview(
         assets_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(
-        "HTML overview: base_dir=%s out_dir=%s copy_assets=%s force=%s self_contained=%s filter=%s pngquant=%s quality=%s topdiff_quality=%s speed=%s strip=%s",
+        "HTML overview: base_dir=%s out_dir=%s copy_assets=%s force=%s self_contained=%s filter=%s pngquant=%s quality=%s topdiff_quality=%s speed=%s workers=%s strip=%s plot_max_width_px=%s",
         root,
         out_root,
         copy_assets,
@@ -1892,7 +1962,9 @@ def build_html_overview(
         pngquant_quality,
         pngquant_topdiff_quality,
         pngquant_speed,
+        pngquant_workers,
         pngquant_strip,
+        plot_max_width_px,
     )
 
     # Collect images first (exclude our output dir).
@@ -1902,7 +1974,6 @@ def build_html_overview(
         include_kinds=include_kinds,
         exclude_dirs=(out_root,),
     )
-
     # Copy/symlink plot assets into the bundle, or embed them as data URIs.
     use_pngquant = bool(pngquant)
     if use_pngquant and not _pngquant_available():
@@ -1921,36 +1992,40 @@ def build_html_overview(
     resource_entries: Dict[str, Dict[str, Any]] = {}
     try:
         if self_contained:
-            pbar = tqdm(plots, desc="compressing", disable=not use_pngquant)
-            for item in pbar:
+            optimized_results: Dict[str, Tuple[bool, int, int]] = {}
+            if use_pngquant and temp_png_dir is not None:
+                jobs = [
+                    (
+                        item.source_relpath,
+                        Path(item.source_path),
+                        temp_png_dir / item.source_relpath,
+                        _pngquant_quality_for_item(
+                            item=item,
+                            default_quality=pngquant_quality,
+                            topdiff_quality=pngquant_topdiff_quality,
+                        ),
+                    )
+                    for item in plots
+                ]
+                optimized_results = _pngquant_optimize_many(
+                    jobs,
+                    speed=int(pngquant_speed),
+                    strip=bool(pngquant_strip),
+                    workers=int(pngquant_workers),
+                )
+                for optimized, before, after in optimized_results.values():
+                    if optimized:
+                        total_before += before
+                        total_after += after
+                        optimized_count += 1
+
+            for item in plots:
                 source_png = Path(item.source_path)
                 embed_png = source_png
                 item.resource_id = _make_resource_id("plot-image", item.source_relpath)
                 if use_pngquant and temp_png_dir is not None:
                     optimized_png = temp_png_dir / item.source_relpath
-                    quality = _pngquant_quality_for_item(
-                        item=item,
-                        default_quality=pngquant_quality,
-                        topdiff_quality=pngquant_topdiff_quality,
-                    )
-                    if _pngquant_optimize(
-                        source_png,
-                        optimized_png,
-                        quality=quality,
-                        speed=int(pngquant_speed),
-                        strip=bool(pngquant_strip),
-                    ):
-                        before = source_png.stat().st_size
-                        after = optimized_png.stat().st_size
-                        total_before += before
-                        total_after += after
-                        optimized_count += 1
-                        saved = total_before - total_after
-                        ratio = (total_after / total_before) if total_before else 1.0
-                        pbar.set_postfix(
-                            saved=f"{saved / 1e6:.1f}MB",
-                            ratio=f"{ratio:.2f}x",
-                        )
+                    if optimized_results.get(item.source_relpath, (False, 0, 0))[0]:
                         embed_png = optimized_png
                 plot_bytes = embed_png.read_bytes()
                 plot_data_url = (
@@ -1967,42 +2042,43 @@ def build_html_overview(
                     path=None,
                     source_bytes=plot_bytes,
                 )
-            if hasattr(pbar, "close"):
-                pbar.close()
         else:
             if assets_dir is None:
                 raise ValueError("assets_dir is required when self_contained=False")
-            pbar = tqdm(plots, desc="compressing", disable=not use_pngquant)
-            for item in pbar:
-                source_png = Path(item.source_path)
-                dst = assets_dir / "plots" / item.source_relpath
-                item.resource_id = _make_resource_id("plot-image", item.source_relpath)
-                wrote_optimized = False
-                if use_pngquant:
-                    quality = _pngquant_quality_for_item(
-                        item=item,
-                        default_quality=pngquant_quality,
-                        topdiff_quality=pngquant_topdiff_quality,
+            optimized_results = {}
+            if use_pngquant:
+                jobs = [
+                    (
+                        item.source_relpath,
+                        Path(item.source_path),
+                        assets_dir / "plots" / item.source_relpath,
+                        _pngquant_quality_for_item(
+                            item=item,
+                            default_quality=pngquant_quality,
+                            topdiff_quality=pngquant_topdiff_quality,
+                        ),
                     )
-                    wrote_optimized = _pngquant_optimize(
-                        source_png,
-                        dst,
-                        quality=quality,
-                        speed=int(pngquant_speed),
-                        strip=bool(pngquant_strip),
-                    )
-                    if wrote_optimized:
-                        before = source_png.stat().st_size
-                        after = dst.stat().st_size
+                    for item in plots
+                ]
+                optimized_results = _pngquant_optimize_many(
+                    jobs,
+                    speed=int(pngquant_speed),
+                    strip=bool(pngquant_strip),
+                    workers=int(pngquant_workers),
+                )
+                for optimized, before, after in optimized_results.values():
+                    if optimized:
                         total_before += before
                         total_after += after
                         optimized_count += 1
-                        saved = total_before - total_after
-                        ratio = (total_after / total_before) if total_before else 1.0
-                        pbar.set_postfix(
-                            saved=f"{saved / 1e6:.1f}MB",
-                            ratio=f"{ratio:.2f}x",
-                        )
+
+            for item in plots:
+                source_png = Path(item.source_path)
+                dst = assets_dir / "plots" / item.source_relpath
+                item.resource_id = _make_resource_id("plot-image", item.source_relpath)
+                wrote_optimized = optimized_results.get(
+                    item.source_relpath, (False, 0, 0)
+                )[0]
                 if not wrote_optimized:
                     _copy_or_symlink(source_png, dst, copy=copy_assets, force=force)
                 item.asset_relpath = str(dst.relative_to(out_root).as_posix())
@@ -2020,8 +2096,6 @@ def build_html_overview(
                     path=item.asset_relpath,
                     source_bytes=plot_bytes,
                 )
-            if hasattr(pbar, "close"):
-                pbar.close()
     finally:
         if temp_png_dir_ctx is not None:
             temp_png_dir_ctx.cleanup()
@@ -2554,6 +2628,7 @@ def build_html_overview(
         self_contained=bool(self_contained),
         interactive_resource_mode=resource_mode,
         defer_plot_images=bool(defer_plot_images),
+        plot_max_width_px=int(plot_max_width_px),
         interactive_payload=interactive_payload_ctx,
         plotly_resource_id=plotly_resource_id,
         tabulator_resource_ids=tabulator_resource_ids,
