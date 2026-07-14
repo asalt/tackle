@@ -634,6 +634,7 @@ class Path_or_Subcommand(click.Path):
         "make-search-report",
         "stage-upload-slim",
         "cluster-summary",
+        "dev",
     )  # run as standalone subcommands
 
     def __init__(self, *args, **kwargs):
@@ -2019,6 +2020,67 @@ def moreinfo(topic):
     _echo_moreinfo_topic(topic)
 
 
+@main.command("dev", hidden=True)
+@click.argument("action", type=click.Choice(["inspect-gctx"]))
+@click.argument(
+    "target",
+    required=False,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the inspection or specification as machine-readable JSON.",
+)
+@click.option(
+    "--spec",
+    "show_spec",
+    is_flag=True,
+    help="Include the tackle GCTX provenance and hashing specification.",
+)
+def dev(action, target, as_json, show_spec):
+    """Internal developer utilities that do not load an experiment config."""
+
+    import json
+
+    from .gct_io import (
+        format_gctx_inspection,
+        format_gctx_provenance_spec,
+        gctx_provenance_spec,
+        inspect_gctx,
+    )
+
+    if action != "inspect-gctx":  # Click's Choice currently makes this unreachable.
+        raise click.UsageError(f"Unsupported developer action: {action}")
+
+    if target is None:
+        if not show_spec:
+            raise click.UsageError(
+                "inspect-gctx needs TARGET.gctx, or pass --spec to print the writer specification."
+            )
+        spec = gctx_provenance_spec()
+        click.echo(
+            json.dumps(spec, sort_keys=False, indent=2)
+            if as_json
+            else format_gctx_provenance_spec(spec)
+        )
+        return
+
+    try:
+        inspection = inspect_gctx(target)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        payload = {"inspection": inspection}
+        if show_spec:
+            payload["spec"] = gctx_provenance_spec()
+        click.echo(json.dumps(payload, sort_keys=False, indent=2))
+    else:
+        click.echo(format_gctx_inspection(inspection, include_spec=show_spec))
+
+
 @main.command("make-rmd")
 @click.option(
     "--base-dir",
@@ -2077,7 +2139,7 @@ def moreinfo(topic):
 @click.pass_context
 def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, force, render):
     """
-    Create a standalone limma replay RMarkdown bundle from an existing volcano run.
+    Replay limma from the stored modeled matrix; never re-impute or substitute PCA.
     """
     from pathlib import Path
 
@@ -2239,10 +2301,24 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     help="pngquant speed (1 slow/best to 11 fast).",
 )
 @click.option(
+    "--pngquant-workers",
+    type=click.IntRange(min=0),
+    default=0,
+    show_default=True,
+    help="Concurrent pngquant subprocesses; 0 automatically uses up to 8 workers.",
+)
+@click.option(
     "--pngquant-strip/--no-pngquant-strip",
     default=True,
     show_default=True,
     help="Strip metadata when optimizing PNGs with pngquant.",
+)
+@click.option(
+    "--plot-max-width-px",
+    type=click.IntRange(min=0),
+    default=1200,
+    show_default=True,
+    help="Maximum in-page plot width in pixels; 0 uses the full available width.",
 )
 @click.option(
     "--force",
@@ -2262,10 +2338,20 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     "--plot-kind",
     "plot_kinds",
     multiple=True,
-    type=click.Choice(["metrics", "cluster", "pca", "umap", "volcano", "topdiff-cluster"]),
-    default=("metrics", "cluster", "pca", "umap", "volcano", "topdiff-cluster"),
+    type=click.Choice(
+        ["metrics", "correlation", "cluster", "pca", "umap", "volcano", "topdiff-cluster"]
+    ),
+    default=(
+        "metrics",
+        "correlation",
+        "cluster",
+        "pca",
+        "umap",
+        "volcano",
+        "topdiff-cluster",
+    ),
     show_default=True,
-    help="Plot categories to include in the overview.",
+    help="Report sections to include in the overview.",
 )
 @click.option(
     "--volcano-topn",
@@ -2360,7 +2446,9 @@ def make_html(
     pngquant_quality,
     pngquant_topdiff_quality,
     pngquant_speed,
+    pngquant_workers,
     pngquant_strip,
+    plot_max_width_px,
     force,
     filter_contains,
     plot_kinds,
@@ -2445,7 +2533,9 @@ def make_html(
                 str(pngquant_topdiff_quality) if pngquant_topdiff_quality else None
             ),
             pngquant_speed=int(pngquant_speed),
+            pngquant_workers=int(pngquant_workers),
             pngquant_strip=bool(pngquant_strip),
+            plot_max_width_px=int(plot_max_width_px),
         )
     except (FileExistsError, NotADirectoryError, FileNotFoundError, RuntimeError) as e:
         raise click.ClickException(str(e))
@@ -2605,6 +2695,382 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_c
     save_multiple(g, outname, *file_fmts, dpi=96)
 
 
+@main.command("correlation")
+@click.option(
+    "--metric",
+    type=click.Choice(
+        ["l2", "l1", "pearson", "spearman", "euclidean", "manhattan"]
+    ),
+    default="l2",
+    show_default=True,
+    help="Sample metric to plot. Euclidean aliases L2 RMS; Manhattan aliases normalized L1.",
+)
+@click.option(
+    "--linkage",
+    type=click.Choice(
+        [
+            "auto",
+            "single",
+            "complete",
+            "average",
+            "weighted",
+            "centroid",
+            "median",
+            "ward.D2",
+        ]
+    ),
+    default="auto",
+    show_default=True,
+    help="Linkage method. Auto uses average for L1 and ward.D2 otherwise.",
+)
+@click.option(
+    "--z-score/--no-z-score",
+    default=False,
+    show_default=True,
+    help="Feature-wise z-score the masked logged matrix before computing the sample metric.",
+)
+@click.option(
+    "--z-score-by",
+    multiple=True,
+    default=(),
+    help="Z-score within metadata groups (repeatable; colon-separated fields are also accepted). Requires --z-score.",
+)
+@click.option(
+    "--cluster/--no-cluster",
+    default=False,
+    show_default=True,
+    help="Hierarchically cluster heatmap rows and columns.",
+)
+@click.option(
+    "--cut-by",
+    multiple=True,
+    default=(),
+    help="Split rows and columns by metadata fields (repeatable; colon-separated fields are also accepted).",
+)
+@click.option(
+    "--metadata",
+    "--legend-include",
+    "metadata_fields",
+    multiple=True,
+    default=(),
+    help="Metadata field to annotate (repeatable). Defaults to informative non-ID fields.",
+)
+@click.option(
+    "--metadata-exclude",
+    "--legend-exclude",
+    "metadata_exclude",
+    multiple=True,
+    default=(),
+    help="Metadata annotation field to omit (repeatable; cut fields are always retained).",
+)
+@click.option(
+    "--sample-exclude",
+    type=str,
+    multiple=True,
+    help="Multiple sample names to exclude from the heatmap.",
+)
+@click.option(
+    "--annotate/--no-annotate",
+    default=False,
+    show_default=True,
+    help="Show values in the upper triangle and pairwise n in the lower triangle.",
+)
+@click.option(
+    "--figsize",
+    nargs=2,
+    type=float,
+    default=None,
+    help="Optional heatmap width and height in inches; otherwise size is sample-aware.",
+)
+@click.option(
+    "--file-format",
+    "correlation_file_fmts",
+    type=click.Choice((".png", ".pdf", ".svg")),
+    multiple=True,
+    default=(),
+    help="Output format(s) for this heatmap. Defaults to global --file-format.",
+)
+@click.pass_context
+def correlation(
+    ctx,
+    metric,
+    linkage,
+    z_score,
+    z_score_by,
+    cluster,
+    cut_by,
+    metadata_fields,
+    metadata_exclude,
+    sample_exclude,
+    annotate,
+    figsize,
+    correlation_file_fmts,
+):
+    """Plot a metadata-aware sample correlation or distance heatmap."""
+
+    import json
+
+    from .correlationplot import (
+        compute_pairwise_counts,
+        compute_sample_metric,
+        exclude_correlation_samples,
+        flatten_metadata_fields,
+        normalize_linkage,
+        normalize_metric,
+        plot_correlation_heatmap,
+        prepare_logged_matrix,
+        resolve_linkage,
+        select_plot_metadata,
+        write_correlation_input_gctx,
+        write_correlation_sample_gctx,
+        zscore_feature_rows,
+    )
+    from .gct_io import (
+        dataframe_content_hash,
+        gct_io_contracts,
+        read_gctx_content_hash,
+        selected_content_hash_algorithm,
+        write_hashed_tsv,
+    )
+
+    data_obj = ctx.obj["data_obj"]
+    metric_requested = metric
+    metric = normalize_metric(metric_requested)
+    linkage_requested = normalize_linkage(linkage)
+    linkage = resolve_linkage(metric, linkage_requested)
+    z_score_fields = flatten_metadata_fields(z_score_by)
+    cut_fields = flatten_metadata_fields(cut_by)
+    if z_score_fields and not z_score:
+        raise click.UsageError("--z-score-by requires --z-score")
+
+    matrix = prepare_logged_matrix(data_obj)
+    try:
+        matrix, sample_selection = exclude_correlation_samples(matrix, sample_exclude)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    # This is deliberately captured before z-scoring. It represents jointly
+    # observed proteins in the selected source logged matrix and is invariant
+    # to every downstream transformation, metric, and clustering choice.
+    pairwise_counts = compute_pairwise_counts(matrix)
+    full_metadata = data_obj.col_metadata.copy()
+    full_metadata.index = full_metadata.index.astype(str)
+    if z_score:
+        matrix = zscore_feature_rows(
+            matrix,
+            metadata=full_metadata,
+            by=z_score_fields,
+        )
+
+    metric_result = compute_sample_metric(
+        matrix,
+        metric,
+        overlap_counts=pairwise_counts,
+    )
+    try:
+        plot_metadata, cut_fields = select_plot_metadata(
+            full_metadata,
+            matrix.columns,
+            include=metadata_fields,
+            exclude=metadata_exclude,
+            cut_by=cut_fields,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    sample_exclude_hash = (
+        dataframe_content_hash(
+            pd.DataFrame({"sample": sample_selection["applied"]}),
+            serialization_contract="tackle-correlation-sample-exclude-v1",
+        )[:12]
+        if sample_selection["applied"]
+        else None
+    )
+    outname = get_outname(
+        "correlation",
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        batch=data_obj.batch_applied,
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
+        normtype=data_obj.normtype,
+        metric=metric,
+        linkage=linkage if cluster else None,
+        sexcl=sample_exclude_hash,
+        z_score=bool(z_score),
+        zby=tuple(z_score_fields) if z_score_fields else None,
+        cluster=bool(cluster),
+        cut_by=tuple(cut_fields) if cut_fields else None,
+        annotate=bool(annotate),
+        outpath=data_obj.outpath,
+    )
+    file_fmts = (
+        tuple(correlation_file_fmts)
+        if correlation_file_fmts
+        else tuple(ctx.obj["file_fmts"])
+    )
+
+    correlation_dir = Path(outname).resolve().parent
+    shared_prefix = correlation_dir / f"{data_obj.outpath_name}_correlation"
+    input_gctx = write_correlation_input_gctx(
+        data_obj,
+        matrix,
+        str(shared_prefix) + "_input_matrix.gctx",
+    )
+    raw_metric_gctx = write_correlation_sample_gctx(
+        data_obj,
+        metric_result.metric_matrix,
+        str(shared_prefix) + "_raw_metric.gctx",
+    )
+    if metric_result.clustering_distance_matrix.equals(metric_result.metric_matrix):
+        distance_gctx = raw_metric_gctx
+    else:
+        distance_gctx = write_correlation_sample_gctx(
+            data_obj,
+            metric_result.clustering_distance_matrix,
+            str(shared_prefix) + "_distance_matrix.gctx",
+        )
+    pairwise_counts_path = write_hashed_tsv(
+        metric_result.overlap_counts,
+        str(shared_prefix) + "_pairwise_counts.tsv",
+        float_format="%.0f",
+    )
+    artifact_paths = {
+        "input_matrix": str(input_gctx),
+        "raw_metric": str(raw_metric_gctx),
+        "distance_matrix": str(distance_gctx),
+        "pairwise_counts": str(pairwise_counts_path),
+        "settings": outname + "_settings.json",
+    }
+
+    contracts = gct_io_contracts()
+    effective_linkage = "mcquitty" if linkage == "weighted" else linkage
+    settings = {
+        "schema_version": 8,
+        "command": "correlation",
+        "source_matrix": "data_obj.areas_log_shifted with data_obj.mask restored to NA",
+        "metric_requested": metric_requested,
+        "metric": metric,
+        "displayed_value": (
+            "pairwise-complete RMS L2 distance"
+            if metric == "l2"
+            else (
+                "pairwise-complete mean absolute L1 distance"
+                if metric == "l1"
+                else f"raw {metric} correlation coefficient"
+            )
+        ),
+        "clustering_distance": (
+            "sqrt(2 * (1 - r)) chord distance"
+            if metric in {"pearson", "spearman"}
+            else f"the displayed pairwise-complete {metric.upper()} distance"
+        ),
+        "linkage_requested": linkage_requested,
+        "linkage": linkage,
+        "effective_r_hclust_method": effective_linkage,
+        "clustering_method": (
+            "stats::hclust(as.dist(precomputed dissimilarity), "
+            f"method = '{effective_linkage}')"
+            if cluster
+            else None
+        ),
+        "z_score": bool(z_score),
+        "z_score_by": z_score_fields,
+        "z_score_method": (
+            "cluster2-compatible detection-aware myzscore" if z_score else None
+        ),
+        "z_score_missing_value_policy": (
+            "temporarily fill missing values at the observed feature minimum minus "
+            "its observed SD (unit offset for sparse constant detections), then "
+            "restore the original NA mask before pairwise metric calculation"
+            if z_score
+            else None
+        ),
+        "distance_missing_value_policy": (
+            (
+                "pairwise complete observations; sqrt(sum((x-y)^2) / n_joint)"
+                if metric == "l2"
+                else "pairwise complete observations; sum(abs(x-y)) / n_joint"
+            )
+            if metric in {"l2", "l1"}
+            else None
+        ),
+        "nonfinite_clustering_distance_policy": "replace with the largest finite off-diagonal distance",
+        "cluster": bool(cluster),
+        "sample_exclude_requested": sample_selection["requested"],
+        "sample_exclude_applied": sample_selection["applied"],
+        "sample_exclude_unknown": sample_selection["unknown"],
+        "cut_by": cut_fields,
+        "metadata_fields": list(plot_metadata.columns),
+        "annotate": bool(annotate),
+        "annotation_layout": (
+            "metric value in upper triangle and diagonal; n = count in lower triangle"
+            if annotate
+            else None
+        ),
+        "n_features": int(matrix.shape[0]),
+        "n_samples": int(matrix.shape[1]),
+        "artifact_hash_contracts": {
+            "gctx": contracts["gctx"]["hash_contract"],
+            "pairwise_counts_tsv": contracts["tsv_hash"],
+        },
+        "artifact_hash_algorithms": {
+            "gctx": selected_content_hash_algorithm(),
+            "pairwise_counts_tsv": selected_content_hash_algorithm(),
+        },
+        "artifact_hashes": {
+            "input_matrix": read_gctx_content_hash(input_gctx),
+            "raw_metric": read_gctx_content_hash(raw_metric_gctx),
+            "distance_matrix": read_gctx_content_hash(distance_gctx),
+            "pairwise_counts": dataframe_content_hash(
+                metric_result.overlap_counts,
+                float_format="%.0f",
+            ),
+        },
+        "matrix_storage_dtype": "float64",
+        "embedded_sample_metadata_fields": list(full_metadata.columns.astype(str)),
+        "pairwise_counts_role": (
+            "jointly observed features in the sample-filtered masked logged source "
+            "matrix before any optional z-scoring"
+        ),
+        "artifacts": artifact_paths,
+        "plot_files": [outname + ext for ext in file_fmts],
+    }
+    Path(artifact_paths["settings"]).write_text(
+        json.dumps(settings, sort_keys=True, indent=2), encoding="utf-8"
+    )
+
+    fig_width, fig_height = figsize if figsize else (None, None)
+    written_plots = plot_correlation_heatmap(
+        metric_result.metric_matrix,
+        metric_result.clustering_distance_matrix,
+        metric_result.overlap_counts,
+        plot_metadata,
+        outname=outname,
+        metric=metric,
+        linkage=linkage,
+        z_score=bool(z_score),
+        z_score_by=z_score_fields,
+        cut_by=cut_fields,
+        cluster=bool(cluster),
+        annotate=bool(annotate),
+        file_fmts=file_fmts,
+        metadata_colors=data_obj.metadata_colors,
+        fig_width=fig_width,
+        fig_height=fig_height,
+        png_res=ctx.obj.get("png_res", 300),
+    )
+    click.echo("Wrote correlation input GCTX: " + artifact_paths["input_matrix"])
+    click.echo("Wrote correlation metric GCTX: " + artifact_paths["raw_metric"])
+    if artifact_paths["distance_matrix"] != artifact_paths["raw_metric"]:
+        click.echo(
+            "Wrote clustering distance GCTX: " + artifact_paths["distance_matrix"]
+        )
+    for plot_path in written_plots:
+        click.echo("Wrote correlation plot: " + plot_path)
+
+
 @main.command("export")
 @click.option(
     "--level",
@@ -2635,6 +3101,8 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_c
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
               `evidence` returns compact cells as PSMs|PeptideCount|PeptideCount_u2g
+              `zscore` returns the detection-aware z-score of masked log expression,
+              matching correlation and cluster2 preprocessing.
               """,
 )
 @click.option(
@@ -3903,6 +4371,47 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     help="Maximum PC to plot. Plots all combinations up to this number.",
 )
 @click.option(
+    "--test-by",
+    "--separation-by",
+    "pca_test_by",
+    multiple=True,
+    default=(),
+    help=(
+        "Metadata factor for opt-in heteroscedastic Welch-James tests of PCA "
+        "score separation; repeatable."
+    ),
+)
+@click.option(
+    "--test-pcs",
+    "--separation-pcs",
+    "pca_test_pcs",
+    multiple=True,
+    default=(),
+    help=(
+        "PCA score scope to test: displayed, leading (or the legacy alias all), "
+        "or a component set such as 1,2 or 1,2,3. Repeatable. Defaults to "
+        "displayed planes plus the largest commonly estimable leading-PC subset."
+    ),
+)
+@click.option(
+    "--test-adjust",
+    "pca_test_adjust",
+    type=click.Choice(
+        ["holm", "hochberg", "bonferroni", "bh", "none"],
+        case_sensitive=False,
+    ),
+    default="holm",
+    show_default=True,
+    help="Multiplicity adjustment for PCA-plane omnibus and pairwise tests.",
+)
+@click.option(
+    "--test-caption/--no-test-caption",
+    "pca_test_caption",
+    default=True,
+    show_default=True,
+    help="Add plane R2 and adjusted Welch-James results to displayed plot captions.",
+)
+@click.option(
     "--normalize-by",
     default=None,
     show_default=True,
@@ -3933,6 +4442,10 @@ def pca2(
     center,
     scale,
     max_pc,
+    pca_test_by,
+    pca_test_pcs,
+    pca_test_adjust,
+    pca_test_caption,
     color,
     marker,
     fillna,
@@ -3942,6 +4455,21 @@ def pca2(
     genefile,
 ):
     outname_kws = dict()
+    pca_test_by = tuple(
+        dict.fromkeys(str(value) for value in pca_test_by if str(value))
+    )
+    pca_test_pcs = tuple(str(value) for value in pca_test_pcs if str(value))
+    pca_test_adjust = str(pca_test_adjust).lower()
+    if pca_test_pcs and not pca_test_by:
+        raise click.UsageError("--test-pcs requires at least one --test-by metadata field")
+
+    if pca_test_by:
+        outname_kws["testby"] = pca_test_by
+        outname_kws["testadj"] = pca_test_adjust
+        if pca_test_pcs:
+            outname_kws["testpcs"] = pca_test_pcs
+        if not pca_test_caption:
+            outname_kws["testcap"] = False
     if show_loadings:
         # Only include in the name when enabled, so default output naming remains unchanged.
         outname_kws["load"] = True
@@ -3962,6 +4490,12 @@ def pca2(
     X.index = X.index.astype(str)
     X[data_obj.mask] = np.nan  # replace with nan, let pca2 subfunc handle nans
     col_meta = data_obj.col_metadata.copy()
+    missing_test_fields = [field for field in pca_test_by if field not in col_meta]
+    if missing_test_fields:
+        raise click.BadParameter(
+            "PCA test metadata field(s) not found: " + ", ".join(missing_test_fields),
+            param_hint="--test-by",
+        )
 
     genes = None
     if genefile:
@@ -4095,7 +4629,7 @@ def pca2(
     with localconverter(robjects.default_converter + pandas2ri.converter):  # no tuples
         dfm_r = conversion.py2rpy(dfm)
 
-    pca2_plots = pca2(
+    pca2_result = pca2(
         dfm_r,
         color=color or robjects.NULL,
         shape=marker or robjects.NULL,
@@ -4119,15 +4653,255 @@ def pca2(
         fig_width=figsize[0],
         fig_height=figsize[1],
         return_plots=True,
+        return_data=True,
+    )
+
+    pca2_plots = pca2_result.rx2("plots")
+    pca_mat_r = pca2_result.rx2("pca_mat")
+    pca_sample_ids = [str(value) for value in robjects.r["rownames"](pca_mat_r)]
+    pca_feature_ids = [str(value) for value in robjects.r["colnames"](pca_mat_r)]
+    pca_matrix = pd.DataFrame(
+        np.asarray(pca_mat_r, dtype=float),
+        index=pca_sample_ids,
+        columns=pca_feature_ids,
+    )
+    pca_scores_r = pca2_result.rx2("scores")
+    pca_score_ids = [str(value) for value in robjects.r["rownames"](pca_scores_r)]
+    pca_score_columns = [
+        str(value) for value in robjects.r["colnames"](pca_scores_r)
+    ]
+    pca_scores = pd.DataFrame(
+        np.asarray(pca_scores_r, dtype=float),
+        index=pca_score_ids,
+        columns=pca_score_columns,
+    )
+    scree_component_count = min(len(pca_score_columns), max(10, int(max_pc)))
+    pca2_scree_outname = get_outname(
+        "pca2",
+        name=data_obj.outpath_name,
+        taxon=data_obj.taxon,
+        non_zeros=data_obj.non_zeros,
+        batch=data_obj.batch_applied,
+        batch_method=(
+            "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+        ),
+        normtype=data_obj.normtype,
+        center=center,
+        scale=scale,
+        norm_by=normalize_by,
+        fillna=fillna,
+        genefile=outname_kws.get("genefile"),
+        scree=scree_component_count,
+        outpath=os.path.join(data_obj.outpath, "pca"),
+    )
+
+    replay_sample_metadata = col_meta.reindex(pca_sample_ids).copy()
+    if color in replay_sample_metadata:
+        replay_sample_metadata[color] = utils.normalize_metadata_str_values(
+            replay_sample_metadata[color]
+        )
+    if marker and marker in replay_sample_metadata:
+        replay_sample_metadata[marker] = replay_sample_metadata[marker].astype(str)
+
+    pca_test_context = {"enabled": False}
+    pca_test_artifacts = {
+        "omnibus": None,
+        "pairwise": None,
+        "settings": None,
+    }
+    if pca_test_by:
+        import json
+
+        from .pca_stats import (
+            analyze_pca_separation,
+            format_pca_test_caption,
+            resolve_pca_test_scopes,
+        )
+
+        try:
+            pca_test_scopes = resolve_pca_test_scopes(
+                pca_test_pcs,
+                scores=pca_scores,
+                max_pc=int(max_pc),
+            )
+            pca_test_omnibus, pca_test_pairwise = analyze_pca_separation(
+                pca_scores,
+                replay_sample_metadata,
+                group_fields=pca_test_by,
+                scopes=pca_test_scopes,
+                p_adjust_method=pca_test_adjust,
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+
+        omnibus_path = Path(pca2_outname + "_separation_omnibus.tsv")
+        pca_test_omnibus.to_csv(omnibus_path, sep="\t", index=False)
+        pca_test_artifacts["omnibus"] = str(omnibus_path)
+        if not pca_test_pairwise.empty:
+            pairwise_path = Path(pca2_outname + "_separation_pairwise.tsv")
+            pca_test_pairwise.to_csv(pairwise_path, sep="\t", index=False)
+            pca_test_artifacts["pairwise"] = str(pairwise_path)
+
+        resolved_scope_payload = [
+            {
+                "name": scope.name,
+                "pcs": list(scope.pcs),
+                "plot_key": scope.plot_key,
+                "selection": scope.selection,
+            }
+            for scope in pca_test_scopes
+        ]
+        pca_test_context = {
+            "enabled": True,
+            "schema_version": 3,
+            "method": "Johansen Welch-James approximate-df test",
+            "group_fields": list(pca_test_by),
+            "requested_scopes": list(pca_test_pcs),
+            "default_scope_policy": (
+                "displayed planes plus the largest commonly estimable leading-PC subset"
+            ),
+            "leading_scope_policy": (
+                "largest PC1..PCk block for which the omnibus and every required "
+                "pairwise Welch-James test are estimable; merge with an identical "
+                "displayed scope"
+            ),
+            "resolved_scopes": resolved_scope_payload,
+            "p_adjust_method": pca_test_adjust,
+            "omnibus_adjustment_family": "all requested scopes within each metadata factor",
+            "pairwise_adjustment_family": (
+                "group pairs within each scope; p_adj_all_scopes additionally covers "
+                "all group-pair by scope tests within each metadata factor"
+            ),
+            "r2_definition": "1 - Euclidean within-group SS / total SS on selected PCA scores",
+            "explained_variance_definition": (
+                "percentage of total PCA score variance represented by the exact "
+                "components in the test"
+            ),
+            "pairwise_geometry_definition": (
+                "centroid Euclidean distance; group RMS radii about their centroids; "
+                "pooled RMS radius = sqrt((radius_a^2 + radius_b^2) / 2); "
+                "standardized separation = centroid distance / pooled RMS radius"
+            ),
+            "score_source": "exact columns of stats::prcomp(..., center=FALSE, scale.=FALSE)$x",
+            "paired_or_blocked_design": False,
+            "singular_covariance_policy": (
+                "report not estimable; never use a pseudoinverse or regularized covariance"
+            ),
+            "artifacts": pca_test_artifacts,
+        }
+        settings_path = Path(pca2_outname + "_separation_settings.json")
+        pca_test_artifacts["settings"] = str(settings_path)
+        settings_path.write_text(
+            json.dumps(pca_test_context, sort_keys=True, indent=2),
+            encoding="utf-8",
+        )
+
+        if pca_test_caption:
+            captions = {}
+            for scope in pca_test_scopes:
+                if not scope.plot_key:
+                    continue
+                rows = pca_test_omnibus.loc[
+                    pca_test_omnibus["scope"] == scope.name
+                ]
+                if not rows.empty:
+                    captions[scope.plot_key] = format_pca_test_caption(rows)
+            if captions:
+                caption_vector = robjects.StrVector(list(captions.values()))
+                caption_vector.names = robjects.StrVector(list(captions))
+                add_test_captions = robjects.r(
+                    """
+                    function(plots, captions) {
+                      for (nm in intersect(names(plots), names(captions))) {
+                        existing <- plots[[nm]]$labels$caption
+                        caption <- captions[[nm]]
+                        if (!is.null(existing) && length(existing) > 0 &&
+                            !is.na(existing[[1]]) && nzchar(existing[[1]])) {
+                          caption <- paste(existing[[1]], caption, sep = "\\n")
+                        }
+                        plots[[nm]] <- plots[[nm]] +
+                          ggplot2::labs(caption = caption) +
+                          ggplot2::theme(
+                            plot.caption.position = "plot",
+                            plot.caption = ggplot2::element_text(hjust = 0)
+                          )
+                      }
+                      plots
+                    }
+                    """
+                )
+                pca2_plots = add_test_captions(pca2_plots, caption_vector)
+
+    from .pca_replay import write_pca2_replay
+
+    pca_replay_files = write_pca2_replay(
+        pca_matrix=pca_matrix,
+        sample_metadata=replay_sample_metadata,
+        feature_symbols=data_obj.gid_symbol or {},
+        pca2_outname=pca2_outname,
+        analysis_outpath=data_obj.outpath,
+        preprocessing={
+            "source_matrix": "data_obj.areas_log_shifted with data_obj.mask restored to NA",
+            "fillna": fillna,
+            "center": bool(center),
+            "scale": bool(scale),
+            "normalize_by": normalize_by,
+            "genefile": str(genefile) if genefile else None,
+            "selected_feature_count": int(pca_matrix.shape[1]),
+            "capture_stage": "after fillna and requested center/scale; immediately before prcomp",
+        },
+        plot_parameters={
+            "annotate": bool(annotate),
+            "color": color,
+            "marker": marker,
+            "encircle": bool(encircle),
+            "frame": bool(frame),
+            "max_pc": int(max_pc),
+            "show_loadings": bool(show_loadings),
+            "ntop_loadings": int(ntop_loadings),
+            "figsize": [float(figsize[0]), float(figsize[1])],
+            "file_formats": list(file_fmts),
+            "title": outname_kws.get("genefile"),
+        },
+        data_parameters={
+            "analysis_name": data_obj.outpath_name,
+            "taxon": str(data_obj.taxon),
+            "non_zeros": data_obj.non_zeros,
+            "unique_pepts": data_obj.unique_pepts,
+            "normtype": data_obj.normtype,
+            "fill_na_zero": bool(data_obj.fill_na_zero),
+            "impute_missing_values": bool(data_obj.impute_missing_values),
+            "imputation_backend": data_obj.imputation_backend,
+            "gaussian_method": data_obj.gaussian_method,
+            "lupine_mode": data_obj.lupine_mode,
+            "normalize_across_species": bool(data_obj.normalize_across_species),
+            "batch": data_obj.batch_applied,
+            "batch_method": (
+                "parametric" if not data_obj.batch_nonparametric else "nonparametric"
+            ),
+        },
+        metadata_colors={color: themapping} if color and themapping else {},
+        separation_testing=pca_test_context,
     )
 
     r_print = robjects.r["print"]
     grdevices = importr("grDevices")
     plot_items = iter_named_items(pca2_plots)
+    written_shared_scree_paths = ctx.obj.setdefault(
+        "_pca2_written_shared_scree_paths", set()
+    )
 
     for plot_name, plot_obj in plot_items:
         for file_fmt in file_fmts:
-            out = f"{pca2_outname}{plot_name}{file_fmt}"
+            plot_outname = (
+                pca2_scree_outname
+                if plot_name == "scree"
+                else f"{pca2_outname}{plot_name}"
+            )
+            out = f"{plot_outname}{file_fmt}"
+            if plot_name == "scree" and out in written_shared_scree_paths:
+                logger.info("Reusing shared PCA scree plot: %s", out)
+                continue
             grdevice = grdevice_helper.get_device(
                 filetype=file_fmt,
                 width=figsize[0],
@@ -4139,6 +4913,14 @@ def pca2(
                 r_print(plot_obj)
             finally:
                 grdevices.dev_off()
+            if plot_name == "scree":
+                written_shared_scree_paths.add(out)
+
+    click.echo(f"Wrote pca2 replay: {pca_replay_files.replay_dir}")
+    if pca_test_artifacts["omnibus"]:
+        click.echo(f"Wrote PCA separation omnibus tests: {pca_test_artifacts['omnibus']}")
+    if pca_test_artifacts["pairwise"]:
+        click.echo(f"Wrote PCA separation pairwise tests: {pca_test_artifacts['pairwise']}")
 
     telemetry = ctx.obj.get("telemetry") if ctx.obj else None
     if telemetry is not None:
@@ -4172,6 +4954,12 @@ def pca2(
                     "center": center,
                     "scale": scale,
                     "normalize_by": normalize_by,
+                    "replay_dir": str(pca_replay_files.replay_dir),
+                    "separation_testing": bool(pca_test_by),
+                    "separation_group_fields": list(pca_test_by),
+                    "separation_requested_scopes": list(pca_test_pcs),
+                    "separation_p_adjust_method": pca_test_adjust,
+                    "separation_artifacts": pca_test_artifacts,
                 },
             )
         except Exception as e:
