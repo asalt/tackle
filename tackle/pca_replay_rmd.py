@@ -109,8 +109,9 @@ knitr::kable(head(scores_df, 10))
 
 When separation testing was requested, these tables recompute the descriptive
 Euclidean R2 and Johansen Welch-James approximate-df tests from the exact PCA
-score columns. Pairwise rows are produced only for factors having more than two
-levels. This is an independent-samples test; no pairing or blocking is inferred.
+score columns. Pairwise rows are produced for every factor having at least two
+levels, including the sole comparison for a two-level factor. This is an
+independent-samples test; no pairing or blocking is inferred.
 The default `leading` scope is reduced to the largest PC1 through PCk block for
 which both the omnibus test and every required pairwise test are estimable. The
 `explained_variance_pct` column is the percentage of total PCA variance carried
@@ -127,6 +128,7 @@ separation_enabled <- !is.null(separation_config$enabled) &&
 separation_omnibus <- data.frame()
 separation_pairwise <- data.frame()
 separation_caption_by_plot <- character()
+separation_summary_plots <- list()
 
 if (separation_enabled) {
   source("pca_stats.R", local = TRUE)
@@ -158,15 +160,71 @@ if (separation_enabled) {
     scope_name <- as.character(unlist(scope$name, use.names = FALSE)[[1]])
     if (length(plot_key) == 1 && !is.na(plot_key) && nzchar(plot_key)) {
       rows <- separation_omnibus[separation_omnibus$scope == scope_name, , drop = FALSE]
-      separation_caption_by_plot[[plot_key]] <- pca_format_test_caption(rows)
+      pair_rows <- separation_pairwise[
+        separation_pairwise$scope == scope_name,
+        ,
+        drop = FALSE
+      ]
+      separation_caption_by_plot[[plot_key]] <- pca_format_test_caption(
+        rows,
+        pair_rows
+      )
     }
   }
 
-  cat("### Omnibus tests\n\n")
+  cat("### Omnibus factor-level tests\n\n")
   print(knitr::kable(separation_omnibus, digits = 4))
   if (nrow(separation_pairwise) > 0) {
-    cat("\n\n### Adjusted pairwise tests\n\n")
+    cat("\n\n### Pairwise comparisons\n\n")
     print(knitr::kable(separation_pairwise, digits = 4))
+
+    cat("\n\n### Pairwise separation summaries\n\n")
+    safe_name <- function(value) gsub("[^A-Za-z0-9._-]+", "_", value)
+    summary_formats <- as.character(
+      unlist(ctx$plot_parameters$file_formats, use.names = FALSE)
+    )
+    if (length(summary_formats) == 0) summary_formats <- ".png"
+    for (field in unique(separation_pairwise$group_field)) {
+      for (scope_name in unique(separation_pairwise$scope)) {
+        pair_rows <- separation_pairwise[
+          separation_pairwise$group_field == field &
+            separation_pairwise$scope == scope_name,
+          ,
+          drop = FALSE
+        ]
+        finite_geometry <- is.finite(pair_rows$centroid_distance) &
+          is.finite(pair_rows$pooled_rms_radius) &
+          is.finite(pair_rows$standardized_separation)
+        pair_rows <- pair_rows[finite_geometry, , drop = FALSE]
+        if (nrow(pair_rows) == 0 || length(unique(pair_rows$n_pcs)) != 1 ||
+            unique(pair_rows$n_pcs) != 2) {
+          next
+        }
+        plot_name <- paste(
+          "separation",
+          safe_name(field),
+          safe_name(scope_name),
+          sep = "_"
+        )
+        summary_plot <- pca_plot_pairwise_separation(
+          pair_rows,
+          group_field = field,
+          scope = scope_name
+        )
+        separation_summary_plots[[plot_name]] <- summary_plot
+        print(summary_plot)
+        for (ext in summary_formats) {
+          ggplot2::ggsave(
+            file.path(out_dir, paste0("pca_", plot_name, ext)),
+            summary_plot,
+            width = 12.5,
+            height = 7.2,
+            dpi = 320,
+            bg = "white"
+          )
+        }
+      }
+    }
   }
 } else {
   cat("Separation testing was not enabled for the captured `pca2` invocation.\n")

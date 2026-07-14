@@ -98,6 +98,8 @@ def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
     assert "pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))" in rmd
     assert 'source("pca_stats.R", local = TRUE)' in rmd
     assert "pca_analyze_separation" in rmd
+    assert "pca_plot_pairwise_separation" in rmd
+    assert "including the sole comparison for a two-level factor" in rmd
     assert 'plot.caption.position = "plot"' in rmd
     assert "fillna_func" not in rmd
     assert "safe_scale" not in rmd

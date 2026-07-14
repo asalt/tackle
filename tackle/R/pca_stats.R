@@ -352,20 +352,12 @@ pca_analyze_separation <- function(
       group <- selected_data$group
       levels <- selected_data$levels
       test <- pca_welch_james(selected, group)
-      geometry <- pca_pairwise_centroid_geometry(selected, group)
       omnibus_rows[[length(omnibus_rows) + 1L]] <- data.frame(
         group_field = field,
         scope = scope_name,
         pcs = paste(pcs, collapse = ","),
         n_pcs = length(pcs),
         explained_variance_pct = explained_variance_pct(pcs),
-        geometry_group_a = geometry$geometry_group_a,
-        geometry_group_b = geometry$geometry_group_b,
-        centroid_distance = geometry$centroid_distance,
-        rms_radius_a = geometry$rms_radius_a,
-        rms_radius_b = geometry$rms_radius_b,
-        pooled_rms_radius = geometry$pooled_rms_radius,
-        standardized_separation = geometry$standardized_separation,
         n_samples = nrow(selected),
         n_groups = length(levels),
         group_sizes = .pca_group_sizes(group),
@@ -382,7 +374,7 @@ pca_analyze_separation <- function(
         stringsAsFactors = FALSE
       )
 
-      if (length(levels) <= 2) next
+      if (length(levels) < 2) next
       combinations <- utils::combn(levels, 2, simplify = FALSE)
       for (pair in combinations) {
         pair_keep <- group %in% pair
@@ -459,7 +451,7 @@ pca_analyze_separation <- function(
   if (key %in% names(labels)) unname(labels[[key]]) else paste0(method, "-adjusted p")
 }
 
-pca_format_test_caption <- function(rows) {
+pca_format_test_caption <- function(rows, pairwise_rows = data.frame()) {
   if (nrow(rows) == 0) return("")
   lines <- vapply(seq_len(nrow(rows)), function(index) {
     row <- rows[index, , drop = FALSE]
@@ -478,18 +470,270 @@ pca_format_test_caption <- function(rows) {
     } else {
       paste0(prefix, "; WJ not estimable (", row$status, ")")
     }
-    if ("standardized_separation" %in% colnames(row) &&
-        is.finite(row$standardized_separation[[1]])) {
+    geometry_rows <- pairwise_rows
+    for (key in c("group_field", "scope")) {
+      if (key %in% colnames(geometry_rows) && key %in% colnames(row)) {
+        geometry_rows <- geometry_rows[
+          geometry_rows[[key]] == row[[key]][[1]],
+          ,
+          drop = FALSE
+        ]
+      }
+    }
+    if (nrow(geometry_rows) == 1 &&
+        is.finite(geometry_rows$standardized_separation[[1]])) {
+      geometry <- geometry_rows[1, , drop = FALSE]
       line <- paste0(
         line,
-        "\nCentroid distance = ", sprintf("%.2f", row$centroid_distance),
-        "\nRMS radii (", row$geometry_group_a, ", ", row$geometry_group_b, ") = ",
-        sprintf("%.2f", row$rms_radius_a), ", ", sprintf("%.2f", row$rms_radius_b),
+        "\nCentroid distance = ", sprintf("%.2f", geometry$centroid_distance),
+        "\nRMS radii (", geometry$group_a, ", ", geometry$group_b, ") = ",
+        sprintf("%.2f", geometry$rms_radius_a), ", ",
+        sprintf("%.2f", geometry$rms_radius_b),
         "\nStandardized separation = ",
-        sprintf("%.2f", row$standardized_separation)
+        sprintf("%.2f", geometry$standardized_separation)
       )
     }
     line
   }, character(1))
   paste(lines, collapse = "\n")
+}
+
+.pca_plot_adjustment_label <- function(method) {
+  key <- tolower(gsub("-", "_", trimws(as.character(method))))
+  labels <- c(
+    none = "Unadjusted",
+    raw = "Unadjusted",
+    holm = "Holm-adjusted",
+    hochberg = "Hochberg-adjusted",
+    bonferroni = "Bonferroni-adjusted",
+    bh = "BH-adjusted",
+    fdr_bh = "BH-adjusted"
+  )
+  if (key %in% names(labels)) unname(labels[[key]]) else paste0(method, "-adjusted")
+}
+
+.pca_plot_pvalue <- function(value, adjusted = TRUE) {
+  if (!is.finite(value)) return("not estimable")
+  prefix <- if (isTRUE(adjusted)) "p(adj) = " else "p = "
+  if (value < 0.001) {
+    return(paste0(prefix, formatC(value, format = "e", digits = 1)))
+  }
+  paste0(prefix, sprintf("%.3f", value))
+}
+
+pca_plot_pairwise_separation <- function(pairwise_rows, group_field = NULL, scope = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE) ||
+      !requireNamespace("ggrepel", quietly = TRUE) ||
+      !requireNamespace("patchwork", quietly = TRUE)) {
+    stop("Pairwise PCA separation plots require ggplot2, ggrepel, and patchwork.")
+  }
+
+  pairwise <- as.data.frame(
+    pairwise_rows,
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  if (!is.null(group_field)) {
+    pairwise <- pairwise[pairwise$group_field == group_field, , drop = FALSE]
+  }
+  if (!is.null(scope)) {
+    pairwise <- pairwise[pairwise$scope == scope, , drop = FALSE]
+  }
+  required <- c(
+    "group_field", "scope", "pcs", "explained_variance_pct", "group_a",
+    "group_b", "centroid_distance", "pooled_rms_radius",
+    "standardized_separation", "r2", "p_adjust_method", "p_adj", "status"
+  )
+  missing <- setdiff(required, colnames(pairwise))
+  if (length(missing) > 0) {
+    stop("Pairwise PCA table is missing: ", paste(missing, collapse = ", "))
+  }
+  keep <- is.finite(pairwise$centroid_distance) &
+    is.finite(pairwise$pooled_rms_radius) &
+    is.finite(pairwise$standardized_separation)
+  pairwise <- pairwise[keep, , drop = FALSE]
+  if (nrow(pairwise) == 0) {
+    stop("No finite pairwise PCA geometry is available for this plot.")
+  }
+
+  adjustment_method <- unique(pairwise$p_adjust_method)
+  adjustment_method <- adjustment_method[!is.na(adjustment_method)]
+  adjustment_method <- if (length(adjustment_method)) adjustment_method[[1]] else "none"
+  adjustment_label <- .pca_plot_adjustment_label(adjustment_method)
+  significant_label <- if (tolower(adjustment_method) %in% c("none", "raw")) {
+    "p < 0.05"
+  } else {
+    paste0(adjustment_label, " p < 0.05")
+  }
+  pairwise$significance <- ifelse(
+    pairwise$status != "ok" | !is.finite(pairwise$p_adj),
+    "Test not estimable",
+    ifelse(pairwise$p_adj < 0.05, significant_label, "Not significant")
+  )
+  pairwise$significance <- factor(
+    pairwise$significance,
+    levels = c(significant_label, "Not significant", "Test not estimable")
+  )
+  pairwise$pair <- paste(pairwise$group_a, pairwise$group_b, sep = " vs ")
+  values_are_adjusted <- !tolower(adjustment_method) %in% c("none", "raw")
+  pairwise$p_label <- vapply(
+    pairwise$p_adj,
+    .pca_plot_pvalue,
+    character(1),
+    adjusted = values_are_adjusted
+  )
+  pairwise$pair_ranked <- stats::reorder(
+    pairwise$pair,
+    pairwise$standardized_separation
+  )
+
+  palette <- c(
+    "Not significant" = "#566573",
+    "Test not estimable" = "#999999"
+  )
+  palette[[significant_label]] <- "#D55E00"
+
+  x_max <- max(pairwise$pooled_rms_radius, na.rm = TRUE) * 1.18
+  y_max <- max(pairwise$centroid_distance, na.rm = TRUE) * 1.12
+  if (!is.finite(x_max) || x_max <= 0) x_max <- 1
+  if (!is.finite(y_max) || y_max <= 0) y_max <- 1
+  reference_rays <- data.frame(separation = c(0.5, 1, 1.5, 2))
+  reference_rays$x <- x_max * 0.27
+  reference_rays$y <- reference_rays$x * reference_rays$separation
+  reference_rays$label <- paste0("S = ", reference_rays$separation)
+
+  geometry_plot <- ggplot2::ggplot(
+    pairwise,
+    ggplot2::aes(x = pooled_rms_radius, y = centroid_distance)
+  ) +
+    ggplot2::geom_abline(
+      data = reference_rays,
+      ggplot2::aes(slope = separation, intercept = 0),
+      inherit.aes = FALSE,
+      linewidth = 0.35,
+      linetype = "dashed",
+      color = "grey72"
+    ) +
+    ggplot2::geom_text(
+      data = reference_rays,
+      ggplot2::aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      color = "grey48",
+      size = 3,
+      hjust = -0.10,
+      vjust = -0.35
+    ) +
+    ggplot2::geom_point(
+      ggplot2::aes(color = significance, size = r2),
+      alpha = 0.95
+    ) +
+    ggrepel::geom_text_repel(
+      ggplot2::aes(label = pair, color = significance),
+      size = 3.35,
+      fontface = "bold",
+      seed = 1634,
+      box.padding = 0.45,
+      point.padding = 0.35,
+      min.segment.length = 0,
+      segment.color = "grey55",
+      show.legend = FALSE
+    ) +
+    ggplot2::scale_color_manual(values = palette, drop = TRUE) +
+    ggplot2::scale_size_continuous(
+      name = expression(Plane~R^2),
+      range = c(3.5, 8),
+      labels = function(values) sprintf("%.2f", values)
+    ) +
+    ggplot2::coord_cartesian(
+      xlim = c(0, x_max),
+      ylim = c(0, y_max),
+      clip = "off"
+    ) +
+    ggplot2::labs(
+      title = "Distance relative to within-group spread",
+      x = "Pooled RMS radius",
+      y = "Centroid distance"
+    ) +
+    ggplot2::theme_bw(base_size = 11.5) +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      legend.position = "bottom",
+      plot.title = ggplot2::element_text(face = "bold", size = 12.5),
+      plot.margin = ggplot2::margin(6, 20, 6, 6)
+    )
+
+  separation_x_max <- max(pairwise$standardized_separation, na.rm = TRUE) * 1.52
+  if (!is.finite(separation_x_max) || separation_x_max <= 0) separation_x_max <- 1
+  separation_plot <- ggplot2::ggplot(
+    pairwise,
+    ggplot2::aes(y = pair_ranked, x = standardized_separation)
+  ) +
+    ggplot2::geom_vline(
+      xintercept = 1,
+      linewidth = 0.4,
+      linetype = "dashed",
+      color = "grey65"
+    ) +
+    ggplot2::geom_segment(
+      ggplot2::aes(x = 0, xend = standardized_separation, yend = pair_ranked),
+      linewidth = 0.75,
+      color = "grey78"
+    ) +
+    ggplot2::geom_point(ggplot2::aes(color = significance), size = 4) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = p_label, color = significance),
+      hjust = -0.12,
+      size = 3.05,
+      show.legend = FALSE
+    ) +
+    ggplot2::scale_color_manual(values = palette, drop = TRUE, guide = "none") +
+    ggplot2::scale_x_continuous(
+      limits = c(0, separation_x_max),
+      expand = ggplot2::expansion(mult = c(0, 0.02))
+    ) +
+    ggplot2::labs(
+      title = "Standardized separation",
+      x = "Centroid distance / pooled RMS radius",
+      y = NULL
+    ) +
+    ggplot2::theme_bw(base_size = 11.5) +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major.y = ggplot2::element_blank(),
+      legend.position = "bottom",
+      plot.title = ggplot2::element_text(face = "bold", size = 12.5)
+    )
+
+  pcs <- strsplit(as.character(pairwise$pcs[[1]]), ",", fixed = TRUE)[[1]]
+  plane_label <- paste(pcs, collapse = " vs ")
+  variance <- unique(pairwise$explained_variance_pct)
+  variance <- variance[is.finite(variance)]
+  variance_text <- if (length(variance) == 1) {
+    paste0(sprintf("%.1f", variance), "% cumulative variance")
+  } else {
+    "cumulative variance unavailable"
+  }
+  field_label <- unique(as.character(pairwise$group_field))
+  field_label <- if (length(field_label) == 1) {
+    paste0("Grouping: ", field_label)
+  } else {
+    "Pairwise groups"
+  }
+
+  geometry_plot + separation_plot +
+    patchwork::plot_layout(widths = c(1.15, 1), guides = "collect") +
+    patchwork::plot_annotation(
+      title = paste0(plane_label, " pairwise group separation"),
+      subtitle = paste(
+        variance_text,
+        paste0(adjustment_label, " within-plane tests"),
+        field_label,
+        sep = "  |  "
+      ),
+      theme = ggplot2::theme(
+        plot.title = ggplot2::element_text(face = "bold", size = 17),
+        plot.subtitle = ggplot2::element_text(size = 11.5, color = "grey30")
+      )
+    ) &
+    ggplot2::theme(legend.position = "bottom")
 }

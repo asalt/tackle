@@ -395,6 +395,38 @@ def _group_sizes_text(groups: pd.Series) -> str:
     return ";".join(f"{level}={int(count)}" for level, count in counts.items())
 
 
+def _empty_pairwise_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "group_field",
+            "scope",
+            "pcs",
+            "n_pcs",
+            "explained_variance_pct",
+            "group_a",
+            "group_b",
+            "n_a",
+            "n_b",
+            "centroid_distance",
+            "rms_radius_a",
+            "rms_radius_b",
+            "pooled_rms_radius",
+            "standardized_separation",
+            "r2",
+            "welch_james_f",
+            "numerator_df",
+            "denominator_df",
+            "p_value",
+            "p_adjust_method",
+            "p_adj",
+            "p_adj_all_scopes",
+            "status",
+            "message",
+            "method",
+        ]
+    )
+
+
 def _select_scope_data(
     score_frame: pd.DataFrame,
     group_series: pd.Series,
@@ -506,16 +538,12 @@ def analyze_pca_separation(
             )
             values = selected.to_numpy(dtype=float)
             result = welch_james_test(values, groups.to_numpy(dtype=object))
-            geometry = pairwise_centroid_geometry(
-                values, groups.to_numpy(dtype=object)
-            )
             row = {
                 "group_field": str(field),
                 "scope": scope.name,
                 "pcs": ",".join(scope.pcs),
                 "n_pcs": len(scope.pcs),
                 "explained_variance_pct": explained_variance_pct(scope.pcs),
-                **geometry,
                 "n_samples": int(len(selected)),
                 "n_groups": int(len(levels)),
                 "group_sizes": _group_sizes_text(groups),
@@ -532,7 +560,7 @@ def analyze_pca_separation(
             }
             omnibus_rows.append(row)
 
-            if len(levels) <= 2:
+            if len(levels) < 2:
                 continue
             scope_pairwise_start = len(pairwise_rows)
             for left, right in combinations(levels, 2):
@@ -605,7 +633,10 @@ def analyze_pca_separation(
         ):
             pair_row["p_adj_all_scopes"] = p_adj
 
-    return pd.DataFrame(omnibus_rows), pd.DataFrame(pairwise_rows)
+    pairwise_frame = (
+        pd.DataFrame(pairwise_rows) if pairwise_rows else _empty_pairwise_frame()
+    )
+    return pd.DataFrame(omnibus_rows), pairwise_frame
 
 
 def _p_adjustment_caption_label(method: object) -> str:
@@ -622,7 +653,10 @@ def _p_adjustment_caption_label(method: object) -> str:
     return labels.get(key, f"{str(method).strip()}-adjusted p")
 
 
-def format_pca_test_caption(rows: pd.DataFrame) -> str:
+def format_pca_test_caption(
+    rows: pd.DataFrame,
+    pairwise_rows: pd.DataFrame | None = None,
+) -> str:
     """Format compact plot-caption lines for one displayed PCA plane."""
 
     lines: list[str] = []
@@ -639,12 +673,23 @@ def format_pca_test_caption(rows: pd.DataFrame) -> str:
             )
         else:
             line = prefix + f"; WJ not estimable ({row.get('status')})"
-        if np.isfinite(row.get("standardized_separation", np.nan)):
+        geometry_row: dict[str, object] | None = None
+        if pairwise_rows is not None and not pairwise_rows.empty:
+            candidates = pairwise_rows
+            for key in ("group_field", "scope"):
+                if key in candidates.columns and key in row:
+                    candidates = candidates.loc[candidates[key] == row[key]]
+            if len(candidates) == 1:
+                geometry_row = candidates.iloc[0].to_dict()
+        if geometry_row is not None and np.isfinite(
+            geometry_row.get("standardized_separation", np.nan)
+        ):
             line += (
-                f"\nCentroid distance = {row['centroid_distance']:.2f}"
-                f"\nRMS radii ({row['geometry_group_a']}, {row['geometry_group_b']}) = "
-                f"{row['rms_radius_a']:.2f}, {row['rms_radius_b']:.2f}"
-                f"\nStandardized separation = {row['standardized_separation']:.2f}"
+                f"\nCentroid distance = {geometry_row['centroid_distance']:.2f}"
+                f"\nRMS radii ({geometry_row['group_a']}, {geometry_row['group_b']}) = "
+                f"{geometry_row['rms_radius_a']:.2f}, {geometry_row['rms_radius_b']:.2f}"
+                "\nStandardized separation = "
+                f"{geometry_row['standardized_separation']:.2f}"
             )
         lines.append(line)
     return "\n".join(lines)

@@ -53,14 +53,13 @@ caption_row <- data.frame(
   p_adjust_method = 'holm'
 )
 stopifnot(grepl('Holm-adjusted p=0.0123', pca_format_test_caption(caption_row), fixed = TRUE))
-caption_row$geometry_group_a <- 'A'
-caption_row$geometry_group_b <- 'B'
-caption_row$centroid_distance <- 0.63
-caption_row$rms_radius_a <- 0.18
-caption_row$rms_radius_b <- 0.14
-caption_row$pooled_rms_radius <- sqrt((0.18^2 + 0.14^2) / 2)
-caption_row$standardized_separation <- 3.85
-geometry_caption <- pca_format_test_caption(caption_row)
+caption_pairwise <- data.frame(
+  group_a = 'A', group_b = 'B', centroid_distance = 0.63,
+  rms_radius_a = 0.18, rms_radius_b = 0.14,
+  pooled_rms_radius = sqrt((0.18^2 + 0.14^2) / 2),
+  standardized_separation = 3.85
+)
+geometry_caption <- pca_format_test_caption(caption_row, caption_pairwise)
 stopifnot(
   grepl('Centroid distance = 0.63', geometry_caption, fixed = TRUE),
   grepl('RMS radii (A, B) = 0.18, 0.14', geometry_caption, fixed = TRUE),
@@ -103,6 +102,31 @@ stopifnot(
   all(adaptive$pairwise$n_pcs == 2),
   all(adaptive$pairwise$status == 'ok')
 )
+
+two_group_scores <- adaptive_scores[1:6, 1:2, drop = FALSE]
+two_group_metadata <- data.frame(
+  group = rep(c('A', 'B'), each = 3),
+  row.names = rownames(two_group_scores)
+)
+two_group <- pca_analyze_separation(
+  two_group_scores,
+  two_group_metadata,
+  'group',
+  list(list(
+    name = 'PC1_PC2', pcs = c('PC1', 'PC2'),
+    plot_key = 'pc1_vs_pc2', selection = 'displayed'
+  )),
+  'holm'
+)
+stopifnot(
+  nrow(two_group$omnibus) == 1,
+  !'centroid_distance' %in% colnames(two_group$omnibus),
+  nrow(two_group$pairwise) == 1,
+  two_group$pairwise$group_a[[1]] == 'A',
+  two_group$pairwise$group_b[[1]] == 'B',
+  isTRUE(all.equal(two_group$pairwise$p_adj[[1]], two_group$pairwise$p_value[[1]])),
+  is.finite(two_group$pairwise$standardized_separation[[1]])
+)
 """
     result = subprocess.run(
         [rscript, "-e", code],
@@ -110,3 +134,62 @@ stopifnot(
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr + result.stdout
+
+
+def test_r_pairwise_separation_plot_is_renderable(tmp_path: Path):
+    rscript = shutil.which("Rscript")
+    if not rscript:
+        pytest.skip("Rscript is not available")
+
+    package_check = subprocess.run(
+        [
+            rscript,
+            "-e",
+            "; ".join(
+                f"stopifnot(requireNamespace('{package}', quietly=TRUE))"
+                for package in ("ggplot2", "ggrepel", "patchwork")
+            ),
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if package_check.returncode != 0:
+        pytest.skip("Required PCA separation plotting packages are not installed")
+
+    r_file = Path(__file__).resolve().parents[2] / "tackle" / "R" / "pca_stats.R"
+    output = tmp_path / "pairwise-separation.png"
+    code = f"""
+source({json.dumps(str(r_file))})
+pairwise <- data.frame(
+  group_field = rep('group', 3),
+  scope = rep('PC1_PC2', 3),
+  pcs = rep('PC1,PC2', 3),
+  n_pcs = rep(2, 3),
+  explained_variance_pct = rep(42.5, 3),
+  group_a = c('A', 'A', 'B'),
+  group_b = c('B', 'C', 'C'),
+  centroid_distance = c(8, 5, 3),
+  pooled_rms_radius = c(2, 4, 5),
+  standardized_separation = c(4, 1.25, 0.6),
+  r2 = c(0.7, 0.3, 0.1),
+  p_adjust_method = rep('holm', 3),
+  p_adj = c(0.003, 0.08, 0.5),
+  status = rep('ok', 3)
+)
+plot <- pca_plot_pairwise_separation(
+  pairwise, group_field = 'group', scope = 'PC1_PC2'
+)
+stopifnot(inherits(plot, 'patchwork'))
+ggplot2::ggsave(
+  {json.dumps(str(output))}, plot,
+  width = 12.5, height = 7.2, dpi = 72, bg = 'white'
+)
+stopifnot(file.exists({json.dumps(str(output))}))
+"""
+    result = subprocess.run(
+        [rscript, "-e", code],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert output.stat().st_size > 0

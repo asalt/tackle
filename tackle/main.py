@@ -4378,7 +4378,8 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     default=(),
     help=(
         "Metadata factor for opt-in heteroscedastic Welch-James tests of PCA "
-        "score separation; repeatable."
+        "score separation; repeatable. Writes a factor-level omnibus table, "
+        "an all-pairs plotting table, and displayed-plane separation summaries."
     ),
 )
 @click.option(
@@ -4707,8 +4708,10 @@ def pca2(
     pca_test_artifacts = {
         "omnibus": None,
         "pairwise": None,
+        "summary_plots": [],
         "settings": None,
     }
+    pca_test_plot_items = []
     if pca_test_by:
         import json
 
@@ -4742,6 +4745,68 @@ def pca2(
             pca_test_pairwise.to_csv(pairwise_path, sep="\t", index=False)
             pca_test_artifacts["pairwise"] = str(pairwise_path)
 
+            required_plot_packages = ("ggplot2", "ggrepel", "patchwork")
+            require_namespace = robjects.r["requireNamespace"]
+            missing_plot_packages = [
+                package
+                for package in required_plot_packages
+                if not bool(require_namespace(package, quietly=True)[0])
+            ]
+            if missing_plot_packages:
+                logger.warning(
+                    "Skipping PCA separation summary plots; missing R package(s): %s",
+                    ", ".join(missing_plot_packages),
+                )
+            else:
+                pca_stats_r_file = os.path.join(
+                    os.path.split(os.path.abspath(__file__))[0],
+                    "R",
+                    "pca_stats.R",
+                )
+                r_source(pca_stats_r_file)
+                make_pairwise_plot = robjects.r["pca_plot_pairwise_separation"]
+                multiple_test_fields = len(pca_test_by) > 1
+                for scope in pca_test_scopes:
+                    if not scope.plot_key:
+                        continue
+                    for field in pca_test_by:
+                        plot_rows = pca_test_pairwise.loc[
+                            (pca_test_pairwise["group_field"] == field)
+                            & (pca_test_pairwise["scope"] == scope.name)
+                        ].copy()
+                        finite_geometry = np.isfinite(
+                            plot_rows[
+                                [
+                                    "centroid_distance",
+                                    "pooled_rms_radius",
+                                    "standardized_separation",
+                                ]
+                            ]
+                        ).all(axis=1)
+                        plot_rows = plot_rows.loc[finite_geometry]
+                        if plot_rows.empty:
+                            continue
+                        with localconverter(
+                            robjects.default_converter + pandas2ri.converter
+                        ):
+                            plot_rows_r = conversion.py2rpy(plot_rows)
+                        plot_obj = make_pairwise_plot(
+                            plot_rows_r,
+                            group_field=str(field),
+                            scope=scope.name,
+                        )
+                        field_token = (
+                            f"_{fix_name(str(field))}" if multiple_test_fields else ""
+                        )
+                        plot_name = f"_separation{field_token}_{scope.name}"
+                        pca_test_plot_items.append(
+                            (plot_name, plot_obj, 12.5, 7.2)
+                        )
+                        pca_test_artifacts["summary_plots"].extend(
+                            f"{pca2_outname}{plot_name}{file_fmt}"
+                            for file_fmt in file_fmts
+                        )
+
         resolved_scope_payload = [
             {
                 "name": scope.name,
@@ -4753,7 +4818,7 @@ def pca2(
         ]
         pca_test_context = {
             "enabled": True,
-            "schema_version": 3,
+            "schema_version": 4,
             "method": "Johansen Welch-James approximate-df test",
             "group_fields": list(pca_test_by),
             "requested_scopes": list(pca_test_pcs),
@@ -4769,9 +4834,17 @@ def pca2(
             "p_adjust_method": pca_test_adjust,
             "omnibus_adjustment_family": "all requested scopes within each metadata factor",
             "pairwise_adjustment_family": (
-                "group pairs within each scope; p_adj_all_scopes additionally covers "
-                "all group-pair by scope tests within each metadata factor"
+                "all group pairs within each scope, including the sole pair for a "
+                "two-level factor; p_adj_all_scopes additionally covers all "
+                "group-pair by scope tests within each metadata factor"
             ),
+            "table_roles": {
+                "omnibus": "one factor-level global test per PCA scope",
+                "pairwise": (
+                    "one plotting-ready row per group pair and PCA scope for every "
+                    "factor having at least two groups"
+                ),
+            },
             "r2_definition": "1 - Euclidean within-group SS / total SS on selected PCA scores",
             "explained_variance_definition": (
                 "percentage of total PCA score variance represented by the exact "
@@ -4805,7 +4878,13 @@ def pca2(
                     pca_test_omnibus["scope"] == scope.name
                 ]
                 if not rows.empty:
-                    captions[scope.plot_key] = format_pca_test_caption(rows)
+                    pairwise_rows = pca_test_pairwise.loc[
+                        pca_test_pairwise["scope"] == scope.name
+                    ]
+                    captions[scope.plot_key] = format_pca_test_caption(
+                        rows,
+                        pairwise_rows,
+                    )
             if captions:
                 caption_vector = robjects.StrVector(list(captions.values()))
                 caption_vector.names = robjects.StrVector(list(captions))
@@ -4886,12 +4965,16 @@ def pca2(
 
     r_print = robjects.r["print"]
     grdevices = importr("grDevices")
-    plot_items = iter_named_items(pca2_plots)
+    plot_items = [
+        (plot_name, plot_obj, float(figsize[0]), float(figsize[1]))
+        for plot_name, plot_obj in iter_named_items(pca2_plots)
+    ]
+    plot_items.extend(pca_test_plot_items)
     written_shared_scree_paths = ctx.obj.setdefault(
         "_pca2_written_shared_scree_paths", set()
     )
 
-    for plot_name, plot_obj in plot_items:
+    for plot_name, plot_obj, plot_width, plot_height in plot_items:
         for file_fmt in file_fmts:
             plot_outname = (
                 pca2_scree_outname
@@ -4904,8 +4987,8 @@ def pca2(
                 continue
             grdevice = grdevice_helper.get_device(
                 filetype=file_fmt,
-                width=figsize[0],
-                height=figsize[1],
+                width=plot_width,
+                height=plot_height,
                 res=ctx.obj["png_res"],
             )
             grdevice(file=out)
@@ -4921,6 +5004,8 @@ def pca2(
         click.echo(f"Wrote PCA separation omnibus tests: {pca_test_artifacts['omnibus']}")
     if pca_test_artifacts["pairwise"]:
         click.echo(f"Wrote PCA separation pairwise tests: {pca_test_artifacts['pairwise']}")
+    for summary_plot in pca_test_artifacts["summary_plots"]:
+        click.echo(f"Wrote PCA separation summary: {summary_plot}")
 
     telemetry = ctx.obj.get("telemetry") if ctx.obj else None
     if telemetry is not None:

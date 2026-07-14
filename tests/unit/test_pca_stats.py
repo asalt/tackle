@@ -152,6 +152,62 @@ def test_analysis_writes_omnibus_and_adjusted_pairwise_families():
     assert (pairwise["p_adj_all_scopes"] >= pairwise["p_value"]).all()
 
 
+def test_two_group_analysis_keeps_omnibus_and_pairwise_outputs_distinct():
+    scores = pd.DataFrame(
+        {
+            "PC1": [0.0, 1.0, 2.0, 8.0, 9.0, 10.0],
+            "PC2": [0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+        },
+        index=[f"S{index}" for index in range(6)],
+    )
+    metadata = pd.DataFrame(
+        {"group": ["A", "A", "A", "B", "B", "B"]},
+        index=scores.index,
+    )
+    scopes = resolve_pca_test_scopes(("1,2",), scores=scores, max_pc=2)
+
+    omnibus, pairwise = analyze_pca_separation(
+        scores,
+        metadata,
+        group_fields=("group",),
+        scopes=scopes,
+        p_adjust_method="holm",
+    )
+
+    assert len(omnibus) == 1
+    assert omnibus.iloc[0]["n_groups"] == 2
+    assert "centroid_distance" not in omnibus.columns
+    assert "standardized_separation" not in omnibus.columns
+    assert len(pairwise) == 1
+    assert pairwise.iloc[0]["group_a"] == "A"
+    assert pairwise.iloc[0]["group_b"] == "B"
+    assert pairwise.iloc[0]["status"] == "ok"
+    assert np.isclose(pairwise.iloc[0]["p_adj"], pairwise.iloc[0]["p_value"])
+    assert np.isfinite(pairwise.iloc[0]["standardized_separation"])
+
+
+def test_pairwise_output_keeps_its_schema_when_fewer_than_two_groups_are_usable():
+    scores = pd.DataFrame(
+        {"PC1": [0.0, 1.0, 2.0], "PC2": [0.0, 1.0, 0.0]},
+        index=["S1", "S2", "S3"],
+    )
+    metadata = pd.DataFrame({"group": ["A", "A", "A"]}, index=scores.index)
+    scopes = resolve_pca_test_scopes(("1,2",), scores=scores, max_pc=2)
+
+    _, pairwise = analyze_pca_separation(
+        scores,
+        metadata,
+        group_fields=("group",),
+        scopes=scopes,
+        p_adjust_method="holm",
+    )
+
+    assert pairwise.empty
+    assert {"scope", "group_a", "group_b", "p_adj", "status"}.issubset(
+        pairwise.columns
+    )
+
+
 def test_leading_scope_uses_largest_dimension_estimable_for_all_tests():
     rng = np.random.default_rng(20260713)
     scores = pd.DataFrame(
@@ -212,18 +268,20 @@ def test_caption_names_the_selected_pvalue_adjustment():
     assert "; p=0.0123" in caption
     assert "adjusted p" not in caption
 
-    row.update(
-        {
-            "geometry_group_a": "A",
-            "geometry_group_b": "B",
-            "centroid_distance": 0.63,
-            "rms_radius_a": 0.18,
-            "rms_radius_b": 0.14,
-            "pooled_rms_radius": np.sqrt((0.18**2 + 0.14**2) / 2),
-            "standardized_separation": 3.85,
-        }
+    pairwise = pd.DataFrame(
+        [
+            {
+                "group_a": "A",
+                "group_b": "B",
+                "centroid_distance": 0.63,
+                "rms_radius_a": 0.18,
+                "rms_radius_b": 0.14,
+                "pooled_rms_radius": np.sqrt((0.18**2 + 0.14**2) / 2),
+                "standardized_separation": 3.85,
+            }
+        ]
     )
-    caption = format_pca_test_caption(pd.DataFrame([row]))
+    caption = format_pca_test_caption(pd.DataFrame([row]), pairwise)
     assert "Centroid distance = 0.63" in caption
     assert "RMS radii (A, B) = 0.18, 0.14" in caption
     assert "Standardized separation = 3.85" in caption
