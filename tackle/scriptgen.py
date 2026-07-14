@@ -287,6 +287,15 @@ plot_topdiff() {{
     "${{cmd[@]}}"
 }}
 
+make_html(){
+    local thebasename
+    thebasename="$(basename "${CONF%.conf}")"
+    local basedir="$RESULT_DIR/$thebasename/$NAME"
+    tackle make-html --self-contained --base-dir "$basedir" --force --pngquant --pngquant-workers 28 --plot-max-width-px 900
+
+}
+
+
 run_export_and_metrics() {{
     tackle "${{HEADMAIN[@]}}" "$CONF" \\
         export --level area --level gct \\
@@ -303,6 +312,7 @@ main() {{
     # run_pca && run_cluster
     # run_volcano
     # plot_topdiff "$CONF"
+    # make_html # after all above are complete 
     :
 }}
 
