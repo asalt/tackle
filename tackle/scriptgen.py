@@ -233,9 +233,19 @@ run_cluster() {{
         #
 }}
 
+run_correlation() {{
+    tackle "${{HEADMAIN[@]}}" "$CONF" \\
+        correlation --cluster --metric euclidean --annotate \\
+        correlation --cluster --metric pearson --annotate \\
+        correlation --cluster --metric pearson --z-score --annotate \\
+        correlation --cut-by "$DESIGN_COL" --cluster --metric euclidean --annotate \\
+        correlation --cut-by "$DESIGN_COL" --cluster --metric pearson --annotate \\
+        correlation --cut-by "$DESIGN_COL" --cluster --metric pearson --z-score --annotate
+}}
+
 run_pca() {{
     tackle "${{HEADMAIN[@]}}" "$CONF" \\
-        pca2 --annotate --color "$DESIGN_COL" --max-pc 4 \\
+        pca2 --color "$DESIGN_COL" --max-pc 3 --annotate --encircle --test-by "$DESIGN_COL" \\
         #
 }}
 
@@ -289,6 +299,7 @@ run_export_and_metrics() {{
 main() {{
     # TODO: uncomment what you want.
     # run_export_and_metrics
+    # run_correlation
     # run_pca && run_cluster
     # run_volcano
     # plot_topdiff "$CONF"

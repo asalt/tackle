@@ -699,6 +699,17 @@ def _unique_sheet_name(base: str, existing: Sequence[str]) -> str:
         i += 1
 
 
+def _sheet_base_from_relative_path(relative_path: str) -> str:
+    """Build a concise sheet label while retaining full provenance in `sources`."""
+
+    path = Path(str(relative_path))
+    parts = path.parts
+    if len(parts) >= 3 and parts[0].lower() == "export":
+        return f"export__{parts[1]}"
+    base = str(relative_path).replace(os.sep, "__")
+    return re.sub(r"\.tsv$", "", base, flags=re.IGNORECASE)
+
+
 def _sanitize_label(value: str) -> str:
     """Sanitize a label for use as a column prefix without truncation.
 
@@ -1130,9 +1141,7 @@ def build_export_xlsx(
         total = len(remaining)
         for idx, (rel, path) in enumerate(remaining, start=1):
             # Deduce a concise sheet name from relative path
-            base = str(rel)
-            base = base.replace(os.sep, "__")
-            base = re.sub(r"\.tsv$", "", base, flags=re.IGNORECASE)
+            base = _sheet_base_from_relative_path(str(rel))
             final = _unique_sheet_name(base, xw.sheets.keys())
 
             is_export = str(rel).startswith("export")

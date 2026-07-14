@@ -93,6 +93,37 @@ def test_build_export_xlsx_writes_pheno_and_sources(tmp_path):
         assert any(s.startswith("volcano__") for s in sheets)
 
 
+@pytest.mark.skipif(not _has_openpyxl(), reason="openpyxl required to inspect sheet names")
+def test_nested_area_export_uses_semantic_sheet_name_without_truncated_run_name(
+    tmp_path,
+):
+    base = tmp_path
+    area_dir = base / "export" / "data_area"
+    area_dir.mkdir(parents=True)
+    source_name = "MSPC1490_group2_20260710_data_area_nz1_med.tsv"
+    pd.DataFrame({"GeneID": ["g1"], "Val": [1.0]}).to_csv(
+        area_dir / source_name, sep="\t", index=False
+    )
+
+    out = base / "export" / "summary.xlsx"
+    result = build_export_xlsx(
+        base_dir=str(base),
+        out_path=str(out),
+        include_export=True,
+        include_volcano=False,
+        pheno_df=None,
+    )
+
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(result, read_only=True)
+    assert "export__data_area" in workbook.sheetnames
+    assert not any(sheet.endswith("_gro") for sheet in workbook.sheetnames)
+    sources = pd.read_excel(result, sheet_name="sources")
+    row = sources.loc[sources["sheet"] == "export__data_area"].iloc[0]
+    assert row["relative_path"] == f"export/data_area/{source_name}"
+
+
 @pytest.mark.skipif(not _has_excel_writer(), reason="No Excel writer engine available")
 def test_build_export_xlsx_respects_include_flags(tmp_path):
     base = tmp_path
