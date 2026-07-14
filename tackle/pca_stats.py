@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.linalg import block_diag
 from scipy.stats import f as f_distribution
+from scipy.stats import t as t_distribution
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,25 @@ class WelchJamesResult:
     statistic: float
     numerator_df: float
     denominator_df: float
+    p_value: float
+    status: str = "ok"
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class WelchAnovaResult:
+    statistic: float
+    numerator_df: float
+    denominator_df: float
+    p_value: float
+    status: str = "ok"
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class WelchTResult:
+    statistic: float
+    degrees_of_freedom: float
     p_value: float
     status: str = "ok"
     message: str = ""
@@ -139,6 +159,42 @@ def resolve_pca_test_scopes(
         seen.add(key)
         unique.append(scope)
     return unique
+
+
+def resolve_single_pc_columns(
+    requested: Iterable[str] | None,
+    *,
+    scores: pd.DataFrame,
+) -> tuple[str, ...]:
+    """Resolve repeatable or comma-delimited single-PC requests in stable order."""
+
+    available = {
+        number: str(column)
+        for column in scores.columns
+        if (number := _pc_number(column)) is not None
+    }
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for token in requested or ():
+        for part in re.split(r"[,+:]", str(token)):
+            value = part.strip()
+            if not value:
+                continue
+            match = re.fullmatch(r"(?:PC)?(\d+)", value, flags=re.IGNORECASE)
+            if not match:
+                raise ValueError(
+                    f"Invalid single-PC test value {value!r}; use e.g. 1, 2, or 1,2."
+                )
+            number = int(match.group(1))
+            if number < 1:
+                raise ValueError("Single-PC test values must be positive.")
+            if number not in available:
+                raise ValueError(f"Requested single-PC test column PC{number} is unavailable.")
+            column = available[number]
+            if column not in seen:
+                seen.add(column)
+                resolved.append(column)
+    return tuple(resolved)
 
 
 def euclidean_r_squared(values: np.ndarray, groups: Sequence[object]) -> float:
@@ -335,6 +391,155 @@ def welch_james_test(values: np.ndarray, groups: Sequence[object]) -> WelchJames
         statistic=float(statistic),
         numerator_df=float(numerator_df),
         denominator_df=float(denominator_df),
+        p_value=p_value,
+    )
+
+
+def _failed_welch_anova(status: str, message: str) -> WelchAnovaResult:
+    return WelchAnovaResult(
+        statistic=np.nan,
+        numerator_df=np.nan,
+        denominator_df=np.nan,
+        p_value=np.nan,
+        status=status,
+        message=message,
+    )
+
+
+def welch_anova_test(
+    values: Sequence[float],
+    groups: Sequence[object],
+) -> WelchAnovaResult:
+    """Welch's heteroscedastic one-way ANOVA for one PCA score column."""
+
+    vector = np.asarray(values, dtype=float).reshape(-1)
+    labels = np.asarray(groups, dtype=object)
+    if vector.shape[0] != labels.shape[0] or not np.isfinite(vector).all():
+        return _failed_welch_anova(
+            "invalid_values", "The selected PCA scores contain non-finite values."
+        )
+    levels = list(pd.unique(labels))
+    if len(levels) < 2:
+        return _failed_welch_anova(
+            "insufficient_groups", "At least two nonempty groups are required."
+        )
+
+    grouped = [vector[labels == level] for level in levels]
+    sizes = np.asarray([len(group) for group in grouped], dtype=float)
+    if np.any(sizes < 2):
+        return _failed_welch_anova(
+            "insufficient_group_size",
+            "Every group needs at least two samples for a variance estimate.",
+        )
+    means = np.asarray([group.mean() for group in grouped], dtype=float)
+    variances = np.asarray([group.var(ddof=1) for group in grouped], dtype=float)
+    if np.any(~np.isfinite(variances)) or np.any(variances <= 0):
+        return _failed_welch_anova(
+            "zero_variance",
+            "Every group needs a positive finite variance; no regularization is applied.",
+        )
+
+    weights = sizes / variances
+    weight_total = float(weights.sum())
+    weighted_mean = float(np.sum(weights * means) / weight_total)
+    group_count = len(levels)
+    numerator_df = float(group_count - 1)
+    numerator = float(np.sum(weights * np.square(means - weighted_mean)) / numerator_df)
+    correction_sum = float(
+        np.sum(np.square(1.0 - weights / weight_total) / (sizes - 1.0))
+    )
+    if not np.isfinite(correction_sum) or correction_sum <= 0:
+        return _failed_welch_anova(
+            "invalid_df_correction",
+            "The Welch ANOVA approximate-df correction is not positive and finite.",
+        )
+    denominator_df = float((group_count**2 - 1.0) / (3.0 * correction_sum))
+    divisor = 1.0 + (
+        2.0 * (group_count - 2.0) / (group_count**2 - 1.0)
+    ) * correction_sum
+    statistic = float(numerator / divisor)
+    p_value = float(
+        f_distribution.sf(statistic, numerator_df, denominator_df)
+    )
+    if not all(np.isfinite(value) for value in (statistic, denominator_df, p_value)):
+        return _failed_welch_anova(
+            "nonfinite_result", "Welch ANOVA produced a non-finite result."
+        )
+    return WelchAnovaResult(
+        statistic=statistic,
+        numerator_df=numerator_df,
+        denominator_df=denominator_df,
+        p_value=p_value,
+    )
+
+
+def _failed_welch_t(status: str, message: str) -> WelchTResult:
+    return WelchTResult(
+        statistic=np.nan,
+        degrees_of_freedom=np.nan,
+        p_value=np.nan,
+        status=status,
+        message=message,
+    )
+
+
+def welch_t_test(
+    values: Sequence[float],
+    groups: Sequence[object],
+) -> WelchTResult:
+    """Two-sided Welch unequal-variance t-test for one PCA score column."""
+
+    vector = np.asarray(values, dtype=float).reshape(-1)
+    labels = np.asarray(groups, dtype=object)
+    if vector.shape[0] != labels.shape[0] or not np.isfinite(vector).all():
+        return _failed_welch_t(
+            "invalid_values", "The selected PCA scores contain non-finite values."
+        )
+    levels = list(pd.unique(labels))
+    if len(levels) != 2:
+        return _failed_welch_t(
+            "invalid_group_count", "Welch's t-test requires exactly two groups."
+        )
+    left = vector[labels == levels[0]]
+    right = vector[labels == levels[1]]
+    if len(left) < 2 or len(right) < 2:
+        return _failed_welch_t(
+            "insufficient_group_size",
+            "Both groups need at least two samples for variance estimates.",
+        )
+    left_variance = float(left.var(ddof=1))
+    right_variance = float(right.var(ddof=1))
+    variance_terms = np.asarray(
+        [left_variance / len(left), right_variance / len(right)],
+        dtype=float,
+    )
+    standard_error_squared = float(variance_terms.sum())
+    if not np.isfinite(standard_error_squared) or standard_error_squared <= 0:
+        return _failed_welch_t(
+            "zero_variance",
+            "The pair has no positive finite standard error; no regularization is applied.",
+        )
+    statistic = float((left.mean() - right.mean()) / np.sqrt(standard_error_squared))
+    denominator = float(
+        variance_terms[0] ** 2 / (len(left) - 1)
+        + variance_terms[1] ** 2 / (len(right) - 1)
+    )
+    if not np.isfinite(denominator) or denominator <= 0:
+        return _failed_welch_t(
+            "invalid_df_correction",
+            "The Welch-Satterthwaite df correction is not positive and finite.",
+        )
+    degrees_of_freedom = float(standard_error_squared**2 / denominator)
+    p_value = float(
+        2.0 * t_distribution.sf(abs(statistic), degrees_of_freedom)
+    )
+    if not all(np.isfinite(value) for value in (statistic, degrees_of_freedom, p_value)):
+        return _failed_welch_t(
+            "nonfinite_result", "Welch's t-test produced a non-finite result."
+        )
+    return WelchTResult(
+        statistic=statistic,
+        degrees_of_freedom=degrees_of_freedom,
         p_value=p_value,
     )
 
@@ -637,6 +842,237 @@ def analyze_pca_separation(
         pd.DataFrame(pairwise_rows) if pairwise_rows else _empty_pairwise_frame()
     )
     return pd.DataFrame(omnibus_rows), pairwise_frame
+
+
+def _empty_single_pc_omnibus_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "group_field",
+            "scope",
+            "pcs",
+            "pc",
+            "n_pcs",
+            "explained_variance_pct",
+            "n_samples",
+            "n_groups",
+            "group_sizes",
+            "r2",
+            "welch_f",
+            "numerator_df",
+            "denominator_df",
+            "p_value",
+            "p_adjust_method",
+            "p_adj",
+            "status",
+            "message",
+            "method",
+        ]
+    )
+
+
+def _empty_single_pc_pairwise_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "group_field",
+            "scope",
+            "pcs",
+            "pc",
+            "n_pcs",
+            "explained_variance_pct",
+            "group_a",
+            "group_b",
+            "n_a",
+            "n_b",
+            "mean_a",
+            "mean_b",
+            "mean_difference",
+            "centroid_distance",
+            "rms_radius_a",
+            "rms_radius_b",
+            "pooled_rms_radius",
+            "standardized_separation",
+            "r2",
+            "welch_t",
+            "degrees_of_freedom",
+            "p_value",
+            "p_adjust_method",
+            "p_adj",
+            "p_adj_all_scopes",
+            "status",
+            "message",
+            "method",
+        ]
+    )
+
+
+def analyze_single_pc_separation(
+    scores: pd.DataFrame,
+    metadata: pd.DataFrame,
+    *,
+    group_fields: Iterable[str],
+    pcs: Sequence[str],
+    p_adjust_method: str = "holm",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Run opt-in one-PC Welch ANOVA and pairwise Welch t-tests."""
+
+    score_frame = scores.copy()
+    score_frame.index = score_frame.index.astype(str)
+    metadata_frame = metadata.copy()
+    metadata_frame.index = metadata_frame.index.astype(str)
+    metadata_frame = metadata_frame.reindex(score_frame.index)
+    component_variances = score_frame.apply(pd.to_numeric, errors="coerce").var(
+        axis=0, ddof=1
+    )
+    total_variance = float(component_variances.sum())
+
+    def explained_variance_pct(pc: str) -> float:
+        if not np.isfinite(total_variance) or total_variance <= 0:
+            return np.nan
+        return float(component_variances.loc[pc] / total_variance * 100.0)
+
+    omnibus_rows: list[dict[str, object]] = []
+    pairwise_rows: list[dict[str, object]] = []
+    for field in group_fields:
+        if field not in metadata_frame.columns:
+            raise ValueError(f"PCA test metadata field {field!r} was not found.")
+        group_series = _clean_group_series(metadata_frame[field])
+        field_omnibus_start = len(omnibus_rows)
+        field_pairwise_start = len(pairwise_rows)
+        for pc in pcs:
+            selected, groups, levels = _select_scope_data(
+                score_frame,
+                group_series,
+                (pc,),
+            )
+            values = selected[pc].to_numpy(dtype=float)
+            result = welch_anova_test(values, groups.to_numpy(dtype=object))
+            omnibus_rows.append(
+                {
+                    "group_field": str(field),
+                    "scope": pc,
+                    "pcs": pc,
+                    "pc": _pc_number(pc),
+                    "n_pcs": 1,
+                    "explained_variance_pct": explained_variance_pct(pc),
+                    "n_samples": int(len(selected)),
+                    "n_groups": int(len(levels)),
+                    "group_sizes": _group_sizes_text(groups),
+                    "r2": euclidean_r_squared(
+                        selected[[pc]].to_numpy(dtype=float),
+                        groups.to_numpy(dtype=object),
+                    ),
+                    "welch_f": result.statistic,
+                    "numerator_df": result.numerator_df,
+                    "denominator_df": result.denominator_df,
+                    "p_value": result.p_value,
+                    "p_adjust_method": p_adjust_method,
+                    "p_adj": np.nan,
+                    "status": result.status,
+                    "message": result.message,
+                    "method": "Welch one-way ANOVA",
+                }
+            )
+
+            if len(levels) < 2:
+                continue
+            scope_pairwise_start = len(pairwise_rows)
+            for left, right in combinations(levels, 2):
+                pair_keep = groups.isin([left, right])
+                pair_values = selected.loc[pair_keep, pc].to_numpy(dtype=float)
+                pair_groups = groups.loc[pair_keep]
+                pair_result = welch_t_test(
+                    pair_values,
+                    pair_groups.to_numpy(dtype=object),
+                )
+                pair_matrix = pair_values.reshape(-1, 1)
+                pair_geometry = pairwise_centroid_geometry(
+                    pair_matrix,
+                    pair_groups.to_numpy(dtype=object),
+                )
+                counts = pair_groups.value_counts(sort=False)
+                left_values = pair_values[
+                    pair_groups.to_numpy(dtype=object) == left
+                ]
+                right_values = pair_values[
+                    pair_groups.to_numpy(dtype=object) == right
+                ]
+                mean_a = float(left_values.mean())
+                mean_b = float(right_values.mean())
+                pairwise_rows.append(
+                    {
+                        "group_field": str(field),
+                        "scope": pc,
+                        "pcs": pc,
+                        "pc": _pc_number(pc),
+                        "n_pcs": 1,
+                        "explained_variance_pct": explained_variance_pct(pc),
+                        "group_a": str(left),
+                        "group_b": str(right),
+                        "n_a": int(counts.get(left, 0)),
+                        "n_b": int(counts.get(right, 0)),
+                        "mean_a": mean_a,
+                        "mean_b": mean_b,
+                        "mean_difference": mean_a - mean_b,
+                        "centroid_distance": pair_geometry["centroid_distance"],
+                        "rms_radius_a": pair_geometry["rms_radius_a"],
+                        "rms_radius_b": pair_geometry["rms_radius_b"],
+                        "pooled_rms_radius": pair_geometry["pooled_rms_radius"],
+                        "standardized_separation": pair_geometry[
+                            "standardized_separation"
+                        ],
+                        "r2": euclidean_r_squared(
+                            pair_matrix,
+                            pair_groups.to_numpy(dtype=object),
+                        ),
+                        "welch_t": pair_result.statistic,
+                        "degrees_of_freedom": pair_result.degrees_of_freedom,
+                        "p_value": pair_result.p_value,
+                        "p_adjust_method": p_adjust_method,
+                        "p_adj": np.nan,
+                        "p_adj_all_scopes": np.nan,
+                        "status": pair_result.status,
+                        "message": pair_result.message,
+                        "method": "Welch unequal-variance t-test (two-sided)",
+                    }
+                )
+            scope_slice = slice(scope_pairwise_start, len(pairwise_rows))
+            adjusted = adjust_pvalues(
+                [row["p_value"] for row in pairwise_rows[scope_slice]],
+                p_adjust_method,
+            )
+            for pair_row, p_adj in zip(pairwise_rows[scope_slice], adjusted):
+                pair_row["p_adj"] = p_adj
+
+        omnibus_slice = slice(field_omnibus_start, len(omnibus_rows))
+        omnibus_adjusted = adjust_pvalues(
+            [row["p_value"] for row in omnibus_rows[omnibus_slice]],
+            p_adjust_method,
+        )
+        for omnibus_row, p_adj in zip(omnibus_rows[omnibus_slice], omnibus_adjusted):
+            omnibus_row["p_adj"] = p_adj
+
+        pairwise_slice = slice(field_pairwise_start, len(pairwise_rows))
+        all_pairwise_adjusted = adjust_pvalues(
+            [row["p_value"] for row in pairwise_rows[pairwise_slice]],
+            p_adjust_method,
+        )
+        for pair_row, p_adj in zip(
+            pairwise_rows[pairwise_slice],
+            all_pairwise_adjusted,
+        ):
+            pair_row["p_adj_all_scopes"] = p_adj
+
+    omnibus_frame = (
+        pd.DataFrame(omnibus_rows)
+        if omnibus_rows
+        else _empty_single_pc_omnibus_frame()
+    )
+    pairwise_frame = (
+        pd.DataFrame(pairwise_rows)
+        if pairwise_rows
+        else _empty_single_pc_pairwise_frame()
+    )
+    return omnibus_frame, pairwise_frame
 
 
 def _p_adjustment_caption_label(method: object) -> str:

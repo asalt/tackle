@@ -72,6 +72,7 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
     assert captured["content_addressed"] is True
 
     context = json.loads(files.context_path.read_text(encoding="utf-8"))
+    assert context["replay_contract_version"] == 5
     assert context["authoritative_input"]["orientation"] == "rows are samples; columns are features"
     assert context["prcomp_arguments"] == {"center": False, "scale.": False}
     assert context["sample_ids"] == ["SampleA", "SampleB"]
@@ -98,8 +99,11 @@ def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
     assert "pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))" in rmd
     assert 'source("pca_stats.R", local = TRUE)' in rmd
     assert "pca_analyze_separation" in rmd
+    assert "pca_analyze_single_pc_separation" in rmd
     assert "pca_plot_pairwise_separation" in rmd
     assert "including the sole comparison for a two-level factor" in rmd
+    assert 'file.path(out_dir, "pca_single_pc_pairwise.tsv")' in rmd
+    assert "without variance pooling, moderation, or" in rmd
     assert 'plot.caption.position = "plot"' in rmd
     assert "fillna_func" not in rmd
     assert "safe_scale" not in rmd

@@ -206,6 +206,157 @@ pca_welch_james <- function(Y, group, condition_limit = 1e12) {
   )
 }
 
+.pca_failed_welch_anova <- function(status, message) {
+  list(
+    statistic = NA_real_,
+    numerator_df = NA_real_,
+    denominator_df = NA_real_,
+    p_value = NA_real_,
+    status = status,
+    message = message
+  )
+}
+
+pca_welch_anova <- function(values, group) {
+  values <- as.numeric(values)
+  group <- as.character(group)
+  if (length(values) != length(group) || any(!is.finite(values))) {
+    return(.pca_failed_welch_anova(
+      "invalid_values", "The selected PCA scores contain non-finite values."
+    ))
+  }
+  levels <- unique(group)
+  if (length(levels) < 2) {
+    return(.pca_failed_welch_anova(
+      "insufficient_groups", "At least two nonempty groups are required."
+    ))
+  }
+  grouped <- lapply(levels, function(level) values[group == level])
+  sizes <- vapply(grouped, length, integer(1))
+  if (any(sizes < 2)) {
+    return(.pca_failed_welch_anova(
+      "insufficient_group_size",
+      "Every group needs at least two samples for a variance estimate."
+    ))
+  }
+  means <- vapply(grouped, mean, numeric(1))
+  variances <- vapply(grouped, stats::var, numeric(1))
+  if (any(!is.finite(variances)) || any(variances <= 0)) {
+    return(.pca_failed_welch_anova(
+      "zero_variance",
+      "Every group needs a positive finite variance; no regularization is applied."
+    ))
+  }
+
+  weights <- sizes / variances
+  weight_total <- sum(weights)
+  weighted_mean <- sum(weights * means) / weight_total
+  group_count <- length(levels)
+  numerator_df <- group_count - 1
+  numerator <- sum(weights * (means - weighted_mean)^2) / numerator_df
+  correction_sum <- sum((1 - weights / weight_total)^2 / (sizes - 1))
+  if (!is.finite(correction_sum) || correction_sum <= 0) {
+    return(.pca_failed_welch_anova(
+      "invalid_df_correction",
+      "The Welch ANOVA approximate-df correction is not positive and finite."
+    ))
+  }
+  denominator_df <- (group_count^2 - 1) / (3 * correction_sum)
+  divisor <- 1 + 2 * (group_count - 2) / (group_count^2 - 1) * correction_sum
+  statistic <- numerator / divisor
+  p_value <- stats::pf(
+    statistic,
+    df1 = numerator_df,
+    df2 = denominator_df,
+    lower.tail = FALSE
+  )
+  if (any(!is.finite(c(statistic, denominator_df, p_value)))) {
+    return(.pca_failed_welch_anova(
+      "nonfinite_result", "Welch ANOVA produced a non-finite result."
+    ))
+  }
+  list(
+    statistic = statistic,
+    numerator_df = as.numeric(numerator_df),
+    denominator_df = denominator_df,
+    p_value = p_value,
+    status = "ok",
+    message = ""
+  )
+}
+
+.pca_failed_welch_t <- function(status, message) {
+  list(
+    statistic = NA_real_,
+    degrees_of_freedom = NA_real_,
+    p_value = NA_real_,
+    status = status,
+    message = message
+  )
+}
+
+pca_welch_t <- function(values, group) {
+  values <- as.numeric(values)
+  group <- as.character(group)
+  if (length(values) != length(group) || any(!is.finite(values))) {
+    return(.pca_failed_welch_t(
+      "invalid_values", "The selected PCA scores contain non-finite values."
+    ))
+  }
+  levels <- unique(group)
+  if (length(levels) != 2) {
+    return(.pca_failed_welch_t(
+      "invalid_group_count", "Welch's t-test requires exactly two groups."
+    ))
+  }
+  left <- values[group == levels[[1]]]
+  right <- values[group == levels[[2]]]
+  if (length(left) < 2 || length(right) < 2) {
+    return(.pca_failed_welch_t(
+      "insufficient_group_size",
+      "Both groups need at least two samples for variance estimates."
+    ))
+  }
+  variance_terms <- c(
+    stats::var(left) / length(left),
+    stats::var(right) / length(right)
+  )
+  standard_error_squared <- sum(variance_terms)
+  if (!is.finite(standard_error_squared) || standard_error_squared <= 0) {
+    return(.pca_failed_welch_t(
+      "zero_variance",
+      "The pair has no positive finite standard error; no regularization is applied."
+    ))
+  }
+  statistic <- (mean(left) - mean(right)) / sqrt(standard_error_squared)
+  denominator <- variance_terms[[1]]^2 / (length(left) - 1) +
+    variance_terms[[2]]^2 / (length(right) - 1)
+  if (!is.finite(denominator) || denominator <= 0) {
+    return(.pca_failed_welch_t(
+      "invalid_df_correction",
+      "The Welch-Satterthwaite df correction is not positive and finite."
+    ))
+  }
+  degrees_of_freedom <- standard_error_squared^2 / denominator
+  p_value <- 2 * stats::pt(
+    abs(statistic),
+    df = degrees_of_freedom,
+    lower.tail = FALSE
+  )
+  if (any(!is.finite(c(statistic, degrees_of_freedom, p_value)))) {
+    return(.pca_failed_welch_t(
+      "nonfinite_result", "Welch's t-test produced a non-finite result."
+    ))
+  }
+  list(
+    statistic = statistic,
+    degrees_of_freedom = degrees_of_freedom,
+    p_value = p_value,
+    status = "ok",
+    message = ""
+  )
+}
+
 .pca_adjust_pvalues <- function(values, method) {
   result <- rep(NA_real_, length(values))
   keep <- is.finite(values)
@@ -239,6 +390,33 @@ pca_welch_james <- function(Y, group, condition_limit = 1e12) {
     denominator_df = numeric(), p_value = numeric(), p_adjust_method = character(),
     p_adj = numeric(), p_adj_all_scopes = numeric(), status = character(),
     message = character(), method = character(), stringsAsFactors = FALSE
+  )
+}
+
+.pca_empty_single_pc_omnibus <- function() {
+  data.frame(
+    group_field = character(), scope = character(), pcs = character(),
+    pc = integer(), n_pcs = integer(), explained_variance_pct = numeric(),
+    n_samples = integer(), n_groups = integer(), group_sizes = character(),
+    r2 = numeric(), welch_f = numeric(), numerator_df = numeric(),
+    denominator_df = numeric(), p_value = numeric(),
+    p_adjust_method = character(), p_adj = numeric(), status = character(),
+    message = character(), method = character(), stringsAsFactors = FALSE
+  )
+}
+
+.pca_empty_single_pc_pairwise <- function() {
+  data.frame(
+    group_field = character(), scope = character(), pcs = character(),
+    pc = integer(), n_pcs = integer(), explained_variance_pct = numeric(),
+    group_a = character(), group_b = character(), n_a = integer(), n_b = integer(),
+    mean_a = numeric(), mean_b = numeric(), mean_difference = numeric(),
+    centroid_distance = numeric(), rms_radius_a = numeric(), rms_radius_b = numeric(),
+    pooled_rms_radius = numeric(), standardized_separation = numeric(), r2 = numeric(),
+    welch_t = numeric(), degrees_of_freedom = numeric(), p_value = numeric(),
+    p_adjust_method = character(), p_adj = numeric(), p_adj_all_scopes = numeric(),
+    status = character(), message = character(), method = character(),
+    stringsAsFactors = FALSE
   )
 }
 
@@ -437,6 +615,153 @@ pca_analyze_separation <- function(
   list(omnibus = omnibus, pairwise = pairwise)
 }
 
+pca_analyze_single_pc_separation <- function(
+  scores, metadata, group_fields, pcs, p_adjust_method = "holm"
+) {
+  scores <- as.data.frame(scores, check.names = FALSE)
+  metadata <- as.data.frame(metadata, check.names = FALSE, stringsAsFactors = FALSE)
+  metadata <- metadata[rownames(scores), , drop = FALSE]
+  pcs <- as.character(unlist(pcs, use.names = FALSE))
+  missing_pcs <- setdiff(pcs, colnames(scores))
+  if (length(missing_pcs) > 0) {
+    stop("Single-PC test columns were not found: ", paste(missing_pcs, collapse = ", "))
+  }
+  component_variances <- vapply(
+    scores,
+    function(values) stats::var(as.numeric(values), na.rm = TRUE),
+    numeric(1)
+  )
+  total_variance <- sum(component_variances[is.finite(component_variances)])
+  explained_variance_pct <- function(pc) {
+    value <- component_variances[[pc]]
+    if (!is.finite(total_variance) || total_variance <= 0 || !is.finite(value)) {
+      return(NA_real_)
+    }
+    value / total_variance * 100
+  }
+
+  omnibus_rows <- list()
+  pairwise_rows <- list()
+  for (field in as.character(unlist(group_fields, use.names = FALSE))) {
+    if (!field %in% colnames(metadata)) {
+      stop("PCA test metadata field was not found: ", field)
+    }
+    clean_group <- .pca_clean_group(metadata[[field]])
+    for (pc in pcs) {
+      selected_data <- .pca_select_scope_data(scores, clean_group, pc)
+      selected <- selected_data$selected
+      group <- selected_data$group
+      levels <- selected_data$levels
+      values <- as.numeric(selected[, pc])
+      test <- pca_welch_anova(values, group)
+      omnibus_rows[[length(omnibus_rows) + 1L]] <- data.frame(
+        group_field = field,
+        scope = pc,
+        pcs = pc,
+        pc = as.integer(sub("^PC", "", pc, ignore.case = TRUE)),
+        n_pcs = 1L,
+        explained_variance_pct = explained_variance_pct(pc),
+        n_samples = length(values),
+        n_groups = length(levels),
+        group_sizes = .pca_group_sizes(group),
+        r2 = pca_euclidean_r2(matrix(values, ncol = 1), group),
+        welch_f = test$statistic,
+        numerator_df = test$numerator_df,
+        denominator_df = test$denominator_df,
+        p_value = test$p_value,
+        p_adjust_method = p_adjust_method,
+        p_adj = NA_real_,
+        status = test$status,
+        message = test$message,
+        method = "Welch one-way ANOVA",
+        stringsAsFactors = FALSE
+      )
+
+      if (length(levels) < 2) next
+      pairs <- utils::combn(levels, 2, simplify = FALSE)
+      for (pair in pairs) {
+        pair_keep <- group %in% pair
+        pair_values <- values[pair_keep]
+        pair_group <- group[pair_keep]
+        pair_test <- pca_welch_t(pair_values, pair_group)
+        pair_matrix <- matrix(pair_values, ncol = 1)
+        pair_geometry <- pca_pairwise_centroid_geometry(pair_matrix, pair_group)
+        left_values <- pair_values[pair_group == pair[[1]]]
+        right_values <- pair_values[pair_group == pair[[2]]]
+        pairwise_rows[[length(pairwise_rows) + 1L]] <- data.frame(
+          group_field = field,
+          scope = pc,
+          pcs = pc,
+          pc = as.integer(sub("^PC", "", pc, ignore.case = TRUE)),
+          n_pcs = 1L,
+          explained_variance_pct = explained_variance_pct(pc),
+          group_a = pair[[1]],
+          group_b = pair[[2]],
+          n_a = length(left_values),
+          n_b = length(right_values),
+          mean_a = mean(left_values),
+          mean_b = mean(right_values),
+          mean_difference = mean(left_values) - mean(right_values),
+          centroid_distance = pair_geometry$centroid_distance,
+          rms_radius_a = pair_geometry$rms_radius_a,
+          rms_radius_b = pair_geometry$rms_radius_b,
+          pooled_rms_radius = pair_geometry$pooled_rms_radius,
+          standardized_separation = pair_geometry$standardized_separation,
+          r2 = pca_euclidean_r2(pair_matrix, pair_group),
+          welch_t = pair_test$statistic,
+          degrees_of_freedom = pair_test$degrees_of_freedom,
+          p_value = pair_test$p_value,
+          p_adjust_method = p_adjust_method,
+          p_adj = NA_real_,
+          p_adj_all_scopes = NA_real_,
+          status = pair_test$status,
+          message = pair_test$message,
+          method = "Welch unequal-variance t-test (two-sided)",
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+
+  omnibus <- if (length(omnibus_rows)) {
+    do.call(rbind, omnibus_rows)
+  } else {
+    .pca_empty_single_pc_omnibus()
+  }
+  pairwise <- if (length(pairwise_rows)) {
+    do.call(rbind, pairwise_rows)
+  } else {
+    .pca_empty_single_pc_pairwise()
+  }
+  if (nrow(omnibus)) {
+    for (field in unique(omnibus$group_field)) {
+      idx <- which(omnibus$group_field == field)
+      omnibus$p_adj[idx] <- .pca_adjust_pvalues(
+        omnibus$p_value[idx],
+        p_adjust_method
+      )
+    }
+  }
+  if (nrow(pairwise)) {
+    families <- interaction(pairwise$group_field, pairwise$scope, drop = TRUE)
+    for (family in unique(families)) {
+      idx <- which(families == family)
+      pairwise$p_adj[idx] <- .pca_adjust_pvalues(
+        pairwise$p_value[idx],
+        p_adjust_method
+      )
+    }
+    for (field in unique(pairwise$group_field)) {
+      idx <- which(pairwise$group_field == field)
+      pairwise$p_adj_all_scopes[idx] <- .pca_adjust_pvalues(
+        pairwise$p_value[idx],
+        p_adjust_method
+      )
+    }
+  }
+  list(omnibus = omnibus, pairwise = pairwise)
+}
+
 .pca_adjustment_caption_label <- function(method) {
   key <- tolower(gsub("-", "_", trimws(as.character(method))))
   labels <- c(
@@ -592,6 +917,12 @@ pca_plot_pairwise_separation <- function(pairwise_rows, group_field = NULL, scop
     "Test not estimable" = "#999999"
   )
   palette[[significant_label]] <- "#D55E00"
+  tested_dimensions <- unique(pairwise$n_pcs)
+  r2_legend_title <- if (length(tested_dimensions) == 1 && tested_dimensions == 1) {
+    expression(PC~R^2)
+  } else {
+    expression(Plane~R^2)
+  }
 
   x_max <- max(pairwise$pooled_rms_radius, na.rm = TRUE) * 1.18
   y_max <- max(pairwise$centroid_distance, na.rm = TRUE) * 1.12
@@ -640,7 +971,7 @@ pca_plot_pairwise_separation <- function(pairwise_rows, group_field = NULL, scop
     ) +
     ggplot2::scale_color_manual(values = palette, drop = TRUE) +
     ggplot2::scale_size_continuous(
-      name = expression(Plane~R^2),
+      name = r2_legend_title,
       range = c(3.5, 8),
       labels = function(values) sprintf("%.2f", values)
     ) +
@@ -709,15 +1040,28 @@ pca_plot_pairwise_separation <- function(pairwise_rows, group_field = NULL, scop
   variance <- unique(pairwise$explained_variance_pct)
   variance <- variance[is.finite(variance)]
   variance_text <- if (length(variance) == 1) {
-    paste0(sprintf("%.1f", variance), "% cumulative variance")
+    pc_numbers <- suppressWarnings(as.integer(sub("^PC", "", pcs, ignore.case = TRUE)))
+    if (length(pcs) == 1) {
+      paste0(pcs[[1]], ": ", sprintf("%.1f", variance), "% variance")
+    } else if (all(is.finite(pc_numbers)) &&
+               identical(sort(pc_numbers), seq_len(max(pc_numbers)))) {
+      paste0(sprintf("%.1f", variance), "% cumulative variance")
+    } else {
+      paste0(sprintf("%.1f", variance), "% variance represented")
+    }
   } else {
-    "cumulative variance unavailable"
+    "explained variance unavailable"
   }
   field_label <- unique(as.character(pairwise$group_field))
   field_label <- if (length(field_label) == 1) {
     paste0("Grouping: ", field_label)
   } else {
     "Pairwise groups"
+  }
+  adjustment_scope_label <- if (length(pcs) == 1) {
+    "within-PC tests"
+  } else {
+    "within-plane tests"
   }
 
   geometry_plot + separation_plot +
@@ -726,7 +1070,7 @@ pca_plot_pairwise_separation <- function(pairwise_rows, group_field = NULL, scop
       title = paste0(plane_label, " pairwise group separation"),
       subtitle = paste(
         variance_text,
-        paste0(adjustment_label, " within-plane tests"),
+        paste(adjustment_label, adjustment_scope_label),
         field_label,
         sep = "  |  "
       ),

@@ -47,6 +47,32 @@ stopifnot(
   isTRUE(all.equal(geometry$standardized_separation, 8))
 )
 
+single_values <- c(1, 2, 4, 8, 9, 11)
+single_groups <- c(rep('A', 3), rep('B', 3))
+welch_anova <- pca_welch_anova(single_values, single_groups)
+base_anova <- stats::oneway.test(
+  single_values ~ factor(single_groups),
+  var.equal = FALSE
+)
+welch_t <- pca_welch_t(single_values, single_groups)
+base_t <- stats::t.test(
+  single_values ~ factor(single_groups),
+  var.equal = FALSE,
+  alternative = 'two.sided'
+)
+stopifnot(
+  welch_anova$status == 'ok',
+  isTRUE(all.equal(welch_anova$statistic, unname(base_anova$statistic))),
+  isTRUE(all.equal(welch_anova$numerator_df, unname(base_anova$parameter[[1]]))),
+  isTRUE(all.equal(welch_anova$denominator_df, unname(base_anova$parameter[[2]]))),
+  isTRUE(all.equal(welch_anova$p_value, base_anova$p.value)),
+  welch_t$status == 'ok',
+  isTRUE(all.equal(welch_t$statistic, unname(base_t$statistic))),
+  isTRUE(all.equal(welch_t$degrees_of_freedom, unname(base_t$parameter))),
+  isTRUE(all.equal(welch_t$p_value, base_t$p.value)),
+  isTRUE(all.equal(welch_anova$statistic, welch_t$statistic^2))
+)
+
 caption_row <- data.frame(
   group_field = 'group', r2 = 0.625, status = 'ok', numerator_df = 4,
   denominator_df = 7.5, welch_james_f = 3.25, p_adj = 0.0123,
@@ -127,6 +153,28 @@ stopifnot(
   isTRUE(all.equal(two_group$pairwise$p_adj[[1]], two_group$pairwise$p_value[[1]])),
   is.finite(two_group$pairwise$standardized_separation[[1]])
 )
+
+single_pc_scores <- adaptive_scores[1:8, 1:2, drop = FALSE]
+single_pc_metadata <- data.frame(
+  group = rep(c('A', 'B', 'C', 'D'), each = 2),
+  row.names = rownames(single_pc_scores)
+)
+single_pc <- pca_analyze_single_pc_separation(
+  single_pc_scores,
+  single_pc_metadata,
+  'group',
+  c('PC1', 'PC2'),
+  'holm'
+)
+stopifnot(
+  nrow(single_pc$omnibus) == 2,
+  all(single_pc$omnibus$status == 'ok'),
+  all(single_pc$omnibus$method == 'Welch one-way ANOVA'),
+  nrow(single_pc$pairwise) == 12,
+  all(single_pc$pairwise$status == 'ok'),
+  all(is.finite(single_pc$pairwise$p_adj)),
+  all(is.finite(single_pc$pairwise$p_adj_all_scopes))
+)
 """
     result = subprocess.run(
         [rscript, "-e", code],
@@ -162,9 +210,9 @@ def test_r_pairwise_separation_plot_is_renderable(tmp_path: Path):
 source({json.dumps(str(r_file))})
 pairwise <- data.frame(
   group_field = rep('group', 3),
-  scope = rep('PC1_PC2', 3),
-  pcs = rep('PC1,PC2', 3),
-  n_pcs = rep(2, 3),
+  scope = rep('PC1', 3),
+  pcs = rep('PC1', 3),
+  n_pcs = rep(1, 3),
   explained_variance_pct = rep(42.5, 3),
   group_a = c('A', 'A', 'B'),
   group_b = c('B', 'C', 'C'),
@@ -177,7 +225,7 @@ pairwise <- data.frame(
   status = rep('ok', 3)
 )
 plot <- pca_plot_pairwise_separation(
-  pairwise, group_field = 'group', scope = 'PC1_PC2'
+  pairwise, group_field = 'group', scope = 'PC1'
 )
 stopifnot(inherits(plot, 'patchwork'))
 ggplot2::ggsave(

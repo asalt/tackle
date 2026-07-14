@@ -3,12 +3,16 @@ import pandas as pd
 
 from tackle.pca_stats import (
     adjust_pvalues,
+    analyze_single_pc_separation,
     analyze_pca_separation,
     euclidean_r_squared,
     format_pca_test_caption,
     pairwise_centroid_geometry,
     resolve_pca_test_scopes,
+    resolve_single_pc_columns,
+    welch_anova_test,
     welch_james_test,
+    welch_t_test,
 )
 
 
@@ -122,6 +126,75 @@ def test_pvalue_adjustments_match_standard_stepwise_definitions():
     assert np.allclose(adjust_pvalues(pvalues, "holm"), [0.03, 0.06, 0.06])
     assert np.allclose(adjust_pvalues(pvalues, "hochberg"), [0.03, 0.04, 0.04])
     assert np.allclose(adjust_pvalues(pvalues, "BH"), [0.03, 0.04, 0.04])
+
+
+def test_two_group_welch_anova_matches_squared_welch_t_test():
+    values = np.array([1.0, 2.0, 4.0, 8.0, 9.0, 11.0])
+    groups = np.array(["A"] * 3 + ["B"] * 3, dtype=object)
+
+    anova = welch_anova_test(values, groups)
+    t_test = welch_t_test(values, groups)
+
+    assert anova.status == "ok"
+    assert t_test.status == "ok"
+    assert np.isclose(anova.statistic, t_test.statistic**2)
+    assert np.isclose(anova.denominator_df, t_test.degrees_of_freedom)
+    assert np.isclose(anova.p_value, t_test.p_value)
+
+
+def test_single_pc_requests_accept_repeated_and_comma_delimited_values():
+    scores = pd.DataFrame(
+        np.zeros((4, 3)),
+        columns=["PC1", "PC2", "PC3"],
+    )
+
+    assert resolve_single_pc_columns(("1,2", "PC2", "3"), scores=scores) == (
+        "PC1",
+        "PC2",
+        "PC3",
+    )
+
+
+def test_single_pc_analysis_supports_four_groups_with_two_samples_each():
+    scores = pd.DataFrame(
+        {
+            "PC1": [0.0, 1.0, 3.0, 5.0, 6.0, 9.0, 10.0, 14.0],
+            "PC2": [1.0, 3.0, 2.0, 5.0, 7.0, 11.0, 9.0, 14.0],
+        },
+        index=[f"S{index}" for index in range(8)],
+    )
+    metadata = pd.DataFrame(
+        {"group": np.repeat(["A", "B", "C", "D"], 2)},
+        index=scores.index,
+    )
+
+    omnibus, pairwise = analyze_single_pc_separation(
+        scores,
+        metadata,
+        group_fields=("group",),
+        pcs=("PC1", "PC2"),
+        p_adjust_method="holm",
+    )
+
+    assert list(omnibus["scope"]) == ["PC1", "PC2"]
+    assert omnibus["status"].eq("ok").all()
+    assert omnibus["method"].eq("Welch one-way ANOVA").all()
+    assert len(pairwise) == 12
+    assert pairwise.groupby("scope").size().to_dict() == {"PC1": 6, "PC2": 6}
+    assert pairwise["status"].eq("ok").all()
+    assert pairwise["p_adj"].notna().all()
+    assert pairwise["p_adj_all_scopes"].notna().all()
+    assert pairwise["standardized_separation"].notna().all()
+
+
+def test_single_pc_tests_do_not_regularize_zero_group_variance():
+    values = np.array([1.0, 1.0, 2.0, 3.0])
+    groups = np.array(["A", "A", "B", "B"], dtype=object)
+
+    result = welch_anova_test(values, groups)
+
+    assert result.status == "zero_variance"
+    assert "no regularization" in result.message
 
 
 def test_analysis_writes_omnibus_and_adjusted_pairwise_families():

@@ -21,7 +21,7 @@ from .gct_io import (
 from .pca_replay_rmd import render_pca_replay_rmd, render_pca_replay_sh
 
 
-PCA_REPLAY_CONTRACT_VERSION = 4
+PCA_REPLAY_CONTRACT_VERSION = 5
 PCA_REPLAY_MATRIX_DTYPE = "float64"
 
 
@@ -216,7 +216,8 @@ def write_pca2_replay(
         "This bundle stores the exact sample-by-feature matrix passed to prcomp by tackle pca2.\n"
         "Run ./render.sh from this directory to render replot.Rmd.\n"
         "The replay must not center, scale, fill, normalize, or transpose the GCTX matrix.\n"
-        "pca_stats.R contains the package-independent Euclidean R2 and Welch-James replay code.\n",
+        "pca_stats.R contains package-independent Euclidean R2, Welch-James, "
+        "Welch ANOVA, and Welch t-test replay code.\n",
         encoding="utf-8",
     )
 

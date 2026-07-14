@@ -7,6 +7,7 @@ rich.traceback.install()
 from dis import show_code
 import sys
 import os
+import re
 import time
 from pathlib import Path
 import itertools
@@ -4395,6 +4396,17 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     ),
 )
 @click.option(
+    "--test-single-pc",
+    "pca_test_single_pc",
+    multiple=True,
+    default=(),
+    help=(
+        "Opt into one-dimensional separation tests for specific PCs using "
+        "Welch ANOVA and pairwise two-sided Welch t-tests. Repeat or use a "
+        "comma-delimited value such as 1,2. Requires --test-by."
+    ),
+)
+@click.option(
     "--test-adjust",
     "pca_test_adjust",
     type=click.Choice(
@@ -4403,7 +4415,10 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     ),
     default="holm",
     show_default=True,
-    help="Multiplicity adjustment for PCA-plane omnibus and pairwise tests.",
+    help=(
+        "Multiplicity adjustment for multivariate and single-PC omnibus and "
+        "pairwise tests."
+    ),
 )
 @click.option(
     "--test-caption/--no-test-caption",
@@ -4445,6 +4460,7 @@ def pca2(
     max_pc,
     pca_test_by,
     pca_test_pcs,
+    pca_test_single_pc,
     pca_test_adjust,
     pca_test_caption,
     color,
@@ -4460,15 +4476,36 @@ def pca2(
         dict.fromkeys(str(value) for value in pca_test_by if str(value))
     )
     pca_test_pcs = tuple(str(value) for value in pca_test_pcs if str(value))
+    normalized_single_pc_requests = []
+    for token in pca_test_single_pc:
+        for part in re.split(r"[,+:]", str(token)):
+            value = part.strip()
+            if not value:
+                continue
+            match = re.fullmatch(r"(?:PC)?(\d+)", value, flags=re.IGNORECASE)
+            if not match:
+                raise click.UsageError(
+                    f"Invalid --test-single-pc value {value!r}; use e.g. 1, 2, or 1,2"
+                )
+            pc_number = int(match.group(1))
+            if pc_number < 1:
+                raise click.UsageError("--test-single-pc values must be positive")
+            normalized_single_pc_requests.append(str(pc_number))
+    pca_test_single_pc = tuple(dict.fromkeys(normalized_single_pc_requests))
     pca_test_adjust = str(pca_test_adjust).lower()
-    if pca_test_pcs and not pca_test_by:
-        raise click.UsageError("--test-pcs requires at least one --test-by metadata field")
+    if (pca_test_pcs or pca_test_single_pc) and not pca_test_by:
+        raise click.UsageError(
+            "--test-pcs and --test-single-pc require at least one --test-by "
+            "metadata field"
+        )
 
     if pca_test_by:
         outname_kws["testby"] = pca_test_by
         outname_kws["testadj"] = pca_test_adjust
         if pca_test_pcs:
             outname_kws["testpcs"] = pca_test_pcs
+        if pca_test_single_pc:
+            outname_kws["test1pc"] = pca_test_single_pc
         if not pca_test_caption:
             outname_kws["testcap"] = False
     if show_loadings:
@@ -4708,6 +4745,8 @@ def pca2(
     pca_test_artifacts = {
         "omnibus": None,
         "pairwise": None,
+        "single_pc_omnibus": None,
+        "single_pc_pairwise": None,
         "summary_plots": [],
         "settings": None,
     }
@@ -4716,9 +4755,11 @@ def pca2(
         import json
 
         from .pca_stats import (
+            analyze_single_pc_separation,
             analyze_pca_separation,
             format_pca_test_caption,
             resolve_pca_test_scopes,
+            resolve_single_pc_columns,
         )
 
         try:
@@ -4734,6 +4775,24 @@ def pca2(
                 scopes=pca_test_scopes,
                 p_adjust_method=pca_test_adjust,
             )
+            pca_single_pc_columns = resolve_single_pc_columns(
+                pca_test_single_pc,
+                scores=pca_scores,
+            )
+            if pca_single_pc_columns:
+                (
+                    pca_single_pc_omnibus,
+                    pca_single_pc_pairwise,
+                ) = analyze_single_pc_separation(
+                    pca_scores,
+                    replay_sample_metadata,
+                    group_fields=pca_test_by,
+                    pcs=pca_single_pc_columns,
+                    p_adjust_method=pca_test_adjust,
+                )
+            else:
+                pca_single_pc_omnibus = pd.DataFrame()
+                pca_single_pc_pairwise = pd.DataFrame()
         except ValueError as exc:
             raise click.ClickException(str(exc)) from exc
 
@@ -4745,6 +4804,81 @@ def pca2(
             pca_test_pairwise.to_csv(pairwise_path, sep="\t", index=False)
             pca_test_artifacts["pairwise"] = str(pairwise_path)
 
+        if pca_single_pc_columns:
+            single_omnibus_path = Path(
+                pca2_outname + "_single_pc_omnibus.tsv"
+            )
+            single_pairwise_path = Path(
+                pca2_outname + "_single_pc_pairwise.tsv"
+            )
+            pca_single_pc_omnibus.to_csv(
+                single_omnibus_path,
+                sep="\t",
+                index=False,
+            )
+            pca_single_pc_pairwise.to_csv(
+                single_pairwise_path,
+                sep="\t",
+                index=False,
+            )
+            pca_test_artifacts["single_pc_omnibus"] = str(single_omnibus_path)
+            pca_test_artifacts["single_pc_pairwise"] = str(single_pairwise_path)
+
+        multiple_test_fields = len(pca_test_by) > 1
+        summary_requests = []
+        for scope in pca_test_scopes:
+            if not scope.plot_key:
+                continue
+            for field in pca_test_by:
+                field_token = (
+                    f"_{fix_name(str(field))}" if multiple_test_fields else ""
+                )
+                summary_requests.append(
+                    (
+                        pca_test_pairwise,
+                        str(field),
+                        scope.name,
+                        f"_separation{field_token}_{scope.name}",
+                    )
+                )
+        for pc in pca_single_pc_columns:
+            for field in pca_test_by:
+                field_token = (
+                    f"_{fix_name(str(field))}" if multiple_test_fields else ""
+                )
+                summary_requests.append(
+                    (
+                        pca_single_pc_pairwise,
+                        str(field),
+                        pc,
+                        f"_separation{field_token}_{pc}",
+                    )
+                )
+
+        usable_summary_requests = []
+        for pairwise_table, field, scope_name, plot_name in summary_requests:
+            if pairwise_table.empty:
+                continue
+            plot_rows = pairwise_table.loc[
+                (pairwise_table["group_field"] == field)
+                & (pairwise_table["scope"] == scope_name)
+            ].copy()
+            finite_geometry = np.isfinite(
+                plot_rows[
+                    [
+                        "centroid_distance",
+                        "pooled_rms_radius",
+                        "standardized_separation",
+                    ]
+                ]
+            ).all(axis=1)
+            plot_rows = plot_rows.loc[finite_geometry]
+            if not plot_rows.empty:
+                usable_summary_requests.append(
+                    (plot_rows, field, scope_name, plot_name)
+                )
+
+        if usable_summary_requests:
             required_plot_packages = ("ggplot2", "ggrepel", "patchwork")
             require_namespace = robjects.r["requireNamespace"]
             missing_plot_packages = [
@@ -4765,47 +4899,23 @@ def pca2(
                 )
                 r_source(pca_stats_r_file)
                 make_pairwise_plot = robjects.r["pca_plot_pairwise_separation"]
-                multiple_test_fields = len(pca_test_by) > 1
-                for scope in pca_test_scopes:
-                    if not scope.plot_key:
-                        continue
-                    for field in pca_test_by:
-                        plot_rows = pca_test_pairwise.loc[
-                            (pca_test_pairwise["group_field"] == field)
-                            & (pca_test_pairwise["scope"] == scope.name)
-                        ].copy()
-                        finite_geometry = np.isfinite(
-                            plot_rows[
-                                [
-                                    "centroid_distance",
-                                    "pooled_rms_radius",
-                                    "standardized_separation",
-                                ]
-                            ]
-                        ).all(axis=1)
-                        plot_rows = plot_rows.loc[finite_geometry]
-                        if plot_rows.empty:
-                            continue
-                        with localconverter(
-                            robjects.default_converter + pandas2ri.converter
-                        ):
-                            plot_rows_r = conversion.py2rpy(plot_rows)
-                        plot_obj = make_pairwise_plot(
-                            plot_rows_r,
-                            group_field=str(field),
-                            scope=scope.name,
-                        )
-                        field_token = (
-                            f"_{fix_name(str(field))}" if multiple_test_fields else ""
-                        )
-                        plot_name = f"_separation{field_token}_{scope.name}"
-                        pca_test_plot_items.append(
-                            (plot_name, plot_obj, 12.5, 7.2)
-                        )
-                        pca_test_artifacts["summary_plots"].extend(
-                            f"{pca2_outname}{plot_name}{file_fmt}"
-                            for file_fmt in file_fmts
-                        )
+                for plot_rows, field, scope_name, plot_name in usable_summary_requests:
+                    with localconverter(
+                        robjects.default_converter + pandas2ri.converter
+                    ):
+                        plot_rows_r = conversion.py2rpy(plot_rows)
+                    plot_obj = make_pairwise_plot(
+                        plot_rows_r,
+                        group_field=field,
+                        scope=scope_name,
+                    )
+                    pca_test_plot_items.append(
+                        (plot_name, plot_obj, 12.5, 7.2)
+                    )
+                    pca_test_artifacts["summary_plots"].extend(
+                        f"{pca2_outname}{plot_name}{file_fmt}"
+                        for file_fmt in file_fmts
+                    )
 
         resolved_scope_payload = [
             {
@@ -4818,10 +4928,17 @@ def pca2(
         ]
         pca_test_context = {
             "enabled": True,
-            "schema_version": 4,
+            "schema_version": 5,
             "method": "Johansen Welch-James approximate-df test",
+            "single_pc_enabled": bool(pca_single_pc_columns),
+            "single_pc_omnibus_method": "Welch one-way ANOVA",
+            "single_pc_pairwise_method": (
+                "Welch unequal-variance t-test (two-sided)"
+            ),
             "group_fields": list(pca_test_by),
             "requested_scopes": list(pca_test_pcs),
+            "requested_single_pcs": list(pca_test_single_pc),
+            "resolved_single_pcs": list(pca_single_pc_columns),
             "default_scope_policy": (
                 "displayed planes plus the largest commonly estimable leading-PC subset"
             ),
@@ -4838,11 +4955,23 @@ def pca2(
                 "two-level factor; p_adj_all_scopes additionally covers all "
                 "group-pair by scope tests within each metadata factor"
             ),
+            "single_pc_adjustment_family": (
+                "omnibus p_adj covers all requested single PCs within each metadata "
+                "factor; pairwise p_adj covers all group pairs within one PC; "
+                "p_adj_all_scopes covers every requested single-PC by group-pair test"
+            ),
             "table_roles": {
                 "omnibus": "one factor-level global test per PCA scope",
                 "pairwise": (
                     "one plotting-ready row per group pair and PCA scope for every "
                     "factor having at least two groups"
+                ),
+                "single_pc_omnibus": (
+                    "one Welch ANOVA row per explicitly requested PC and metadata factor"
+                ),
+                "single_pc_pairwise": (
+                    "one plotting-ready two-sided Welch t-test row per group pair "
+                    "and explicitly requested PC"
                 ),
             },
             "r2_definition": "1 - Euclidean within-group SS / total SS on selected PCA scores",
@@ -4859,6 +4988,10 @@ def pca2(
             "paired_or_blocked_design": False,
             "singular_covariance_policy": (
                 "report not estimable; never use a pseudoinverse or regularized covariance"
+            ),
+            "single_pc_variance_policy": (
+                "ordinary per-group sample variances; report zero or non-finite "
+                "variance as not estimable; never regularize, moderate, or pool variances"
             ),
             "artifacts": pca_test_artifacts,
         }
@@ -5004,6 +5137,16 @@ def pca2(
         click.echo(f"Wrote PCA separation omnibus tests: {pca_test_artifacts['omnibus']}")
     if pca_test_artifacts["pairwise"]:
         click.echo(f"Wrote PCA separation pairwise tests: {pca_test_artifacts['pairwise']}")
+    if pca_test_artifacts["single_pc_omnibus"]:
+        click.echo(
+            "Wrote single-PC Welch ANOVA tests: "
+            f"{pca_test_artifacts['single_pc_omnibus']}"
+        )
+    if pca_test_artifacts["single_pc_pairwise"]:
+        click.echo(
+            "Wrote single-PC pairwise Welch t-tests: "
+            f"{pca_test_artifacts['single_pc_pairwise']}"
+        )
     for summary_plot in pca_test_artifacts["summary_plots"]:
         click.echo(f"Wrote PCA separation summary: {summary_plot}")
 
@@ -5043,6 +5186,7 @@ def pca2(
                     "separation_testing": bool(pca_test_by),
                     "separation_group_fields": list(pca_test_by),
                     "separation_requested_scopes": list(pca_test_pcs),
+                    "separation_requested_single_pcs": list(pca_test_single_pc),
                     "separation_p_adjust_method": pca_test_adjust,
                     "separation_artifacts": pca_test_artifacts,
                 },

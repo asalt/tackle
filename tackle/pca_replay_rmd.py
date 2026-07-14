@@ -118,7 +118,9 @@ which both the omnibus test and every required pairwise test are estimable. The
 by the exact components in that row. For every two-group comparison, centroid
 distance and the two within-group RMS radii are reported along with pooled RMS
 radius and standardized separation (centroid distance divided by pooled RMS
-radius).
+radius). Explicitly requested single-PC tests use ordinary Welch one-way ANOVA
+and two-sided pairwise Welch t-tests without variance pooling, moderation, or
+regularization.
 
 ```{r pca-separation-tests, results='asis'}
 separation_config <- ctx$separation_testing
@@ -127,6 +129,8 @@ separation_enabled <- !is.null(separation_config$enabled) &&
   isTRUE(as.logical(unlist(separation_config$enabled, use.names = FALSE)[[1]]))
 separation_omnibus <- data.frame()
 separation_pairwise <- data.frame()
+single_pc_omnibus <- data.frame()
+single_pc_pairwise <- data.frame()
 separation_caption_by_plot <- character()
 separation_summary_plots <- list()
 
@@ -155,6 +159,29 @@ if (separation_enabled) {
     )
   }
 
+  single_pcs <- as.character(
+    unlist(separation_config$resolved_single_pcs, use.names = FALSE)
+  )
+  if (length(single_pcs) > 0) {
+    single_pc_result <- pca_analyze_single_pc_separation(
+      scores = as.data.frame(pca_res$x, check.names = FALSE),
+      metadata = sample_meta,
+      group_fields = separation_config$group_fields,
+      pcs = single_pcs,
+      p_adjust_method = adjustment
+    )
+    single_pc_omnibus <- single_pc_result$omnibus
+    single_pc_pairwise <- single_pc_result$pairwise
+    readr::write_tsv(
+      single_pc_omnibus,
+      file.path(out_dir, "pca_single_pc_omnibus.tsv")
+    )
+    readr::write_tsv(
+      single_pc_pairwise,
+      file.path(out_dir, "pca_single_pc_pairwise.tsv")
+    )
+  }
+
   for (scope in separation_config$resolved_scopes) {
     plot_key <- as.character(unlist(scope$plot_key, use.names = FALSE))
     scope_name <- as.character(unlist(scope$name, use.names = FALSE)[[1]])
@@ -177,54 +204,75 @@ if (separation_enabled) {
   if (nrow(separation_pairwise) > 0) {
     cat("\n\n### Pairwise comparisons\n\n")
     print(knitr::kable(separation_pairwise, digits = 4))
+  }
+  if (nrow(single_pc_omnibus) > 0) {
+    cat("\n\n### Single-PC Welch ANOVA tests\n\n")
+    print(knitr::kable(single_pc_omnibus, digits = 4))
+    cat("\n\n### Single-PC pairwise Welch t-tests\n\n")
+    print(knitr::kable(single_pc_pairwise, digits = 4))
+  }
 
+  if (nrow(separation_pairwise) > 0 || nrow(single_pc_pairwise) > 0) {
     cat("\n\n### Pairwise separation summaries\n\n")
     safe_name <- function(value) gsub("[^A-Za-z0-9._-]+", "_", value)
     summary_formats <- as.character(
       unlist(ctx$plot_parameters$file_formats, use.names = FALSE)
     )
     if (length(summary_formats) == 0) summary_formats <- ".png"
-    for (field in unique(separation_pairwise$group_field)) {
-      for (scope_name in unique(separation_pairwise$scope)) {
-        pair_rows <- separation_pairwise[
-          separation_pairwise$group_field == field &
-            separation_pairwise$scope == scope_name,
-          ,
-          drop = FALSE
-        ]
-        finite_geometry <- is.finite(pair_rows$centroid_distance) &
-          is.finite(pair_rows$pooled_rms_radius) &
-          is.finite(pair_rows$standardized_separation)
-        pair_rows <- pair_rows[finite_geometry, , drop = FALSE]
-        if (nrow(pair_rows) == 0 || length(unique(pair_rows$n_pcs)) != 1 ||
-            unique(pair_rows$n_pcs) != 2) {
-          next
-        }
-        plot_name <- paste(
-          "separation",
-          safe_name(field),
-          safe_name(scope_name),
-          sep = "_"
-        )
-        summary_plot <- pca_plot_pairwise_separation(
-          pair_rows,
-          group_field = field,
-          scope = scope_name
-        )
-        separation_summary_plots[[plot_name]] <- summary_plot
-        print(summary_plot)
-        for (ext in summary_formats) {
-          ggplot2::ggsave(
-            file.path(out_dir, paste0("pca_", plot_name, ext)),
-            summary_plot,
-            width = 12.5,
-            height = 7.2,
-            dpi = 320,
-            bg = "white"
+    write_summary_plots <- function(pairwise_table, allowed_scopes) {
+      if (nrow(pairwise_table) == 0) return(invisible(NULL))
+      for (field in unique(pairwise_table$group_field)) {
+        for (scope_name in intersect(unique(pairwise_table$scope), allowed_scopes)) {
+          pair_rows <- pairwise_table[
+            pairwise_table$group_field == field &
+              pairwise_table$scope == scope_name,
+            ,
+            drop = FALSE
+          ]
+          finite_geometry <- is.finite(pair_rows$centroid_distance) &
+            is.finite(pair_rows$pooled_rms_radius) &
+            is.finite(pair_rows$standardized_separation)
+          pair_rows <- pair_rows[finite_geometry, , drop = FALSE]
+          if (nrow(pair_rows) == 0) next
+          plot_name <- paste(
+            "separation",
+            safe_name(field),
+            safe_name(scope_name),
+            sep = "_"
           )
+          summary_plot <- pca_plot_pairwise_separation(
+            pair_rows,
+            group_field = field,
+            scope = scope_name
+          )
+          separation_summary_plots[[plot_name]] <<- summary_plot
+          print(summary_plot)
+          for (ext in summary_formats) {
+            ggplot2::ggsave(
+              file.path(out_dir, paste0("pca_", plot_name, ext)),
+              summary_plot,
+              width = 12.5,
+              height = 7.2,
+              dpi = 320,
+              bg = "white"
+            )
+          }
         }
       }
     }
+    displayed_scope_names <- vapply(
+      Filter(
+        function(scope) {
+          key <- as.character(unlist(scope$plot_key, use.names = FALSE))
+          length(key) == 1 && !is.na(key) && nzchar(key)
+        },
+        separation_config$resolved_scopes
+      ),
+      function(scope) as.character(unlist(scope$name, use.names = FALSE)[[1]]),
+      character(1)
+    )
+    write_summary_plots(separation_pairwise, displayed_scope_names)
+    write_summary_plots(single_pc_pairwise, single_pcs)
   }
 } else {
   cat("Separation testing was not enabled for the captured `pca2` invocation.\n")
