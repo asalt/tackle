@@ -24,23 +24,47 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 6, fig.height = 7)
-required_packages <- c("cmapR", "jsonlite", "ggplot2", "ggfortify", "ggrepel", "dplyr", "readr", "tibble")
-load_required_package <- function(package) {
-  tryCatch(
-    suppressPackageStartupMessages(
-      library(package, character.only = TRUE)
-    ),
-    error = function(error) {
-      stop(
-        "Required R package '", package, "' could not be loaded: ",
-        conditionMessage(error),
-        call. = FALSE
-      )
-    }
+
+required_packages <- c(
+  "cmapR",
+  "jsonlite",
+  "ggplot2",
+  "ggfortify",
+  "ggrepel",
+  "dplyr",
+  "readr",
+  "tibble"
+)
+
+missing_packages <- required_packages[
+  !vapply(
+    required_packages,
+    requireNamespace,
+    logical(1),
+    quietly = TRUE
+  )
+]
+
+if (length(missing_packages)) {
+  stop(
+    "Required packages are unavailable: ",
+    paste(missing_packages, collapse = ", "),
+    call. = FALSE
   )
 }
-invisible(lapply(required_packages, load_required_package))
+
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(ggfortify)
+  library(ggrepel)
+  library(dplyr)
+  library(readr)
+  library(tibble)
+  library(jsonlite)
+  library(cmapR)
+})
+
+
 ```
 
 ## Replay contract
@@ -73,8 +97,8 @@ knitr::opts_chunk$set(fig.width = fig_width, fig.height = fig_height)
 ```{r load-authoritative-input}
 parse_gct_any <- function(path) {
   exports <- getNamespaceExports("cmapR")
-  if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
   if ("parse_gctx" %in% exports) return(cmapR::parse_gctx(path))
+  if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
   stop("cmapR does not export parse.gctx / parse_gctx")
 }
 
