@@ -21,7 +21,7 @@ from .gct_io import (
 from .pca_replay_rmd import render_pca_replay_rmd, render_pca_replay_sh
 
 
-PCA_REPLAY_CONTRACT_VERSION = 5
+PCA_REPLAY_CONTRACT_VERSION = 6
 PCA_REPLAY_MATRIX_DTYPE = "float64"
 
 
@@ -32,7 +32,7 @@ class PcaReplayFiles:
     gct_path: Path
     context_path: Path
     rmd_path: Path
-    stats_r_path: Path
+    stats_r_path: Path | None
     pointer_path: Path
 
 
@@ -115,6 +115,8 @@ def write_pca2_replay(
     samples = list(matrix.index)
     features = list(matrix.columns)
     matrix_hash = _hash_frame(matrix)
+    separation_config = _normalize_mapping(separation_testing)
+    include_separation = separation_config.get("enabled") is True
     identity = {
         "contract_version": PCA_REPLAY_CONTRACT_VERSION,
         "matrix_hash_algorithm": selected_content_hash_algorithm(),
@@ -122,7 +124,7 @@ def write_pca2_replay(
         "preprocessing": _normalize_mapping(preprocessing),
         "plot_parameters": _normalize_mapping(plot_parameters),
         "data_parameters": _normalize_mapping(data_parameters),
-        "separation_testing": _normalize_mapping(separation_testing),
+        "separation_testing": separation_config,
     }
     run_id = hashlib.sha1(
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -161,7 +163,7 @@ def write_pca2_replay(
     )
     context_path = replay_dir / "pca_replay_context.json"
     rmd_path = replay_dir / "replot.Rmd"
-    stats_r_path = replay_dir / "pca_stats.R"
+    stats_r_path = replay_dir / "pca_stats.R" if include_separation else None
     render_path = replay_dir / "render.sh"
     readme_path = replay_dir / "README.txt"
 
@@ -194,9 +196,10 @@ def write_pca2_replay(
         "plot_parameters": _normalize_mapping(plot_parameters),
         "data_parameters": _normalize_mapping(data_parameters),
         "metadata_colors": _normalize_mapping(metadata_colors),
-        "separation_testing": _normalize_mapping(separation_testing),
         "replot_default_pc_pairs": [[1, 2], [1, 3], [2, 3]],
     }
+    if include_separation:
+        context["separation_testing"] = separation_config
     context_path.write_text(
         json.dumps(context, sort_keys=True, indent=2, default=_json_default),
         encoding="utf-8",
@@ -206,20 +209,28 @@ def write_pca2_replay(
         render_pca_replay_rmd(
             title=title,
             gct_relpath=os.path.relpath(gct_path, replay_dir).replace("\\", "/"),
+            include_separation=include_separation,
         ),
         encoding="utf-8",
     )
-    shutil.copyfile(Path(__file__).resolve().parent / "R" / "pca_stats.R", stats_r_path)
+    if stats_r_path is not None:
+        shutil.copyfile(
+            Path(__file__).resolve().parent / "R" / "pca_stats.R",
+            stats_r_path,
+        )
     render_path.write_text(render_pca_replay_sh(), encoding="utf-8")
     render_path.chmod(0o755)
-    readme_path.write_text(
+    readme_lines = [
         "This bundle stores the exact sample-by-feature matrix passed to prcomp by tackle pca2.\n"
         "Run ./render.sh from this directory to render replot.Rmd.\n"
-        "The replay must not center, scale, fill, normalize, or transpose the GCTX matrix.\n"
-        "pca_stats.R contains package-independent Euclidean R2, Welch-James, "
-        "Welch ANOVA, and Welch t-test replay code.\n",
-        encoding="utf-8",
-    )
+        "The replay should not center, scale, fill, normalize, or transpose the GCTX matrix.\n"
+    ]
+    if include_separation:
+        readme_lines.append(
+            "pca_stats.R contains package-independent Euclidean R2, Welch-James, "
+            "Welch ANOVA, and Welch t-test replay code.\n"
+        )
+    readme_path.write_text("".join(readme_lines), encoding="utf-8")
 
     pointer_path = Path(analysis_outpath).expanduser().resolve() / "context" / "last_pca2_replay.json"
     pointer_path.parent.mkdir(parents=True, exist_ok=True)
@@ -230,8 +241,9 @@ def write_pca2_replay(
         "gct_path": str(gct_path),
         "context_path": str(context_path),
         "rmd_path": str(rmd_path),
-        "stats_r_path": str(stats_r_path),
     }
+    if stats_r_path is not None:
+        pointer_payload["stats_r_path"] = str(stats_r_path)
     pointer_path.write_text(
         json.dumps(pointer_payload, sort_keys=True, indent=2), encoding="utf-8"
     )

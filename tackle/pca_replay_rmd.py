@@ -9,6 +9,7 @@ def render_pca_replay_rmd(
     title: str,
     gct_relpath: str = "pca_input_pre_svd.gctx",
     context_relpath: str = "pca_replay_context.json",
+    include_separation: bool = False,
 ) -> str:
     """Render a standalone pca2 replay with tackle's score/biplot styling."""
 
@@ -23,14 +24,23 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 9, fig.height = 8)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 6, fig.height = 7)
 required_packages <- c("cmapR", "jsonlite", "ggplot2", "ggfortify", "ggrepel", "dplyr", "readr", "tibble")
-missing_packages <- required_packages[!vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing_packages) > 0) {
-  stop("Missing required R package(s): ", paste(missing_packages, collapse = ", "))
+load_required_package <- function(package) {
+  tryCatch(
+    suppressPackageStartupMessages(
+      library(package, character.only = TRUE)
+    ),
+    error = function(error) {
+      stop(
+        "Required R package '", package, "' could not be loaded: ",
+        conditionMessage(error),
+        call. = FALSE
+      )
+    }
+  )
 }
-library(ggplot2)
-library(dplyr)
+invisible(lapply(required_packages, load_required_package))
 ```
 
 ## Replay contract
@@ -39,9 +49,28 @@ The GCT matrix is the authoritative input. Its rows are samples and its columns 
 features, exactly matching the matrix passed to `prcomp()` by tackle. No missing-value
 filling, centering, scaling, normalization, or transposition is performed in this replay.
 
-```{r load-authoritative-input}
-ctx <- jsonlite::fromJSON("__CONTEXT__", simplifyVector = FALSE)
+## Editable replay parameters
 
+This block gathers the captured plotting parameters in one place. Edit `pc_pairs` or
+`replot_formats` here before rerunning the PCA and plotting chunks below.
+
+```{r replay-parameters}
+ctx <- jsonlite::fromJSON("__CONTEXT__", simplifyVector = FALSE)
+plot_params <- ctx$plot_parameters
+captured_figsize <- as.numeric(unlist(plot_params$figsize, use.names = FALSE))
+fig_width <- if (length(captured_figsize) >= 1 && is.finite(captured_figsize[[1]])) captured_figsize[[1]] else 6
+fig_height <- if (length(captured_figsize) >= 2 && is.finite(captured_figsize[[2]])) captured_figsize[[2]] else 7
+pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))
+replot_formats <- as.character(unlist(plot_params$file_formats, use.names = FALSE))
+if (length(replot_formats) == 0) replot_formats <- ".png"
+out_dir <- "pca_replay_outputs"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+knitr::opts_chunk$set(fig.width = fig_width, fig.height = fig_height)
+```
+
+## Load the authoritative input
+
+```{r load-authoritative-input}
 parse_gct_any <- function(path) {
   exports <- getNamespaceExports("cmapR")
   if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
@@ -71,9 +100,6 @@ sample_meta$variable <- rownames(sample_meta)
 feature_meta <- as.data.frame(stored_ds@cdesc, check.names = FALSE, stringsAsFactors = FALSE)
 rownames(feature_meta) <- as.character(stored_ds@cid)
 feature_meta <- feature_meta[colnames(pca_mat), , drop = FALSE]
-
-out_dir <- "pca_replay_outputs"
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 ```
 
 ## PCA
@@ -105,6 +131,7 @@ readr::write_tsv(variance_df, file.path(out_dir, "pca_variance.tsv"))
 knitr::kable(head(scores_df, 10))
 ```
 
+__SEPARATION_START__
 ## Heteroscedastic PCA separation tests
 
 When separation testing was requested, these tables recompute the descriptive
@@ -274,10 +301,9 @@ if (separation_enabled) {
     write_summary_plots(separation_pairwise, displayed_scope_names)
     write_summary_plots(single_pc_pairwise, single_pcs)
   }
-} else {
-  cat("Separation testing was not enabled for the captured `pca2` invocation.\n")
 }
 ```
+__SEPARATION_END__
 
 ## Tackle-style replot code
 
@@ -285,7 +311,9 @@ The editable defaults below draw PC1/PC2, PC1/PC3, and PC2/PC3 whenever those
 components exist. Plot annotations and loading arrows follow the parameters captured
 from the original `pca2` invocation.
 
-```{r plotting-code}
+### Plot settings and metadata
+
+```{r plot-settings}
 scalar_or_null <- function(x) {
   if (is.null(x) || length(x) == 0) return(NULL)
   value <- as.character(unlist(x, use.names = FALSE)[[1]])
@@ -301,7 +329,6 @@ integer_value <- function(x, default) {
   as.integer(unlist(x, use.names = FALSE)[[1]])
 }
 
-plot_params <- ctx$plot_parameters
 color_field <- scalar_or_null(plot_params$color)
 shape_field <- scalar_or_null(plot_params$marker)
 label_points <- flag_value(plot_params$annotate)
@@ -311,9 +338,6 @@ show_loadings <- flag_value(plot_params$show_loadings)
 ntop_loadings <- integer_value(plot_params$ntop_loadings, 10)
 plot_title <- scalar_or_null(plot_params$title)
 normalize_by <- scalar_or_null(ctx$preprocessing$normalize_by)
-captured_figsize <- as.numeric(unlist(plot_params$figsize, use.names = FALSE))
-fig_width <- if (length(captured_figsize) >= 1 && is.finite(captured_figsize[[1]])) captured_figsize[[1]] else 9
-fig_height <- if (length(captured_figsize) >= 2 && is.finite(captured_figsize[[2]])) captured_figsize[[2]] else 8
 
 if (!is.null(color_field) && !color_field %in% colnames(sample_meta)) {
   stop("Captured color field is absent from GCT row metadata: ", color_field)
@@ -346,7 +370,11 @@ if ("GeneSymbol" %in% colnames(feature_meta)) {
   keep <- !is.na(symbols) & nzchar(symbols)
   feature_labels$feature_label[keep] <- symbols[keep]
 }
+```
 
+### PCA plotting function
+
+```{r pca-plot-function}
 make_pca_plot <- function(pc_pair) {
   x1 <- pc_pair[[1]]
   x2 <- pc_pair[[2]]
@@ -464,6 +492,7 @@ make_pca_plot <- function(pc_pair) {
   if (!is.null(normalize_by)) {
     p <- p + labs(caption = paste("centered within", normalize_by))
   }
+__SEPARATION_CAPTION_START__
   plot_key <- paste0("pc", x1, "_vs_pc", x2)
   if (plot_key %in% names(separation_caption_by_plot)) {
     stats_caption <- separation_caption_by_plot[[plot_key]]
@@ -479,6 +508,7 @@ make_pca_plot <- function(pc_pair) {
         plot.caption = element_text(hjust = 0)
       )
   }
+__SEPARATION_CAPTION_END__
   if (!is.null(plot_title)) {
     annotation_label <- paste(strwrap(gsub("_", " ", plot_title), width = 40), collapse = "\n")
     p <- p + annotate(
@@ -492,9 +522,11 @@ make_pca_plot <- function(pc_pair) {
   }
   p
 }
+```
 
-# Edit this list to request different component pairs.
-pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))
+### Build the requested PCA planes
+
+```{r build-pca-plots}
 available_pcs <- ncol(pca_res$x)
 pc_pairs <- Filter(function(pair) all(pair <= available_pcs), pc_pairs)
 plots <- setNames(
@@ -505,9 +537,7 @@ plots <- setNames(
 
 ## PC1/PC2, PC1/PC3, and PC2/PC3
 
-```{r pca-pairs, results='asis', fig.width=9, fig.height=8}
-replot_formats <- as.character(unlist(ctx$plot_parameters$file_formats, use.names = FALSE))
-if (length(replot_formats) == 0) replot_formats <- ".png"
+```{r pca-pairs, results='asis'}
 for (plot_name in names(plots)) {
   cat("\n\n### ", toupper(gsub("_", " ", plot_name)), "\n\n", sep = "")
   print(plots[[plot_name]])
@@ -525,7 +555,7 @@ for (plot_name in names(plots)) {
 
 ## Scree plot
 
-```{r scree, fig.width=9, fig.height=8}
+```{r scree}
 scree_n <- min(length(variance_ratio), max(10, 3))
 scree_idx <- seq_len(scree_n)
 scree_df <- tibble::tibble(
@@ -552,7 +582,7 @@ scree_plot <- ggplot(scree_df, aes(x = pc_label)) +
   ggplot2::theme_classic(base_size = 20) +
   theme(plot.title = element_text(face = "bold"), plot.subtitle = element_text(size = rel(0.8)))
 print(scree_plot)
-ggplot2::ggsave(file.path(out_dir, "scree.png"), scree_plot, width = 9, height = 8)
+ggplot2::ggsave(file.path(out_dir, "scree.png"), scree_plot, width = fig_width, height = fig_height)
 ```
 
 ## Captured input parameters
@@ -572,13 +602,25 @@ cat(jsonlite::toJSON(ctx, pretty = TRUE, auto_unbox = TRUE))
 cat("</pre></details>")
 ```
 '''
-    return (
+    rendered = (
         textwrap.dedent(template)
         .lstrip()
         .replace("__TITLE__", json.dumps(str(title)))
         .replace("__GCT__", str(gct_relpath).replace("\\", "/"))
         .replace("__CONTEXT__", str(context_relpath).replace("\\", "/"))
     )
+    conditional_blocks = (
+        ("__SEPARATION_START__", "__SEPARATION_END__"),
+        ("__SEPARATION_CAPTION_START__", "__SEPARATION_CAPTION_END__"),
+    )
+    for start, end in conditional_blocks:
+        if include_separation:
+            rendered = rendered.replace(start, "").replace(end, "")
+            continue
+        before, remainder = rendered.split(start, 1)
+        _conditional, after = remainder.split(end, 1)
+        rendered = before.rstrip() + "\n" + after.lstrip()
+    return rendered
 
 
 def render_pca_replay_sh(*, rmd_name: str = "replot.Rmd") -> str:
