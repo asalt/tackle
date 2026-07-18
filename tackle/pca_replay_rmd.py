@@ -435,14 +435,16 @@ make_pca_plot <- function(pc_pair) {
 
   if (!is.null(color_values)) {
     p <- p +
-      ggplot2::scale_color_manual(values = color_values) +
-      ggplot2::scale_fill_manual(values = color_values)
+      ggplot2::scale_color_manual(values = color_values) 
   }
 
   if (do_encircle) {
     if (!requireNamespace("ggalt", quietly = TRUE)) {
       stop("The replayed pca2 call used --encircle, but R package 'ggalt' is missing.")
     }
+
+    p <- p + ggplot2::scale_fill_manual(values = color_values)
+
     encircle_data <- p$data |>
       dplyr::filter(!is.na(.data[[color_field]]))
     encircle_layer <- ggalt::geom_encircle(
