@@ -21,7 +21,7 @@ from .gct_io import (
 from .pca_replay_rmd import render_pca_replay_rmd, render_pca_replay_sh
 
 
-PCA_REPLAY_CONTRACT_VERSION = 6
+PCA_REPLAY_CONTRACT_VERSION = 7
 PCA_REPLAY_MATRIX_DTYPE = "float64"
 
 
@@ -33,6 +33,7 @@ class PcaReplayFiles:
     context_path: Path
     rmd_path: Path
     stats_r_path: Path | None
+    caption_r_path: Path
     pointer_path: Path
 
 
@@ -164,6 +165,7 @@ def write_pca2_replay(
     context_path = replay_dir / "pca_replay_context.json"
     rmd_path = replay_dir / "replot.Rmd"
     stats_r_path = replay_dir / "pca_stats.R" if include_separation else None
+    caption_r_path = replay_dir / "pca_caption.R"
     render_path = replay_dir / "render.sh"
     readme_path = replay_dir / "README.txt"
 
@@ -218,12 +220,17 @@ def write_pca2_replay(
             Path(__file__).resolve().parent / "R" / "pca_stats.R",
             stats_r_path,
         )
+    shutil.copyfile(
+        Path(__file__).resolve().parent / "R" / "pca_caption.R",
+        caption_r_path,
+    )
     render_path.write_text(render_pca_replay_sh(), encoding="utf-8")
     render_path.chmod(0o755)
     readme_lines = [
         "This bundle stores the exact sample-by-feature matrix passed to prcomp by tackle pca2.\n"
         "Run ./render.sh from this directory to render replot.Rmd.\n"
         "The replay should not center, scale, fill, normalize, or transpose the GCTX matrix.\n"
+        "pca_caption.R measures and wraps captions against the rendered plot width.\n"
     ]
     if include_separation:
         readme_lines.append(
@@ -241,6 +248,7 @@ def write_pca2_replay(
         "gct_path": str(gct_path),
         "context_path": str(context_path),
         "rmd_path": str(rmd_path),
+        "caption_r_path": str(caption_r_path),
     }
     if stats_r_path is not None:
         pointer_payload["stats_r_path"] = str(stats_r_path)
@@ -255,5 +263,6 @@ def write_pca2_replay(
         context_path=context_path,
         rmd_path=rmd_path,
         stats_r_path=stats_r_path,
+        caption_r_path=caption_r_path,
         pointer_path=pointer_path,
     )

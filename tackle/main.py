@@ -4334,12 +4334,12 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     "--figsize",
     nargs=2,
     type=float,
-    default=(9, 8),
+    default=None,
     show_default=True,
-    help="""Optionally specify the figuresize (width, height) in inches
-              If not specified, tries to use a reasonable default depending on the number of
-              samples.
-              """,
+    help=(
+        "Figure width and height in inches. By default pca2 starts at 6 x 7 "
+        "and expands for demanding color/marker legends and measured statistical captions."
+    ),
 )
 @click.option(
     "--fillna",
@@ -4600,6 +4600,12 @@ def pca2(
     r_source = robjects.r["source"]
     r_file = os.path.join(os.path.split(os.path.abspath(__file__))[0], "R", "pcaplot.R")
     r_source(r_file)
+    pca_caption_r_file = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0],
+        "R",
+        "pca_caption.R",
+    )
+    r_source(pca_caption_r_file)
     pca2 = robjects.r["pca2"]
     # robjects.pandas2ri.activate()
 
@@ -4646,6 +4652,22 @@ def pca2(
 
         # Ensure the melted data uses the same normalized values.
         dfm[color] = utils.normalize_metadata_str_values(dfm[color])
+
+    from .pca_plotting import resolve_pca2_figsize
+
+    requested_figsize = figsize
+    figsize = resolve_pca2_figsize(
+        requested_figsize,
+        sample_metadata=col_meta,
+        color=color,
+        marker=marker,
+    )
+    if requested_figsize is None:
+        logger.info(
+            "Auto-sized pca2 figures to %.2f x %.2f inches",
+            figsize[0],
+            figsize[1],
+        )
 
     # if marker:
     #     if data_obj.metadata_colors is not None and marker in data_obj.metadata_colors:
@@ -5072,6 +5094,7 @@ def pca2(
             "show_loadings": bool(show_loadings),
             "ntop_loadings": int(ntop_loadings),
             "figsize": [float(figsize[0]), float(figsize[1])],
+            "figsize_mode": "auto" if requested_figsize is None else "explicit",
             "file_formats": list(file_fmts),
             "title": outname_kws.get("genefile"),
         },
@@ -5098,10 +5121,30 @@ def pca2(
 
     r_print = robjects.r["print"]
     grdevices = importr("grDevices")
-    plot_items = [
-        (plot_name, plot_obj, float(figsize[0]), float(figsize[1]))
-        for plot_name, plot_obj in iter_named_items(pca2_plots)
-    ]
+    prepare_pca_plot = robjects.r["pca_prepare_plot_for_output"]
+    plot_items = []
+    for plot_name, plot_obj in iter_named_items(pca2_plots):
+        plot_width = float(figsize[0])
+        plot_height = float(figsize[1])
+        prepared = prepare_pca_plot(
+            plot_obj,
+            fig_width=plot_width,
+            fig_height=plot_height,
+            expand_height=requested_figsize is None,
+        )
+        plot_obj = prepared.rx2("plot")
+        plot_height = float(prepared.rx2("fig_height")[0])
+        original_lines = int(prepared.rx2("original_line_count")[0])
+        wrapped_lines = int(prepared.rx2("wrapped_line_count")[0])
+        if wrapped_lines > original_lines:
+            logger.info(
+                "Wrapped %s PCA caption from %d to %d lines; output height %.2f inches",
+                plot_name,
+                original_lines,
+                wrapped_lines,
+                plot_height,
+            )
+        plot_items.append((plot_name, plot_obj, plot_width, plot_height))
     plot_items.extend(pca_test_plot_items)
     written_shared_scree_paths = ctx.obj.setdefault(
         "_pca2_written_shared_scree_paths", set()

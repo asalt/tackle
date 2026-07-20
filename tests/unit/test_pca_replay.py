@@ -72,7 +72,7 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
     assert captured["content_addressed"] is True
 
     context = json.loads(files.context_path.read_text(encoding="utf-8"))
-    assert context["replay_contract_version"] == 5
+    assert context["replay_contract_version"] == 7
     assert context["authoritative_input"]["orientation"] == "rows are samples; columns are features"
     assert context["prcomp_arguments"] == {"center": False, "scale.": False}
     assert context["sample_ids"] == ["SampleA", "SampleB"]
@@ -89,15 +89,18 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
     assert files.stats_r_path.exists()
     assert "pca_welch_james" in files.stats_r_path.read_text(encoding="utf-8")
     assert files.pointer_path == tmp_path / "context" / "last_pca2_replay.json"
+    assert files.caption_r_path.exists()
 
 
 def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
-    rmd = render_pca_replay_rmd(title="PCA replay")
+    rmd = render_pca_replay_rmd(title="PCA replay", include_separation=True)
 
     assert "pca_mat <- as.matrix(stored_ds@mat)" in rmd
     assert "prcomp(pca_mat, center = FALSE, scale. = FALSE)" in rmd
     assert "pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))" in rmd
     assert 'source("pca_stats.R", local = TRUE)' in rmd
+    assert 'source("pca_caption.R", local = TRUE)' in rmd
+    assert "pca_prepare_plot_for_output(" in rmd
     assert "pca_analyze_separation" in rmd
     assert "pca_analyze_single_pc_separation" in rmd
     assert "pca_plot_pairwise_separation" in rmd
@@ -107,3 +110,63 @@ def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
     assert 'plot.caption.position = "plot"' in rmd
     assert "fillna_func" not in rmd
     assert "safe_scale" not in rmd
+    assert "load_required_package" in rmd
+    assert "missing_packages" not in rmd
+    assert "```{r replay-parameters}" in rmd
+    assert "```{r pca-plot-function}" in rmd
+    assert "```{r build-pca-plots}" in rmd
+
+
+def test_pca_replay_without_testing_omits_all_separation_material():
+    rmd = render_pca_replay_rmd(title="PCA replay")
+
+    assert "Heteroscedastic PCA separation tests" not in rmd
+    assert "pca_stats.R" not in rmd
+    assert "pca_analyze_separation" not in rmd
+    assert "separation_caption_by_plot" not in rmd
+    assert "separation testing was not enabled" not in rmd.lower()
+
+
+def test_write_pca2_replay_without_testing_omits_stats_file_and_readme_text(
+    tmp_path,
+    monkeypatch,
+):
+    def fake_write_gctx(matrix, path, **kwargs):
+        output = Path(path)
+        output.write_text("fake gctx\n", encoding="utf-8")
+        return output
+
+    monkeypatch.setattr(pca_replay, "write_gctx", fake_write_gctx)
+    monkeypatch.setattr(pca_replay, "read_gctx_content_hash", lambda _path: "abc123")
+    matrix = pd.DataFrame(
+        [[-1.0, 1.0], [1.0, -1.0]],
+        index=["SampleA", "SampleB"],
+        columns=["101", "202"],
+    )
+    metadata = pd.DataFrame(
+        {"group": ["control", "case"]},
+        index=matrix.index,
+    )
+
+    files = pca_replay.write_pca2_replay(
+        pca_matrix=matrix,
+        sample_metadata=metadata,
+        feature_symbols={},
+        pca2_outname=str(tmp_path / "pca" / "analysis_pca2"),
+        analysis_outpath=str(tmp_path),
+        preprocessing={"center": True},
+        plot_parameters={"figsize": [6, 7], "file_formats": [".png"]},
+        data_parameters={},
+        separation_testing={"enabled": False},
+    )
+
+    assert files.stats_r_path is None
+    assert not (files.replay_dir / "pca_stats.R").exists()
+    assert "pca_stats.R" not in files.rmd_path.read_text(encoding="utf-8")
+    assert "Welch-James" not in (files.replay_dir / "README.txt").read_text(
+        encoding="utf-8"
+    )
+    pointer = json.loads(files.pointer_path.read_text(encoding="utf-8"))
+    assert "stats_r_path" not in pointer
+    context = json.loads(files.context_path.read_text(encoding="utf-8"))
+    assert "separation_testing" not in context

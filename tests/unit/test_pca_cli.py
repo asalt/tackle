@@ -9,6 +9,8 @@ def test_single_pc_option_is_documented_as_repeatable_and_comma_delimited():
     assert result.exit_code == 0
     assert "--test-single-pc TEXT" in result.output
     assert "comma-delimited value such as 1,2" in result.output
+    assert "starts at 6 x 7" in result.output
+    assert "measured statistical captions" in " ".join(result.output.split())
 
 
 def test_single_pc_option_requires_a_test_grouping_field():

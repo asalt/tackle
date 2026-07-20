@@ -36,33 +36,32 @@ required_packages <- c(
   "tibble"
 )
 
-missing_packages <- required_packages[
-  !vapply(
-    required_packages,
-    requireNamespace,
-    logical(1),
-    quietly = TRUE
-  )
-]
-
-if (length(missing_packages)) {
-  stop(
-    "Required packages are unavailable: ",
-    paste(missing_packages, collapse = ", "),
-    call. = FALSE
+load_required_package <- function(package) {
+  tryCatch(
+    {
+      suppressPackageStartupMessages(
+        library(
+          package,
+          character.only = TRUE,
+          quietly = TRUE,
+          warn.conflicts = FALSE
+        )
+      )
+      TRUE
+    },
+    error = function(error) {
+      stop(
+        "Required package '", package, "' could not be loaded: ",
+        conditionMessage(error),
+        call. = FALSE
+      )
+    }
   )
 }
 
-suppressPackageStartupMessages({
-  library(ggplot2)
-  library(ggfortify)
-  library(ggrepel)
-  library(dplyr)
-  library(readr)
-  library(tibble)
-  library(jsonlite)
-  library(cmapR)
-})
+invisible(vapply(required_packages, load_required_package, logical(1)))
+
+source("pca_caption.R", local = TRUE)
 
 
 ```
@@ -84,6 +83,8 @@ plot_params <- ctx$plot_parameters
 captured_figsize <- as.numeric(unlist(plot_params$figsize, use.names = FALSE))
 fig_width <- if (length(captured_figsize) >= 1 && is.finite(captured_figsize[[1]])) captured_figsize[[1]] else 6
 fig_height <- if (length(captured_figsize) >= 2 && is.finite(captured_figsize[[2]])) captured_figsize[[2]] else 7
+figsize_mode <- as.character(unlist(plot_params$figsize_mode, use.names = FALSE))
+expand_caption_height <- length(figsize_mode) == 0 || !identical(figsize_mode[[1]], "explicit")
 pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))
 replot_formats <- as.character(unlist(plot_params$file_formats, use.names = FALSE))
 if (length(replot_formats) == 0) replot_formats <- ".png"
@@ -566,14 +567,20 @@ plots <- setNames(
 ```{r pca-pairs, results='asis'}
 for (plot_name in names(plots)) {
   cat("\n\n### ", toupper(gsub("_", " ", plot_name)), "\n\n", sep = "")
-  print(plots[[plot_name]])
+  prepared_plot <- pca_prepare_plot_for_output(
+    plots[[plot_name]],
+    fig_width = fig_width,
+    fig_height = fig_height,
+    expand_height = expand_caption_height
+  )
+  print(prepared_plot$plot)
   for (ext in replot_formats) {
     if (!startsWith(ext, ".")) ext <- paste0(".", ext)
     ggplot2::ggsave(
       file.path(out_dir, paste0(plot_name, ext)),
-      plots[[plot_name]],
+      prepared_plot$plot,
       width = fig_width,
-      height = fig_height
+      height = prepared_plot$fig_height
     )
   }
 }
