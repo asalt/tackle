@@ -247,6 +247,44 @@ def test_build_html_overview_adds_correlation_plots_after_metrics(tmp_path: Path
     assert "GCTX Artifacts" not in html_text
 
 
+def test_build_html_overview_pairs_pca_planes_and_keeps_scree_last(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "analysis"
+    pca_dir = base / "pca" / "pca2"
+    prefix = "run_pca2_nz1_testby_treatment"
+    filenames = [
+        f"{prefix}pc1_vs_pc2.png",
+        f"{prefix}_separation_PC1_PC2.png",
+        f"{prefix}pc1_vs_pc3.png",
+        f"{prefix}_separation_PC1_PC3.png",
+        f"{prefix}pc2_vs_pc3.png",
+        f"{prefix}_separation_PC2_PC3.png",
+        "run_pca2_nz1_scree_10.png",
+    ]
+    for filename in filenames:
+        _write_dummy_png(pca_dir / filename)
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(base_dir=str(base), out_dir=str(out_dir), force=True)
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+
+    assert "PCA (7)" in html_text
+    assert html_text.count("<summary>PC1 vs PC2</summary>") == 1
+    assert html_text.count("<summary>PC1 vs PC3</summary>") == 1
+    assert html_text.count("<summary>PC2 vs PC3</summary>") == 1
+    assert html_text.count('data-pca-role="PCA scores"') == 3
+    assert html_text.count('data-pca-role="Separability summary"') == 3
+    pc12_start = html_text.index("<summary>PC1 vs PC2</summary>")
+    pc13_start = html_text.index("<summary>PC1 vs PC3</summary>")
+    pc23_start = html_text.index("<summary>PC2 vs PC3</summary>")
+    scree_start = html_text.index("<summary>Scree plot</summary>")
+    assert pc12_start < pc13_start < pc23_start < scree_start
+    pc12_html = html_text[pc12_start:pc13_start]
+    assert f"{prefix}pc1_vs_pc2.png" in pc12_html
+    assert f"{prefix}_separation_PC1_PC2.png" in pc12_html
+
+
 def test_build_html_overview_caps_displayed_plot_width(tmp_path: Path) -> None:
     base = tmp_path / "analysis"
     _write_dummy_png(base / "metrics" / "qc_plot.png")

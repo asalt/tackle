@@ -400,6 +400,121 @@ def _group_volcano_by_contrast_and_sort(items: Sequence[PlotItem]) -> List[Dict[
     return out
 
 
+_PCA_SCORE_PLANE_RE = re.compile(
+    r"_?pc(?P<x>\d+)_vs_pc(?P<y>\d+)$",
+    flags=re.IGNORECASE,
+)
+_PCA_SEPARATION_PLANE_RE = re.compile(
+    r"_?separation_pc(?P<x>\d+)_pc(?P<y>\d+)$",
+    flags=re.IGNORECASE,
+)
+_PCA_SCREE_RE = re.compile(r"_?scree(?:_\d+)?$", flags=re.IGNORECASE)
+
+
+def _pca_plot_identity(item: PlotItem) -> Dict[str, Any]:
+    relpath = Path(item.source_relpath)
+    stem = relpath.stem
+    parent = relpath.parent.as_posix().lower()
+
+    for role, pattern in (
+        ("PCA scores", _PCA_SCORE_PLANE_RE),
+        ("Separability summary", _PCA_SEPARATION_PLANE_RE),
+    ):
+        match = pattern.search(stem)
+        if match is None:
+            continue
+        x = int(match.group("x"))
+        y = int(match.group("y"))
+        run_stem = stem[: match.start()].rstrip("_").lower()
+        return {
+            "role": role,
+            "run_key": f"{parent}/{run_stem}",
+            "plane": (x, y),
+            "plane_label": f"PC{x} vs PC{y}",
+            "is_scree": False,
+        }
+
+    return {
+        "role": "Scree plot" if _PCA_SCREE_RE.search(stem) else "PCA plot",
+        "run_key": f"{parent}/{stem.lower()}",
+        "plane": None,
+        "plane_label": None,
+        "is_scree": bool(_PCA_SCREE_RE.search(stem)),
+    }
+
+
+def _group_pca_plots(items: Sequence[PlotItem]) -> List[Dict[str, Any]]:
+    """Pair each PCA score plane with its matching separability summary."""
+
+    plane_buckets: Dict[Tuple[str, int, int], List[Dict[str, Any]]] = defaultdict(list)
+    other: List[Dict[str, Any]] = []
+    scree: List[Dict[str, Any]] = []
+
+    for item in items:
+        identity = _pca_plot_identity(item)
+        entry = {"role": identity["role"], "plot": item}
+        plane = identity["plane"]
+        if plane is not None:
+            x, y = plane
+            plane_buckets[(identity["run_key"], x, y)].append(entry)
+        elif identity["is_scree"]:
+            scree.append(entry)
+        else:
+            other.append(entry)
+
+    groups: List[Dict[str, Any]] = []
+    for group_index, ((run_key, x, y), entries) in enumerate(
+        sorted(plane_buckets.items(), key=lambda pair: (pair[0][0], pair[0][1], pair[0][2])),
+        start=1,
+    ):
+        entries.sort(
+            key=lambda entry: (
+                0 if entry["role"] == "PCA scores" else 1,
+                entry["plot"].source_relpath,
+            )
+        )
+        groups.append(
+            {
+                "key": _slugify_html_id(f"pca-plane-{group_index}-{run_key}-{x}-{y}"),
+                "label": f"PC{x} vs PC{y}",
+                "count": len(entries),
+                "entries": entries,
+                "paired": {entry["role"] for entry in entries}
+                >= {"PCA scores", "Separability summary"},
+            }
+        )
+
+    for group_index, entry in enumerate(
+        sorted(other, key=lambda value: value["plot"].source_relpath), start=1
+    ):
+        groups.append(
+            {
+                "key": f"pca-other-{group_index}",
+                "label": entry["plot"].title,
+                "count": 1,
+                "entries": [entry],
+                "paired": False,
+            }
+        )
+
+    # Scree plots are intentionally last: they summarize the PCA run rather than
+    # one displayed score plane.
+    for group_index, entry in enumerate(
+        sorted(scree, key=lambda value: value["plot"].source_relpath), start=1
+    ):
+        groups.append(
+            {
+                "key": f"pca-scree-{group_index}",
+                "label": "Scree plot",
+                "count": 1,
+                "entries": [entry],
+                "paired": False,
+            }
+        )
+
+    return groups
+
+
 def _render_html_table(
     headers: Sequence[str],
     rows: Sequence[Sequence[str]],
@@ -2277,6 +2392,16 @@ def build_html_overview(
                     "count": len(items),
                     "plots": items,
                     "contrasts": contrasts,
+                }
+            )
+        elif k == "pca":
+            sections.append(
+                {
+                    "key": k,
+                    "label": label,
+                    "count": len(items),
+                    "plots": items,
+                    "plot_groups": _group_pca_plots(items),
                 }
             )
         else:

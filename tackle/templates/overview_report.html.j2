@@ -167,6 +167,21 @@
       min-height: 2px;
       background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(78, 161, 255, 0.05));
     }
+    .pca-plot-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+    .pca-plot-grid.single { grid-template-columns: minmax(0, 1fr); }
+    .pca-plot-item h3 {
+      margin: 0.2rem 0 0.45rem 0;
+      color: var(--text);
+      font-size: 1rem;
+    }
+    @media (max-width: 900px) {
+      .pca-plot-grid { grid-template-columns: minmax(0, 1fr); }
+    }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .muted { color: var(--muted); }
@@ -410,7 +425,30 @@
         {% if sec.count == 0 %}
         <p class="muted">No plots found for this category.</p>
         {% else %}
-          {% if (sec.key == "topdiff-cluster" or sec.key == "volcano") and sec.contrasts %}
+          {% if sec.key == "pca" and sec.plot_groups %}
+            {% for g in sec.plot_groups %}
+            <details class="plot pca-plot-group" data-pca-group="{{ g.key }}">
+              <summary>{{ g.label }}</summary>
+              <div class="plot-body pca-plot-grid{% if not g.paired %} single{% endif %}">
+                {% for entry in g.entries %}
+                {% set item = entry.plot %}
+                <div class="pca-plot-item" data-pca-role="{{ entry.role }}">
+                  <h3>{{ entry.role }}</h3>
+                  <p class="meta plot-path"><code>{{ item.source_relpath }}</code></p>
+                  {% if not self_contained and item.asset_relpath %}
+                  <a href="{{ item.asset_relpath }}" target="_blank" rel="noopener">
+                    <img class="plot-img{% if defer_plot_images %} plot-img-deferred{% endif %}" data-plot-id="{{ item.source_relpath }}" data-resource-id="{{ item.resource_id }}" alt="{{ item.title }}" loading="lazy" />
+                  </a>
+                  {% else %}
+                  <img class="plot-img{% if defer_plot_images %} plot-img-deferred{% endif %}" data-plot-id="{{ item.source_relpath }}" data-resource-id="{{ item.resource_id }}" alt="{{ item.title }}" loading="lazy"
+                       onclick="if (this.currentSrc) { window.open(this.currentSrc, '_blank'); }" />
+                  {% endif %}
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+            {% endfor %}
+          {% elif (sec.key == "topdiff-cluster" or sec.key == "volcano") and sec.contrasts %}
             {% if (sec.contrasts | length) > 1 %}
             <nav class="contrast-tabs" aria-label="{% if sec.key == 'volcano' %}Volcano contrasts{% else %}Top diff contrasts{% endif %}">
               {% for c in sec.contrasts %}
