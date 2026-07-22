@@ -64,7 +64,9 @@ tackle dev inspect-gctx --spec
 
 Generated `make-run` scripts include editable `run_correlation` variants and a
 `run_pca` default using the selected design column, PCs 1-3, sample labels,
-encircles, and heteroscedastic separation tests.
+encircles, and heteroscedastic separation tests. The generated metadata inventory
+appears before `DESIGN_COL`; its default is the highest-cardinality repeated
+metadata field (`1 < distinct values < sample count`) or blank when none exists.
 
 ## Output layout (high-level)
 
