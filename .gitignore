@@ -45,3 +45,4 @@ tackle/data/annotations/generated/
 tackle/data/annotations/source_cache/
 tackle-freeze/target/
 tackle-freeze/.cargo-home/
+trials/*
