@@ -42,6 +42,7 @@ def test_build_metrics_html_report_inlines_tabulator_and_embeds_plots(
             "GPGroups": [1200, 980],
             "Total_psms": [25000, 18000],
             "Total_peptides": [4100, 3600],
+            "u2g_peptides": [3200, 2800],
         },
         index=["SampleA", "SampleB"],
     )
@@ -95,6 +96,11 @@ def test_build_metrics_html_report_inlines_tabulator_and_embeds_plots(
     assert "Genotype" in html_text
     assert "Total_psms" in html_text
     assert "data:image/png;base64," in html_text
+    assert "Median u2g peptides" in html_text
+    assert 'class="table-scroll"' in html_text
+    assert 'aria-label="Metrics table"' in html_text
+    assert "Sample metadata stays on the left" not in html_text
+    assert "These are the PNG outputs from the metrics workflow" not in html_text
 
 
 def test_build_metrics_html_report_falls_back_to_static_table_without_tabulator(
@@ -127,12 +133,13 @@ def test_build_metrics_html_report_falls_back_to_static_table_without_tabulator(
     assert "window.Tabulator" not in html_text
 
 
-def test_prepare_metrics_payload_uses_median_cards_not_total_psms() -> None:
+def test_prepare_metrics_payload_uses_u2g_peptides_for_median_card() -> None:
     metrics_df = pd.DataFrame(
         {
             "GPGroups": [1200, 980],
             "Total_psms": [25000, 18000],
             "Total_peptides": [4100, 3600],
+            "u2g_peptides": [3200, 2801],
         },
         index=["SampleA", "SampleB"],
     )
@@ -144,7 +151,8 @@ def test_prepare_metrics_payload_uses_median_cards_not_total_psms() -> None:
     )
 
     labels = [card["label"] for card in payload["summary_cards"]]
-    assert labels == ["Samples", "Median Peptides", "Median GP Groups"]
+    assert labels == ["Samples", "Median u2g peptides", "Median GP Groups"]
+    assert payload["summary_cards"][1]["value"] == "3000.5"
 
 
 def test_miscut_long_frame_preserves_real_miscut_categories() -> None:

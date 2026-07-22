@@ -61,7 +61,10 @@ window.Tabulator = function(target, options) {
 
 def _write_css_stub(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(".tabulator-stub { display: block; }", encoding="utf-8")
+    path.write_text(
+        ".tabulator-stub { display: block; width: 2200px; }",
+        encoding="utf-8",
+    )
 
 
 @contextlib.contextmanager
@@ -136,7 +139,7 @@ def test_metrics_html_playwright_renders_filters_and_downloads(
             except Exception as exc:  # pragma: no cover
                 pytest.skip(f"Playwright browser unavailable: {exc}")
 
-            page = browser.new_page()
+            page = browser.new_page(viewport={"width": 900, "height": 700})
             try:
                 page.goto(f"{base_url}/metrics.html")
                 page.wait_for_load_state("domcontentloaded")
@@ -148,6 +151,19 @@ def test_metrics_html_playwright_renders_filters_and_downloads(
                     "sample_name,meta__0__genotype,meta__1__age,metric__0__s,metric__1__r,metric__2__gpgroups,metric__3__total-psms,metric__4__total-peptides",
                 )
                 expect(page.locator("#metrics-status")).to_have_text("2 rows")
+
+                table_region = page.locator(
+                    '.table-scroll[aria-label="Metrics table"]'
+                )
+                region_widths = table_region.evaluate(
+                    "el => ({client: el.clientWidth, scroll: el.scrollWidth})"
+                )
+                assert region_widths["scroll"] > region_widths["client"]
+                page_widths = page.evaluate(
+                    "() => ({client: document.documentElement.clientWidth, "
+                    "scroll: document.documentElement.scrollWidth})"
+                )
+                assert page_widths["scroll"] <= page_widths["client"] + 1
 
                 page.locator("#metrics-search").fill("KO")
                 expect(host.locator(".tabulator-stub")).to_have_text("Rows 1/2")

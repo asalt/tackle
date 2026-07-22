@@ -166,17 +166,23 @@ def _prepare_metrics_payload(
                 return str(available[candidate])
         return None
 
-    total_peptides_col = _find_metric_column(("Total_peptides", "PeptideCount", "peptide_count_total"))
+    u2g_peptides_col = _find_metric_column(
+        ("u2g_peptides", "PeptideCount_u2g", "peptide_count_u2g")
+    )
     gpgroups_col = _find_metric_column(("GPGroups", "GPGroup", "GeneProducts"))
 
-    if total_peptides_col:
-        summary_cards.append(
-            _summary_card(
-                "Median Peptides",
-                int(pd.to_numeric(metrics_frame[total_peptides_col], errors="coerce").fillna(0).median()),
-                "per sample",
+    if u2g_peptides_col:
+        u2g_peptide_values = pd.to_numeric(
+            metrics_frame[u2g_peptides_col], errors="coerce"
+        ).dropna()
+        if not u2g_peptide_values.empty:
+            summary_cards.append(
+                _summary_card(
+                    "Median u2g peptides",
+                    _clean_scalar(u2g_peptide_values.median()),
+                    "per sample",
+                )
             )
-        )
     if gpgroups_col:
         summary_cards.append(
             _summary_card(

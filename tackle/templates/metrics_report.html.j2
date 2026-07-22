@@ -86,6 +86,7 @@
       display: grid;
       gap: 1rem;
       margin-top: 1rem;
+      min-width: 0;
     }
     .summary-grid {
       display: grid;
@@ -124,6 +125,7 @@
     }
     .panel {
       padding: 1rem 1.05rem 1.1rem;
+      min-width: 0;
     }
     .panel h2 {
       margin: 0 0 0.2rem;
@@ -177,6 +179,20 @@
       border-radius: 14px;
       background: rgba(255,255,255,0.62);
       overflow: hidden;
+    }
+    .table-scroll {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 0.25rem;
+      scrollbar-gutter: stable;
+      -webkit-overflow-scrolling: touch;
+    }
+    .table-scroll > .metrics-table-host,
+    .table-scroll > .miscut-table-host,
+    .table-scroll > .static-table {
+      min-width: max-content;
     }
     .fallback-note {
       margin: 0 0 0.75rem;
@@ -322,9 +338,7 @@
 
       <section class="panel">
         <h2>Interactive Metrics Table</h2>
-        <p class="panel-copy">
-          Sample metadata stays on the left, numeric metric columns can be sorted, and the bar cells help surface relative differences without losing the exact values.
-        </p>
+        <!-- Metadata columns precede sortable numeric metrics; bar cells retain exact values. -->
         <div class="toolbar">
           <input id="metrics-search" type="search" placeholder="Search samples, metadata, or metric values" />
           <button class="toolbar-btn" id="metrics-reset" type="button">Reset</button>
@@ -337,9 +351,13 @@
         <p class="fallback-note">
           Tabulator could not be bundled during report generation, so this report is falling back to a plain HTML table.
         </p>
+        <div class="table-scroll" role="region" aria-label="Metrics table" tabindex="0">
         {{ static_metrics_table_html | safe }}
+        </div>
         {% else %}
-        <div class="metrics-table-host" id="metrics-table"></div>
+        <div class="table-scroll" role="region" aria-label="Metrics table" tabindex="0">
+          <div class="metrics-table-host" id="metrics-table"></div>
+        </div>
         {% endif %}
       </section>
 
@@ -351,9 +369,13 @@
             Included because the metrics command already computes it when the source values are available. It stays tucked away by default.
           </p>
           {% if not tabulator_available %}
+          <div class="table-scroll" role="region" aria-label="Miscut ratio table" tabindex="0">
           {{ static_miscut_table_html | safe }}
+          </div>
           {% else %}
-          <div class="miscut-table-host" id="miscut-table"></div>
+          <div class="table-scroll" role="region" aria-label="Miscut ratio table" tabindex="0">
+            <div class="miscut-table-host" id="miscut-table"></div>
+          </div>
           {% endif %}
         </details>
       </section>
@@ -362,7 +384,7 @@
       {% if plots %}
       <section class="panel">
         <h2>Bundled Plots</h2>
-        <p class="panel-copy">These are the PNG outputs from the metrics workflow, embedded directly into this HTML so the report stays shareable as a single file.</p>
+        <!-- Metrics PNGs are embedded as data URLs to keep the report self-contained. -->
         <div class="plot-grid">
           {% for plot in plots %}
           <figure class="plot-card">
