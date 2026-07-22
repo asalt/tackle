@@ -55,7 +55,7 @@ def _load_sheetnames(path: str):
 
 
 @pytest.mark.skipif(not _has_excel_writer(), reason="No Excel writer engine available")
-def test_build_export_xlsx_writes_pheno_and_sources(tmp_path):
+def test_build_export_xlsx_writes_sample_metadata_and_sources(tmp_path):
     base = tmp_path
     (base / "export").mkdir(parents=True, exist_ok=True)
     (base / "volcano").mkdir(parents=True, exist_ok=True)
@@ -87,10 +87,22 @@ def test_build_export_xlsx_writes_pheno_and_sources(tmp_path):
 
     sheets = _load_sheetnames(result)
     if sheets is not None:
-        assert "phenotype" in sheets
+        assert sheets[0] == "readme"
+        assert "sample_metadata" in sheets
+        assert "phenotype" not in sheets
         assert "sources" in sheets
         assert any(s.startswith("export__") for s in sheets)
         assert any(s.startswith("volcano__") for s in sheets)
+
+    readme = pd.read_excel(result, sheet_name="README")
+    assert not readme["section"].isin(["Row counts", "Run metadata"]).any()
+    assert "area" in set(readme["item"])
+    assert "MSPC" not in set(readme["item"])
+    assert "evidence" not in set(readme["item"])
+    assert "sample_metadata" in set(readme["item"])
+    assert "volcano" in set(readme["item"])
+    sources = pd.read_excel(result, sheet_name="sources")
+    assert {"count_scope", "row_unit"}.issubset(sources.columns)
 
 
 @pytest.mark.skipif(not _has_openpyxl(), reason="openpyxl required to inspect sheet names")
@@ -122,6 +134,60 @@ def test_nested_area_export_uses_semantic_sheet_name_without_truncated_run_name(
     sources = pd.read_excel(result, sheet_name="sources")
     row = sources.loc[sources["sheet"] == "export__data_area"].iloc[0]
     assert row["relative_path"] == f"export/data_area/{source_name}"
+
+
+@pytest.mark.skipif(not _has_openpyxl(), reason="openpyxl required to inspect workbook contents")
+def test_readme_describes_loaded_and_filtered_export_scopes(tmp_path):
+    export_dir = tmp_path / "export"
+    export_dir.mkdir(parents=True)
+    pd.DataFrame({"GeneID": ["g1", "g2", "g3"]}).to_csv(
+        export_dir / "run_data_MSPC_iBAQ.tsv",
+        sep="\t",
+        index=False,
+    )
+    pd.DataFrame({"GeneID": ["g1", "g2", "g3"]}).to_csv(
+        export_dir / "run_data_evidence.tsv",
+        sep="\t",
+        index=False,
+    )
+    pd.DataFrame({"GeneID": ["g1", "g2"]}).to_csv(
+        export_dir / "run_data_area.tsv",
+        sep="\t",
+        index=False,
+    )
+
+    result = build_export_xlsx(
+        base_dir=str(tmp_path),
+        out_path=str(export_dir / "summary.xlsx"),
+        include_export=True,
+        include_volcano=False,
+    )
+
+    sources = pd.read_excel(result, sheet_name="sources")
+    mspc = sources.loc[sources["relative_path"].str.contains("data_MSPC")].iloc[0]
+    evidence = sources.loc[sources["relative_path"].str.contains("data_evidence")].iloc[0]
+    area = sources.loc[sources["relative_path"].str.contains("data_area")].iloc[0]
+    assert mspc["rows"] == 3
+    assert evidence["rows"] == 3
+    assert area["rows"] == 2
+    assert mspc["row_unit"] == "loaded GeneID"
+    assert evidence["row_unit"] == "loaded GeneID"
+    assert area["row_unit"] == "filtered GeneID"
+
+    readme = pd.read_excel(result, sheet_name="README")
+    values = readme.set_index("item")["value"]
+    assert values["MSPC"] == "one row per loaded GeneID"
+    assert values["evidence"] == "one row per loaded GeneID"
+    assert values["area"] == "one row per filtered GeneID"
+    assert not readme["section"].isin(["Row counts", "Run metadata"]).any()
+    assert "sample_metadata" not in set(readme["item"])
+    assert "volcano" not in set(readme["item"])
+
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(result, read_only=False)
+    assert workbook.sheetnames[0] == "README"
+    assert workbook["README"]["A1"].alignment.text_rotation == 0
 
 
 @pytest.mark.skipif(not _has_excel_writer(), reason="No Excel writer engine available")

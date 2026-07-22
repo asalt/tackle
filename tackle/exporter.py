@@ -463,6 +463,17 @@ def _infer_col_widths(
                 "rows": 10,
                 "cols": 10,
                 "mtime": 20,
+                "count_scope": 32,
+                "row_unit": 42,
+            }
+        )
+    if kind == "readme":
+        overrides.update(
+            {
+                "section": 18,
+                "item": 28,
+                "value": 28,
+                "description": 60,
             }
         )
 
@@ -710,6 +721,100 @@ def _sheet_base_from_relative_path(relative_path: str) -> str:
     return re.sub(r"\.tsv$", "", base, flags=re.IGNORECASE)
 
 
+def _source_row_unit(relative_path: str, kind: str) -> str:
+    name = Path(str(relative_path)).name.lower()
+    if "data_evidence" in name:
+        return "loaded GeneID"
+    if "data_mspc" in name:
+        return "loaded GeneID"
+    if "data_area" in name:
+        return "filtered GeneID"
+    if str(kind) == "volcano":
+        return "GeneID statistical-result row"
+    return "source data row"
+
+
+def _build_workbook_readme(
+    *,
+    export_levels: Sequence[str],
+    include_sample_metadata: bool,
+    include_volcano: bool,
+) -> pd.DataFrame:
+    included_levels = set(export_levels)
+    contents = []
+    if included_levels:
+        contents.append("tackle export TSV files")
+    if include_volcano:
+        contents.append("volcano result TSV files")
+    summary_label = " and ".join(contents) or "included TSV files"
+    rows = [
+        {
+            "section": "Workbook",
+            "item": "Purpose",
+            "value": "",
+            "description": (
+                f"Summary of {summary_label}. The sources sheet "
+                "records the originating path and dimensions for each included table."
+            ),
+        },
+    ]
+    if "MSPC" in included_levels:
+        rows.append(
+            {
+                "section": "Export levels",
+                "item": "MSPC",
+                "value": "one row per loaded GeneID",
+                "description": (
+                    "Broad quantitative export over the complete loaded GeneID universe, "
+                    "including entries outside the filtered area analysis matrix."
+                ),
+            }
+        )
+    if "evidence" in included_levels:
+        rows.append(
+            {
+                "section": "Export levels",
+                "item": "evidence",
+                "value": "one row per loaded GeneID",
+                "description": (
+                    "Built from all distinct GeneIDs in the loaded data. Each sample cell is "
+                    "PSMs|PeptideCount|PeptideCount_u2g."
+                ),
+            }
+        )
+    if "area" in included_levels:
+        rows.append(
+            {
+                "section": "Export levels",
+                "item": "area",
+                "value": "one row per filtered GeneID",
+                "description": "Logged or linear abundance matrix for the filtered feature set.",
+            }
+        )
+    if include_sample_metadata:
+        rows.append(
+            {
+                "section": "Other sheets",
+                "item": "sample_metadata",
+                "value": "one row per sample",
+                "description": "Sample metadata carried by the analysis configuration.",
+            }
+        )
+    if include_volcano:
+        rows.append(
+            {
+                "section": "Other sheets",
+                "item": "volcano",
+                "value": "one row per result GeneID",
+                "description": (
+                    "Differential-analysis result rows. Counts can change with model inputs, "
+                    "top-N selection, slimming, or merged-table joins."
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=["section", "item", "value", "description"])
+
+
 def _sanitize_label(value: str) -> str:
     """Sanitize a label for use as a column prefix without truncation.
 
@@ -846,6 +951,25 @@ def build_export_xlsx(
         logger.error("Exporter: no TSVs found under %s for patterns %s", base_dir, patterns)
         raise FileNotFoundError(f"No TSV exports found under {base_dir} matching \n{patterns}")
 
+    volcano_targets = [
+        (rel, path) for (rel, path) in targets if str(rel).startswith("volcano")
+    ]
+    export_targets = [
+        (rel, path) for (rel, path) in targets if str(rel).startswith("export")
+    ]
+    export_levels = []
+    for rel, _path in export_targets:
+        name = Path(str(rel)).name.lower()
+        if "data_mspc" in name:
+            export_levels.append("MSPC")
+        elif "data_evidence" in name:
+            export_levels.append("evidence")
+        elif "data_area" in name:
+            export_levels.append("area")
+    has_sample_metadata = (
+        isinstance(pheno_df, pd.DataFrame) and not pheno_df.empty
+    )
+
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     write_target = out
@@ -895,21 +1019,62 @@ def build_export_xlsx(
             else None
         )
         sources_rows: List[Dict[str, Any]] = []
-        # Manifest sheet removed per request; key metadata remains in logs/context
-        # Optional phenotype/metadata sheet first
+        readme_df = _build_workbook_readme(
+            export_levels=export_levels,
+            include_sample_metadata=has_sample_metadata,
+            include_volcano=bool(volcano_targets),
+        )
+        readme_sheet = _sanitize_sheet_name("README")
+        readme_df.to_excel(xw, sheet_name=readme_sheet, index=False)
+        if style:
+            try:
+                headers = [str(c) for c in readme_df.columns]
+                widths = _infer_col_widths(readme_df, kind="readme")
+                ws = xw.sheets.get(readme_sheet)
+                if ws is not None and engine == "xlsxwriter":
+                    readme_formats = _xlsxwriter_formats(
+                        xw.book,
+                        header_rotation=0,
+                    )
+                    _apply_sheet_style_xlsxwriter(
+                        ws,
+                        nrows_total=int(readme_df.shape[0]) + 1,
+                        ncols=int(readme_df.shape[1]),
+                        headers=headers,
+                        kind="readme",
+                        col_widths=widths,
+                        formats=readme_formats,
+                        header_rotation=0,
+                        color_scale_ibaq=False,
+                    )
+                elif ws is not None and engine == "openpyxl":
+                    _apply_sheet_style_openpyxl(
+                        ws,
+                        nrows_total=int(readme_df.shape[0]) + 1,
+                        ncols=int(readme_df.shape[1]),
+                        headers=headers,
+                        kind="readme",
+                        col_widths=widths,
+                        header_rotation=0,
+                        color_scale_ibaq=False,
+                    )
+            except Exception:
+                logger.debug("Exporter: styling skipped for README sheet")
 
-        if pheno_df is not None and isinstance(pheno_df, pd.DataFrame) and not pheno_df.empty:
+        # Optional sample metadata sheet first.
+
+        if has_sample_metadata:
             pheno = pheno_df.copy()
             pheno.index.name = pheno.index.name or "Sample"
             pheno_reset = pheno.reset_index()
-            pheno_sheet = _sanitize_sheet_name("phenotype")
+            pheno_sheet = _sanitize_sheet_name("sample_metadata")
             logger.info("Exporter: adding sheet '%s' with shape %s", pheno_sheet, pheno_reset.shape)
             t0 = time.perf_counter()
             pheno_reset.to_excel(xw, sheet_name=pheno_sheet, index=False)
             if style:
                 try:
                     headers = [str(c) for c in pheno_reset.columns]
-                    widths = _infer_col_widths(pheno_reset, kind="phenotype")
+                    widths = _infer_col_widths(pheno_reset, kind="sample_metadata")
                     ws = xw.sheets.get(pheno_sheet)
                     if ws is not None:
                         if engine == "xlsxwriter":
@@ -918,7 +1083,7 @@ def build_export_xlsx(
                                 nrows_total=int(pheno_reset.shape[0]) + 1,
                                 ncols=int(pheno_reset.shape[1]),
                                 headers=headers,
-                                kind="phenotype",
+                                kind="sample_metadata",
                                 col_widths=widths,
                                 formats=xlsx_formats or {},
                                 header_rotation=header_rotation,
@@ -930,7 +1095,7 @@ def build_export_xlsx(
                                 nrows_total=int(pheno_reset.shape[0]) + 1,
                                 ncols=int(pheno_reset.shape[1]),
                                 headers=headers,
-                                kind="phenotype",
+                                kind="sample_metadata",
                                 col_widths=widths,
                                 header_rotation=header_rotation,
                                 color_scale_ibaq=color_scale_ibaq,
@@ -940,9 +1105,6 @@ def build_export_xlsx(
             if timing:
                 logger.info("Exporter: wrote sheet '%s' in %.2fs", pheno_sheet, time.perf_counter() - t0)
         # Optionally merge all volcano TSVs into a single wide sheet
-        volcano_targets = [(rel, p) for (rel, p) in targets if str(rel).startswith("volcano")]
-        export_targets = [(rel, p) for (rel, p) in targets if str(rel).startswith("export")]
-
         volcano_wide_metrics: Optional[pd.DataFrame] = None
 
         def _label_from_rel(relpath: str) -> str:
@@ -1317,6 +1479,20 @@ def build_export_xlsx(
         try:
             if sources_rows:
                 sources_df = pd.DataFrame(sources_rows)
+                sources_df["count_scope"] = sources_df["sheet"].map(
+                    lambda sheet: (
+                        "source TSV before workbook merge"
+                        if str(sheet) == "volcano_merged"
+                        else "rows written to sheet"
+                    )
+                )
+                sources_df["row_unit"] = [
+                    _source_row_unit(path, kind)
+                    for path, kind in zip(
+                        sources_df["relative_path"],
+                        sources_df["kind"],
+                    )
+                ]
                 logger.info("Exporter: adding 'sources' sheet with %d entries", len(sources_df))
                 sources_df.to_excel(xw, sheet_name=_sanitize_sheet_name("sources"), index=False)
                 if style:

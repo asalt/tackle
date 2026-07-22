@@ -3096,12 +3096,15 @@ def correlation(
 	    ),
     default=(),
     multiple=True,
-    help="""Export data table of the filtered list of gene products used for plotting
+    help="""Export one or more data tables.
               If no `--level` is provided, exports the default matrices: area + gct + MSPC.
+              `area` and `gct` contain the filtered analysis feature set.
+              `MSPC` contains every loaded GeneID in the broad quantitative export.
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
-              `evidence` returns compact cells as PSMs|PeptideCount|PeptideCount_u2g
+              `evidence` contains every loaded GeneID and returns compact cells as
+              PSMs|PeptideCount|PeptideCount_u2g
               `zscore` writes the detection-aware z-score matrix with its original
               missing-value mask restored plus a complete `zscore_complete` matrix.
               """,

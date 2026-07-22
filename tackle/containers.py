@@ -986,6 +986,14 @@ class Data:
             cols.append(active)
         return cols
 
+    def _mspc_export_source(self) -> pd.DataFrame:
+        """Return every loaded GeneID/metric row for the broad MSPC export."""
+        return (
+            self.data.set_index(["GeneID", "Metric"])
+            .sort_index(level=[0, 1])
+            .copy()
+        )
+
     @staticmethod
     def _export_label_token(label) -> str:
         """Normalize export label token for column naming."""
@@ -2449,8 +2457,7 @@ class Data:
             return outname
 
         elif level == "MSPC":
-            # TODO: export ALL data, not just filtered
-            export = self.df_filtered.sort_index(level=[0, 1])
+            export = self._mspc_export_source()
             data = list()
             # cols = export.index.get_level_values(1).unique()
             gene_metadata_cols = [
