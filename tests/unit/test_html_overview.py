@@ -128,6 +128,27 @@ def test_ai_summary_prompt_labels_cluster_heatmap_scaling_without_inference() ->
     assert "not proof that the data are genotyping measurements" in msg
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("clustermap_z_row.png", "row z-scored"),
+        ("clustermap_z_0.png", "row z-scored"),
+        ("clustermap_z_column.png", "column z-scored"),
+        ("clustermap_z_1.png", "column z-scored"),
+        ("clustermap_scale_row.png", "row-scaled"),
+        ("clustermap_scale_column.png", "column-scaled"),
+        ("clustermap_scale_col.png", "column-scaled"),
+    ],
+)
+def test_cluster_scaling_note_supports_named_modes_and_numeric_aliases(
+    path: str, expected: str
+) -> None:
+    note = html_overview._cluster_scaling_note_from_paths([path])
+
+    assert note is not None
+    assert expected in note
+
+
 def test_summarize_topdiff_ai_context_extracts_topn_and_metric() -> None:
     summary = html_overview._summarize_topdiff_ai_context(
         [

@@ -1265,13 +1265,13 @@ def _parse_matrix_shape_from_text(value: str) -> Optional[Dict[str, int]]:
 
 def _cluster_scaling_note_from_paths(paths: Sequence[str]) -> Optional[str]:
     text = " ".join(str(path) for path in paths)
-    if re.search(r"(?<![A-Za-z0-9])z_0(?![A-Za-z0-9])", text):
+    if re.search(r"(?<![A-Za-z0-9])z_(?:row|0)(?![A-Za-z0-9])", text):
         return "Heatmap values are row z-scored: each feature/gene is mean-centered and scaled across samples."
-    if re.search(r"(?<![A-Za-z0-9])z_1(?![A-Za-z0-9])", text):
+    if re.search(r"(?<![A-Za-z0-9])z_(?:column|1)(?![A-Za-z0-9])", text):
         return "Heatmap values are column z-scored: each sample column is mean-centered and scaled across features."
     if re.search(r"(?<![A-Za-z0-9])scale_row(?![A-Za-z0-9])", text):
         return "Heatmap values are row-scaled for visualization."
-    if re.search(r"(?<![A-Za-z0-9])scale_col(?![A-Za-z0-9])", text):
+    if re.search(r"(?<![A-Za-z0-9])scale_(?:column|col)(?![A-Za-z0-9])", text):
         return "Heatmap values are column-scaled for visualization."
     return None
 
