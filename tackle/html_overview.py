@@ -80,6 +80,9 @@ _CATEGORY_LABELS: Dict[str, str] = {
     "cluster": "Clustering",
     "pca": "PCA",
     "umap": "UMAP",
+    "bar": "Bar Plots",
+    "box": "Box Plots",
+    "violin": "Violin Plots",
     "volcano": "Volcano Plots",
     "topdiff-cluster": "Top Diff Heatmaps",
 }
@@ -90,6 +93,9 @@ _DEFAULT_ORDER: Tuple[str, ...] = (
     "cluster",
     "pca",
     "umap",
+    "bar",
+    "box",
+    "violin",
     "volcano",
     "topdiff-cluster",
 )
@@ -162,8 +168,19 @@ def _is_under(path: Path, parent: Path) -> bool:
 def _classify_plot_png(relpath: str) -> Optional[str]:
     rel_lower = str(relpath).lower().replace("\\", "/")
     path_parts = {part for part in rel_lower.split("/") if part}
+    stem = Path(rel_lower).stem
     if rel_lower.startswith("topdiff/") or "/topdiff/" in rel_lower:
         return "topdiff-cluster"
+    if "bar" in path_parts or "barplot" in path_parts or stem.startswith("barplot_"):
+        return "bar"
+    if "box" in path_parts or "boxplot" in path_parts or stem.startswith("boxplot_"):
+        return "box"
+    if (
+        "violin" in path_parts
+        or "violinplot" in path_parts
+        or stem.startswith("violinplot_")
+    ):
+        return "violin"
     if "correlation" in path_parts:
         return "correlation"
     if "umap" in rel_lower:
@@ -196,6 +213,12 @@ def _readable_title_from_png_rel(relpath: str, *, category: str) -> str:
         "cluster",
         "clustermap",
         "topdiff",
+        "bar",
+        "barplot",
+        "box",
+        "boxplot",
+        "violin",
+        "violinplot",
     }:
         return f"{category_label}: {parent} / {stem or p.name}"
     return f"{category_label}: {stem or p.name}"

@@ -2340,7 +2340,18 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     "plot_kinds",
     multiple=True,
     type=click.Choice(
-        ["metrics", "correlation", "cluster", "pca", "umap", "volcano", "topdiff-cluster"]
+        [
+            "metrics",
+            "correlation",
+            "cluster",
+            "pca",
+            "umap",
+            "bar",
+            "box",
+            "violin",
+            "volcano",
+            "topdiff-cluster",
+        ]
     ),
     default=(
         "metrics",
@@ -2348,6 +2359,9 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
         "cluster",
         "pca",
         "umap",
+        "bar",
+        "box",
+        "violin",
         "volcano",
         "topdiff-cluster",
     ),
@@ -3521,14 +3535,28 @@ def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, 
     "--include-plot-images/--no-include-plot-images",
     default=True,
     show_default=True,
-    help="Also include existing PNG plots (volcano/pca/metrics/cluster/topdiff-cluster) as slides.",
+    help=(
+        "Also include existing PNG plots (metrics/PCA/cluster/bar/box/violin/"
+        "volcano/topdiff-cluster) as slides."
+    ),
 )
 @click.option(
     "--plot-kind",
     "plot_kinds",
     multiple=True,
-    type=click.Choice(["volcano", "pca", "metrics", "cluster", "topdiff-cluster"]),
-    default=("metrics", "pca", "cluster", "volcano"),
+    type=click.Choice(
+        [
+            "volcano",
+            "pca",
+            "metrics",
+            "cluster",
+            "bar",
+            "box",
+            "violin",
+            "topdiff-cluster",
+        ]
+    ),
+    default=("metrics", "pca", "cluster", "bar", "box", "violin", "volcano"),
     show_default=True,
     help="Plot categories to include when --include-plot-images is enabled. If any --plot-kind is provided, it replaces the default list.",
 )

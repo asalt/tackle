@@ -21,8 +21,11 @@ PLOT_CATEGORY_ORDER = {
     "metrics": 0,
     "cluster": 1,
     "pca": 2,
-    "volcano": 3,
-    "topdiff-cluster": 4,
+    "bar": 3,
+    "box": 4,
+    "violin": 5,
+    "volcano": 6,
+    "topdiff-cluster": 7,
 }
 
 
@@ -71,19 +74,47 @@ def _readable_title_from_png_rel(relpath: str, *, category: str) -> str:
         "pca": "PCA Plot",
         "metrics": "Metrics Plot",
         "cluster": "Cluster Plot",
+        "bar": "Bar Plot",
+        "box": "Box Plot",
+        "violin": "Violin Plot",
         "topdiff-cluster": "Topdiff Cluster Plot",
     }.get(category, category.title())
 
-    if parent and parent.lower() not in {"volcano", "pca", "metrics", "cluster", "clustermap", "topdiff"}:
+    if parent and parent.lower() not in {
+        "volcano",
+        "pca",
+        "metrics",
+        "cluster",
+        "clustermap",
+        "topdiff",
+        "bar",
+        "barplot",
+        "box",
+        "boxplot",
+        "violin",
+        "violinplot",
+    }:
         return f"{category_label}: {parent} / {stem or p.name}"
     return f"{category_label}: {stem or p.name}"
 
 
 def _classify_plot_png(relpath: str) -> Optional[str]:
     rel_lower = relpath.lower().replace("\\", "/")
+    path_parts = {part for part in rel_lower.split("/") if part}
+    stem = Path(rel_lower).stem
     # topdiff-specific cluster images should be categorized first.
     if "topdiff" in rel_lower and ("cluster" in rel_lower or "clustermap" in rel_lower):
         return "topdiff-cluster"
+    if "bar" in path_parts or "barplot" in path_parts or stem.startswith("barplot_"):
+        return "bar"
+    if "box" in path_parts or "boxplot" in path_parts or stem.startswith("boxplot_"):
+        return "box"
+    if (
+        "violin" in path_parts
+        or "violinplot" in path_parts
+        or stem.startswith("violinplot_")
+    ):
+        return "violin"
     if "volcano" in rel_lower:
         return "volcano"
     if "pca" in rel_lower or "pcaplot" in rel_lower:
@@ -107,12 +138,20 @@ def collect_plot_image_assets(
     *,
     base_dir: str,
     filter_contains: Sequence[str] = (),
-    include_kinds: Sequence[str] = ("volcano", "pca", "metrics", "cluster", "topdiff-cluster"),
+    include_kinds: Sequence[str] = (
+        "volcano",
+        "pca",
+        "metrics",
+        "cluster",
+        "bar",
+        "box",
+        "violin",
+        "topdiff-cluster",
+    ),
     exclude_dirs: Sequence[str] = (),
 ) -> List[DeckImageAsset]:
     """
-    Discover existing PNG plot assets (volcano/pca/metrics/cluster/topdiff-cluster)
-    to include in slide decks.
+    Discover existing PNG plot assets to include in slide decks.
     """
     root = Path(base_dir).resolve()
     include = {str(x).strip().lower() for x in include_kinds if str(x).strip()}

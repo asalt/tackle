@@ -306,6 +306,31 @@ def test_build_html_overview_pairs_pca_planes_and_keeps_scree_last(
     assert f"{prefix}_separation_PC1_PC2.png" in pc12_html
 
 
+def test_build_html_overview_adds_existing_bar_box_and_violin_plots(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "analysis"
+    bar_plot = base / "bar" / "barplot_TP53.png"
+    box_plot = base / "box" / "boxplot_TP53.png"
+    violin_plot = base / "violin" / "violinplot_TP53.png"
+    for plot in (bar_plot, box_plot, violin_plot):
+        _write_dummy_png(plot)
+
+    out_dir = tmp_path / "report" / "html"
+    outputs = build_html_overview(base_dir=str(base), out_dir=str(out_dir), force=True)
+    html_text = outputs.out_html.read_text(encoding="utf-8")
+
+    assert "Bar Plots (1)" in html_text
+    assert "Box Plots (1)" in html_text
+    assert "Violin Plots (1)" in html_text
+    assert bar_plot.name in html_text
+    assert box_plot.name in html_text
+    assert violin_plot.name in html_text
+    assert (out_dir / "assets" / "plots" / "bar" / bar_plot.name).exists()
+    assert (out_dir / "assets" / "plots" / "box" / box_plot.name).exists()
+    assert (out_dir / "assets" / "plots" / "violin" / violin_plot.name).exists()
+
+
 def test_build_html_overview_caps_displayed_plot_width(tmp_path: Path) -> None:
     base = tmp_path / "analysis"
     _write_dummy_png(base / "metrics" / "qc_plot.png")

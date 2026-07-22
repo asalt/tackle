@@ -65,18 +65,29 @@ def test_collect_plot_image_assets_discovers_expected_categories(tmp_path):
     _write_png(tmp_path / "pca" / "pcaplot_groupA.png", "pca")
     _write_png(tmp_path / "metrics" / "metrics_dist_groupA.png", "metrics")
     _write_png(tmp_path / "cluster" / "clustermap_groupA.png", "cluster")
+    _write_png(tmp_path / "bar" / "barplot_TP53.png", "bar")
+    _write_png(tmp_path / "box" / "boxplot_TP53.png", "box")
+    _write_png(tmp_path / "violin" / "violinplot_TP53.png", "violin")
     _write_png(tmp_path / "topdiff" / "cluster" / "clustermap_topdiff_groupA.png", "topdiff")
     _write_png(tmp_path / "report" / "deck" / "tables" / "generated.png", "generated")
     _write_png(tmp_path / "misc" / "other_plot.png", "other")
 
     assets = collect_plot_image_assets(
         base_dir=str(tmp_path),
-        include_kinds=("volcano", "pca", "metrics", "cluster", "topdiff-cluster"),
         exclude_dirs=(str(tmp_path / "report" / "deck"),),
     )
 
     categories = {asset.category for asset in assets}
-    assert categories == {"volcano", "pca", "metrics", "cluster", "topdiff-cluster"}
+    assert categories == {
+        "volcano",
+        "pca",
+        "metrics",
+        "cluster",
+        "bar",
+        "box",
+        "violin",
+        "topdiff-cluster",
+    }
     # Generated deck assets should not be re-ingested.
     assert all("report/deck" not in asset.source_relpath.replace("\\", "/") for asset in assets)
     # Unclassified misc image should not be included.
