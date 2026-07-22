@@ -3102,8 +3102,8 @@ def correlation(
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
               `evidence` returns compact cells as PSMs|PeptideCount|PeptideCount_u2g
-              `zscore` returns the detection-aware z-score of masked log expression,
-              matching correlation and cluster2 preprocessing.
+              `zscore` writes the detection-aware z-score matrix with its original
+              missing-value mask restored plus a complete `zscore_complete` matrix.
               """,
 )
 @click.option(
@@ -3158,7 +3158,12 @@ def export(ctx, level, force, genesymbols, gene_symbols, linear, gct_gene_covari
             covariates=gct_gene_covariate,
             force=force,
         )
-        exported.append((l, out))
+        if isinstance(out, (tuple, list)):
+            for index, path in enumerate(out):
+                label = l if index == 0 else f"{l}_complete"
+                exported.append((label, path))
+        else:
+            exported.append((l, out))
 
     click.echo("Exported:")
     for level_name, outpath in exported:

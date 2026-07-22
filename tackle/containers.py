@@ -2385,22 +2385,30 @@ class Data:
         if level == "MSPC":  # just export 1 column and name it
             level_formatter = level + "_" + _area_col
 
-        outname = (
-            get_outname(
-                "data_{}".format(level_formatter),
-                normtype=self.normtype,
-                name=self.outpath_name,
-                taxon=self.taxon,
-                non_zeros=self.non_zeros,
-                colors_only=self.colors_only,
-                batch=self.batch_applied,
-                batch_method=(
-                    "parametric" if not self.batch_nonparametric else "nonparametric"
-                ),
-                # outpath=self.outpath,
-                outpath=os.path.join(self.outpath, "export"),
+        def _export_outname(formatter):
+            return (
+                get_outname(
+                    "data_{}".format(formatter),
+                    normtype=self.normtype,
+                    name=self.outpath_name,
+                    taxon=self.taxon,
+                    non_zeros=self.non_zeros,
+                    colors_only=self.colors_only,
+                    batch=self.batch_applied,
+                    batch_method=(
+                        "parametric"
+                        if not self.batch_nonparametric
+                        else "nonparametric"
+                    ),
+                    # outpath=self.outpath,
+                    outpath=os.path.join(self.outpath, "export"),
+                )
+                + ".tsv"
             )
-            + ".tsv"
+
+        outname = _export_outname(level_formatter)
+        zscore_complete_outname = (
+            _export_outname("zscore_complete") if level == "zscore" else None
         )
 
         # Default behavior: don't overwrite export artifacts unless explicitly requested.
@@ -2422,6 +2430,15 @@ class Data:
                     newest = max(candidates, key=os.path.getmtime)
                     logger.info(f"Export exists; skipping: {newest}")
                     return newest
+            elif level == "zscore":
+                zscore_paths = (outname, zscore_complete_outname)
+                if all(
+                    path is not None and os.path.exists(path)
+                    for path in zscore_paths
+                ):
+                    for path in zscore_paths:
+                        logger.info(f"Export exists; skipping: {path}")
+                    return zscore_paths
             elif os.path.exists(outname):
                 logger.info(f"Export exists; skipping: {outname}")
                 return outname
@@ -3091,15 +3108,32 @@ class Data:
             return outname
 
         elif level == "zscore":  # export zscore of the data
-            # Match correlation/cluster2: z-score the logged matrix while
-            # allowing nondetections to anchor scaling, then restore the mask.
+            # Match correlation/cluster2: nondetections participate in the
+            # detection-aware scaling. Export both the complete result and an
+            # otherwise identical matrix with the original mask restored.
             zscore_input = self.areas_log.copy()
             zscore_input[self.mask] = np.nan
-            export = zscore_input.apply(my_zscore, axis=1).reset_index()
-            export.insert(1, "Metric", "zscore")
-            export.to_csv(outname, sep="\t", index=False)
-            logger.info(f"Wrote {outname}")
-            return outname
+            zscore_missing = ~np.isfinite(zscore_input)
+            zscore_complete = zscore_input.apply(
+                lambda row: my_zscore(row, remask=False), axis=1
+            )
+            zscore_masked = zscore_complete.mask(zscore_missing)
+
+            exports = (
+                (outname, zscore_masked),
+                (zscore_complete_outname, zscore_complete),
+            )
+            for path, matrix in exports:
+                if path is None:
+                    raise RuntimeError("Missing z-score export path")
+                if os.path.exists(path) and not force:
+                    logger.info(f"Export exists; skipping: {path}")
+                    continue
+                export = matrix.reset_index()
+                export.insert(1, "Metric", "zscore")
+                export.to_csv(path, sep="\t", index=False, na_rep="")
+                logger.info(f"Wrote {path}")
+            return tuple(path for path, _matrix in exports)
 
             #     .apply(z_score, axis=1)
             #     .reset_index()

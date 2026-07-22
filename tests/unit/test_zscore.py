@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -30,7 +32,7 @@ def test_containers_reexports_shared_my_zscore_for_zscore_export():
     assert export_my_zscore is my_zscore
 
 
-def test_zscore_export_uses_logged_masked_matrix_and_shared_transform(
+def test_zscore_export_writes_complete_and_remasked_transforms(
     tmp_path, monkeypatch
 ):
     from tackle import containers
@@ -65,17 +67,47 @@ def test_zscore_export_uses_logged_masked_matrix_and_shared_transform(
     monkeypatch.setattr(
         containers,
         "get_outname",
-        lambda *_args, **_kwargs: str(tmp_path / "zscore_export"),
+        lambda plot_type, **_kwargs: str(tmp_path / plot_type),
     )
 
-    output = data._perform_data_export(level="zscore", force=True)
+    output, complete_output = data._perform_data_export(level="zscore", force=True)
     exported = pd.read_table(output, dtype={"GeneID": str})
-    expected = matrix.apply(my_zscore, axis=1)
+    complete_exported = pd.read_table(complete_output, dtype={"GeneID": str})
+    expected = matrix.apply(lambda row: my_zscore(row, remask=False), axis=1)
+    expected_masked = expected.mask(mask)
 
     assert list(exported.columns) == ["GeneID", "Metric", "S1", "S2", "S3"]
+    assert list(complete_exported.columns) == [
+        "GeneID",
+        "Metric",
+        "S1",
+        "S2",
+        "S3",
+    ]
     assert exported["Metric"].eq("zscore").all()
+    assert complete_exported["Metric"].eq("zscore").all()
     assert np.allclose(
         exported[["S1", "S2", "S3"]],
+        expected_masked,
+        equal_nan=True,
+    )
+    assert np.allclose(
+        complete_exported[["S1", "S2", "S3"]],
         expected,
         equal_nan=True,
     )
+    assert complete_exported[["S1", "S2", "S3"]].notna().all().all()
+    assert np.array_equal(
+        exported[["S1", "S2", "S3"]].isna().to_numpy(),
+        mask.to_numpy(),
+    )
+    assert output.endswith("data_zscore.tsv")
+    assert complete_output.endswith("data_zscore_complete.tsv")
+
+    Path(output).write_text("do-not-overwrite\n", encoding="utf-8")
+    Path(complete_output).unlink()
+    repeated = data._perform_data_export(level="zscore", force=False)
+
+    assert repeated == (output, complete_output)
+    assert Path(output).read_text(encoding="utf-8") == "do-not-overwrite\n"
+    assert Path(complete_output).exists()
