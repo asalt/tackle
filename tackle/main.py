@@ -5931,9 +5931,13 @@ when `auto` is set for `--nclusters`""",
 )
 @click.option(
     "--standard-scale",
-    type=click.Choice(["None", "0", "1"]),
+    type=click.Choice(["None", "row", "column", "col", "0", "1"]),
     default="None",
     show_default=True,
+    help=(
+        "Optionally divide each gene row or sample column by its sum. "
+        "Compatibility aliases: col=column, 0=column, 1=row."
+    ),
 )
 @click.option(
     "--show-missing-values/--hide-missing-values",
@@ -5949,9 +5953,23 @@ when `auto` is set for `--nclusters`""",
     show_default=True,
 )
 @click.option(
-    "--z-score", type=click.Choice(["None", "0", "1"]), default="0", show_default=True
+    "--z-score",
+    type=click.Choice(["None", "row", "column", "col", "0", "1"]),
+    default="row",
+    show_default=True,
+    help=(
+        "Z-score heatmap values within rows (each gene across samples) or "
+        "columns (each sample across genes). Compatibility aliases: col=column, "
+        "0=row, 1=column."
+    ),
 )
-@click.option("--z-score-by", type=str, default=None, show_default=True)
+@click.option(
+    "--z-score-by",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Metadata field for row z-scoring within sample groups; requires --z-score row.",
+)
 @click.pass_context
 @click.option(
     "--z-score-fillna/--z-score-nofillna",
@@ -7442,7 +7460,7 @@ def cluster_from_volcano(
             standard_scale="None",
             show_missing_values=True,
             cluster_fillna=None,
-            z_score="0",
+            z_score="row",
             z_score_by=None,
             z_score_fillna=False,
             add_human_ratios=False,

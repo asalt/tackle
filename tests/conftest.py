@@ -1,18 +1,10 @@
+import shutil
+import subprocess
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
-from types import SimpleNamespace
-
-
-class _DF(pd.DataFrame):
-    @property
-    def _constructor(self):
-        return _DF
-
-    @property
-    def GeneID(self):
-        # Provide attribute used by dispatcher to create a 'GeneID' column from the index
-        return pd.Series(self.index, index=self.index)
 
 
 class StubDataObj:
@@ -26,7 +18,8 @@ class StubDataObj:
         self.col_metadata = pd.DataFrame({"condition": conditions}, index=samples)
 
         expr = rng.normal(loc=0.0, scale=1.0, size=(n_genes, n_samples))
-        self.areas_log = _DF(expr, index=genes, columns=samples)
+        self.areas_log = pd.DataFrame(expr, index=genes, columns=samples)
+        self.areas_log.index.name = "GeneID"
         self.mask = pd.DataFrame(False, index=genes, columns=samples)
         self.gid_symbol = {g: g.upper() for g in genes}
 
@@ -62,3 +55,29 @@ def stub_data_obj(tmp_path, stub_gene_mapper):
 def ctx(stub_data_obj):
     return SimpleNamespace(obj={"data_obj": stub_data_obj, "file_fmts": [".png"]})
 
+
+@pytest.fixture(scope="session")
+def cluster2_r_prereqs():
+    rscript = shutil.which("Rscript")
+    if not rscript:
+        pytest.skip("Rscript is not available")
+
+    required = (
+        "tidyverse",
+        "ComplexHeatmap",
+        "circlize",
+        "stringr",
+        "cluster",
+        "dendsort",
+    )
+    package_check = "; ".join(
+        f"stopifnot(requireNamespace('{package}', quietly=TRUE))"
+        for package in required
+    )
+    result = subprocess.run(
+        [rscript, "-e", package_check],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        pytest.skip("Required cluster2 R packages are not installed")

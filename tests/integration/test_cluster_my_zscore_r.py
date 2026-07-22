@@ -48,8 +48,106 @@ stopifnot(
   all(is.na(one_detected[c(1, 2, 4)])),
   variable[[3]] > variable[[1]],
   is.na(variable[[2]]),
-  identical(constant_complete, c(0, 0, 0))
+  identical(constant_complete, c(0, 0, 0)),
+  identical(
+    cluster2_legend_title(z_score = "row"),
+    "log(iBAQ) zscore"
+  ),
+  identical(
+    cluster2_legend_title(z_score = "row", z_score_by = "group"),
+    "log(iBAQ) zscore by group"
+  ),
+  identical(
+    cluster2_legend_title(z_score = "column"),
+    "log(iBAQ) sample-wise zscore"
+  ),
+  identical(
+    cluster2_legend_title(z_score = "row", standard_scale = "row"),
+    "log(iBAQ) zscore (row-sum scaled)"
+  ),
+  identical(
+    cluster2_legend_title(z_score = "row", standard_scale = "column"),
+    "log(iBAQ) zscore (column-sum scaled)"
+  ),
+  identical(cluster2_legend_title(z_score = NULL), "log(iBAQ)")
 )
+
+tiny_data <- data.frame(
+  GeneID = c("g1", "g2"),
+  GeneSymbol = c("G1", "G2"),
+  S1 = c(1, 3),
+  S2 = c(2, 4),
+  S3 = c(4, 2),
+  check.names = FALSE
+)
+tiny_metadata <- data.frame(
+  name = c("S1", "S2", "S3"),
+  row.names = c("S1", "S2", "S3")
+)
+tiny_row_result <- cluster2(
+  tiny_data,
+  col_data = tiny_metadata,
+  z_score = "row",
+  row_cluster = FALSE,
+  col_cluster = FALSE
+)
+stopifnot(identical(
+  tiny_row_result$heatmap@ht_list[[1]]@matrix_legend_param$title,
+  "log(iBAQ) zscore"
+))
+tiny_row_legend_width <- grid::convertWidth(
+  tiny_row_result$heatmap@ht_list[[1]]@matrix_legend_param$legend_width,
+  "cm",
+  valueOnly = TRUE
+)
+tiny_row_title_width <- grid::convertWidth(
+  1.1 * grid::stringWidth("log(iBAQ) zscore"),
+  "cm",
+  valueOnly = TRUE
+)
+stopifnot(
+  tiny_row_legend_width >= 3,
+  tiny_row_legend_width + 1e-12 >= tiny_row_title_width
+)
+tiny_row_matrix <- tiny_row_result$heatmap@ht_list[[1]]@matrix
+stopifnot(isTRUE(all.equal(
+  unname(rowMeans(tiny_row_matrix)),
+  rep(0, nrow(tiny_row_matrix)),
+  tolerance = 1e-12
+)))
+
+tiny_column_result <- cluster2(
+  tiny_data,
+  col_data = tiny_metadata,
+  z_score = "column",
+  row_cluster = FALSE,
+  col_cluster = FALSE
+)
+stopifnot(identical(
+  tiny_column_result$heatmap@ht_list[[1]]@matrix_legend_param$title,
+  "log(iBAQ) sample-wise zscore"
+))
+tiny_column_legend_width <- grid::convertWidth(
+  tiny_column_result$heatmap@ht_list[[1]]@matrix_legend_param$legend_width,
+  "cm",
+  valueOnly = TRUE
+)
+tiny_column_title_width <- grid::convertWidth(
+  1.1 * grid::stringWidth("log(iBAQ) sample-wise zscore"),
+  "cm",
+  valueOnly = TRUE
+)
+stopifnot(
+  tiny_column_legend_width >= 3,
+  tiny_column_legend_width + 1e-12 >= tiny_column_title_width,
+  tiny_column_legend_width > tiny_row_legend_width
+)
+tiny_column_matrix <- tiny_column_result$heatmap@ht_list[[1]]@matrix
+stopifnot(isTRUE(all.equal(
+  unname(colMeans(tiny_column_matrix)),
+  rep(0, ncol(tiny_column_matrix)),
+  tolerance = 1e-12
+)))
 """
     result = subprocess.run(
         [rscript, "-e", code],

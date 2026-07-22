@@ -10,7 +10,7 @@ from rpy2.rinterface_lib.embedded import RRuntimeError
 import tackle.clusterplot_dispatcher as cdisp
 
 
-def test_cluster2_with_volcano_filter(ctx):
+def test_cluster2_with_volcano_filter(ctx, cluster2_r_prereqs):
     # Build a small volcano TSV with clear up/down and significant rows
     data_obj = ctx.obj["data_obj"]
     genes = list(data_obj.areas_log.index)[:10]
@@ -64,7 +64,7 @@ def test_cluster2_with_volcano_filter(ctx):
             sample_reference=None,
             sample_include=None,
             sample_exclude=None,
-            linkage="ward",
+            linkage="ward.D2",
             min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
@@ -91,7 +91,7 @@ def test_cluster2_with_volcano_filter(ctx):
             volcano_topn=6,
         )
     except RRuntimeError as err:
-        pytest.skip(f"R runtime prerequisites missing: {err}")
+        pytest.fail(f"cluster2 R execution failed: {err}")
 
     cluster_dir = Path(vfile).parent / "topdiff" / "test"
     images = list(cluster_dir.rglob("*.png"))

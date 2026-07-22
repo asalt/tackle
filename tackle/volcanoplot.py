@@ -686,7 +686,7 @@ def volcanoplot(
                         standard_scale="None",
                         show_missing_values=True,
                         cluster_fillna=None,
-                        z_score="0",
+                        z_score="row",
                         z_score_by=None,
                         z_score_fillna=False,
                         add_human_ratios=False,

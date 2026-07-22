@@ -51,6 +51,35 @@ myzscore <- function(value, minval = NA, remask = TRUE, fillna = TRUE) {
 }
 
 
+cluster2_legend_title <- function(linear = FALSE, z_score = NULL,
+                                  z_score_scale = !is.null(z_score),
+                                  z_score_by = NULL,
+                                  standard_scale = NULL) {
+  title <- ifelse(isTRUE(linear), "iBAQ", "log(iBAQ)")
+  z_score_mode <- if (is.null(z_score)) NULL else as.character(z_score)[[1]]
+  z_score_active <- !is.null(z_score) || isTRUE(z_score_scale)
+
+  if (identical(z_score_mode, "column")) {
+    title <- paste0(title, " sample-wise zscore")
+  } else if (z_score_active) {
+    title <- paste0(title, " zscore")
+  }
+  if (!is.null(z_score_by)) title <- paste0(title, " by ", z_score_by)
+
+  if (!is.null(standard_scale)) {
+    standard_scale <- as.character(standard_scale)
+    if (standard_scale == "row") {
+      title <- paste0(title, " (row-sum scaled)")
+    } else if (standard_scale == "column") {
+      title <- paste0(title, " (column-sum scaled)")
+    } else {
+      title <- paste0(title, " (standardized)")
+    }
+  }
+  title
+}
+
+
 
 dist_no_na <- function(mat) {
   .min <- min(mat, na.rm = TRUE)
@@ -150,6 +179,15 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
                      metrics_only = FALSE,
                      ...) {
   ht_opt$message <- FALSE
+  if (!is.null(z_score) && !z_score %in% c("row", "column")) {
+    stop("cluster2 expects canonical z_score values: NULL, 'row', or 'column'")
+  }
+  if (!is.null(standard_scale) && !standard_scale %in% c("row", "column")) {
+    stop("cluster2 expects canonical standard_scale values: NULL, 'row', or 'column'")
+  }
+  if (identical(z_score, "column") && !is.null(z_score_by)) {
+    stop("z_score_by can only be used with row-wise z-scoring")
+  }
   # preserve column order if col_cluster is disabled
 
   use_cuttree <- FALSE
@@ -197,7 +235,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
 
   if (is.null(z_score)) {
     # do nothing
-  } else if (is.null(z_score_by) & z_score == "0") {
+  } else if (is.null(z_score_by) && z_score == "row") {
     exprs_long <- exprs_long %>%
       mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
       group_by(GeneID) %>%
@@ -205,11 +243,22 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       ungroup() %>%
       mutate(zscore_impute = ifelse(.missing & cluster_fillna == "avg", 0, zscore_impute)) %>%
       select(-.missing)
-  } else if (!is.null(z_score_by) & z_score == "0") {
+  } else if (!is.null(z_score_by) && z_score == "row") {
     exprs_long <- exprs_long %>%
       mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
       group_by(GeneID, !!as.name(z_score_by)) %>%
       mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
+      ungroup() %>%
+      mutate(zscore_impute = ifelse(.missing & cluster_fillna == "avg", 0, zscore_impute)) %>%
+      select(-.missing)
+  } else if (z_score == "column") {
+    exprs_long <- exprs_long %>%
+      mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
+      group_by(name) %>%
+      mutate(
+        zscore = myzscore(value, fillna = z_score_fillna),
+        zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)
+      ) %>%
       ungroup() %>%
       mutate(zscore_impute = ifelse(.missing & cluster_fillna == "avg", 0, zscore_impute)) %>%
       select(-.missing)
@@ -757,27 +806,18 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
   # row_cluster <- as.dendrogram(o1[[1]])
   # col_cluster <- as.dendrogram(o2[[1]])
 
-  # title = ifelse(is.null(z_score), ifelse(linear == TRUE, "iBAQ", "log(iBAQ)"), "zscore(log(iBAQ))"),
-  .title <- ifelse(linear == TRUE, "iBAQ", "log(iBAQ)")
-  if (!is.null(z_score) || (z_score_scale==TRUE)) z_score <- TRUE
-  if (is.null(z_score) && (z_score_scale==FALSE)) z_score <- FALSE
-  if (z_score == TRUE | z_score == "0") .title <- paste0(.title, " zscore")
-  if (!is.null(z_score_by)) .title <- paste0(.title, " by ", z_score_by)
-  # {
-  #   heatmap_legend_param$title <- paste0("zscore ", heatmap_legend_param$title)
-  # }
-  if (!is.null(standard_scale)) {
-    .standard_scale <- as.character(standard_scale)
-    if (.standard_scale == "1") {
-      .title <- paste0(.title, " (row-sum scaled)")
-    } else if (.standard_scale == "0") {
-      .title <- paste0(.title, " (column-sum scaled)")
-    } else {
-      .title <- paste0(.title, " (standardized)")
-    }
-  }
+  .title <- cluster2_legend_title(
+    linear = linear,
+    z_score = z_score,
+    z_score_scale = z_score_scale,
+    z_score_by = z_score_by,
+    standard_scale = standard_scale
+  )
 
-  .legend_width <- if (is.null(z_score_by)) unit(3.0, "cm") else unit(4.4, "cm")
+  .legend_width <- grid::unit.pmax(
+    unit(3.0, "cm"),
+    1.1 * grid::stringWidth(.title)
+  )
   heatmap_legend_param <- list(
     title = .title,
     direction = "horizontal",
@@ -787,7 +827,6 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     gap = unit(2, "mm"),
     labels_gp = gpar(fontsize=8)
   )
-  # legend_width = ifelse(is.null(z_score_by), unit(1.5, "cm"), unit(4, "cm"))
   # print(heatmap_legend_param)
 
 

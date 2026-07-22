@@ -34,6 +34,61 @@ from .containers import (
 logger = _get_logger(__name__)
 
 
+def normalize_cluster2_z_score(value):
+    """Return the canonical cluster2 z-score mode."""
+    if value is None:
+        return None
+
+    mode = str(value)
+    aliases = {
+        "None": None,
+        "row": "row",
+        "column": "column",
+        "col": "column",
+        "0": "row",
+        "1": "column",
+    }
+    if mode not in aliases:
+        choices = "None, row, column, col, 0, 1"
+        raise ValueError(f"Unknown cluster2 z-score mode {value!r}; choose one of: {choices}")
+    return aliases[mode]
+
+
+def normalize_cluster2_standard_scale(value):
+    """Return the canonical cluster2 sum-scaling mode."""
+    if value is None:
+        return None
+
+    mode = str(value)
+    aliases = {
+        "None": None,
+        "row": "row",
+        "column": "column",
+        "col": "column",
+        "0": "column",
+        "1": "row",
+    }
+    if mode not in aliases:
+        choices = "None, row, column, col, 0, 1"
+        raise ValueError(
+            f"Unknown cluster2 standard-scale mode {value!r}; choose one of: {choices}"
+        )
+    return aliases[mode]
+
+
+def standard_scale_cluster2_matrix(matrix, mode):
+    """Apply optional row- or column-sum scaling to a cluster2 matrix."""
+    mode = normalize_cluster2_standard_scale(mode)
+    if mode is None:
+        return matrix
+    if mode == "row":
+        row_sums = matrix.sum(axis=1)
+        return matrix.div(row_sums.where(row_sums != 0), axis=0).fillna(0)
+
+    col_sums = matrix.sum(axis=0)
+    return matrix.div(col_sums.where(col_sums != 0), axis=1).fillna(0)
+
+
 def _json_safe_metadata_color_mapping(mapping):
     colors = {}
     for key, value in mapping.items():
@@ -309,6 +364,11 @@ def run(
 
     grdevices = importr("grDevices")
 
+    z_score = normalize_cluster2_z_score(z_score)
+    standard_scale = normalize_cluster2_standard_scale(standard_scale)
+    if z_score == "column" and z_score_by is not None:
+        raise ValueError("`--z-score-by` can only be used with `--z-score row`")
+
     outname_kws = dict()
     print(volcano_direction)
     topdiff_out_dir = None
@@ -321,10 +381,6 @@ def run(
 
     if genesymbols is True and gene_symbols is False:
         gene_symbols = True
-    if z_score == "None":
-        z_score = None
-    if standard_scale == "None":
-        standard_scale = None
     if cluster_func == "none":
         cluster_func = None
     if cluster_func is not None and str(cluster_func).lower() in ("cutree", "cuttree"):
@@ -591,13 +647,7 @@ def run(
         X = 10**X
         covariate_source = 10**covariate_source
 
-    if standard_scale is not None and standard_scale != "None":
-        if standard_scale == 1 or standard_scale == "1":
-            row_sums = X.sum(axis=1)
-            X = X.div(row_sums.where(row_sums != 0), axis=0).fillna(0)
-        elif standard_scale == 0 or standard_scale == "0":
-            col_sums = X.sum(axis=0)
-            X = X.div(col_sums.where(col_sums != 0), axis=1).fillna(0)
+    X = standard_scale_cluster2_matrix(X, standard_scale)
 
     symbols = [data_obj.gid_symbol.get(x, "?") for x in X.index]
 
@@ -827,10 +877,7 @@ def run(
     if linear:
         outname_kws["linear"] = "linear"
     if standard_scale is not None:
-        if standard_scale == 1 or standard_scale == "1":
-            outname_kws["scale"] = "row"
-        if standard_scale == 0 or standard_scale == "0":
-            outname_kws["scale"] = "col"
+        outname_kws["scale"] = standard_scale
 
     #
     # data_obj.do_cluster()

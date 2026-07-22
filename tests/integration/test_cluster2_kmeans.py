@@ -9,8 +9,7 @@ from rpy2.rinterface_lib.embedded import RRuntimeError
 import tackle.clusterplot_dispatcher as cdisp
 
 
-def test_cluster2_kmeans_writes_outputs(ctx):
-    
+def test_cluster2_kmeans_writes_outputs(ctx, cluster2_r_prereqs):
     try:
         cdisp.run(
             ctx=ctx,
@@ -48,7 +47,7 @@ def test_cluster2_kmeans_writes_outputs(ctx):
             sample_reference=None,
             sample_include=None,
             sample_exclude=None,
-            linkage="ward",
+            linkage="ward.D2",
             min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
@@ -75,12 +74,12 @@ def test_cluster2_kmeans_writes_outputs(ctx):
             volcano_topn=50,
         )
     except RRuntimeError as err:
-        pytest.skip(f"R runtime prerequisites missing: {err}")
+        pytest.fail(f"cluster2 R execution failed: {err}")
 
-    # Expect at least one cluster metrics TSV and one plot file under cluster2/
-    cluster_dir = Path(ctx.obj["data_obj"].outpath) / "cluster2"
-    tsvs = list(cluster_dir.rglob("*.tsv"))
-    images = list(cluster_dir.rglob("*.png"))
+    # Plot and cluster-membership outputs live under clustermap/<taxon>/.
+    clustermap_dir = Path(ctx.obj["data_obj"].outpath) / "clustermap"
+    tsvs = list(clustermap_dir.rglob("*.tsv"))
+    images = list(clustermap_dir.rglob("*.png"))
 
     assert tsvs, "Expected clustermap TSV metrics to be written"
     for tsv in tsvs:

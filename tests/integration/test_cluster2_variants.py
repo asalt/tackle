@@ -9,7 +9,13 @@ from rpy2.rinterface_lib.embedded import RRuntimeError
 import tackle.clusterplot_dispatcher as cdisp
 
 
-def test_cluster2_with_scaling_and_zscore(ctx):
+@pytest.mark.parametrize(
+    ("z_score", "canonical_token"),
+    [("0", "z_row"), ("col", "z_column")],
+)
+def test_cluster2_with_scaling_and_zscore(
+    ctx, cluster2_r_prereqs, z_score, canonical_token
+):
     try:
         cdisp.run(
             ctx=ctx,
@@ -47,7 +53,7 @@ def test_cluster2_with_scaling_and_zscore(ctx):
             sample_reference=None,
             sample_include=None,
             sample_exclude=None,
-            linkage="ward",
+            linkage="ward.D2",
             min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
@@ -67,21 +73,22 @@ def test_cluster2_with_scaling_and_zscore(ctx):
             standard_scale="1",  # row scale
             show_missing_values=False,
             cluster_fillna="min",
-            z_score="0",  # column z-score
+            z_score=z_score,
             z_score_by=None,
             z_score_fillna=False,
             add_human_ratios=False,
             volcano_topn=50,
         )
     except RRuntimeError as err:
-        pytest.skip(f"R runtime prerequisites missing: {err}")
+        pytest.fail(f"cluster2 R execution failed: {err}")
 
-    cluster_dir = Path(ctx.obj["data_obj"].outpath) / "cluster2"
-    images = list(cluster_dir.rglob("*.png"))
+    clustermap_dir = Path(ctx.obj["data_obj"].outpath) / "clustermap"
+    images = list(clustermap_dir.rglob("*.png"))
     assert images, "Expected a clustermap image with scaling/z-score options"
+    assert any(canonical_token in image.name for image in images)
 
 
-def test_cluster2_sample_include_reduces_columns(ctx):
+def test_cluster2_sample_include_reduces_columns(ctx, cluster2_r_prereqs):
     try:
         cdisp.run(
             ctx=ctx,
@@ -119,7 +126,7 @@ def test_cluster2_sample_include_reduces_columns(ctx):
             sample_reference="condition",
             sample_include=["A"],
             sample_exclude=None,
-            linkage="ward",
+            linkage="ward.D2",
             min_autoclusters=3,
             max_autoclusters=10,
             nclusters=3,
@@ -146,10 +153,10 @@ def test_cluster2_sample_include_reduces_columns(ctx):
             volcano_topn=50,
         )
     except RRuntimeError as err:
-        pytest.skip(f"R runtime prerequisites missing: {err}")
+        pytest.fail(f"cluster2 R execution failed: {err}")
 
-    cluster_dir = Path(ctx.obj["data_obj"].outpath) / "cluster2"
-    imgs = list(cluster_dir.rglob("*.png"))
+    clustermap_dir = Path(ctx.obj["data_obj"].outpath) / "clustermap"
+    imgs = list(clustermap_dir.rglob("*.png"))
     assert imgs, "Expected at least one clustermap image"
     # Assert filename hints reduced columns (look for 'x4' ending since 8 samples -> 4 after include)
     assert any(img.name.endswith("x4.png") for img in imgs), "Expected column count suffix x4 in output name"
