@@ -352,6 +352,7 @@ def run(
     export_sweep_tsvs=False,
     annotation_filter=None,
     reroute_volcano=True,
+    keep_description_attributes=False,
 ):
 
     from . import grdevice_helper
@@ -917,14 +918,15 @@ def run(
     # =================================================================
     if gene_symbols and add_description:
         # this could definitely be improved
-        description_frame = data_obj.data.query("Metric == 'GeneDescription'")
+        description_frame = data_obj.data.query("Metric == 'Description'")
+        # description_frame = data_obj.data.query("Metric == 'GeneDescription'")
         _cols = [x for x in description_frame if x not in ("GeneID", "Metric")]
         # _descriptions = description_frame[_cols].stack().unique()
         _descriptions = description_frame[_cols].fillna("").stack().unique()
         if all(x == "" for x in _descriptions):
             description_frame = data_obj.data.query(
-                "Metric == 'Description'"
-            )  # try another
+                "Metric == 'GeneDescription'"
+            )  # try the mapped description
             _descriptions = description_frame[_cols].fillna("").stack().unique()
         if len(description_frame) == 0 or all(x == "" for x in _descriptions):
             pass  # fail
@@ -937,9 +939,12 @@ def run(
             X = pd.merge(X, to_merge, how="left")
             # try to remove excess info from description that are not useful for display
             # this is uniprot based removal of identifiers
-            X["Description"] = X.Description.fillna("").str.replace(
-                r"OS=.*", "", regex=True
-            )
+            if not keep_description_attributes:
+                X["Description"] = X.Description.fillna("").str.replace(
+                    r"OS=.*", "", regex=True
+                )
+            # append description string to genesymbol string -
+            # easier than creating a new column to pass to clusterplot.R
             X["GeneSymbol"] = (
                 X.GeneSymbol.astype(str) + " " + X.Description.fillna("").astype(str)
             )

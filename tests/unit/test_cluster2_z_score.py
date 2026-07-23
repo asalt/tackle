@@ -1,7 +1,10 @@
+import inspect
+
 from click.testing import CliRunner
 import pandas as pd
 import pytest
 
+from tackle import clusterplot_dispatcher
 from tackle.clusterplot_dispatcher import (
     normalize_cluster2_standard_scale,
     normalize_cluster2_z_score,
@@ -72,3 +75,28 @@ def test_cluster2_standard_scale_help_retains_opt_in_default_and_aliases():
     assert "0=column, 1=row" in normalized_help
     standard_scale_help = normalized_help.split("--standard-scale", 1)[1]
     assert "[default: None]" in standard_scale_help.split("--show-missing-values", 1)[0]
+
+
+@pytest.mark.parametrize(
+    ("option", "expected"),
+    [
+        ("--keep-description-attributes", True),
+        ("--no-keep-description-attributes", False),
+    ],
+)
+def test_cluster2_forwards_keep_description_attributes_by_keyword(
+    monkeypatch, option, expected
+):
+    run_signature = inspect.signature(clusterplot_dispatcher.run)
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        bound = run_signature.bind(*args, **kwargs)
+        captured.update(bound.arguments)
+
+    monkeypatch.setattr(clusterplot_dispatcher, "run", fake_run)
+
+    result = CliRunner().invoke(cluster2, [option])
+
+    assert result.exit_code == 0, result.output
+    assert captured["keep_description_attributes"] is expected

@@ -5784,6 +5784,16 @@ def umap(
               can have multiple subsequent annotation columns
               """,
 )
+
+@click.option(
+    "--keep-description-attributes/--no-keep-description-attributes",
+    default=False,
+    show_default=True,
+    help=(
+        "Keep UniProt-style attributes such as OS=, OX=, GN=, PE=, and SV= "
+        "when --add-description is used."
+    ),
+)
 @click.option(
     "--volcano-file",
     type=Path_or_Glob(exists=True, dir_okay=False),
@@ -6057,6 +6067,7 @@ def cluster2(
     gsea_input,
     highlight_geneids,
     highlight_geneids_table,
+    keep_description_attributes,
     linear,
     legend_include,
     legend_exclude,
@@ -6178,6 +6189,7 @@ def cluster2(
         export_sweep_tsvs=export_sweep_tsvs,
         annotation_filter=annotation_filter,
         reroute_volcano=reroute_volcano,
+        keep_description_attributes=keep_description_attributes,
     )
 
 
