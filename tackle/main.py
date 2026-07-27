@@ -460,7 +460,7 @@ HELP_NOTICES = (
         command_paths=("make-run",),
     ),
     HelpNotice(
-        "make-xls accepts --base-dir and --basedir for standalone workbook generation from an existing analysis directory.",
+        "make-xls accepts --base-dir and --basedir for standalone workbook generation and writes to <base-dir>/export/summary.xlsx by default.",
         command_paths=("make-xls",),
     ),
     HelpNotice(
@@ -500,11 +500,13 @@ HELP_TOPICS = {
             "This is intended for review, filtering, and sharing without changing the source result tables."
         ),
         "examples": (
-            "tackle make-xls --basedir ./results/project/run --out summary.xlsx",
-            "tackle EXPERIMENTS.conf make-xls --out summary.xlsx",
+            "tackle make-xls --basedir ./results/project/run",
+            "tackle make-xls --basedir ./results/project/run --name review.xlsx",
+            "tackle EXPERIMENTS.conf make-xls --outpath ./workbooks --name review.xlsx",
         ),
         "notes": (
             "--base-dir and --basedir are aliases for standalone use.",
+            "Without --outpath, the workbook is written under the analysis export folder.",
             "Styling options affect workbook readability only; they do not change the analytical data.",
         ),
     },
@@ -3195,12 +3197,87 @@ def export(ctx, level, force, genesymbols, gene_symbols, linear, gct_gene_covari
         click.echo(f"- {level_name}: {outpath}")
 
 
+def _validate_make_xls_name(_ctx, param, value):
+    name = str(value or "").strip()
+    candidate = Path(name)
+    if not name or candidate.name != name:
+        raise click.BadParameter(
+            "must be a filename only; use --outpath to select its directory",
+            param=param,
+        )
+    if candidate.suffix.lower() != ".xlsx":
+        raise click.BadParameter("must end in .xlsx", param=param)
+    return name
+
+
+def _resolve_make_xls_request(
+    ctx,
+    *,
+    base_dir,
+    name,
+    outpath,
+    include_export,
+    include_volcano,
+):
+    data_obj = (ctx.obj or {}).get("data_obj")
+    if data_obj is not None:
+        analysis_root = Path(data_obj.outpath).expanduser()
+        pheno_df = data_obj.col_metadata
+        meta = {
+            "analysis_name": data_obj.outpath_name,
+            "outpath": str(analysis_root),
+            "taxon": data_obj.taxon,
+            "non_zeros": data_obj.non_zeros,
+            "batch_applied": data_obj.batch_applied,
+            "batch_nonparametric": data_obj.batch_nonparametric,
+        }
+    elif base_dir:
+        analysis_root = Path(base_dir).expanduser()
+        pheno_df = None
+        meta = {"outpath": str(analysis_root)}
+    else:
+        raise click.UsageError(
+            "make-xls needs an analysis directory. Run it after loading data "
+            "or pass --base-dir PATH."
+        )
+
+    destination_dir = (
+        Path(outpath).expanduser()
+        if outpath is not None
+        else analysis_root / "export"
+    )
+    meta.update(
+        {
+            "include_export": include_export,
+            "include_volcano": include_volcano,
+        }
+    )
+    return {
+        "base_dir": str(analysis_root),
+        "out_path": str(destination_dir / name),
+        "pheno_df": pheno_df,
+        "meta": meta,
+    }
+
+
 @main.command("make-xls")
 @click.option(
-    "--out",
+    "-n",
+    "--name",
     type=str,
+    default="summary.xlsx",
+    show_default=True,
+    callback=_validate_make_xls_name,
+    help="Workbook filename. Use --outpath to select a different directory.",
+)
+@click.option(
+    "--outpath",
+    type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="Output .xlsx path. Default inherits naming via get_outname under the analysis 'export' folder.",
+    help=(
+        "Output directory. Defaults to <analysis outpath>/export after data "
+        "load or <base-dir>/export in standalone use."
+    ),
 )
 @click.option(
     "--base-dir",
@@ -3303,118 +3380,66 @@ def export(ctx, level, force, genesymbols, gene_symbols, linear, gct_gene_covari
     "--staging-dir",
     type=str,
     default=None,
-    help="Optional temp directory to write the XLSX before moving to --out (useful on slow mounts).",
+    help=(
+        "Optional temp directory to write the XLSX before moving it to the "
+        "final output path (useful on slow mounts)."
+    ),
 )
 @click.pass_context
-def make_xls(ctx, out, base_dir, include_export, include_volcano, excel_engine, filter_contains, slim_volcano, volcano_topn, merge_volcano, style, header_rotation, color_scale_ibaq, timing, tsv_engine, pandas_low_memory, stream_export, staging_dir):
+def make_xls(
+    ctx,
+    name,
+    outpath,
+    base_dir,
+    include_export,
+    include_volcano,
+    excel_engine,
+    filter_contains,
+    slim_volcano,
+    volcano_topn,
+    merge_volcano,
+    style,
+    header_rotation,
+    color_scale_ibaq,
+    timing,
+    tsv_engine,
+    pandas_low_memory,
+    stream_export,
+    staging_dir,
+):
     """
     Build a summary Excel workbook by collecting common TSV exports
     (export tables, volcano results) from the current analysis outpath.
     """
     from .exporter import build_export_xlsx
 
-    data_obj = None
-    if ctx.obj and "data_obj" in ctx.obj:
-        data_obj = ctx.obj["data_obj"]
-    # Determine base_dir from context or CLI
-    if data_obj is not None:
-        base_dir = data_obj.outpath  # honors config file name and --name overrides
-    else:
-        if not base_dir:
-            click.echo("make-xls needs an analysis directory. Either run after loading data (e.g., 'tackle ... CONFIG.conf make-xls') or pass --base-dir PATH.")
-            raise click.Abort()
-    if out is None:
-        if data_obj is not None:
-            # Reflect naming conventions via get_outname
-            src = (
-                "both"
-                if (include_export and include_volcano)
-                else ("export" if include_export else ("volcano" if include_volcano else "none"))
-            )
-            out = (
-                get_outname(
-                    "export",  # plottype; ensures results land under <outpath>/export/
-                    name=data_obj.outpath_name,
-                    taxon=data_obj.taxon,
-                    non_zeros=data_obj.non_zeros,
-                    colors_only=data_obj.colors_only,
-                    batch=data_obj.batch_applied,
-                    batch_method=(
-                        "parametric" if not data_obj.batch_nonparametric else "nonparametric"
-                    ),
-                    outpath=data_obj.outpath,
-                    book="summary",
-                    src=src,
-                )
-                + ".xlsx"
-            )
-        else:
-            # Standalone fallback
-            suffix_parts = []
-            if not include_export:
-                suffix_parts.append("noexport")
-            if not include_volcano:
-                suffix_parts.append("novolcano")
-            suffix = ("." + ".".join(suffix_parts)) if suffix_parts else ""
-            out = os.path.join(base_dir, "export", f"summary{suffix}.xlsx")
+    request = _resolve_make_xls_request(
+        ctx,
+        base_dir=base_dir,
+        name=name,
+        outpath=outpath,
+        include_export=include_export,
+        include_volcano=include_volcano,
+    )
     try:
-        if data_obj is not None:
-            result = build_export_xlsx(
-                base_dir=base_dir,
-                out_path=out,
-                include_export=include_export,
-                include_volcano=include_volcano,
-                pheno_df=data_obj.col_metadata,
-                meta={
-                    "analysis_name": data_obj.outpath_name,
-                    "outpath": data_obj.outpath,
-                    "taxon": data_obj.taxon,
-                    "non_zeros": data_obj.non_zeros,
-                    "batch_applied": data_obj.batch_applied,
-                    "batch_nonparametric": data_obj.batch_nonparametric,
-                    "include_export": include_export,
-                    "include_volcano": include_volcano,
-                },
-                engine_preference=excel_engine,
-                filter_contains=filter_contains,
-                slim_volcano=slim_volcano,
-                volcano_topn=volcano_topn,
-                merge_volcano=merge_volcano,
-                staging_dir=staging_dir,
-                timing=timing,
-                tsv_engine=tsv_engine,
-                pandas_low_memory=pandas_low_memory,
-                stream_export=stream_export,
-                style=style,
-                header_rotation=int(header_rotation),
-                color_scale_ibaq=color_scale_ibaq,
-            )
-        else:
-            result = build_export_xlsx(
-                base_dir=base_dir,
-                out_path=out,
-                include_export=include_export,
-                include_volcano=include_volcano,
-                pheno_df=None,
-                meta={
-                    "outpath": base_dir,
-                    "include_export": include_export,
-                    "include_volcano": include_volcano,
-                },
-                engine_preference=excel_engine,
-                filter_contains=filter_contains,
-                slim_volcano=slim_volcano,
-                volcano_topn=volcano_topn,
-                merge_volcano=merge_volcano,
-                staging_dir=staging_dir,
-                timing=timing,
-                tsv_engine=tsv_engine,
-                pandas_low_memory=pandas_low_memory,
-                stream_export=stream_export,
-                style=style,
-                header_rotation=int(header_rotation),
-                color_scale_ibaq=color_scale_ibaq,
-            )
+        result = build_export_xlsx(
+            **request,
+            include_export=include_export,
+            include_volcano=include_volcano,
+            engine_preference=excel_engine,
+            filter_contains=filter_contains,
+            slim_volcano=slim_volcano,
+            volcano_topn=volcano_topn,
+            merge_volcano=merge_volcano,
+            staging_dir=staging_dir,
+            timing=timing,
+            tsv_engine=tsv_engine,
+            pandas_low_memory=pandas_low_memory,
+            stream_export=stream_export,
+            style=style,
+            header_rotation=int(header_rotation),
+            color_scale_ibaq=color_scale_ibaq,
+        )
     except RuntimeError as e:
         click.echo(str(e))
         click.echo("Install 'openpyxl' or 'xlsxwriter' to enable XLSX export.")
