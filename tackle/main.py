@@ -3206,7 +3206,7 @@ def _validate_make_xls_name(_ctx, param, value):
             param=param,
         )
     if candidate.suffix.lower() != ".xlsx":
-        raise click.BadParameter("must end in .xlsx", param=param)
+        return name + ".xlsx"
     return name
 
 
@@ -3268,7 +3268,10 @@ def _resolve_make_xls_request(
     default="summary.xlsx",
     show_default=True,
     callback=_validate_make_xls_name,
-    help="Workbook filename. Use --outpath to select a different directory.",
+    help=(
+        "Workbook filename; .xlsx is added if omitted. Use --outpath to "
+        "select a different directory."
+    ),
 )
 @click.option(
     "--outpath",
@@ -3423,7 +3426,10 @@ def make_xls(
     )
     try:
         result = build_export_xlsx(
-            **request,
+            base_dir=request["base_dir"],
+            out_path=request["out_path"],
+            pheno_df=request["pheno_df"],
+            meta=request["meta"],
             include_export=include_export,
             include_volcano=include_volcano,
             engine_preference=excel_engine,

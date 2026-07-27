@@ -82,7 +82,7 @@ def test_make_xls_loaded_context_uses_analysis_export_dir(monkeypatch, tmp_path)
     assert captured["meta"]["analysis_name"] == "run1"
 
 
-def test_make_xls_name_rejects_paths_and_non_xlsx_extensions(monkeypatch, tmp_path):
+def test_make_xls_name_rejects_paths(monkeypatch, tmp_path):
     nested_result, nested_capture = _invoke_make_xls(
         monkeypatch,
         [
@@ -92,22 +92,25 @@ def test_make_xls_name_rejects_paths_and_non_xlsx_extensions(monkeypatch, tmp_pa
             "nested/review.xlsx",
         ],
     )
-    extension_result, extension_capture = _invoke_make_xls(
+
+    assert nested_result.exit_code == 2
+    assert "use --outpath to select its directory" in nested_result.output
+    assert not nested_capture
+
+
+def test_make_xls_name_adds_xlsx_extension(monkeypatch, tmp_path):
+    result, captured = _invoke_make_xls(
         monkeypatch,
         [
             "--base-dir",
             str(tmp_path),
             "--name",
-            "review.xls",
+            "review",
         ],
     )
 
-    assert nested_result.exit_code == 2
-    assert "use --outpath to select its directory" in nested_result.output
-    assert not nested_capture
-    assert extension_result.exit_code == 2
-    assert "must end in .xlsx" in extension_result.output
-    assert not extension_capture
+    assert result.exit_code == 0, result.output
+    assert captured["out_path"] == str(tmp_path / "export" / "review.xlsx")
 
 
 def test_make_xls_help_describes_name_and_default_output_directory():
@@ -117,5 +120,6 @@ def test_make_xls_help_describes_name_and_default_output_directory():
     assert result.exit_code == 0, result.output
     assert "-n, --name TEXT" in normalized_help
     assert "[default: summary.xlsx]" in normalized_help
+    assert ".xlsx is added if omitted" in normalized_help
     assert "--outpath DIRECTORY" in normalized_help
     assert "Defaults to <analysis outpath>/export" in normalized_help
