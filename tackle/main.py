@@ -4416,7 +4416,8 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     show_default=True,
     help=(
         "Figure width and height in inches. By default pca2 starts at 6 x 7 "
-        "and expands for demanding color/marker legends and measured statistical captions."
+        "and expands from the measured rendered color/marker legend and "
+        "statistical caption."
     ),
 )
 @click.option(
@@ -5212,9 +5213,19 @@ def pca2(
             fig_width=plot_width,
             fig_height=plot_height,
             expand_height=requested_figsize is None,
+            expand_width=requested_figsize is None,
         )
         plot_obj = prepared.rx2("plot")
+        prepared_width = float(prepared.rx2("fig_width")[0])
         plot_height = float(prepared.rx2("fig_height")[0])
+        if prepared_width > plot_width:
+            logger.info(
+                "Expanded %s PCA width from %.2f to %.2f inches for its measured legend",
+                plot_name,
+                plot_width,
+                prepared_width,
+            )
+        plot_width = prepared_width
         original_lines = int(prepared.rx2("original_line_count")[0])
         wrapped_lines = int(prepared.rx2("wrapped_line_count")[0])
         if wrapped_lines > original_lines:

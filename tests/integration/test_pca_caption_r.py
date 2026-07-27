@@ -52,6 +52,36 @@ stopifnot(
   long_token_prepared$max_line_width <=
     long_token_prepared$caption_width + 1e-8
 )
+
+long_legend_plot <- ggplot(
+  data.frame(
+    x = seq_len(6),
+    y = seq_len(6),
+    group = c(
+      'noTPO_noTPO_VCF_UBC',
+      'PBS_PBS_C57WT',
+      'PBS_PBS_hJAK2WT_mJak2KO',
+      'TPO_TPO400_C57WT',
+      'TPO_TPO400_hJAK2WT_mJak2KO',
+      'TPO_TPO50_VCF_UBC'
+    )
+  ),
+  aes(x, y, colour = group)
+) +
+  geom_point() +
+  coord_fixed() +
+  theme_classic(base_size = 20)
+long_legend_prepared <- pca_prepare_plot_for_output(
+  long_legend_plot,
+  6,
+  7,
+  expand_width = TRUE
+)
+stopifnot(
+  long_legend_prepared$legend_width > 4,
+  long_legend_prepared$fixed_width > 5,
+  long_legend_prepared$fig_width >= 9
+)
 """
     result = subprocess.run(
         [rscript, "-e", code],

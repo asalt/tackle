@@ -571,7 +571,8 @@ for (plot_name in names(plots)) {
     plots[[plot_name]],
     fig_width = fig_width,
     fig_height = fig_height,
-    expand_height = expand_caption_height
+    expand_height = expand_caption_height,
+    expand_width = expand_caption_height
   )
   print(prepared_plot$plot)
   for (ext in replot_formats) {
@@ -579,7 +580,7 @@ for (plot_name in names(plots)) {
     ggplot2::ggsave(
       file.path(out_dir, paste0(plot_name, ext)),
       prepared_plot$plot,
-      width = fig_width,
+      width = prepared_plot$fig_width,
       height = prepared_plot$fig_height
     )
   }

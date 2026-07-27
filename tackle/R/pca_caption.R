@@ -65,6 +65,33 @@ pca_caption_line_width <- function(text, gp) {
   )
 }
 
+pca_plot_width_metrics <- function(plot) {
+  table <- ggplot2::ggplotGrob(plot)
+  fixed_width <- grid::convertWidth(
+    sum(table$widths),
+    "inches",
+    valueOnly = TRUE
+  )
+  guide_indices <- grep("^guide-box", table$layout$name)
+  guide_widths <- vapply(
+    guide_indices,
+    function(index) {
+      guide <- table$grobs[[index]]
+      if (inherits(guide, "zeroGrob")) return(0)
+      grid::convertWidth(
+        grid::grobWidth(guide),
+        "inches",
+        valueOnly = TRUE
+      )
+    },
+    numeric(1)
+  )
+  list(
+    fixed_width = as.numeric(fixed_width),
+    legend_width = if (length(guide_widths)) max(guide_widths) else 0
+  )
+}
+
 pca_split_caption_token <- function(token, max_width, gp) {
   if (pca_caption_line_width(token, gp) <= max_width) return(token)
   characters <- strsplit(token, "", fixed = TRUE)[[1]]
@@ -129,15 +156,29 @@ pca_prepare_plot_for_output <- function(
   plot,
   fig_width,
   fig_height,
-  expand_height = TRUE
+  expand_height = TRUE,
+  expand_width = FALSE,
+  minimum_panel_width = 3.75
 ) {
+  grDevices::pdf(NULL, width = fig_width, height = fig_height)
+  on.exit(grDevices::dev.off(), add = TRUE)
+
+  width_metrics <- pca_plot_width_metrics(plot)
+  resolved_width <- as.numeric(fig_width)
+  if (isTRUE(expand_width)) {
+    required_width <- width_metrics$fixed_width + as.numeric(minimum_panel_width)
+    resolved_width <- max(resolved_width, ceiling(required_width * 4) / 4)
+  }
+
   caption <- plot$labels$caption
   if (is.null(caption) || length(caption) == 0 ||
       is.na(caption[[1]]) || !nzchar(caption[[1]])) {
     return(list(
       plot = plot,
-      fig_width = as.numeric(fig_width),
+      fig_width = resolved_width,
       fig_height = as.numeric(fig_height),
+      fixed_width = width_metrics$fixed_width,
+      legend_width = width_metrics$legend_width,
       caption_width = NA_real_,
       original_line_count = 0L,
       wrapped_line_count = 0L,
@@ -145,15 +186,14 @@ pca_prepare_plot_for_output <- function(
     ))
   }
 
-  grDevices::pdf(NULL, width = fig_width, height = fig_height)
-  on.exit(grDevices::dev.off(), add = TRUE)
-
-  original_metrics <- pca_caption_metrics(plot, fig_width)
+  original_metrics <- pca_caption_metrics(plot, resolved_width)
   if (is.null(original_metrics) || original_metrics$available_width <= 0) {
     return(list(
       plot = plot,
-      fig_width = as.numeric(fig_width),
+      fig_width = resolved_width,
       fig_height = as.numeric(fig_height),
+      fixed_width = width_metrics$fixed_width,
+      legend_width = width_metrics$legend_width,
       caption_width = NA_real_,
       original_line_count = length(strsplit(caption[[1]], "\n", fixed = TRUE)[[1]]),
       wrapped_line_count = length(strsplit(caption[[1]], "\n", fixed = TRUE)[[1]]),
@@ -167,7 +207,7 @@ pca_prepare_plot_for_output <- function(
     gp = original_metrics$text_gp
   )
   wrapped_plot <- plot + ggplot2::labs(caption = wrapped_caption)
-  wrapped_metrics <- pca_caption_metrics(wrapped_plot, fig_width)
+  wrapped_metrics <- pca_caption_metrics(wrapped_plot, resolved_width)
   original_lines <- strsplit(caption[[1]], "\n", fixed = TRUE)[[1]]
   wrapped_lines <- strsplit(wrapped_caption, "\n", fixed = TRUE)[[1]]
   line_widths <- vapply(
@@ -184,8 +224,10 @@ pca_prepare_plot_for_output <- function(
 
   list(
     plot = wrapped_plot,
-    fig_width = as.numeric(fig_width),
+    fig_width = resolved_width,
     fig_height = as.numeric(fig_height) + extra_height,
+    fixed_width = width_metrics$fixed_width,
+    legend_width = width_metrics$legend_width,
     caption_width = wrapped_metrics$available_width,
     original_line_count = length(original_lines),
     wrapped_line_count = length(wrapped_lines),
