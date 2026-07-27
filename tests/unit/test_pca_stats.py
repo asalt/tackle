@@ -321,7 +321,7 @@ def test_leading_scope_uses_largest_dimension_estimable_for_all_tests():
     assert pairwise["status"].eq("ok").all()
 
 
-def test_caption_names_the_selected_pvalue_adjustment():
+def test_caption_uses_unadjusted_plane_pvalue():
     row = {
         "group_field": "group",
         "r2": 0.625,
@@ -329,16 +329,19 @@ def test_caption_names_the_selected_pvalue_adjustment():
         "numerator_df": 4.0,
         "denominator_df": 7.5,
         "welch_james_f": 3.25,
+        "p_value": 0.00456,
         "p_adj": 0.0123,
         "p_adjust_method": "holm",
     }
 
     caption = format_pca_test_caption(pd.DataFrame([row]))
-    assert "Holm-adjusted p=0.0123" in caption
+    assert "; p=0.00456" in caption
+    assert "adjusted p" not in caption
+    assert "0.0123" not in caption
 
     row["p_adjust_method"] = "none"
     caption = format_pca_test_caption(pd.DataFrame([row]))
-    assert "; p=0.0123" in caption
+    assert "; p=0.00456" in caption
     assert "adjusted p" not in caption
 
     pairwise = pd.DataFrame(

@@ -75,10 +75,15 @@ stopifnot(
 
 caption_row <- data.frame(
   group_field = 'group', r2 = 0.625, status = 'ok', numerator_df = 4,
-  denominator_df = 7.5, welch_james_f = 3.25, p_adj = 0.0123,
+  denominator_df = 7.5, welch_james_f = 3.25, p_value = 0.00456, p_adj = 0.0123,
   p_adjust_method = 'holm'
 )
-stopifnot(grepl('Holm-adjusted p=0.0123', pca_format_test_caption(caption_row), fixed = TRUE))
+caption_text <- pca_format_test_caption(caption_row)
+stopifnot(
+  grepl('; p=0.00456', caption_text, fixed = TRUE),
+  !grepl('adjusted p', caption_text, fixed = TRUE),
+  !grepl('0.0123', caption_text, fixed = TRUE)
+)
 caption_pairwise <- data.frame(
   group_a = 'A', group_b = 'B', centroid_distance = 0.63,
   rms_radius_a = 0.18, rms_radius_b = 0.14,

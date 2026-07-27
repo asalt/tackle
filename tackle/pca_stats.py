@@ -905,6 +905,8 @@ def _empty_single_pc_pairwise_frame() -> pd.DataFrame:
     )
 
 
+# TODO: Add an opt-in single-PC score/separation visualization that presents
+# the one-axis groups alongside their Welch ANOVA and pairwise Welch t summaries.
 def analyze_single_pc_separation(
     scores: pd.DataFrame,
     metadata: pd.DataFrame,
@@ -1075,20 +1077,6 @@ def analyze_single_pc_separation(
     return omnibus_frame, pairwise_frame
 
 
-def _p_adjustment_caption_label(method: object) -> str:
-    key = str(method).strip().lower().replace("-", "_")
-    labels = {
-        "none": "p",
-        "raw": "p",
-        "holm": "Holm-adjusted p",
-        "hochberg": "Hochberg-adjusted p",
-        "bonferroni": "Bonferroni-adjusted p",
-        "bh": "BH-adjusted p",
-        "fdr_bh": "BH-adjusted p",
-    }
-    return labels.get(key, f"{str(method).strip()}-adjusted p")
-
-
 def format_pca_test_caption(
     rows: pd.DataFrame,
     pairwise_rows: pd.DataFrame | None = None,
@@ -1100,12 +1088,11 @@ def format_pca_test_caption(
         r2 = row.get("r2")
         prefix = f"{row['group_field']}: R²={r2:.3f}" if np.isfinite(r2) else f"{row['group_field']}: R²=NA"
         if row.get("status") == "ok":
-            p_label = _p_adjustment_caption_label(row.get("p_adjust_method", "none"))
             line = (
                 prefix
                 + "; WJ "
                 + f"F*({row['numerator_df']:.0f}, {row['denominator_df']:.2f})="
-                + f"{row['welch_james_f']:.2f}; {p_label}={row['p_adj']:.3g}"
+                + f"{row['welch_james_f']:.2f}; p={row['p_value']:.3g}"
             )
         else:
             line = prefix + f"; WJ not estimable ({row.get('status')})"

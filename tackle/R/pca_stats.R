@@ -762,20 +762,6 @@ pca_analyze_single_pc_separation <- function(
   list(omnibus = omnibus, pairwise = pairwise)
 }
 
-.pca_adjustment_caption_label <- function(method) {
-  key <- tolower(gsub("-", "_", trimws(as.character(method))))
-  labels <- c(
-    none = "p",
-    raw = "p",
-    holm = "Holm-adjusted p",
-    hochberg = "Hochberg-adjusted p",
-    bonferroni = "Bonferroni-adjusted p",
-    bh = "BH-adjusted p",
-    fdr_bh = "BH-adjusted p"
-  )
-  if (key %in% names(labels)) unname(labels[[key]]) else paste0(method, "-adjusted p")
-}
-
 pca_format_test_caption <- function(rows, pairwise_rows = data.frame()) {
   if (nrow(rows) == 0) return("")
   lines <- vapply(seq_len(nrow(rows)), function(index) {
@@ -786,11 +772,10 @@ pca_format_test_caption <- function(rows, pairwise_rows = data.frame()) {
       paste0(row$group_field, ": R²=NA")
     }
     line <- if (row$status == "ok") {
-      p_label <- .pca_adjustment_caption_label(row$p_adjust_method[[1]])
       paste0(
         prefix, "; WJ F*(", sprintf("%.0f", row$numerator_df), ", ",
         sprintf("%.2f", row$denominator_df), ")=", sprintf("%.2f", row$welch_james_f),
-        "; ", p_label, "=", format.pval(row$p_adj, digits = 3, eps = 1e-99)
+        "; p=", format.pval(row$p_value, digits = 3, eps = 1e-99)
       )
     } else {
       paste0(prefix, "; WJ not estimable (", row$status, ")")

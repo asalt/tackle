@@ -4503,7 +4503,10 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     "pca_test_caption",
     default=True,
     show_default=True,
-    help="Add plane R2 and adjusted Welch-James results to displayed plot captions.",
+    help=(
+        "Add plane R2 and the unadjusted plane-specific Welch-James p value "
+        "to displayed plot captions."
+    ),
 )
 @click.option(
     "--normalize-by",
