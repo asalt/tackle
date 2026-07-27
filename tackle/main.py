@@ -2194,6 +2194,21 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
         click.echo(f"- HTML: {bundle.html_path}")
 
 
+def _html_plot_kind_choices():
+    return (
+        "metrics",
+        "correlation",
+        "cluster",
+        "pca",
+        "umap",
+        "bar",
+        "box",
+        "violin",
+        "volcano",
+        "topdiff-cluster",
+    )
+
+
 @main.command("make-html")
 @click.option(
     "--interactive-payload",
@@ -2339,34 +2354,22 @@ def make_rmd(ctx, outdir, base_dir, volcano_dir, run_id, title, copy_inputs, for
     "--plot-kind",
     "plot_kinds",
     multiple=True,
-    type=click.Choice(
-        [
-            "metrics",
-            "correlation",
-            "cluster",
-            "pca",
-            "umap",
-            "bar",
-            "box",
-            "violin",
-            "volcano",
-            "topdiff-cluster",
-        ]
-    ),
-    default=(
-        "metrics",
-        "correlation",
-        "cluster",
-        "pca",
-        "umap",
-        "bar",
-        "box",
-        "violin",
-        "volcano",
-        "topdiff-cluster",
-    ),
+    type=click.Choice(_html_plot_kind_choices()),
+    default=_html_plot_kind_choices(),
     show_default=True,
     help="Report sections to include in the overview.",
+)
+@click.option(
+    "--not-plot-kind",
+    "excluded_plot_kinds",
+    multiple=True,
+    type=click.Choice(_html_plot_kind_choices()),
+    default=(),
+    show_default=True,
+    help=(
+        "Report section to subtract from the selected --plot-kind set; repeatable. "
+        "Exclusions win when a kind is both included and excluded. Default: none."
+    ),
 )
 @click.option(
     "--volcano-topn",
@@ -2467,6 +2470,7 @@ def make_html(
     force,
     filter_contains,
     plot_kinds,
+    excluded_plot_kinds,
     volcano_topn,
     volcano_direction,
     p_cutoff,
@@ -2515,6 +2519,10 @@ def make_html(
         )
 
     p_cut = None if (p_cutoff is None or float(p_cutoff) <= 0) else float(p_cutoff)
+    excluded_plot_kind_set = set(excluded_plot_kinds)
+    resolved_plot_kinds = tuple(
+        kind for kind in plot_kinds if kind not in excluded_plot_kind_set
+    )
 
     try:
         outputs = build_html_overview(
@@ -2530,7 +2538,7 @@ def make_html(
             interactive_resource_mode=str(interactive_resource_mode),
             defer_plot_images=bool(defer_plot_images),
             filter_contains=tuple(filter_contains),
-            include_kinds=tuple(plot_kinds),
+            include_kinds=resolved_plot_kinds,
             volcano_topn=int(volcano_topn),
             volcano_direction=str(volcano_direction),
             volcano_p_cutoff=p_cut,
