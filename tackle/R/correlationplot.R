@@ -222,6 +222,170 @@ suppressPackageStartupMessages(library(grid))
   )
 }
 
+.correlation_text_width <- function(
+  labels,
+  fontsize = 8,
+  fontface = "plain"
+) {
+  labels <- as.character(labels)
+  labels <- unique(labels[!is.na(labels) & nzchar(labels)])
+  if (length(labels) == 0) return(0)
+  max(vapply(
+    labels,
+    function(label) {
+      grid::convertWidth(
+        grid::grobWidth(grid::textGrob(
+          label,
+          gp = grid::gpar(fontsize = fontsize, fontface = fontface)
+        )),
+        "inches",
+        valueOnly = TRUE
+      )
+    },
+    numeric(1)
+  ))
+}
+
+.correlation_fit_fontsize <- function(
+  labels,
+  base_size = 8,
+  minimum_size = 5,
+  maximum_width = 2.25
+) {
+  measured_width <- .correlation_text_width(labels, fontsize = base_size)
+  if (!is.finite(measured_width) || measured_width <= maximum_width) {
+    return(as.numeric(base_size))
+  }
+  max(
+    as.numeric(minimum_size),
+    as.numeric(base_size) * as.numeric(maximum_width) / measured_width
+  )
+}
+
+.correlation_split_token_chunks <- function(token, maximum_width, fontsize) {
+  if (.correlation_text_width(token, fontsize = fontsize) <= maximum_width) {
+    return(token)
+  }
+  characters <- strsplit(token, "", fixed = TRUE)[[1]]
+  chunks <- character()
+  current <- ""
+  for (character in characters) {
+    candidate <- paste0(current, character)
+    if (nzchar(current) &&
+        .correlation_text_width(candidate, fontsize = fontsize) > maximum_width) {
+      chunks <- c(chunks, current)
+      current <- character
+    } else {
+      current <- candidate
+    }
+  }
+  c(chunks, current)
+}
+
+.correlation_wrap_split_label <- function(label, maximum_width, fontsize) {
+  label <- as.character(label)
+  if (!nzchar(label) ||
+      .correlation_text_width(label, fontsize = fontsize) <= maximum_width) {
+    return(label)
+  }
+  token_matches <- gregexpr(
+    "[^_[:space:]]+[_[:space:]]*|[_[:space:]]+",
+    label,
+    perl = TRUE
+  )
+  tokens <- regmatches(label, token_matches)[[1]]
+  if (length(tokens) == 0) tokens <- label
+  lines <- character()
+  current <- ""
+  for (token in tokens) {
+    token_chunks <- .correlation_split_token_chunks(
+      token,
+      maximum_width,
+      fontsize
+    )
+    for (chunk in token_chunks) {
+      candidate <- paste0(current, chunk)
+      if (nzchar(current) &&
+          .correlation_text_width(candidate, fontsize = fontsize) > maximum_width) {
+        lines <- c(lines, current)
+        current <- chunk
+      } else {
+        current <- candidate
+      }
+    }
+  }
+  paste(c(lines, current), collapse = "\n")
+}
+
+.correlation_prepare_split_df <- function(split_df, cell_inches, fontsize) {
+  if (is.null(split_df) || ncol(split_df) == 0) return(split_df)
+  for (field in colnames(split_df)) {
+    values <- as.character(split_df[[field]])
+    raw_levels <- unique(values)
+    level_counts <- table(factor(values, levels = raw_levels))
+    available_widths <- pmax(
+      0.32,
+      as.numeric(cell_inches) * as.numeric(level_counts) * 0.88
+    )
+    display_levels <- mapply(
+      .correlation_wrap_split_label,
+      raw_levels,
+      available_widths,
+      MoreArgs = list(fontsize = fontsize),
+      USE.NAMES = FALSE
+    )
+    split_df[[field]] <- factor(
+      values,
+      levels = raw_levels,
+      labels = display_levels,
+      ordered = TRUE
+    )
+  }
+  split_df
+}
+
+.correlation_annotation_legend_params <- function(metadata) {
+  if (is.null(metadata) || ncol(metadata) == 0) return(list())
+  params <- lapply(colnames(metadata), function(field) {
+    values <- metadata[[field]]
+    labels <- if (is.numeric(values)) {
+      pretty(values[is.finite(values)], n = 5)
+    } else {
+      unique(as.character(values))
+    }
+    label_size <- .correlation_fit_fontsize(
+      labels,
+      base_size = 8,
+      minimum_size = 5.5,
+      maximum_width = 2.25
+    )
+    list(
+      title_gp = grid::gpar(fontsize = 9, fontface = "bold"),
+      labels_gp = grid::gpar(fontsize = label_size),
+      grid_width = grid::unit(3.2, "mm"),
+      grid_height = grid::unit(3.2, "mm")
+    )
+  })
+  stats::setNames(params, colnames(metadata))
+}
+
+.correlation_heatmap_extent <- function(heatmap) {
+  width_method <- getFromNamespace("width", "ComplexHeatmap")
+  height_method <- getFromNamespace("height", "ComplexHeatmap")
+  list(
+    width = grid::convertWidth(
+      width_method(heatmap),
+      "inches",
+      valueOnly = TRUE
+    ),
+    height = grid::convertHeight(
+      height_method(heatmap),
+      "inches",
+      valueOnly = TRUE
+    )
+  )
+}
+
 correlation_heatmap <- function(
   metric_matrix,
   distance_matrix = NULL,
@@ -291,6 +455,7 @@ correlation_heatmap <- function(
   }
 
   annotation_colors <- list()
+  annotation_legend_param <- list()
   top_annotation <- NULL
   left_annotation <- NULL
   split_df <- NULL
@@ -298,15 +463,20 @@ correlation_heatmap <- function(
     annotation_spec <- .correlation_annotation_colors(metadata_df, configured_colors)
     metadata_df <- annotation_spec$metadata
     annotation_colors <- annotation_spec$colors
+    annotation_legend_param <- .correlation_annotation_legend_params(metadata_df)
     top_annotation <- ComplexHeatmap::HeatmapAnnotation(
       df = metadata_df,
       col = annotation_colors,
+      annotation_legend_param = annotation_legend_param,
+      simple_anno_size = grid::unit(4, "mm"),
       show_annotation_name = FALSE,
       na_col = "#bdbdbd"
     )
     left_annotation <- ComplexHeatmap::rowAnnotation(
       df = metadata_df,
       col = annotation_colors,
+      annotation_legend_param = annotation_legend_param,
+      simple_anno_size = grid::unit(4, "mm"),
       show_annotation_name = FALSE,
       na_col = "#bdbdbd"
     )
@@ -328,13 +498,68 @@ correlation_heatmap <- function(
 
   n_samples <- ncol(mat)
   n_annotations <- if (is.null(metadata_df)) 0 else ncol(metadata_df)
-  cell_inches <- if (isTRUE(annotate)) 0.30 else 0.22
-  if (is.null(fig_width)) {
+  cell_fontsize <- if (n_samples > 30) {
+    4.2
+  } else if (n_samples > 20) {
+    4.5
+  } else if (n_samples > 10) {
+    5.25
+  } else {
+    6.5
+  }
+  cell_inches <- 0.22
+  if (isTRUE(annotate)) {
+    finite_values <- mat[is.finite(mat)]
+    finite_counts <- overlap_counts[is.finite(overlap_counts)]
+    widest_labels <- c(
+      if (length(finite_values)) .correlation_value_label(finite_values) else "NA",
+      if (length(finite_counts)) paste0("n = ", finite_counts) else "n = NA"
+    )
+    label_width <- .correlation_text_width(
+      widest_labels,
+      fontsize = cell_fontsize,
+      fontface = "bold"
+    )
+    cell_inches <- min(0.50, max(0.30, label_width + 0.04))
+  }
+  auto_width <- is.null(fig_width)
+  auto_height <- is.null(fig_height)
+  if (auto_width) {
     fig_width <- max(7, 3.5 + cell_inches * n_samples + 0.32 * n_annotations)
   }
-  if (is.null(fig_height)) {
+  if (auto_height) {
     fig_height <- max(7, 3.0 + cell_inches * n_samples + 0.32 * n_annotations)
   }
+  heatmap_body_width <- if (auto_width) {
+    grid::unit(max(2.4, cell_inches * n_samples), "inches")
+  } else {
+    NULL
+  }
+  heatmap_body_height <- if (auto_height) {
+    grid::unit(max(2.4, cell_inches * n_samples), "inches")
+  } else {
+    NULL
+  }
+
+  split_count <- if (is.null(split_df)) 0 else nrow(unique(split_df))
+  split_title_fontsize <- if (split_count > 12) {
+    4.5
+  } else if (split_count > 6) {
+    5.5
+  } else {
+    6.5
+  }
+  split_df <- .correlation_prepare_split_df(
+    split_df,
+    cell_inches = cell_inches,
+    fontsize = split_title_fontsize
+  )
+  sample_name_fontsize <- .correlation_fit_fontsize(
+    colnames(mat),
+    base_size = if (n_samples > 50) 6 else 8,
+    minimum_size = 5,
+    maximum_width = 1.65
+  )
 
   heatmap_colors <- .correlation_color_function(mat, metric)
   legend_title <- if (identical(metric, "l2")) {
@@ -350,19 +575,12 @@ correlation_heatmap <- function(
     cluster,
     linkage
   )
-  cell_fontsize <- if (n_samples > 30) {
-    4.2
-  } else if (n_samples > 20) {
-    4.5
-  } else if (n_samples > 10) {
-    5.25
-  } else {
-    6.5
-  }
 
   make_heatmap <- function() {
     ComplexHeatmap::Heatmap(
       mat,
+      width = heatmap_body_width,
+      height = heatmap_body_height,
       name = legend_title,
       col = heatmap_colors,
       na_col = "#d9d9d9",
@@ -378,9 +596,11 @@ correlation_heatmap <- function(
       left_annotation = left_annotation,
       show_row_names = n_samples <= 100,
       show_column_names = n_samples <= 100,
-      row_names_gp = grid::gpar(fontsize = if (n_samples > 50) 6 else 8),
-      column_names_gp = grid::gpar(fontsize = if (n_samples > 50) 6 else 8),
+      row_names_gp = grid::gpar(fontsize = sample_name_fontsize),
+      column_names_gp = grid::gpar(fontsize = sample_name_fontsize),
       column_names_rot = 45,
+      row_title_gp = grid::gpar(fontsize = split_title_fontsize),
+      column_title_gp = grid::gpar(fontsize = split_title_fontsize),
       rect_gp = grid::gpar(col = "white", lwd = 0.35),
       layer_fun = .correlation_layer_fun(
         annotate,
@@ -390,6 +610,40 @@ correlation_heatmap <- function(
       ),
       heatmap_legend_param = list(title_position = "topcenter")
     )
+  }
+
+  draw_heatmap <- function(heatmap) {
+    ComplexHeatmap::draw(
+      heatmap,
+      column_title = title,
+      column_title_gp = grid::gpar(fontsize = 14, fontface = "bold"),
+      heatmap_legend_side = "bottom",
+      annotation_legend_side = "bottom",
+      merge_legends = TRUE,
+      padding = grid::unit(c(8, 8, 5, 8), "mm")
+    )
+  }
+
+  if (auto_width || auto_height) {
+    grDevices::pdf(NULL, width = fig_width, height = 30)
+    measured <- tryCatch(
+      {
+        drawn <- draw_heatmap(make_heatmap())
+        .correlation_heatmap_extent(drawn)
+      },
+      finally = grDevices::dev.off()
+    )
+    if (auto_width) {
+      fig_width <- max(fig_width, ceiling((measured$width + 0.25) * 4) / 4)
+    }
+    if (auto_height) {
+      fig_height <- max(fig_height, ceiling((measured$height + 0.25) * 4) / 4)
+    }
+    message(sprintf(
+      "Auto-sized correlation heatmap to %.2f x %.2f inches",
+      fig_width,
+      fig_height
+    ))
   }
 
   outfiletypes <- as.character(outfiletypes)
@@ -415,15 +669,7 @@ correlation_heatmap <- function(
       stop("Unsupported output type: ", ext)
     }
     tryCatch(
-      ComplexHeatmap::draw(
-        make_heatmap(),
-        column_title = title,
-        column_title_gp = grid::gpar(fontsize = 14, fontface = "bold"),
-        heatmap_legend_side = "bottom",
-        annotation_legend_side = "bottom",
-        merge_legends = TRUE,
-        padding = grid::unit(c(8, 8, 5, 8), "mm")
-      ),
+      draw_heatmap(make_heatmap()),
       finally = grDevices::dev.off()
     )
     written <- c(written, normalizePath(outfile, mustWork = FALSE))

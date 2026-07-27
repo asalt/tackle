@@ -2805,7 +2805,10 @@ def scatter(ctx, colors_only, histogram, size, shade_correlation, stat, export_c
     nargs=2,
     type=float,
     default=None,
-    help="Optional heatmap width and height in inches; otherwise size is sample-aware.",
+    help=(
+        "Optional heatmap width and height in inches; otherwise size is sample-, "
+        "annotation-, label-, and legend-aware."
+    ),
 )
 @click.option(
     "--file-format",

@@ -26,6 +26,7 @@ def test_correlation_heatmap_uses_precomputed_dissimilarity_for_both_axes(tmp_pa
 
     r_file = Path(__file__).resolve().parents[2] / "tackle" / "R" / "correlationplot.R"
     outname = tmp_path / "correlation"
+    auto_outname = tmp_path / "correlation-auto"
     code = f"""
 source({json.dumps(str(r_file))})
 ids <- c('S1', 'S2', 'S3', 'S4')
@@ -90,6 +91,27 @@ stopifnot(
 )
 stopifnot(identical(.correlation_hclust(distance, ids, 'weighted')$method, 'mcquitty'))
 
+long_split <- data.frame(
+  group = c(
+    'TPO_TPO400_hJAK2WT_mJak2KO',
+    'PBS_PBS_hJAK2WT_mJak2KO'
+  ),
+  check.names = FALSE
+)
+wrapped_split <- .correlation_prepare_split_df(
+  long_split,
+  cell_inches = 0.30,
+  fontsize = 6.5
+)
+stopifnot(
+  any(grepl('\\n', levels(wrapped_split$group), fixed = TRUE)),
+  .correlation_fit_fontsize(
+    'an_exceptionally_long_metadata_legend_value_that_needs_scaling',
+    base_size = 8,
+    maximum_width = 1
+  ) < 8
+)
+
 counts <- matrix(100L, 4, 4, dimnames = list(ids, ids))
 metadata <- data.frame(
   sample = ids,
@@ -115,6 +137,46 @@ written <- correlation_heatmap(
   title = 'correlation integration smoke'
 )
 stopifnot(length(written) == 1L, file.exists(written[[1]]))
+
+auto_ids <- paste0('sample_', seq_len(8))
+auto_raw <- matrix(0.2, 8, 8, dimnames = list(auto_ids, auto_ids))
+diag(auto_raw) <- 1
+auto_counts <- matrix(5600L, 8, 8, dimnames = list(auto_ids, auto_ids))
+auto_metadata <- data.frame(
+  sample = auto_ids,
+  cell = c('platelet_rich_plasma', rep('platelets', 7)),
+  geno = c(
+    'VCF_UBC', 'VCF_UBC', 'VCF_UBC',
+    rep('hJAK2WT_mJak2KO', 3), 'C57WT', 'C57WT'
+  ),
+  treatment = c('TPO', 'TPO', 'noTPO', 'TPO', 'TPO', 'PBS', 'PBS', 'TPO'),
+  dosage = c(
+    'TPO50', 'TPO50', 'noTPO', 'TPO400', 'TPO400', 'PBS', 'PBS', 'TPO400'
+  ),
+  group = c(
+    'TPO_TPO50_VCF_UBC', 'TPO_TPO50_VCF_UBC',
+    'noTPO_noTPO_VCF_UBC',
+    'TPO_TPO400_hJAK2WT_mJak2KO', 'TPO_TPO400_hJAK2WT_mJak2KO',
+    'PBS_PBS_hJAK2WT_mJak2KO', 'PBS_PBS_C57WT', 'TPO_TPO400_C57WT'
+  ),
+  check.names = FALSE
+)
+auto_written <- correlation_heatmap(
+  auto_raw,
+  distance_matrix = sqrt(2 * (1 - auto_raw)),
+  overlap_counts = auto_counts,
+  metadata = auto_metadata,
+  metric = 'pearson',
+  linkage = 'ward.D2',
+  cut_by = 'group',
+  cluster = TRUE,
+  annotate = TRUE,
+  outname = {json.dumps(str(auto_outname))},
+  outfiletypes = '.png',
+  png_res = 72,
+  title = 'correlation auto-size integration smoke'
+)
+stopifnot(length(auto_written) == 1L, file.exists(auto_written[[1]]))
 """
     result = subprocess.run(
         [rscript, "-e", code],
@@ -122,3 +184,9 @@ stopifnot(length(written) == 1L, file.exists(written[[1]]))
         capture_output=True,
     )
     assert result.returncode == 0, result.stderr + result.stdout
+
+    png_header = (tmp_path / "correlation-auto.png").read_bytes()[:24]
+    width_px = int.from_bytes(png_header[16:20], "big")
+    height_px = int.from_bytes(png_header[20:24], "big")
+    assert width_px > 7 * 72
+    assert height_px > 7 * 72
