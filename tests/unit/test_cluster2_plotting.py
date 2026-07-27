@@ -37,13 +37,36 @@ def test_compute_cluster2_figsize_respects_figsize_when_no_gene_symbols():
     assert res.figheight == 9.0
 
 
-def test_compute_cluster2_figsize_overrides_height_for_gene_symbols_when_not_optimal():
+def test_compute_cluster2_figsize_preserves_explicit_height_with_gene_symbols():
     n_rows = 100
     font = 12
     res = compute_cluster2_figsize(
         n_rows=n_rows,
         n_cols=10,
         figsize=(11, 5),
+        optimal_figsize=False,
+        has_title=False,
+        col_cluster=False,
+        row_annot_df=None,
+        col_meta=None,
+        add_description=False,
+        row_annot_side="right",
+        row_names_side="right",
+        show_gene_symbols=True,
+        gene_symbol_fontsize=font,
+        has_cut_by=False,
+        env=_env(),
+    )
+    assert res.figheight == 5.0
+
+
+def test_compute_cluster2_figsize_autosizes_unspecified_gene_symbol_height():
+    n_rows = 100
+    font = 12
+    res = compute_cluster2_figsize(
+        n_rows=n_rows,
+        n_cols=10,
+        figsize=(11, None),
         optimal_figsize=False,
         has_title=False,
         col_cluster=False,

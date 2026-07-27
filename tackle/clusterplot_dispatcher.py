@@ -353,6 +353,7 @@ def run(
     annotation_filter=None,
     reroute_volcano=True,
     keep_description_attributes=False,
+    file_fmts=None,
 ):
 
     from . import grdevice_helper
@@ -365,6 +366,9 @@ def run(
 
     grdevices = importr("grDevices")
 
+    file_fmts = (
+        tuple(file_fmts) if file_fmts else tuple(ctx.obj["file_fmts"])
+    )
     z_score = normalize_cluster2_z_score(z_score)
     standard_scale = normalize_cluster2_standard_scale(standard_scale)
     if z_score == "column" and z_score_by is not None:
@@ -1765,7 +1769,7 @@ def run(
             sweep_title = (
                 f"{base_sweep_title} (k={sel_min_k}..{max_k}, linkage={linkage})"
             )
-            for file_fmt in ctx.obj["file_fmts"]:
+            for file_fmt in file_fmts:
                 out_plot = os.path.join(
                     data_obj.outpath,
                     "cluster2",
@@ -1794,7 +1798,7 @@ def run(
         outname_kws[cluster_func] = nclusters
     # outname = outname_func("clustermap", **outname_kws)
 
-    for file_fmt in ctx.obj["file_fmts"]:
+    for file_fmt in file_fmts:
         # grdevice = gr_devices[file_fmt] # this is now done within plot_and_save
         # gr_kw = gr_kws[file_fmt]
         annot_mat_to_pass = annot_mat

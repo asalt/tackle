@@ -286,7 +286,8 @@ def compute_cluster2_figsize(
         figwidth = float(figsize[0])
         figheight = float(figsize[1])
 
-    if show_gene_symbols and not optimal_figsize:
+    explicit_height = figsize is not None and figsize[1] is not None
+    if show_gene_symbols and not optimal_figsize and not explicit_height:
         figheight = max(((gene_symbol_fontsize + 2) / 72) * n_rows, 12)
         if figheight > 218:
             figheight = 218

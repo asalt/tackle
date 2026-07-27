@@ -5627,7 +5627,7 @@ def umap(
     default=False,
     is_flag=True,
     show_default=True,
-    help="will try to add gene description info to heatmap",
+    help="Append gene descriptions to displayed gene-symbol labels.",
 )
 @click.option(
     "--annotate",
@@ -5698,18 +5698,49 @@ def umap(
 @click.option("--color-low", default="blue", show_default=True)
 @click.option("--color-mid", default="white", show_default=True)
 @click.option("--color-high", default="red", show_default=True)
-@click.option("--figwidth", nargs=1, type=float, default=None, show_default=True)
-@click.option("--figheight", nargs=1, type=float, default=None, show_default=True)
+@click.option(
+    "--figwidth",
+    nargs=1,
+    type=float,
+    default=None,
+    show_default=True,
+    help=(
+        "Set figure width in inches and auto-size height. Ignored when "
+        "--figsize is provided."
+    ),
+)
+@click.option(
+    "--figheight",
+    nargs=1,
+    type=float,
+    default=None,
+    show_default=True,
+    help=(
+        "Set figure height in inches and auto-size width. Ignored when "
+        "--figsize is provided."
+    ),
+)
 @click.option(
     "--figsize",
     nargs=2,
     type=float,
     default=None,
     show_default=True,
-    help="""Optionally specify the figuresize (width, height) in inches
-              If not specified, tries to use a reasonable default depending on the number of
-              samples.
-              """,
+    help=(
+        "Set figure width and height in inches. Overrides --figwidth and "
+        "--figheight; otherwise dimensions are auto-sized."
+    ),
+)
+@click.option(
+    "--file-format",
+    "cluster_file_fmts",
+    type=click.Choice((".png", ".pdf", ".svg")),
+    multiple=True,
+    default=(),
+    help=(
+        "Output format(s) for cluster2 plots. Defaults to the global "
+        "--file-format setting."
+    ),
 )
 @click.option("--add-human-ratios", default=False, is_flag=True, show_default=True)
 @click.option(
@@ -5742,7 +5773,7 @@ def umap(
     default=False,
     is_flag=True,
     show_default=True,
-    help="Show Gene Symbols on clustermap",
+    help="Show gene-symbol row labels on the clustermap.",
 )
 @click.option(
     "--genesymbols", default=False, is_flag=True, help="Alias for --gene-symbols"
@@ -5799,7 +5830,7 @@ def umap(
     show_default=True,
     help=(
         "Keep UniProt-style attributes such as OS=, OX=, GN=, PE=, and SV= "
-        "when --add-description is used."
+        "if present."
     ),
 )
 @click.option(
@@ -5871,24 +5902,27 @@ def umap(
     default=False,
     is_flag=True,
     show_default=True,
-    help="Use the best figure size to display row names. May fail for pdf export if too big.",
+    help=(
+        "Auto-size unspecified dimensions from heatmap contents and row labels. "
+        "Very large PDFs may exceed device limits."
+    ),
 )
 @click.option(
     "--sample-reference",
     type=str,
-    help="metadata key to choose what samples to keep as specified by `--sample-include`",
+    help="Metadata field used to select samples with --sample-include.",
 )
 @click.option(
     "--sample-include",
     type=str,
     multiple=True,
-    help="samples to include b ased on metadata entry `--sample-reference`",
+    help="Metadata value to retain from --sample-reference; repeatable.",
 )
 @click.option(
     "--sample-exclude",
     type=str,
     multiple=True,
-    help="multiple sample names to exclude from heatmap",
+    help="Sample name to exclude from the heatmap; repeatable.",
 )
 @click.option(
     "--linkage",
@@ -5928,9 +5962,7 @@ when `auto` is set for `--nclusters`""",
     default="none",
     show_default=True,
     type=click.Choice(["none", "Kmeans", "kmeans", "PAM", "cuttree", "cutree"]),
-    help="""Function used to break data into k distinct clusters,
-              k is specified by `n-clusters`
-              """,
+    help="Function used to partition heatmap rows; k is specified by --nclusters.",
 )
 @click.option(
     "--row-annot-side",
@@ -6064,6 +6096,7 @@ def cluster2(
     figwidth,
     figheight,
     figsize,
+    cluster_file_fmts,
     force_plot_genes,
     genefile,
     genefile_sheet,
@@ -6114,6 +6147,20 @@ def cluster2(
     cluster_db_path,
     export_sweep_tsvs,
 ):
+    if figsize is not None and (figwidth is not None or figheight is not None):
+        click.echo(
+            "Warning: --figsize was provided with --figwidth or --figheight; "
+            "using the --figsize values.",
+            err=True,
+        )
+
+    global_file_fmts = (
+        tuple(ctx.obj.get("file_fmts", (".png",))) if ctx.obj else (".png",)
+    )
+    file_fmts = (
+        tuple(cluster_file_fmts) if cluster_file_fmts else global_file_fmts
+    )
+
     volcano_topn = volcano_top_n if volcano_top_n is not None else volcano_topn
     annotation_filter = list(annotation_filter or ())
     if "_all" in annotation_filter:
@@ -6198,6 +6245,7 @@ def cluster2(
         annotation_filter=annotation_filter,
         reroute_volcano=reroute_volcano,
         keep_description_attributes=keep_description_attributes,
+        file_fmts=file_fmts,
     )
 
 
