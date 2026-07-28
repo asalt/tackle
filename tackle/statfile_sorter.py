@@ -301,5 +301,8 @@ def sort_files(
             #import ipdb; ipdb.set_trace()
             keep_genes = [g for g in gene_set if g in X.index]
             X = X.loc[keep_genes]
-    
-    return X
+            return X
+
+    # A volcano table from another taxon (or otherwise disjoint gene universe)
+    # must not silently turn a requested top-N plot into an all-gene heatmap.
+    return X.iloc[0:0].copy()

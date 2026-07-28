@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 
-def test_cluster2_myzscore_anchors_sparse_detections_below_observed_minimum():
+def test_cluster2_myzscore_anchors_sparse_detections_below_observed_minimum(tmp_path):
     rscript = shutil.which("Rscript")
     if not rscript:
         pytest.skip("Rscript is not available")
@@ -27,6 +27,7 @@ def test_cluster2_myzscore_anchors_sparse_detections_below_observed_minimum():
         [rscript, "-e", package_check],
         text=True,
         capture_output=True,
+        cwd=tmp_path,
     )
     if check.returncode != 0:
         pytest.skip("Required cluster2 R packages are not installed")
@@ -153,5 +154,6 @@ stopifnot(isTRUE(all.equal(
         [rscript, "-e", code],
         text=True,
         capture_output=True,
+        cwd=tmp_path,
     )
     assert result.returncode == 0, result.stderr + result.stdout

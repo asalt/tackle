@@ -536,6 +536,14 @@ def run(
             pval_cutoff=_pval,
             pval_type=_ptype
         )
+        if X.empty:
+            logger.warning(
+                "No GeneIDs from volcano file %s matched the active %s matrix; "
+                "skipping cluster2 plot.",
+                volcano_file,
+                data_obj.taxon,
+            )
+            return
         logger.info(f"Loading volcano file: {volcano_file}")
         volcanofile_basename = os.path.split(volcano_file)[-1]
 
@@ -1292,7 +1300,15 @@ def run(
             savedir=os.path.abspath(
                 os.path.join(data_obj.outpath, "cluster2")
             ),  # this is for saving things within the r function
-            fixed_size=True if optimal_figsize else False,
+            # Fixed physical cell sizes are only safe while the requested
+            # automatic dimensions fit on a real graphics device. Once a very
+            # tall heatmap is compressed, let ComplexHeatmap fit its body to
+            # the bounded device instead.
+            fixed_size=(
+                True
+                if optimal_figsize and not bool(fig_debug.get("height_clamped", 0.0))
+                else False
+            ),
             figwidth=figwidth or robjects.NULL,
         )
         if cut_by is not None and cut_by is not robjects.NULL:
@@ -1313,7 +1329,7 @@ def run(
         # Detailed breakdown to simplify troubleshooting
         try:
             logger.info(
-                "figsize: base_w=%.2f, legends_w=%.2f, margins=%.2f, row_annot_w=%.2f, desc=%.2f, cut_by=%.2f, left_row_annot=%.2f, left_row_names=%.2f, width_scale=%.2f, pre_clamp=%.2f, final_w=%.2f, base_h=%.2f, legends_h=%.2f, final_h=%.2f"
+                "figsize: base_w=%.2f, legends_w=%.2f, margins=%.2f, row_annot_w=%.2f, desc=%.2f, cut_by=%.2f, left_row_annot=%.2f, left_row_names=%.2f, width_scale=%.2f, pre_clamp=%.2f, final_w=%.2f, base_h=%.2f, legends_h=%.2f, pre_clamp_h=%.2f, final_h=%.2f, height_clamped=%s"
                 % (
                     fig_debug.get("base_w", -1.0),
                     fig_debug.get("legend_width_extra", 0.0),
@@ -1328,7 +1344,9 @@ def run(
                     figwidth,
                     fig_debug.get("base_h", -1.0),
                     fig_debug.get("legend_height_extra", 0.0),
+                    fig_debug.get("pre_clamp_height", figheight),
                     figheight,
+                    bool(fig_debug.get("height_clamped", 0.0)),
                 )
             )
         except Exception:
@@ -1343,10 +1361,14 @@ def run(
                 height=figheight,
                 res=png_res,
             )
-            grdevice(file=out)  # open file for saving
-            ret = cluster2(**call_kws)  # draw
-            # print(ret[0])
-            grdevices.dev_off()  # close file
+            device_open = False
+            try:
+                grdevice(out)  # filename is the first formal argument
+                device_open = True
+                ret = cluster2(**call_kws)  # draw
+            finally:
+                if device_open:
+                    grdevices.dev_off()
             _write_metadata_colors_json(metadata_color_manifest, out)
             print(".done", flush=True)
 

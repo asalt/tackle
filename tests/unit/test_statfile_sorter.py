@@ -42,6 +42,36 @@ def test_sort_files_restricts_volcano_to_X_before_topn(tmp_path):
     assert not any(str(g).startswith("h") for g in out.index)
 
 
+def test_sort_files_returns_empty_when_volcano_has_no_genes_in_X(tmp_path):
+    from tackle.statfile_sorter import sort_files
+
+    X = pd.DataFrame(index=["human1", "human2"], data={"sample": [1.0, 2.0]})
+    volcano = pd.DataFrame(
+        {
+            "GeneID": ["mouse1", "mouse2"],
+            "log2_FC": [2.0, -2.0],
+            "pValue": [0.001, 0.002],
+            "pAdj": [0.01, 0.02],
+        }
+    )
+    volcano_path = tmp_path / "mouse.tsv"
+    volcano.to_csv(volcano_path, sep="\t", index=False)
+
+    out = sort_files(
+        [str(volcano_path)],
+        X,
+        sort_by="pValue",
+        direction="both",
+        topn=2,
+        fc=0,
+        pval_cutoff=1,
+        pval_type="pAdj",
+    )
+
+    assert out.empty
+    assert list(out.columns) == ["sample"]
+
+
 def test_sort_and_select_topn_both_backfills_to_total_topn_when_possible():
     from tackle.statfile_sorter import sort_and_select_topn
 

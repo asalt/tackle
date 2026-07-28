@@ -157,3 +157,51 @@ def test_compute_cluster2_figsize_uses_fixed_nonoptimal_default_height():
         env=_env(),
     )
     assert res.figheight == 11.8
+
+
+def test_compute_cluster2_figsize_caps_very_tall_automatic_heatmap():
+    env = _env()
+    res = compute_cluster2_figsize(
+        n_rows=8831,
+        n_cols=8,
+        figsize=(None, None),
+        optimal_figsize=True,
+        has_title=True,
+        col_cluster=False,
+        row_annot_df=None,
+        col_meta=None,
+        add_description=False,
+        row_annot_side="right",
+        row_names_side="right",
+        show_gene_symbols=True,
+        gene_symbol_fontsize=12,
+        has_cut_by=True,
+        env=env,
+    )
+
+    assert res.debug["pre_clamp_height"] > 1500
+    assert res.figheight == env.max_auto_figheight
+    assert bool(res.debug["height_clamped"])
+
+
+def test_compute_cluster2_figsize_preserves_explicit_large_height():
+    res = compute_cluster2_figsize(
+        n_rows=8831,
+        n_cols=8,
+        figsize=(12, 120),
+        optimal_figsize=True,
+        has_title=True,
+        col_cluster=False,
+        row_annot_df=None,
+        col_meta=None,
+        add_description=False,
+        row_annot_side="right",
+        row_names_side="right",
+        show_gene_symbols=True,
+        gene_symbol_fontsize=12,
+        has_cut_by=True,
+        env=_env(),
+    )
+
+    assert res.figheight == 120
+    assert not bool(res.debug["height_clamped"])

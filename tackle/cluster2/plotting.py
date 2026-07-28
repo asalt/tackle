@@ -22,6 +22,7 @@ class Cluster2FigsizeEnv:
     width_scale: float = 1.0
     min_figwidth: float = 5.4
     max_figwidth: float = 48.0
+    max_auto_figheight: float = 100.0
     width_margin_overhead: float = 1.2
     legend_col_width: float = 0.1
     legend_row_height: float = 0.35
@@ -29,6 +30,7 @@ class Cluster2FigsizeEnv:
     ENV_WIDTH_SCALE: str = "TACKLE_WIDTH_SCALE"
     ENV_MIN_FIGWIDTH: str = "TACKLE_MIN_FIGWIDTH"
     ENV_MAX_FIGWIDTH: str = "TACKLE_MAX_FIGWIDTH"
+    ENV_MAX_AUTO_FIGHEIGHT: str = "TACKLE_MAX_AUTO_FIGHEIGHT"
     ENV_WIDTH_MARGIN_OVERHEAD: str = "TACKLE_WIDTH_MARGIN_OVERHEAD"
     ENV_LEGEND_COL_WIDTH: str = "TACKLE_LEGEND_COL_WIDTH"
     ENV_LEGEND_ROW_HEIGHT: str = "TACKLE_LEGEND_ROW_HEIGHT"
@@ -39,6 +41,9 @@ class Cluster2FigsizeEnv:
             width_scale=_safe_float(os.getenv(cls.ENV_WIDTH_SCALE), cls.width_scale),
             min_figwidth=_safe_float(os.getenv(cls.ENV_MIN_FIGWIDTH), cls.min_figwidth),
             max_figwidth=_safe_float(os.getenv(cls.ENV_MAX_FIGWIDTH), cls.max_figwidth),
+            max_auto_figheight=_safe_float(
+                os.getenv(cls.ENV_MAX_AUTO_FIGHEIGHT), cls.max_auto_figheight
+            ),
             width_margin_overhead=_safe_float(
                 os.getenv(cls.ENV_WIDTH_MARGIN_OVERHEAD), cls.width_margin_overhead
             ),
@@ -289,8 +294,12 @@ def compute_cluster2_figsize(
     explicit_height = figsize is not None and figsize[1] is not None
     if show_gene_symbols and not optimal_figsize and not explicit_height:
         figheight = max(((gene_symbol_fontsize + 2) / 72) * n_rows, 12)
-        if figheight > 218:
-            figheight = 218
+
+    pre_clamp_height = float(figheight)
+    height_clamped = False
+    if not explicit_height and figheight > env.max_auto_figheight:
+        figheight = float(env.max_auto_figheight)
+        height_clamped = True
 
     debug = {
         "base_w": float(base_w),
@@ -302,8 +311,11 @@ def compute_cluster2_figsize(
         "cut_by_extra": float(cut_by_extra),
         "width_scale": float(env.width_scale),
         "pre_clamp_width": float(w_pre),
+        "pre_clamp_height": float(pre_clamp_height),
         "final_w": float(figwidth),
         "final_h": float(figheight),
+        "height_clamped": float(height_clamped),
+        "explicit_height": float(explicit_height),
         "margins_overhead": float(env.width_margin_overhead),
         "row_annot_w": float(extra_info.get("row_annot_w", 0.0)),
         "row_annot_h": float(extra_info.get("row_annot_h", 0.0)),
