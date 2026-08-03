@@ -1593,20 +1593,6 @@ class Data:
             # scale = .5
             gaussian_cfg = get_gaussian_imputation_defaults(self.gaussian_method)
             downshift = gaussian_cfg["downshift"]
-            plot_scale = gaussian_cfg["plot_scale"]
-
-            inpute_plotname = get_outname(
-                "distribution_ds_{:.2g}_scale_{:.2g}".format(downshift, plot_scale),
-                name=self.outpath_name,
-                taxon=self.taxon,
-                non_zeros=self.non_zeros,
-                colors_only=self.colors_only,
-                batch=self.batch_applied,
-                batch_method=(
-                    "parametric" if not self.batch_nonparametric else "nonparametric"
-                ),
-                outpath=self.outpath,
-            )
 
             to_impute = (
                 self._areas.replace(0, np.NAN).divide(self.minval).applymap(np.log10)
@@ -1621,8 +1607,22 @@ class Data:
                 make_plot=False,
             )
             # Plot imputed vs observed distributions for both backends
-            plot_imputed(
-                imputed, observed, missing, downshift=downshift, scale=plot_scale
+            imputation_stats = plot_imputed(
+                imputed, observed, missing, downshift=downshift
+            )
+            inpute_plotname = get_outname(
+                imputation_distribution_plot_stem(
+                    downshift, imputation_stats["final_imputed_sd"]
+                ),
+                name=self.outpath_name,
+                taxon=self.taxon,
+                non_zeros=self.non_zeros,
+                colors_only=self.colors_only,
+                batch=self.batch_applied,
+                batch_method=(
+                    "parametric" if not self.batch_nonparametric else "nonparametric"
+                ),
+                outpath=self.outpath,
             )
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
@@ -2082,20 +2082,6 @@ class Data:
         if impute_missing_values:
             gaussian_cfg = get_gaussian_imputation_defaults(self.gaussian_method)
             downshift = gaussian_cfg["downshift"]
-            plot_scale = gaussian_cfg["plot_scale"]
-
-            inpute_plotname = get_outname(
-                "distribution_ds_{:.2g}_scale_{:.2g}".format(downshift, plot_scale),
-                name=self.outpath_name,
-                taxon=self.taxon,
-                non_zeros=self.non_zeros,
-                colors_only=self.colors_only,
-                batch=self.batch_applied,
-                batch_method=(
-                    "parametric" if not self.batch_nonparametric else "nonparametric"
-                ),
-                outpath=self.outpath,
-            )
 
             mat[self.mask] = np.nan
             mat[mat == 0] = np.nan
@@ -2108,7 +2094,23 @@ class Data:
                 effective_width=gaussian_cfg["effective_width"],
                 make_plot=False,
             )
-            plot_imputed(mat, observed, missing, downshift=downshift, scale=plot_scale)
+            imputation_stats = plot_imputed(
+                mat, observed, missing, downshift=downshift
+            )
+            inpute_plotname = get_outname(
+                imputation_distribution_plot_stem(
+                    downshift, imputation_stats["final_imputed_sd"]
+                ),
+                name=self.outpath_name,
+                taxon=self.taxon,
+                non_zeros=self.non_zeros,
+                colors_only=self.colors_only,
+                batch=self.batch_applied,
+                batch_method=(
+                    "parametric" if not self.batch_nonparametric else "nonparametric"
+                ),
+                outpath=self.outpath,
+            )
             plt.savefig(inpute_plotname + ".png", dpi=90)
             plt.close(plt.gcf())
 

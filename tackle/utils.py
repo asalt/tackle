@@ -241,12 +241,73 @@ def maybe_int(x):
         return x
 
 
-def plot_imputed(edata_impute, observed, missing, downshift, scale):
+def summarize_imputation_distribution(edata_impute, observed, missing):
+    """Summarize the values that were actually imputed in the final matrix."""
+    missing_mask = pd.DataFrame(
+        missing,
+        index=edata_impute.index,
+        columns=edata_impute.columns,
+    ).astype(bool)
+    imputed_values = (
+        edata_impute.where(missing_mask)
+        .stack()
+        .pipe(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
+
+    if isinstance(observed, pd.DataFrame):
+        observed_values = observed.stack()
+    elif isinstance(observed, pd.Series):
+        observed_values = observed
+    else:
+        observed_values = pd.Series(np.asarray(observed).ravel())
+    observed_values = (
+        pd.to_numeric(observed_values, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
+
+    final_imputed_sd = (
+        float(imputed_values.std()) if len(imputed_values) > 1 else None
+    )
+    observed_sd = float(observed_values.std()) if len(observed_values) > 1 else None
+    relative_sd = (
+        final_imputed_sd / observed_sd
+        if final_imputed_sd is not None and observed_sd not in (None, 0)
+        else None
+    )
+    return {
+        "imputed_count": int(len(imputed_values)),
+        "final_imputed_sd": final_imputed_sd,
+        "observed_count": int(len(observed_values)),
+        "observed_sd": observed_sd,
+        "final_imputed_sd_fraction_of_observed": relative_sd,
+    }
+
+
+def imputation_distribution_plot_stem(downshift, final_imputed_sd):
+    sd_label = "na" if final_imputed_sd is None else f"{final_imputed_sd:.3g}"
+    return f"distribution_ds_{downshift:.2g}_imputed_sd_{sd_label}"
+
+
+def plot_imputed(edata_impute, observed, missing, downshift, scale=None):
+    """Plot observed and final imputed distributions.
+
+    ``scale`` remains accepted for compatibility, but the plot reports the
+    realized SD after any draw averaging rather than the per-draw scale.
+    """
+    imputation_stats = summarize_imputation_distribution(
+        edata_impute, observed, missing
+    )
     fig, ax = plt.subplots()
     sb.histplot(edata_impute.stack(), label="All Data", ax=ax, kde=False)
     sb.histplot(observed, label="Observed Values", ax=ax, kde=False)
     sb.histplot(
-        edata_impute[missing].stack(), label="Imputed Values", ax=ax, kde=False
+        edata_impute.where(missing).stack(),
+        label="Imputed Values",
+        ax=ax,
+        kde=False,
     )
 
     # sb.histplot(
@@ -255,12 +316,19 @@ def plot_imputed(edata_impute, observed, missing, downshift, scale):
 
     ax.legend(fontsize=10, loc="upper right", markerscale=0.4)
     # ax.set_xlim(0, 10)
-    title = "downshift : {:.2g} scale : {:.2g}".format(downshift, scale)
+    final_sd = imputation_stats["final_imputed_sd"]
+    relative_sd = imputation_stats["final_imputed_sd_fraction_of_observed"]
+    if final_sd is None:
+        final_sd_label = "not estimable"
+    elif relative_sd is None:
+        final_sd_label = f"{final_sd:.3g}"
+    else:
+        final_sd_label = f"{final_sd:.3g} ({relative_sd:.3g} x observed SD)"
+    title = f"downshift: {downshift:.2g}; final imputed SD: {final_sd_label}"
     ax.set_title(title)
-    # outname = os.path.join('../results/imputation_testing', 'distribution_ds_{:.2g}_scale_{:.2g}'.format(downshift, scale))
-
     # fig.savefig(outname+'.png', dpi=90)
     # plt.close(fig)
+    return imputation_stats
 
 
 # def impute_missing_old(frame, downshift=2.0, scale=1.0, random_state=1234, make_plot=True):
@@ -275,11 +343,11 @@ def impute_missing_old(
     """
     # _norm_notna = frame.replace(0, np.NAN).stack()
 
-    observed = frame.replace(0, np.nan).stack().dropna().to_frame()
-    #missing = frame.isna()
-    missing = observed.isna()
+    frame_na = frame.replace(0, np.nan)
+    observed = frame_na.stack().dropna()
+    missing = frame_na.isna()
 
-    _norm_notna = observed.stack()
+    _norm_notna = observed
     # _norm_notna += np.abs(_norm_notna.min())
     _mean = _norm_notna.mean()
     _sd = _norm_notna.std()
@@ -310,7 +378,7 @@ def impute_missing_old(
         start_ix += last_ix
 
     if make_plot:
-        plot_imputed(areas_log, observed, missing, downshift=downshift, scale=scale)
+        plot_imputed(areas_log, observed, missing, downshift=downshift)
 
     return areas_log
 
@@ -376,7 +444,6 @@ def impute_missing_mqish(
             observed,
             frame_na.isna(),  # mask of missing values
             downshift=downshift,
-            scale=effective_width,  # report effective width
         )
 
     return areas_imputed
@@ -395,7 +462,6 @@ def get_gaussian_imputation_defaults(
             "downshift": 1.8,
             "scale": 0.8,
             "effective_width": None,
-            "plot_scale": 0.8,
         }
     if method == "mqish":
         return {
@@ -403,7 +469,6 @@ def get_gaussian_imputation_defaults(
             "downshift": 1.8,
             "scale": None,
             "effective_width": 0.3,
-            "plot_scale": 0.3,
         }
     raise ValueError(f"Unsupported gaussian imputation method: {method}")
 
