@@ -7275,6 +7275,30 @@ class Float_or_Bool(click.ParamType):
     help="To what extent to scale the labels",
 )
 @click.option(
+    "--label-size-by",
+    type=click.Choice(("fixed", "density")),
+    default="fixed",
+    show_default=True,
+    help=(
+        "Use one fixed label size or scale labels inversely with local density "
+        "among labelled genes."
+    ),
+)
+@click.option(
+    "--label-size-min",
+    type=click.FloatRange(min=0.1),
+    default=2.4,
+    show_default=True,
+    help="Minimum density-scaled label size before applying --label-scale.",
+)
+@click.option(
+    "--label-size-max",
+    type=click.FloatRange(min=0.1),
+    default=4.0,
+    show_default=True,
+    help="Maximum density-scaled label size before applying --label-scale.",
+)
+@click.option(
     "--limma-robust/--no-limma-robust",
     default=True,
     is_flag=True,
@@ -7302,12 +7326,36 @@ class Float_or_Bool(click.ParamType):
     help="Maximum number of significant genes to highlight (annotate) in plot",
 )
 @click.option(
+    "-n-left",
+    "--number-left",
+    type=click.IntRange(min=0),
+    default=None,
+    help=(
+        "Maximum labels on the left (negative log2 fold-change) side. "
+        "The right side receives the remaining --number budget unless also "
+        "specified; unset by default."
+    ),
+)
+@click.option(
+    "-n-right",
+    "--number-right",
+    type=click.IntRange(min=0),
+    default=None,
+    help=(
+        "Maximum labels on the right (positive log2 fold-change) side. "
+        "The left side receives the remaining --number budget unless also "
+        "specified; unset by default."
+    ),
+)
+@click.option(
     "--number-by",
-    type=click.Choice(("abs_log2_FC", "log2_FC", "pValue")),
+    type=click.Choice(("abs_log2_FC", "log2_FC", "pValue", "hybrid")),
     default="log2_FC",
     show_default=True,
-    help="""How to determine the top n genes to label on plot.
-              `log2_Fold_Change` takes top n/2 genes that are up and down""",
+    help=(
+        "How to rank genes for labelling. hybrid balances genes that are "
+        "extreme by fold-change magnitude or p-value within each side."
+    ),
 )
 @click.option(
     "-o",
@@ -7374,10 +7422,15 @@ def volcano(
     highlight_geneids,
     impute_missing_values,
     label_scale,
+    label_size_by,
+    label_size_min,
+    label_size_max,
     limma_robust,
     limma_trend,
     marker_scale,
     number,
+    number_left,
+    number_right,
     number_by,
     only_sig,
     p_value,
@@ -7399,6 +7452,11 @@ def volcano(
 
     if comparison_label_scale is None:
         comparison_label_scale = annot_scale
+    if label_size_min > label_size_max:
+        raise click.BadParameter(
+            "must be less than or equal to --label-size-max",
+            param_hint="--label-size-min",
+        )
 
     # yaxis = 'pAdj' if p_adj else 'pValue'
     yaxis = "pValue" if p_value else "pAdj"
@@ -7424,6 +7482,8 @@ def volcano(
         foldchange,
         expression_data,
         number=number,
+        number_left=number_left,
+        number_right=number_right,
         number_by=number_by,
         direction=direction,
         only_sig=only_sig,
@@ -7431,6 +7491,9 @@ def volcano(
         sig_metric=sig_metric,
         yaxis=yaxis,
         label_scale=label_scale,
+        label_size_by=label_size_by,
+        label_size_min=label_size_min,
+        label_size_max=label_size_max,
         marker_scale=marker_scale,
         formula=formula,
         contrasts=contrasts,

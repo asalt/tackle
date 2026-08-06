@@ -65,6 +65,9 @@ def test_volcanoplot_writes_safe_exports(tmp_path, stub_gene_mapper):
             foldchange=1.5,
             expression_data=False,
             number=10,
+            label_size_by="density",
+            label_size_min=2.4,
+            label_size_max=4.0,
         )
     except RRuntimeError as err:
         pytest.skip(f"R runtime prerequisites missing: {err}")
@@ -88,3 +91,33 @@ def test_volcanoplot_writes_safe_exports(tmp_path, stub_gene_mapper):
         assert not plot_path.name.endswith(".png.png")
         plot_limit = os.pathconf(str(plot_path.parent), "PC_NAME_MAX")
         assert len(plot_path.name.encode("utf-8")) <= plot_limit
+
+
+def test_volcanoplot_svg_contains_semantic_gene_tags(tmp_path, stub_gene_mapper):
+    pytest.importorskip("rpy2.robjects.packages")
+    from rpy2.robjects.packages import isinstalled
+
+    if not isinstalled("ggiraph"):
+        pytest.skip("ggiraph is required for semantic SVG output")
+
+    data_obj = _StubDataObj(tmp_path)
+    ctx = SimpleNamespace(obj={"data_obj": data_obj, "file_fmts": [".svg"]})
+
+    try:
+        volcanoplot.volcanoplot(
+            ctx=ctx,
+            foldchange=1.5,
+            expression_data=False,
+            number=10,
+        )
+    except RRuntimeError as err:
+        pytest.skip(f"R runtime prerequisites missing: {err}")
+
+    svg_files = list((Path(data_obj.outpath) / "volcano").rglob("*.svg"))
+    assert svg_files, "Expected an SVG volcano plot to be generated"
+
+    svg = svg_files[0].read_text(encoding="utf-8")
+    assert "data-id='geneA'" in svg
+    assert "title='SYM_A'" in svg
+    assert ">SYM_A</text>" in svg
+    assert svg.count("data-id='geneA'") >= 2

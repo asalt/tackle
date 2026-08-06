@@ -8,10 +8,191 @@ suppressMessages(library(ggrepel))
 
 
 yaxis.choices <- c("pValue", "pAdj")
-number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue")
+number_by.choices <- c("abs_log2_FC", "log2_FC", "pValue", "hybrid")
 direction.choices <- c("both", "up", "down")
+label_size_by.choices <- c("fixed", "density")
+
+.volcano_density_label_sizes <- function(x,
+                                         y,
+                                         min_size = 2.4,
+                                         max_size = 4.0) {
+  x <- as.numeric(x)
+  y <- as.numeric(y)
+  min_size <- as.numeric(min_size[[1]])
+  max_size <- as.numeric(max_size[[1]])
+  if (!is.finite(min_size) || min_size <= 0) {
+    stop("min_size must be a positive finite number")
+  }
+  if (!is.finite(max_size) || max_size < min_size) {
+    stop("max_size must be finite and greater than or equal to min_size")
+  }
+  if (length(x) != length(y)) stop("x and y must have the same length")
+  if (length(x) == 0) return(numeric())
+
+  midpoint <- (min_size + max_size) / 2
+  sizes <- rep(midpoint, length(x))
+  usable <- is.finite(x) & is.finite(y)
+  n_usable <- sum(usable)
+  if (n_usable == 0) return(sizes)
+  if (n_usable == 1) {
+    sizes[usable] <- max_size
+    return(sizes)
+  }
+
+  coordinates <- cbind(x[usable], y[usable])
+  distances <- as.matrix(stats::dist(coordinates))
+  diag(distances) <- Inf
+  neighbors <- min(
+    3L,
+    max(1L, floor(sqrt(n_usable))),
+    n_usable - 1L
+  )
+  local_spacing <- apply(
+    distances,
+    1,
+    function(values) sort(values, partial = neighbors)[[neighbors]]
+  )
+  spacing_range <- range(local_spacing)
+  if (diff(spacing_range) <= sqrt(.Machine$double.eps)) {
+    spacing_score <- rep(0.5, n_usable)
+  } else {
+    spacing_score <- (local_spacing - spacing_range[[1]]) / diff(spacing_range)
+  }
+  sizes[usable] <- min_size + spacing_score * (max_size - min_size)
+  sizes
+}
+
+.select_volcano_labels <- function(label_candidates,
+                                   max_labels = 35,
+                                   number_by = number_by.choices,
+                                   direction = direction.choices,
+                                   max_labels_left = NULL,
+                                   max_labels_right = NULL) {
+  number_by <- match.arg(number_by, number_by.choices)
+  direction <- match.arg(direction, direction.choices)
+  max_labels <- as.integer(max_labels)
+
+  normalize_side_count <- function(value, option_name) {
+    if (is.null(value)) return(NULL)
+    value <- as.integer(value[[1]])
+    if (is.na(value) || value < 0) {
+      stop(option_name, " must be a non-negative integer")
+    }
+    value
+  }
+  max_labels_left <- normalize_side_count(max_labels_left, "max_labels_left")
+  max_labels_right <- normalize_side_count(max_labels_right, "max_labels_right")
+
+  # One explicit side consumes part of the overall --number budget and the
+  # opposite side receives the remainder. With both sides explicit, the
+  # overall budget is intentionally ignored.
+  total_budget <- if (is.na(max_labels)) 0L else max(0L, max_labels)
+  if (!is.null(max_labels_left) && is.null(max_labels_right)) {
+    max_labels_right <- max(0L, total_budget - max_labels_left)
+  } else if (is.null(max_labels_left) && !is.null(max_labels_right)) {
+    max_labels_left <- max(0L, total_budget - max_labels_right)
+  }
+
+  if (direction == "up") {
+    label_candidates <- label_candidates %>% filter(log2_FC > 0)
+  } else if (direction == "down") {
+    label_candidates <- label_candidates %>% filter(log2_FC < 0)
+  }
+  if (nrow(label_candidates) == 0) return(character())
+
+  rank_side <- function(candidates, side, count) {
+    if (count <= 0 || nrow(candidates) == 0) return(character())
+    candidates <- if (side == "left") {
+      candidates %>% filter(log2_FC < 0)
+    } else {
+      candidates %>% filter(log2_FC > 0)
+    }
+    if (nrow(candidates) == 0) return(character())
+
+    ranked <- if (number_by == "hybrid") {
+      candidates %>%
+        mutate(
+          .fc_rank = min_rank(desc(abs(log2_FC))),
+          .p_rank = min_rank(pValue),
+          .best_rank = pmin(.fc_rank, .p_rank),
+          .combined_rank = .fc_rank + .p_rank
+        ) %>%
+        arrange(
+          .best_rank,
+          .combined_rank,
+          pValue,
+          desc(abs(log2_FC))
+        )
+    } else if (number_by == "abs_log2_FC") {
+      candidates %>% arrange(desc(abs(log2_FC)))
+    } else if (number_by == "log2_FC" && side == "left") {
+      candidates %>% arrange(log2_FC)
+    } else if (number_by == "log2_FC") {
+      candidates %>% arrange(desc(log2_FC))
+    } else {
+      candidates %>% arrange(pValue)
+    }
+    rownames(head(ranked, count))
+  }
+
+  # Preserve the historical --number selection exactly unless a side-specific
+  # override is explicitly supplied.
+  legacy_labels <- character()
+  if (!is.na(max_labels) && max_labels > 0) {
+    if (number_by == "abs_log2_FC") {
+      legacy_labels <- label_candidates %>%
+        arrange(desc(abs(log2_FC))) %>%
+        head(max_labels) %>%
+        rownames()
+    } else if (number_by == "log2_FC" && direction == "both") {
+      legacy_labels <- c(
+        rank_side(label_candidates, "left", floor(max_labels / 2)),
+        rank_side(label_candidates, "right", ceiling(max_labels / 2))
+      )
+    } else if (number_by == "log2_FC") {
+      side <- if (direction == "down") "left" else "right"
+      legacy_labels <- rank_side(label_candidates, side, max_labels)
+    } else if (number_by == "pValue" && direction == "both") {
+      legacy_labels <- c(
+        rank_side(label_candidates, "left", floor(max_labels / 2)),
+        rank_side(label_candidates, "right", ceiling(max_labels / 2))
+      )
+    } else if (number_by == "pValue") {
+      legacy_labels <- label_candidates %>%
+        arrange(pValue) %>%
+        head(max_labels) %>%
+        rownames()
+    } else if (number_by == "hybrid" && direction == "both") {
+      legacy_labels <- c(
+        rank_side(label_candidates, "left", floor(max_labels / 2)),
+        rank_side(label_candidates, "right", ceiling(max_labels / 2))
+      )
+    } else if (number_by == "hybrid") {
+      side <- if (direction == "down") "left" else "right"
+      legacy_labels <- rank_side(label_candidates, side, max_labels)
+    }
+  }
+
+  if (is.null(max_labels_left) && is.null(max_labels_right)) {
+    return(legacy_labels)
+  }
+
+  legacy_fc <- label_candidates[legacy_labels, "log2_FC", drop = TRUE]
+  left_labels <- legacy_labels[legacy_fc < 0]
+  right_labels <- legacy_labels[legacy_fc > 0]
+  neutral_labels <- legacy_labels[legacy_fc == 0]
+  if (!is.null(max_labels_left)) {
+    left_labels <- rank_side(label_candidates, "left", max_labels_left)
+  }
+  if (!is.null(max_labels_right)) {
+    right_labels <- rank_side(label_candidates, "right", max_labels_right)
+  }
+  unique(c(left_labels, neutral_labels, right_labels))
+}
 
 volcanoplot <- function(X, max_labels = 35,
+                        max_labels_left = NULL,
+                        max_labels_right = NULL,
                         pch = 21, cex = 1.0,
                         alpha = 1.,
                         fc_cutoff = 4, sig = 0.05, label_cex = 1,
@@ -33,6 +214,10 @@ volcanoplot <- function(X, max_labels = 35,
                         global_ymax = NULL,
                         x_label_override = NULL,
                         y_label_override = NULL,
+                        label_size_by = label_size_by.choices,
+                        label_size_min = 2.4,
+                        label_size_max = 4.0,
+                        semantic_svg = FALSE,
                         verbose = TRUE,
                         ...) {
   if (!is.null(point_size)) {
@@ -43,6 +228,7 @@ volcanoplot <- function(X, max_labels = 35,
   ploty <- match.arg(yaxis, yaxis.choices)
   number_by <- match.arg(number_by, number_by.choices)
   direction <- match.arg(direction, direction.choices)
+  label_size_by <- match.arg(label_size_by, label_size_by.choices)
   linear_fc_cutoff <- fc_cutoff
 
   if (sig_metric == "pAdj") {
@@ -82,69 +268,15 @@ volcanoplot <- function(X, max_labels = 35,
   ## ======================================================================
   ## = calculations for deciding on which dots to show ===============
   ## ======================================================================
-  to_label <- c()
-  max_labels <- as.integer(max_labels)
-  if (max_labels > 0) {
-    label_candidates <- X %>% filter(Sig != "N.S.")
-    if (direction == "up") {
-      label_candidates <- label_candidates %>% filter(log2_FC > 0)
-    } else if (direction == "down") {
-      label_candidates <- label_candidates %>% filter(log2_FC < 0)
-    }
-
-    if (nrow(label_candidates) > 0) {
-      if (number_by == "abs_log2_FC") {
-        to_label <- label_candidates %>%
-          arrange(desc(abs(log2_FC))) %>%
-          head(max_labels) %>%
-          rownames()
-      } else if (number_by == "log2_FC" && direction == "both") {
-        up_n <- ceiling(max_labels / 2)
-        down_n <- floor(max_labels / 2)
-        to_label_up <- label_candidates %>%
-          filter(log2_FC > 0) %>%
-          arrange(desc(log2_FC)) %>%
-          head(up_n) %>%
-          rownames()
-        to_label_down <- label_candidates %>%
-          filter(log2_FC < 0) %>%
-          arrange(log2_FC) %>%
-          head(down_n) %>%
-          rownames()
-        to_label <- c(to_label_down, to_label_up)
-      } else if (number_by == "log2_FC") {
-        to_label <- label_candidates %>%
-          arrange(desc(log2_FC)) %>%
-          head(max_labels) %>%
-          rownames()
-        if (direction == "down") {
-          to_label <- label_candidates %>%
-            arrange(log2_FC) %>%
-            head(max_labels) %>%
-            rownames()
-        }
-      } else if (number_by == "pValue" && direction == "both") {
-        up_n <- ceiling(max_labels / 2)
-        down_n <- floor(max_labels / 2)
-        to_label_up <- label_candidates %>%
-          filter(log2_FC > 0) %>%
-          arrange(pValue) %>%
-          head(up_n) %>%
-          rownames()
-        to_label_down <- label_candidates %>%
-          filter(log2_FC < 0) %>%
-          arrange(pValue) %>%
-          head(down_n) %>%
-          rownames()
-        to_label <- c(to_label_down, to_label_up)
-      } else if (number_by == "pValue") {
-        to_label <- label_candidates %>%
-          arrange(pValue) %>%
-          head(max_labels) %>%
-          rownames()
-      }
-    }
-  }
+  label_candidates <- X %>% filter(Sig != "N.S.")
+  to_label <- .select_volcano_labels(
+    label_candidates,
+    max_labels = max_labels,
+    number_by = number_by,
+    direction = direction,
+    max_labels_left = max_labels_left,
+    max_labels_right = max_labels_right
+  )
   ## ======================================================================
 
   X[(highlight_mask & X$log2_FC > 0 & X[, sig_metric] < sig), "label"] <- TRUE
@@ -258,13 +390,57 @@ volcanoplot <- function(X, max_labels = 35,
   annot_size <- annot_size * annot_cex
   side_annot_y <- max(ymax * 0.02, 0.15) # 
 
+  X[, "label_size_plot"] <- 3.2 * label_cex
+  label_mask <- !is.na(X$label) & X$label
+  if (label_size_by == "density" && any(label_mask)) {
+    x_denominator <- max(2 * xmax, .Machine$double.eps)
+    y_denominator <- max(ymax, .Machine$double.eps)
+    label_x <- (X[label_mask, "log2_FC"] + xmax) / x_denominator
+    label_y <- -log10(X[label_mask, ploty]) / y_denominator
+    X[label_mask, "label_size_plot"] <- .volcano_density_label_sizes(
+      label_x,
+      label_y,
+      min_size = label_size_min,
+      max_size = label_size_max
+    ) * label_cex
+  }
+
   outline_color <- "#444444"
   highlight_outline_color <- "purple"
   highlight_stroke <- 0.8
   fillable_pch <- c(21, 22, 23, 24, 25)
   use_fill <- pch %in% fillable_pch
 
-  base_points <- if (use_fill) {
+  if (isTRUE(semantic_svg) && !requireNamespace("ggiraph", quietly = TRUE)) {
+    stop("ggiraph is required for semantic volcano SVG output")
+  }
+
+  base_points <- if (isTRUE(semantic_svg) && use_fill) {
+    ggiraph::geom_point_interactive(
+      data = X[!highlight_mask, ],
+      mapping = aes(
+        fill = usd,
+        data_id = GeneID,
+        tooltip = GeneSymbol
+      ),
+      color = outline_color,
+      size = POINT_SIZE * cex,
+      show.legend = FALSE,
+      pch = pch
+    )
+  } else if (isTRUE(semantic_svg)) {
+    ggiraph::geom_point_interactive(
+      data = X[!highlight_mask, ],
+      mapping = aes(
+        color = usd,
+        data_id = GeneID,
+        tooltip = GeneSymbol
+      ),
+      size = POINT_SIZE * cex,
+      show.legend = FALSE,
+      pch = pch
+    )
+  } else if (use_fill) {
     geom_point(
       mapping = aes(fill = usd),
       color = outline_color,
@@ -283,14 +459,72 @@ volcanoplot <- function(X, max_labels = 35,
 
   highlight_points <- NULL
   if (any(highlight_mask)) {
-    highlight_points <- geom_point(
-      data = X[highlight_mask, ],
-      mapping = aes(fill = usd),
-      color = highlight_outline_color,
-      stroke = highlight_stroke,
-      size = POINT_SIZE * cex,
-      show.legend = FALSE,
-      pch = if (use_fill) pch else 21
+    highlight_points <- if (isTRUE(semantic_svg)) {
+      ggiraph::geom_point_interactive(
+        data = X[highlight_mask, ],
+        mapping = aes(
+          fill = usd,
+          data_id = GeneID,
+          tooltip = GeneSymbol
+        ),
+        color = highlight_outline_color,
+        stroke = highlight_stroke,
+        size = POINT_SIZE * cex,
+        show.legend = FALSE,
+        pch = if (use_fill) pch else 21
+      )
+    } else {
+      geom_point(
+        data = X[highlight_mask, ],
+        mapping = aes(fill = usd),
+        color = highlight_outline_color,
+        stroke = highlight_stroke,
+        size = POINT_SIZE * cex,
+        show.legend = FALSE,
+        pch = if (use_fill) pch else 21
+      )
+    }
+  }
+
+  label_points <- if (isTRUE(semantic_svg)) {
+    ggiraph::geom_text_repel_interactive(
+      data = X[X$label == TRUE, ],
+      aes(
+        label = GeneSymbol,
+        alpha = alpha,
+        size = label_size_plot,
+        data_id = GeneID,
+        tooltip = GeneSymbol
+      ),
+      color = "black",
+      min.segment.length = .15,
+      point.padding = 1e-3,
+      box.padding = .1,
+      fontface = "bold",
+      segment.size = .35,
+      segment.alpha = .4,
+      max.overlaps = Inf,
+      seed = 1234,
+      show.legend = FALSE
+    )
+  } else {
+    geom_text_repel(
+      data = X[X$label == TRUE, ],
+      aes(
+        label = GeneSymbol,
+        alpha = alpha,
+        size = label_size_plot
+      ),
+      color = "black",
+      min.segment.length = .15,
+      point.padding = 1e-3,
+      box.padding = .1,
+      fontface = "bold",
+      segment.size = .35,
+      segment.alpha = .4,
+      max.overlaps = Inf,
+      seed = 1234,
+      show.legend = FALSE
     )
   }
 
@@ -298,24 +532,11 @@ volcanoplot <- function(X, max_labels = 35,
     base_points +
     highlight_points +
     scale_alpha_identity() +
+    scale_size_identity() +
     scale_fill_identity() +
     scale_color_identity() +
     coord_cartesian(xlim = c(-xmax, xmax), ylim = c(0, ymax), clip = "off") +
-    geom_text_repel(
-      data = X[X$label == TRUE, ],
-      aes(label = GeneSymbol, alpha = alpha),
-      color = "black",
-      min.segment.length = .15,
-      point.padding = 1e-3,
-      box.padding = .1,
-      size = 3.2 * label_cex,
-      fontface = "bold",
-      segment.size = .35,
-      segment.alpha = .4,
-      max.overlaps = Inf,
-      seed = 1234,
-      show.legend = FALSE
-    ) +
+    label_points +
     annotate("text", c(-xmax * 0.98, xmax * 0.98), c(side_annot_y, side_annot_y),
       label = c(group0, group1),
       color = c(color_down, color_up),
@@ -329,9 +550,9 @@ volcanoplot <- function(X, max_labels = 35,
       y = ylabel_full,
       caption = footnote
     ) +
-    theme_classic() +
+    theme_classic(base_size=18) +
     theme(
-      plot.caption = element_text(color = grey(.5), size = 10),
+      plot.caption = element_text(color = grey(.5), size = 12),
       plot.margin = margin(5.5, 18, 10, 18)
     )
 

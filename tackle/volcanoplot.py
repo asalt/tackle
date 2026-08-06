@@ -197,6 +197,8 @@ def volcanoplot(
         foldchange,
         expression_data,
         number,
+        number_left=None,
+        number_right=None,
         only_sig=False,
         sig=0.05,
         genes=None,
@@ -205,6 +207,9 @@ def volcanoplot(
         number_by="log2_FC",
         yaxis="pAdj",
         label_scale=1.0,
+        label_size_by="fixed",
+        label_size_min=2.4,
+        label_size_max=4.0,
         marker_scale=1.0,
         highlight_geneids=None,
         force_highlight_geneids=False,
@@ -707,10 +712,24 @@ def volcanoplot(
 
         file_fmts = ctx.obj["file_fmts"]
         grdevices = importr("grDevices")
+        semantic_svg = False
+        svg_device = grdevices.svg
+        if ".svg" in file_fmts:
+            try:
+                ggiraph = importr("ggiraph")
+            except Exception as exc:
+                logger.warning(
+                    "ggiraph is unavailable; volcano SVG output will not contain "
+                    "semantic GeneID tags: %s",
+                    exc,
+                )
+            else:
+                svg_device = ggiraph.dsvg
+                semantic_svg = True
         gr_devices = {
             ".png": grdevices.png,
             ".pdf": grdevices.pdf,
-            ".svg": grdevices.svg,
+            ".svg": svg_device,
         }
         gr_kws = {
             ".png": dict(width=width, height=height, units="in", res=300),
@@ -795,6 +814,9 @@ def volcanoplot(
                     sig_metric=sig_metric,
                     yax=yaxis,
                     label_cex=label_scale,
+                    label_size_by=label_size_by,
+                    label_size_min=label_size_min,
+                    label_size_max=label_size_max,
                     annot_cex=annot_scale,
                     marker_cex=marker_scale,
                     max_fc=max_fc,
@@ -809,6 +831,12 @@ def volcanoplot(
                     # y_label_override=y_label_override,
                     # **kws,
                 )
+                if number_left is not None:
+                    r_plot_kwargs["max_labels_left"] = number_left
+                if number_right is not None:
+                    r_plot_kwargs["max_labels_right"] = number_right
+                if file_fmt == ".svg" and semantic_svg:
+                    r_plot_kwargs["semantic_svg"] = True
                 if comparison_wrap_width is not None:
                     r_plot_kwargs["comparison_wrap_width"] = comparison_wrap_width
                 Rvolcanoplot(df, **r_plot_kwargs)
@@ -866,6 +894,9 @@ def volcanoplot(
                         sig_metric=sig_metric,
                         yax=yaxis,
                         label_cex=label_scale,
+                        label_size_by=label_size_by,
+                        label_size_min=label_size_min,
+                        label_size_max=label_size_max,
                         annot_cex=annot_scale,
                         marker_cex=marker_scale,
                         max_fc=max_fc,
@@ -879,6 +910,12 @@ def volcanoplot(
                         # x_label_override=x_label_override,
                         # y_label_override=y_label_override,
                     )
+                    if number_left is not None:
+                        r_plot_kwargs["max_labels_left"] = number_left
+                    if number_right is not None:
+                        r_plot_kwargs["max_labels_right"] = number_right
+                    if file_fmt == ".svg" and semantic_svg:
+                        r_plot_kwargs["semantic_svg"] = True
                     if comparison_wrap_width is not None:
                         r_plot_kwargs["comparison_wrap_width"] = comparison_wrap_width
                     Rvolcanoplot(df2, **r_plot_kwargs)
