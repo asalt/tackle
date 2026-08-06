@@ -49,6 +49,10 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
             "encircle": False,
             "show_loadings": False,
             "ntop_loadings": 10,
+            "max_pc": 10,
+            "figsize": [6.0, 7.0],
+            "scree_figsize": [8.0, 7.0],
+            "figsize_mode": "auto",
             "file_formats": [".pdf"],
         },
         data_parameters={"taxon": "all"},
@@ -78,6 +82,7 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
     assert context["sample_ids"] == ["SampleA", "SampleB"]
     assert context["feature_ids"] == ["101", "202", "303"]
     assert context["replot_default_pc_pairs"] == [[1, 2], [1, 3], [2, 3]]
+    assert context["plot_parameters"]["scree_figsize"] == [8.0, 7.0]
     assert context["authoritative_input"]["storage_format"] == "gctx"
     assert context["authoritative_input"]["matrix_dtype"] == "float64"
     assert context["authoritative_input"]["gctx_content_hash"] == "abc123"
@@ -115,6 +120,9 @@ def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
     assert "```{r replay-parameters}" in rmd
     assert "```{r pca-plot-function}" in rmd
     assert "```{r build-pca-plots}" in rmd
+    assert "fig.width=scree_width" in rmd
+    assert "max(10, captured_max_pc[[1]])" in rmd
+    assert "width = scree_width" in rmd
 
 
 def test_pca_replay_without_testing_omits_all_separation_material():

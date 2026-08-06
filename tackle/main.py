@@ -4735,7 +4735,7 @@ def pca2(
         # Ensure the melted data uses the same normalized values.
         dfm[color] = utils.normalize_metadata_str_values(dfm[color])
 
-    from .pca_plotting import resolve_pca2_figsize
+    from .pca_plotting import resolve_pca2_figsize, resolve_pca2_scree_figsize
 
     requested_figsize = figsize
     figsize = resolve_pca2_figsize(
@@ -4818,6 +4818,18 @@ def pca2(
         columns=pca_score_columns,
     )
     scree_component_count = min(len(pca_score_columns), max(10, int(max_pc)))
+    scree_figsize = resolve_pca2_scree_figsize(
+        figsize,
+        component_count=scree_component_count,
+        auto_size=requested_figsize is None,
+    )
+    if scree_figsize[0] > figsize[0]:
+        logger.info(
+            "Expanded PCA scree width from %.2f to %.2f inches for %d components",
+            figsize[0],
+            scree_figsize[0],
+            scree_component_count,
+        )
     pca2_scree_outname = get_outname(
         "pca2",
         name=data_obj.outpath_name,
@@ -5176,6 +5188,10 @@ def pca2(
             "show_loadings": bool(show_loadings),
             "ntop_loadings": int(ntop_loadings),
             "figsize": [float(figsize[0]), float(figsize[1])],
+            "scree_figsize": [
+                float(scree_figsize[0]),
+                float(scree_figsize[1]),
+            ],
             "figsize_mode": "auto" if requested_figsize is None else "explicit",
             "file_formats": list(file_fmts),
             "title": outname_kws.get("genefile"),
@@ -5206,8 +5222,12 @@ def pca2(
     prepare_pca_plot = robjects.r["pca_prepare_plot_for_output"]
     plot_items = []
     for plot_name, plot_obj in iter_named_items(pca2_plots):
-        plot_width = float(figsize[0])
-        plot_height = float(figsize[1])
+        if plot_name == "scree":
+            plot_width, plot_height = scree_figsize
+        else:
+            plot_width, plot_height = figsize
+        plot_width = float(plot_width)
+        plot_height = float(plot_height)
         prepared = prepare_pca_plot(
             plot_obj,
             fig_width=plot_width,

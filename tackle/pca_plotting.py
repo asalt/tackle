@@ -52,3 +52,24 @@ def resolve_pca2_figsize(
         height += min(7.0, 0.2 * (total_levels - 12))
 
     return _round_up_quarter(width), _round_up_quarter(height)
+
+
+def resolve_pca2_scree_figsize(
+    base_figsize: Sequence[float],
+    *,
+    component_count: int,
+    auto_size: bool,
+) -> tuple[float, float]:
+    """Give each displayed scree component enough horizontal space.
+
+    Six components fit the compact six-inch PCA baseline. In automatic mode,
+    every additional component adds half an inch. Explicit ``--figsize``
+    remains authoritative.
+    """
+
+    width, height = (float(value) for value in base_figsize)
+    if not auto_size:
+        return width, height
+
+    target_width = 6.0 + (0.5 * max(0, int(component_count) - 6))
+    return _round_up_quarter(max(width, target_width)), height

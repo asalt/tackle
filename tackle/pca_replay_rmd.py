@@ -84,7 +84,22 @@ captured_figsize <- as.numeric(unlist(plot_params$figsize, use.names = FALSE))
 fig_width <- if (length(captured_figsize) >= 1 && is.finite(captured_figsize[[1]])) captured_figsize[[1]] else 6
 fig_height <- if (length(captured_figsize) >= 2 && is.finite(captured_figsize[[2]])) captured_figsize[[2]] else 7
 figsize_mode <- as.character(unlist(plot_params$figsize_mode, use.names = FALSE))
-expand_caption_height <- length(figsize_mode) == 0 || !identical(figsize_mode[[1]], "explicit")
+auto_figsize <- length(figsize_mode) == 0 || !identical(figsize_mode[[1]], "explicit")
+expand_caption_height <- auto_figsize
+captured_max_pc <- as.integer(unlist(plot_params$max_pc, use.names = FALSE))
+if (length(captured_max_pc) == 0 || !is.finite(captured_max_pc[[1]])) captured_max_pc <- 3L
+captured_scree_figsize <- as.numeric(unlist(plot_params$scree_figsize, use.names = FALSE))
+scree_width <- if (length(captured_scree_figsize) >= 1 && is.finite(captured_scree_figsize[[1]])) {
+  captured_scree_figsize[[1]]
+} else if (isTRUE(auto_figsize)) {
+  max(fig_width, 6 + 0.5 * max(0, max(10, captured_max_pc[[1]]) - 6))
+} else {
+  fig_width
+}
+scree_height <- if (
+  length(captured_scree_figsize) >= 2 &&
+  is.finite(captured_scree_figsize[[2]])
+) captured_scree_figsize[[2]] else fig_height
 pc_pairs <- list(c(1L, 2L), c(1L, 3L), c(2L, 3L))
 replot_formats <- as.character(unlist(plot_params$file_formats, use.names = FALSE))
 if (length(replot_formats) == 0) replot_formats <- ".png"
@@ -589,8 +604,8 @@ for (plot_name in names(plots)) {
 
 ## Scree plot
 
-```{r scree}
-scree_n <- min(length(variance_ratio), max(10, 3))
+```{r scree, fig.width=scree_width, fig.height=scree_height}
+scree_n <- min(length(variance_ratio), max(10, captured_max_pc[[1]]))
 scree_idx <- seq_len(scree_n)
 scree_df <- tibble::tibble(
   pc_index = scree_idx,
@@ -616,7 +631,7 @@ scree_plot <- ggplot(scree_df, aes(x = pc_label)) +
   ggplot2::theme_classic(base_size = 20) +
   theme(plot.title = element_text(face = "bold"), plot.subtitle = element_text(size = rel(0.8)))
 print(scree_plot)
-ggplot2::ggsave(file.path(out_dir, "scree.png"), scree_plot, width = fig_width, height = fig_height)
+ggplot2::ggsave(file.path(out_dir, "scree.png"), scree_plot, width = scree_width, height = scree_height)
 ```
 
 ## Captured input parameters
