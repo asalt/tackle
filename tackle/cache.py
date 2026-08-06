@@ -432,6 +432,7 @@ class DataSnapshotCache:
         experiment_file = getattr(data_obj, "experiment_file")
         return {
             "schema_version": self.config.schema_version,
+            "area_log_floor_fraction": 0.9,
             "config_path": os.path.abspath(experiment_file),
             "config_hash": SnapshotCache.hash_file(experiment_file),
             "additional_info_hash": additional_info_hash,

@@ -94,6 +94,7 @@ def test_data_snapshot_cache_save_and_restore(tmp_path):
 
     fake1 = FakeData(experiment_file=str(config_file), data_dir=str(tmp_path / "data"))
     cache1 = DataSnapshotCache(config, only_local=False)
+    assert cache1.build_key(fake1)["area_log_floor_fraction"] == 0.9
     assert cache1.try_restore(fake1) is False
     assert cache1.maybe_save(fake1) is True
 

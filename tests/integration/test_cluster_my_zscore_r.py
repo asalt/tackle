@@ -149,6 +149,28 @@ stopifnot(isTRUE(all.equal(
   rep(0, ncol(tiny_column_matrix)),
   tolerance = 1e-12
 )))
+
+explicit_missing_data <- data.frame(
+  GeneID = "g1",
+  GeneSymbol = "G1",
+  S1 = 0,
+  S2 = 1,
+  S3 = NA_real_,
+  check.names = FALSE
+)
+explicit_missing_result <- cluster2(
+  explicit_missing_data,
+  col_data = tiny_metadata,
+  z_score = "row",
+  row_cluster = FALSE,
+  col_cluster = FALSE
+)
+explicit_missing_matrix <- explicit_missing_result$heatmap@ht_list[[1]]@matrix
+stopifnot(
+  is.finite(explicit_missing_matrix[1, "S1"]),
+  explicit_missing_matrix[1, "S2"] > explicit_missing_matrix[1, "S1"],
+  is.na(explicit_missing_matrix[1, "S3"])
+)
 """
     result = subprocess.run(
         [rscript, "-e", code],

@@ -237,7 +237,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
     # do nothing
   } else if (is.null(z_score_by) && z_score == "row") {
     exprs_long <- exprs_long %>%
-      mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
+      mutate(.missing = is.na(value)) %>%
       group_by(GeneID) %>%
       mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
       ungroup() %>%
@@ -245,7 +245,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       select(-.missing)
   } else if (!is.null(z_score_by) && z_score == "row") {
     exprs_long <- exprs_long %>%
-      mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
+      mutate(.missing = is.na(value)) %>%
       group_by(GeneID, !!as.name(z_score_by)) %>%
       mutate(zscore = myzscore(value, fillna = z_score_fillna), zscore_impute = myzscore(value, remask = FALSE, fillna = z_score_fillna)) %>%
       ungroup() %>%
@@ -253,7 +253,7 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       select(-.missing)
   } else if (z_score == "column") {
     exprs_long <- exprs_long %>%
-      mutate(value = na_if(value, 0), .missing = is.na(value)) %>%
+      mutate(.missing = is.na(value)) %>%
       group_by(name) %>%
       mutate(
         zscore = myzscore(value, fillna = z_score_fillna),

@@ -1564,7 +1564,7 @@ class Data:
 
             self._areas = areas
 
-        self._mask = self._areas.replace(0, np.nan).applymap(np.isnan)
+        self._mask = self._areas.replace(0, np.nan).isna()
         self._zeros = self._areas == 0
         if len(self.areas) == 0:
             raise ValueError("No data")
@@ -1581,9 +1581,13 @@ class Data:
 
         gids = tuple(gids)
         self.minval = self._areas.replace(0, np.nan).stack().dropna().min()
+        # Reserve log zero for masked zeros/NAs while keeping every observed
+        # positive area strictly above zero after the log transformation.
+        log_floor = self.minval * 0.9
         logger.info(f"total values {self._areas.count().sum()}")
         logger.info(f"total zeros {self._zeros.sum().sum()}")
         logger.info(f"min nonzero val: {self.minval:.4g}")
+        logger.info(f"log floor (0.9 * min nonzero): {log_floor:.4g}")
 
         # if self.impute_missing_values or 1:
         # logger.info(f"Impute missing values : {self.impute_missing_values}")
@@ -1595,7 +1599,7 @@ class Data:
             downshift = gaussian_cfg["downshift"]
 
             to_impute = (
-                self._areas.replace(0, np.NAN).divide(self.minval).applymap(np.log10)
+                self._areas.replace(0, np.NAN).divide(log_floor).applymap(np.log10)
             )
             observed = to_impute.replace(0, np.nan).stack().dropna()
             missing = to_impute.isna()
@@ -1633,13 +1637,14 @@ class Data:
             if self.fill_na_zero:
                 self._areas_log = np.log10(
                     self._areas.replace(0, np.NAN)
-                    .fillna(self.minval)
-                    .divide(self.minval)
+                    .fillna(log_floor)
+                    .divide(log_floor)
                 )
             elif not self.fill_na_zero:
                 self._areas_log = (
-                    self._areas.astype(float)
-                    .divide(self.minval)
+                    self._areas.replace(0, np.nan)
+                    .astype(float)
+                    .divide(log_floor)
                     .pipe(np.log10)
                     .replace([np.inf, -np.inf], np.nan)
                 )
@@ -1653,7 +1658,7 @@ class Data:
         #     self._areas_log = self._areas_log
         #     return
 
-        # don't need this section anymore since now minval is 0
+        # don't need this section anymore since masked values use log-floor zero
         # minval = self._areas_log.replace(0, np.NAN).min().min()
         # shift_val = np.ceil(np.abs(minval))
         # self.minval_log = minval
