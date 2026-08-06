@@ -67,7 +67,6 @@ def render_limma_replay_rmd(
             block_col=_r_string(replay_context.get("block")),
             robust_flag="TRUE" if bool(replay_context.get("limma_robust")) else "FALSE",
             trend_flag="TRUE" if bool(replay_context.get("limma_trend")) else "FALSE",
-            direct_coefs=_r_string_vector(replay_context.get("direct_coefs")),
             contrast_exprs=_r_string_vector(
                 replay_context.get("contrast_expressions")
             ),

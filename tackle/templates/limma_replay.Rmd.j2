@@ -17,12 +17,8 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 - Analysis replayed here: limma model, contrasts, empirical Bayes moderation, and result tables.
 - Authoritative input: `[[[ gct_relpath ]]]`, the matrix supplied to limma by tackle.
 - Imputation is **not** rerun. If the original analysis imputed values, they are already in the stored matrix.
-- PCA is intentionally excluded. Tackle `pca2` has a separate input matrix and preprocessing contract.
 
 ## Editable limma setup
-
-These are the resolved values used by tackle. They are ordinary R objects so the
-analysis can be inspected or modified interactively without reading a JSON file.
 
 ```{r analysis-setup}
 expected_matrix_shape <- [[[ expected_matrix_shape ]]]
@@ -32,7 +28,6 @@ block_col <- [[[ block_col ]]]
 robust_flag <- [[[ robust_flag ]]]
 trend_flag <- [[[ trend_flag ]]]
 
-direct_coefs <- [[[ direct_coefs ]]]
 contrast_exprs <- [[[ contrast_exprs ]]]
 result_labels <- [[[ result_labels ]]]
 ```
@@ -129,10 +124,6 @@ if (is.null(formula_str)) {
 }
 colnames(mod) <- make.names(sanitize_name(colnames(mod)))
 
-if (length(result_labels) == 0) {
-  result_labels <- c(paste0("coef_", direct_coefs, "=", direct_coefs),
-                     paste0(contrast_exprs, "=", contrast_exprs))
-}
 if (length(result_labels) == 0) stop("The captured setup contains no limma results to reproduce.")
 
 contrasts_matrix <- NULL
@@ -290,8 +281,6 @@ if (length(result_labels) > 0) {
 
 ## Modeled Matrix QC
 
-These summaries inspect the exact modeled matrix without changing it.
-
 ```{r matrix-summary}
 sample_summary <- data.frame(
   sample = colnames(mat_stored),
@@ -303,12 +292,6 @@ sample_summary <- data.frame(
 )
 knitr::kable(sample_summary)
 ```
-
-## PCA Scope
-
-PCA is not computed here. Replaying tackle `pca2` requires its own saved matrix plus the
-original `fillna`, `center`, `scale`, feature-selection, and annotation options; the limma
-modeled matrix and context do not establish that contract.
 
 ```{r session-info}
 sessionInfo()

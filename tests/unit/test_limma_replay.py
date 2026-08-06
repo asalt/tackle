@@ -152,7 +152,6 @@ def test_limma_replay_rmd_embeds_editable_setup_without_json_dependency() -> Non
             "block": "donor_line",
             "limma_robust": True,
             "limma_trend": True,
-            "direct_coefs": [],
             "contrast_expressions": ["c1grpsel_mi16 - c1grpsel_none"],
             "result_labels": [
                 "c1grpsel_mi16 - c1grpsel_none="
@@ -171,6 +170,11 @@ def test_limma_replay_rmd_embeds_editable_setup_without_json_dependency() -> Non
     assert "jsonlite" not in rmd
     assert "read_json" not in rmd
     assert "ctx$" not in rmd
+
+    # Temporary guards for early-template strings; remove after old bundles age out.
+    deprecated_text = ("direct_coefs", "PCA Scope", "PCA is intentionally excluded",
+                       "ordinary R objects", "These summaries inspect")
+    assert not any(text in rmd for text in deprecated_text)
 
 
 def test_write_limma_replay_files_prefers_explicit_expression_matrix(tmp_path: Path, monkeypatch) -> None:
