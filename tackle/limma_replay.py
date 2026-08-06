@@ -455,8 +455,8 @@ def write_limma_replay_files(
             title="Tackle limma replay",
             generated_at=now,
             gct_relpath=gct_path.name,
-            context_relpath=context_path.name,
             outputs_rel_dir="replay_outputs",
+            replay_context=context,
         ),
         force=force,
     )

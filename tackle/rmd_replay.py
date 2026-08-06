@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -56,6 +57,7 @@ def write_limma_replay_bundle(
 
     replay_path = Path(replay_dir).expanduser().resolve()
     gct_src, ctx_src = validate_replay_dir(replay_path)
+    replay_context = json.loads(ctx_src.read_text(encoding="utf-8"))
 
     now = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     title = title or f"Tackle limma replay: {replay_path.name}"
@@ -76,8 +78,8 @@ def write_limma_replay_bundle(
             title=title,
             generated_at=now,
             gct_relpath=str(gct_dst_rel).replace("\\", "/"),
-            context_relpath=str(ctx_dst_rel).replace("\\", "/"),
             outputs_rel_dir="rmd_outputs",
+            replay_context=replay_context,
         ),
         force=force,
     )

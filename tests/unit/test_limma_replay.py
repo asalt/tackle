@@ -12,6 +12,7 @@ from tackle.limma_replay import (
     validate_replay_dir,
     write_limma_replay_files,
 )
+from tackle.limma_replay_rmd import render_limma_replay_rmd
 from tackle.rmd_replay import write_limma_replay_bundle
 
 
@@ -136,6 +137,40 @@ def test_write_limma_replay_bundle(tmp_path: Path) -> None:
     assert "sample-distributions" not in rmd
     assert "sample-correlation" not in rmd
     assert "boxplot(" not in rmd
+
+
+def test_limma_replay_rmd_embeds_editable_setup_without_json_dependency() -> None:
+    rmd = render_limma_replay_rmd(
+        title="Tackle limma replay",
+        generated_at="2026-08-06",
+        gct_relpath="limma_input.gctx",
+        outputs_rel_dir="replay_outputs",
+        replay_context={
+            "matrix_shape": [9556, 24],
+            "group": None,
+            "formula_rewritten": "~ 0 + c1grp",
+            "block": "donor_line",
+            "limma_robust": True,
+            "limma_trend": True,
+            "direct_coefs": [],
+            "contrast_expressions": ["c1grpsel_mi16 - c1grpsel_none"],
+            "result_labels": [
+                "c1grpsel_mi16 - c1grpsel_none="
+                "c1grpsel_mi16 - c1grpsel_none"
+            ],
+        },
+    )
+
+    assert "```{r analysis-setup}" in rmd
+    assert "expected_matrix_shape <- c(9556L, 24L)" in rmd
+    assert 'formula_str <- "~ 0 + c1grp"' in rmd
+    assert 'block_col <- "donor_line"' in rmd
+    assert "robust_flag <- TRUE" in rmd
+    assert "trend_flag <- TRUE" in rmd
+    assert '"c1grpsel_mi16 - c1grpsel_none"' in rmd
+    assert "jsonlite" not in rmd
+    assert "read_json" not in rmd
+    assert "ctx$" not in rmd
 
 
 def test_write_limma_replay_files_prefers_explicit_expression_matrix(tmp_path: Path, monkeypatch) -> None:

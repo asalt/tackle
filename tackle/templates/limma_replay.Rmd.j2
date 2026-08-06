@@ -19,25 +19,22 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 - Imputation is **not** rerun. If the original analysis imputed values, they are already in the stored matrix.
 - PCA is intentionally excluded. Tackle `pca2` has a separate input matrix and preprocessing contract.
 
-```{r load-context}
-if (!requireNamespace("jsonlite", quietly = TRUE)) {
-  stop("Missing dependency: jsonlite")
-}
-ctx <- jsonlite::read_json("[[[ context_relpath ]]]", simplifyVector = TRUE)
+## Editable limma setup
 
-key_fields <- c(
-  "replay_contract_version", "replay_scope", "analysis_dir", "volcano_dir", "run_id",
-  "matrix_shape", "stored_matrix_role", "stored_matrix_is_authoritative",
-  "expression_matrix_source",
-  "group", "formula_in", "formula_effective", "formula_rewritten",
-  "contrasts_spec", "block", "limma_robust", "limma_trend",
-  "impute_missing_values", "imputation_backend", "gaussian_method", "lupine_mode",
-  "has_pre_impute_matrix", "pre_impute_matrix_role", "recompute_imputation_supported",
-  "normtype", "non_zeros", "taxon", "batch_applied", "batch_method",
-  "pca_included"
-)
-present <- intersect(key_fields, names(ctx))
-as.data.frame(t(unlist(ctx[present])), stringsAsFactors = FALSE)
+These are the resolved values used by tackle. They are ordinary R objects so the
+analysis can be inspected or modified interactively without reading a JSON file.
+
+```{r analysis-setup}
+expected_matrix_shape <- [[[ expected_matrix_shape ]]]
+group_col <- [[[ group_col ]]]
+formula_str <- [[[ formula_str ]]]
+block_col <- [[[ block_col ]]]
+robust_flag <- [[[ robust_flag ]]]
+trend_flag <- [[[ trend_flag ]]]
+
+direct_coefs <- [[[ direct_coefs ]]]
+contrast_exprs <- [[[ contrast_exprs ]]]
+result_labels <- [[[ result_labels ]]]
 ```
 
 ## Load the Modeled Matrix
@@ -75,16 +72,12 @@ if ("GeneID" %in% colnames(rdesc)) {
   rownames(rdesc) <- as.character(rdesc$id)
 }
 
-if (!isTRUE(ctx$stored_matrix_is_authoritative)) {
-  stop("Replay context does not mark the stored matrix as authoritative.")
-}
-if (!is.null(ctx$matrix_shape)) {
-  expected_shape <- as.integer(unlist(ctx$matrix_shape, use.names = FALSE))
-  if (!identical(as.integer(dim(mat_stored)), expected_shape)) {
+if (!is.null(expected_matrix_shape)) {
+  if (!identical(as.integer(dim(mat_stored)), as.integer(expected_matrix_shape))) {
     stop(
-      "Stored matrix shape does not match replay context: ",
+      "Stored matrix shape does not match the captured limma input: ",
       paste(dim(mat_stored), collapse = " x "), " versus ",
-      paste(expected_shape, collapse = " x ")
+      paste(expected_matrix_shape, collapse = " x ")
     )
   }
 }
@@ -104,27 +97,15 @@ if (!requireNamespace("limma", quietly = TRUE)) {
 suppressPackageStartupMessages(library(limma))
 
 pheno <- cdesc
-group_col <- if (!is.null(ctx$group) && length(ctx$group) == 1 && nzchar(ctx$group)) {
-  as.character(ctx$group)
-} else {
-  NULL
-}
-
-formula_str <- NULL
-if (!is.null(ctx$formula_rewritten) && length(ctx$formula_rewritten) == 1 && nzchar(ctx$formula_rewritten)) {
-  formula_str <- as.character(ctx$formula_rewritten)
-} else if (!is.null(ctx$formula_effective) && length(ctx$formula_effective) == 1 && nzchar(ctx$formula_effective)) {
-  formula_str <- as.character(ctx$formula_effective)
-}
 
 if (is.null(formula_str) && is.null(group_col)) {
-  stop("Context is missing both formula and group.")
+  stop("The captured setup is missing both formula_str and group_col.")
 }
 if (!is.null(group_col) && !(group_col %in% colnames(pheno))) {
   stop(paste0("Missing group column in cdesc: ", group_col))
 }
-if (!is.null(ctx$block) && length(ctx$block) == 1 && nzchar(ctx$block) && !(ctx$block %in% colnames(pheno))) {
-  stop(paste0("Missing block column in cdesc: ", ctx$block))
+if (!is.null(block_col) && !(block_col %in% colnames(pheno))) {
+  stop(paste0("Missing block column in cdesc: ", block_col))
 }
 if (!is.null(formula_str) && grepl("ns\\(", formula_str)) {
   if (!requireNamespace("splines", quietly = TRUE)) stop("Missing dependency: splines")
@@ -148,18 +129,11 @@ if (is.null(formula_str)) {
 }
 colnames(mod) <- make.names(sanitize_name(colnames(mod)))
 
-as_character_vector <- function(x) {
-  if (is.null(x) || length(x) == 0) return(character())
-  as.character(unlist(x, use.names = FALSE))
-}
-direct_coefs <- as_character_vector(ctx$direct_coefs)
-contrast_exprs <- as_character_vector(ctx$contrast_expressions)
-result_labels <- as_character_vector(ctx$result_labels)
 if (length(result_labels) == 0) {
   result_labels <- c(paste0("coef_", direct_coefs, "=", direct_coefs),
                      paste0(contrast_exprs, "=", contrast_exprs))
 }
-if (length(result_labels) == 0) stop("Replay context contains no limma results to reproduce.")
+if (length(result_labels) == 0) stop("The captured setup contains no limma results to reproduce.")
 
 contrasts_matrix <- NULL
 if (length(contrast_exprs) > 0) {
@@ -173,13 +147,10 @@ if (!is.null(contrasts_matrix)) contrasts_matrix
 ## Limma Fit
 
 ```{r limma-fit}
-robust_flag <- isTRUE(ctx$limma_robust)
-trend_flag <- isTRUE(ctx$limma_trend)
-
 block <- NULL
 cor_value <- NULL
-if (!is.null(ctx$block) && length(ctx$block) == 1 && nzchar(ctx$block)) {
-  block <- as.factor(pheno[[ctx$block]])
+if (!is.null(block_col)) {
+  block <- as.factor(pheno[[block_col]])
   corfit <- duplicateCorrelation(mat_stored, design = mod, block = block)
   cor_value <- corfit$consensus
   cat("duplicateCorrelation consensus:", cor_value, "\n")
@@ -338,14 +309,6 @@ knitr::kable(sample_summary)
 PCA is not computed here. Replaying tackle `pca2` requires its own saved matrix plus the
 original `fillna`, `center`, `scale`, feature-selection, and annotation options; the limma
 modeled matrix and context do not establish that contract.
-
-## Provenance
-
-```{r context-dump, results='asis'}
-cat("<details><summary><strong>Resolved context (JSON)</strong></summary><pre>")
-cat(jsonlite::toJSON(ctx, pretty = TRUE, auto_unbox = TRUE))
-cat("</pre></details>")
-```
 
 ```{r session-info}
 sessionInfo()
