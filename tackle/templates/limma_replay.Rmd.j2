@@ -89,6 +89,9 @@ cat("No imputation is performed by this document.\n")
 if (!requireNamespace("limma", quietly = TRUE)) {
   stop("Missing dependency: limma")
 }
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  stop("Missing dependency: dplyr")
+}
 suppressPackageStartupMessages(library(limma))
 
 pheno <- cdesc
@@ -189,17 +192,16 @@ split_result_label <- function(label) {
 }
 
 normalize_tackle_columns <- function(tt) {
-  rename_one <- function(old, new) {
-    hit <- match(old, colnames(tt), nomatch = 0)
-    if (hit > 0) colnames(tt)[hit] <<- new
-  }
-  rename_one("logFC", "log2_FC")
-  rename_one("adj.P.Val", "pAdj")
-  rename_one("P.Value", "pValue")
-  for (column in intersect(c("log2_FC", "CI.L", "CI.R"), colnames(tt))) {
-    tt[[column]] <- tt[[column]] / log10(2)
-  }
-  tt
+  # limma effects use the input matrix's log10 units; convert them to log2.
+  tt |>
+    dplyr::rename(
+      log2_FC = logFC,
+      pAdj = adj.P.Val,
+      pValue = P.Value
+    ) |>
+    dplyr::mutate(
+      dplyr::across(c(log2_FC, CI.L, CI.R), ~ .x / log10(2))
+    )
 }
 
 add_replay_data <- function(tt) {
