@@ -10,6 +10,10 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(cmapR)
+library(dplyr)
+library(limma)
 ```
 
 ## Replay Contract
@@ -35,11 +39,6 @@ result_labels <- [[[ result_labels ]]]
 ## Load the Modeled Matrix
 
 ```{r load-gct}
-if (!requireNamespace("cmapR", quietly = TRUE)) {
-  stop("Missing dependency: cmapR")
-}
-suppressPackageStartupMessages(library(cmapR))
-
 parse_gct_any <- function(path) {
   exports <- getNamespaceExports("cmapR")
   if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
@@ -86,14 +85,6 @@ cat("No imputation is performed by this document.\n")
 ## Design and Contrasts
 
 ```{r design-contrasts}
-if (!requireNamespace("limma", quietly = TRUE)) {
-  stop("Missing dependency: limma")
-}
-if (!requireNamespace("dplyr", quietly = TRUE)) {
-  stop("Missing dependency: dplyr")
-}
-suppressPackageStartupMessages(library(limma))
-
 pheno <- cdesc
 
 if (is.null(formula_str) && is.null(group_col)) {
@@ -189,13 +180,13 @@ split_result_label <- function(label) {
 normalize_tackle_columns <- function(tt) {
   # limma effects use the input matrix's log10 units; convert them to log2.
   tt |>
-    dplyr::rename(
+    rename(
       log2_FC = logFC,
       pAdj = adj.P.Val,
       pValue = P.Value
     ) |>
-    dplyr::mutate(
-      dplyr::across(c(log2_FC, CI.L, CI.R), ~ .x / log10(2))
+    mutate(
+      across(c(log2_FC, CI.L, CI.R), ~ .x / log10(2))
     )
 }
 
