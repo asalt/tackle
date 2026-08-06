@@ -111,13 +111,8 @@ if (!is.null(formula_str) && grepl("ns\\(", formula_str)) {
 }
 
 sanitize_name <- function(x) {
-  x <- gsub(":", "_", x, fixed = TRUE)
-  x <- gsub(" ", "_", x, fixed = TRUE)
-  x <- gsub("-", "_", x, fixed = TRUE)
-  x <- gsub("\\+", "_", x)
-  x <- gsub("/", "_", x, fixed = TRUE)
-  x <- gsub("\\?", "qmk", x)
-  x
+  x <- gsub("[-: +/]", "_", x)
+  gsub("\\?", "qmk", x)
 }
 
 if (is.null(formula_str)) {
