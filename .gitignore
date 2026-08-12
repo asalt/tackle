@@ -43,6 +43,10 @@ examples/*
 .tackle-synthetic-symbols
 tackle/data/annotations/generated/
 tackle/data/annotations/source_cache/
+tackle/data/annotations/*.xls
+tackle/data/annotations/*.gmx
+tackle/data/annotations/IDG_TargetList*.csv
+tackle/data/annotations/*pharos*.zip
 tackle-freeze/target/
 tackle-freeze/.cargo-home/
 trials/*

@@ -92,6 +92,36 @@ REFERENCE_REGISTRY: Mapping[str, Mapping[str, str]] = {
         "doi": "10.1093/nar/gkac1052",
         "url": "https://pubmed.ncbi.nlm.nih.gov/36408920/",
     },
+    "hpa_subcellular": {
+        "label": "Human Protein Atlas subcellular protein map",
+        "pmid": "28495876",
+        "doi": "10.1126/science.aal3321",
+        "url": "https://www.proteinatlas.org/about/publications",
+    },
+    "hpa_secretome": {
+        "label": "Human Protein Atlas human secretome",
+        "pmid": "31772123",
+        "doi": "10.1126/scisignal.aaz0274",
+        "url": "https://www.proteinatlas.org/about/publications",
+    },
+    "matrisomedb_2_0": {
+        "label": "MatrisomeDB 2.0 ECM protein knowledge database",
+        "pmid": "36399478",
+        "doi": "10.1093/nar/gkac1009",
+        "url": "https://matrisomedb.org/",
+    },
+    "surfaceome": {
+        "label": "In silico human surfaceome",
+        "pmid": "30373828",
+        "doi": "10.1073/pnas.1808790115",
+        "url": "https://wlab.ethz.ch/surfaceome/",
+    },
+    "local_curated_annotations": {
+        "label": "Local curated tackle annotation table",
+        "pmid": "",
+        "doi": "",
+        "url": "",
+    },
 }
 
 REFERENCE_ORDER: Tuple[str, ...] = (
@@ -107,6 +137,11 @@ REFERENCE_ORDER: Tuple[str, ...] = (
     "kegg",
     "reactome",
     "uniprot",
+    "hpa_subcellular",
+    "hpa_secretome",
+    "matrisomedb_2_0",
+    "surfaceome",
+    "local_curated_annotations",
 )
 
 ANNOTATION_TOKENS: Mapping[str, Tuple[str, ...]] = {
@@ -115,6 +150,11 @@ ANNOTATION_TOKENS: Mapping[str, Tuple[str, ...]] = {
     "kegg": ("KEGG", "curated.CP.KEGG"),
     "reactome": ("Reactome", "REACTOME", "curated.CP.Reactome"),
     "uniprot": ("UniProt", "Uniprot", "uniprot"),
+    "hpa_subcellular": ("ER_GOLGI", "CYTO_NUC"),
+    "hpa_secretome": ("SECRETED", "Secreted"),
+    "matrisomedb_2_0": ("MATRISOME",),
+    "surfaceome": ("SurfaceLabel", "CellMembrane", "glycomineN", "glycomineO", "glycomineN/O"),
+    "local_curated_annotations": ("IO",),
 }
 
 
