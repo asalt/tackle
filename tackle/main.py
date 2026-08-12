@@ -7153,6 +7153,13 @@ class Float_or_Bool(click.ParamType):
     help='"rgb(a)" for background marker color',
 )
 @click.option(
+    "--block",
+    type=str,
+    default=None,
+    show_default=True,
+    help="Metadata field for limma blocking; defaults to the global --block setting.",
+)
+@click.option(
     "--cluster-topn",
     type=int,
     multiple=True,
@@ -7423,6 +7430,7 @@ def volcano(
     ctx,
     alpha,
     annot_scale,
+    block,
     bg_marker_color,
     cluster_topn,
     color_down,
@@ -7528,6 +7536,7 @@ def volcano(
         annot_scale=comparison_label_scale,
         pch=pch,
         alpha=alpha,
+        block=block,
         comparison_wrap_width=comparison_wrap_width,
         force_highlight_geneids=force_highlight_geneids,
         fill_na_zero=fill_na_zero,

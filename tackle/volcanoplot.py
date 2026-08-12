@@ -232,6 +232,7 @@ def volcanoplot(
         global_xmax=None,
         global_ymax=None,
         cluster_topn=None,
+        block=None,
         ):
     data_obj = ctx.obj["data_obj"]
 
@@ -276,6 +277,7 @@ def volcanoplot(
     # this is where the missing value imputation results will come from
     results = data_obj.stat_model(
             formula=formula,
+            block=block,
             contrasts_str=contrasts,
             limma_robust=limma_robust,
             limma_trend=limma_trend,
@@ -400,7 +402,7 @@ def volcanoplot(
                 formula_effective=formula_effective,
                 formula_rewritten=formula_rewritten,
                 contrasts_spec=contrasts,
-                block=getattr(data_obj, "block", None),
+                block=block or getattr(data_obj, "block", None),
                 limma_robust=limma_robust,
                 limma_trend=limma_trend,
                 impute_missing_values=impute_missing_values,

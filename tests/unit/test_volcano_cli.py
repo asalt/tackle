@@ -74,3 +74,9 @@ def test_volcano_density_label_size_range_must_be_ordered():
 
     assert result.exit_code != 0
     assert "must be less than or equal" in result.output
+
+
+def test_volcano_block_override_is_forwarded(monkeypatch):
+    captured = _invoke_volcano(monkeypatch, ["--block", "donor"])
+
+    assert captured["block"] == "donor"
