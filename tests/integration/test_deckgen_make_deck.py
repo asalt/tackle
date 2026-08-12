@@ -70,6 +70,10 @@ def test_collect_plot_image_assets_discovers_expected_categories(tmp_path):
     _write_png(tmp_path / "violin" / "violinplot_TP53.png", "violin")
     _write_png(tmp_path / "topdiff" / "cluster" / "clustermap_topdiff_groupA.png", "topdiff")
     _write_png(tmp_path / "report" / "deck" / "tables" / "generated.png", "generated")
+    _write_png(
+        tmp_path / "analysis" / "report" / "html" / "assets" / "plots" / "volcano" / "compressed_copy.png",
+        "recompressed report copy",
+    )
     _write_png(tmp_path / "misc" / "other_plot.png", "other")
 
     assets = collect_plot_image_assets(
@@ -88,8 +92,9 @@ def test_collect_plot_image_assets_discovers_expected_categories(tmp_path):
         "violin",
         "topdiff-cluster",
     }
-    # Generated deck assets should not be re-ingested.
-    assert all("report/deck" not in asset.source_relpath.replace("\\", "/") for asset in assets)
+    # Derivative report assets should not be re-ingested, even from nested
+    # analysis report trees and even when recompression changes their bytes.
+    assert all("report" not in Path(asset.source_relpath).parts for asset in assets)
     # Unclassified misc image should not be included.
     assert all("misc/other_plot.png" != asset.source_relpath.replace("\\", "/") for asset in assets)
 

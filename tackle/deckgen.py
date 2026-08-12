@@ -167,6 +167,11 @@ def collect_plot_image_assets(
             continue
 
         rel = png_resolved.relative_to(root)
+        # Report trees contain derivative copies for HTML/deck presentation.
+        # Prefer the authoritative plot outside report/ even when compression
+        # changes the bytes enough to defeat content-hash deduplication.
+        if any(part.lower() == "report" for part in rel.parts):
+            continue
         rel_str = str(rel)
         if needles and not any(n in rel_str for n in needles):
             continue
