@@ -38,6 +38,9 @@ setup(
         'slides': [
             'python-pptx',
         ],
+        'psm-qc': [
+            'polars>=1.0',
+        ],
     },
     entry_points="""
     [console_scripts]

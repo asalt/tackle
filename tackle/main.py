@@ -87,6 +87,7 @@ GENESET_MAPPING = {
 from .scatterplot import scatterplot
 from .clusterplot import clusterplot
 from .metrics import make_metrics
+from .psm_qc import PsmQcDependencyError
 from .utils import fix_name, _get_logger
 from . import utils
 from .utils import *
@@ -7086,10 +7087,18 @@ def _xx():  # not called, old code
 
 @main.command("metrics")
 @click.option(
+    "--psm-qc",
     "--full",
+    "psm_qc",
     is_flag=True,
     default=False,
-    help="Calculate more metrics, requires PSMs data",
+    help="Add local QUAL-based PSM QC summaries and plots. Requires the psm-qc extra.",
+)
+@click.option(
+    "--psm-data-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Directory searched recursively for PSM QUAL files. Defaults to global --data-dir.",
 )
 @click.option(
     "--before-filter/--after-filter",
@@ -7106,22 +7115,28 @@ def _xx():  # not called, old code
     help="Whether or not to show area before or after normalization",
 )
 @click.pass_context
-def metrics(ctx, full, before_filter, before_norm):
+def metrics(ctx, psm_qc, psm_data_dir, before_filter, before_norm):
     data_obj = ctx.obj["data_obj"]
     file_fmts = ctx.obj["file_fmts"]
 
-    outputs = make_metrics(
-        data_obj,
-        file_fmts,
-        png_res=ctx.obj["png_res"],
-        before_filter=before_filter,
-        before_norm=before_norm,
-        full=full,
-    )
+    try:
+        outputs = make_metrics(
+            data_obj,
+            file_fmts,
+            png_res=ctx.obj["png_res"],
+            before_filter=before_filter,
+            before_norm=before_norm,
+            psm_qc=psm_qc,
+            psm_data_dir=psm_data_dir,
+        )
+    except PsmQcDependencyError as exc:
+        raise click.ClickException(str(exc)) from exc
     if outputs and outputs.get("metrics_tsv"):
         click.echo(f"Wrote metrics TSV: {outputs['metrics_tsv']}")
     if outputs and outputs.get("metrics_html"):
         click.echo(f"Wrote metrics HTML: {outputs['metrics_html']}")
+    if outputs and outputs.get("psm_qc_summary"):
+        click.echo(f"Wrote PSM QC summary: {outputs['psm_qc_summary']}")
 
 
 

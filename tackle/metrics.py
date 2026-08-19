@@ -6,7 +6,6 @@ from warnings import warn
 from functools import partial
 import matplotlib
 
-from matplotlib import gridspec
 import matplotlib.pyplot as plt
 from matplotlib import markers
 from matplotlib.offsetbox import AnchoredText
@@ -141,9 +140,20 @@ def _metrics_plot_dimensions(num_samples: int) -> tuple[float, float]:
 
 
 def make_metrics(
-    data_obj, file_fmts, png_res=300, before_filter=False, before_norm=False, full=False
+    data_obj,
+    file_fmts,
+    png_res=300,
+    before_filter=False,
+    before_norm=False,
+    psm_qc=False,
+    psm_data_dir=None,
 ):
     from .metrics_html import build_metrics_html_report
+
+    if psm_qc:
+        from .psm_qc import require_psm_qc_dependencies
+
+        require_psm_qc_dependencies()
 
     rc = {
         "font.family": "sans-serif",
@@ -472,70 +482,6 @@ def make_metrics(
     # save_multiple(fig, outname, *file_fmts)
     # with localconverter(robjects.default_converter + pandas2ri.converter): # no tuples
 
-    if full:  # also plot info from PSMs
-        raise NotImplementedError("Not yet")
-        return  # not done
-        config = data_obj.config
-        data_dir = data_obj.data_dir
-
-        psms = OrderedDict()
-        for name, record in config.items():
-            if name.startswith("__"):
-                continue
-            recno = record.get("recno")
-            runno = record.get("runno")
-            searchno = record.get("searcno")
-            df = ispec.PSMs(recno, runno, searchno, data_dir=data_dir).df.query(
-                "oriFLAG==1"
-            )
-
-            df.index = pd.to_timedelta(df.RTmin, unit="m")
-
-            psms[name] = df
-
-        nrows = len(psms)
-
-        m = max([pd.Timedelta(df.RTmin.max(), unit="m") for df in psms.values()])
-
-        fig = plt.figure(figsize=(12, 8))
-        gs = gridspec.GridSpec(
-            nrows, 3, width_ratios=(3, 1, 3), left=0.1, right=0.9, bottom=0.1, top=0.9
-        )
-        # plot IDs/min over time
-        prev_ax = None
-        for ix, (name, df) in enumerate(psms.items()):
-            if prev_ax:
-                # ax = fig.add_subplot(gs[ix, 0], sharex=prev_ax, sharey=prev_ax)
-                ax = fig.add_subplot(gs[ix, 0], sharey=prev_ax)
-            else:
-                ax = fig.add_subplot(gs[ix, 0])
-            # df.index = pd.to_timedelta( df.RTmin, unit='m' )
-            df.loc[m] = np.NaN
-            g = df.groupby(
-                [
-                    pd.Grouper(freq="Min"),
-                ]
-            )
-            g.size().plot(ax=ax)
-            label_ax = fig.add_subplot(gs[ix, 1])
-            label_ax.annotate(
-                name,
-                xy=(0.5, 0.5),
-                xycoords="axes fraction",
-                va="center",
-                ha="center",
-                size=12,
-            )
-            sb.despine(ax=label_ax, left=True, bottom=True)
-            plt.setp(label_ax.get_xticklabels(), visible=False)
-            plt.setp(label_ax.get_yticklabels(), visible=False)
-            ax.xaxis.grid(True, lw=0.25, color="grey", ls=":")
-            if ix < nrows - 1:
-                plt.setp(ax.get_xticklabels(), visible=False)
-                ax.set_xlabel("")
-            sb.despine(ax=ax)
-            prev_ax = ax
-
     # ==========================  gene count overlap ============================================
     bins = (
         0.001,
@@ -634,6 +580,21 @@ def make_metrics(
     save_multiple(fig, outname, *file_fmts)
     _append_plot_png(plot_png_paths, outname)
 
+    psm_qc_artifacts = None
+    if psm_qc:
+        from .psm_qc import run_psm_qc
+
+        psm_qc_artifacts = run_psm_qc(
+            config=data_obj.config,
+            data_dir=psm_data_dir or data_obj.data_dir,
+            output_stem=namegen("psm_qc"),
+            file_fmts=file_fmts,
+            png_res=png_res,
+        )
+        plot_png_paths.extend(
+            path for path in psm_qc_artifacts.plot_paths if path.suffix.lower() == ".png"
+        )
+
     metrics_html_path = None
     try:
         metrics_html_path = build_metrics_html_report(
@@ -657,6 +618,10 @@ def make_metrics(
         "miscut_tsv": None
         if miscut_frame is None
         else Path(namegen("miscut_ratio") + ".tsv"),
+        "psm_qc_summary": None
+        if psm_qc_artifacts is None
+        else psm_qc_artifacts.summary_tsv,
+        "psm_qc_artifacts": psm_qc_artifacts,
         "plot_pngs": plot_png_paths,
     }
 
