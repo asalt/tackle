@@ -176,7 +176,10 @@ def write_pca2_replay(
         "created_at": datetime.now().astimezone().isoformat(),
         "authoritative_input": {
             "path": os.path.relpath(gct_path, replay_dir).replace("\\", "/"),
-            "role": "final post-fill, post-center/scale matrix immediately before prcomp",
+            "role": (
+                "final post-fill, post-feature-selection, post-center/scale matrix "
+                "immediately before prcomp"
+            ),
             "orientation": "rows are samples; columns are features",
             "storage_format": "gctx",
             "matrix_dtype": PCA_REPLAY_MATRIX_DTYPE,
@@ -229,7 +232,7 @@ def write_pca2_replay(
     readme_lines = [
         "This bundle stores the exact sample-by-feature matrix passed to prcomp by tackle pca2.\n"
         "Run ./render.sh from this directory to render replot.Rmd.\n"
-        "The replay should not center, scale, fill, normalize, or transpose the GCTX matrix.\n"
+        "The replay should not fill, filter, center, scale, normalize, or transpose the GCTX matrix.\n"
         "pca_caption.R measures and wraps captions against the rendered plot width.\n"
     ]
     if include_separation:

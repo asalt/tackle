@@ -12,11 +12,13 @@ suppressPackageStartupMessages(library(ggrepel))
 ## ; variable <color> <shape> gene1 gene2 gene3 ...
 pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  color = NULL, shape = NULL, label = FALSE,
+                 label_size = 2.5,
                  encircle = FALSE,
                  showframe = TRUE, frame.type = "t",
                  max_pc = 2, color_list = NULL, marker_list = NULL,
                  names_from = "GeneID",
                  fillna = c("min", "avg"),
+                 top_variable_pct = 100,
                  scale = FALSE,
                  center = TRUE,
                  normalize_by = NULL,
@@ -31,6 +33,17 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
                  return_data = FALSE,
                  ...) {
   fillna <- match.arg(fillna)
+  label_size <- as.numeric(label_size)
+  if (length(label_size) != 1 || !is.finite(label_size) || label_size <= 0) {
+    stop("label_size must be a single positive number")
+  }
+  top_variable_pct <- as.numeric(top_variable_pct)
+  if (length(top_variable_pct) != 1 ||
+      !is.finite(top_variable_pct) ||
+      top_variable_pct <= 0 ||
+      top_variable_pct > 100) {
+    stop("top_variable_pct must be greater than 0 and no greater than 100")
+  }
 
 
   ## exprs_long <- data %>% pivot_longer(c(-GeneSymbol, -GeneID)) %>%
@@ -108,20 +121,64 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       group_by(GeneID) %>%
       mutate(fill_value = fillna_func(value)) %>%
       mutate(value = if_else(is.na(value), fill_value, value)) %>%
-      # select(-fill_value) %>%
-      mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
-      ungroup() %>%
-      mutate(value = if_else(is.na(value), 0, value))
+      select(-fill_value) %>%
+      ungroup()
   } else {
     forpca <- data %>%
       group_by(GeneID, !!sym(normalize_by)) %>%
       mutate(fill_value = fillna_func(value)) %>%
       mutate(value = if_else(is.na(value), fill_value, value)) %>%
-      # select(-fill_value) %>%
+      select(-fill_value) %>%
+      ungroup()
+  }
+
+  feature_order <- forpca %>%
+    distinct(GeneID) %>%
+    mutate(.feature_order = row_number())
+  feature_variance <- forpca %>%
+    group_by(GeneID) %>%
+    summarise(
+      feature_variance = stats::var(value),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      feature_variance = if_else(
+        is.finite(feature_variance),
+        feature_variance,
+        0
+      )
+    ) %>%
+    left_join(feature_order, by = "GeneID") %>%
+    arrange(desc(feature_variance), .feature_order)
+
+  selected_feature_count <- max(
+    1L,
+    as.integer(ceiling(nrow(feature_variance) * top_variable_pct / 100))
+  )
+  selected_features <- feature_variance %>%
+    slice_head(n = selected_feature_count) %>%
+    select(GeneID)
+  forpca <- forpca %>%
+    semi_join(selected_features, by = "GeneID")
+
+  if (is.null(normalize_by)) {
+    forpca <- forpca %>%
+      group_by(GeneID) %>%
+      mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
+      ungroup() %>%
+      mutate(value = if_else(is.na(value), 0, value))
+  } else {
+    forpca <- forpca %>%
+      group_by(GeneID, !!sym(normalize_by)) %>%
       mutate(value = safe_scale(value, scale = !!scale, center = !!center)) %>%
       ungroup() %>%
       mutate(value = if_else(is.na(value), 0, value))
   }
+  print(paste0(
+    "Selected ", selected_feature_count, " of ", nrow(feature_variance),
+    " features (top ", format(top_variable_pct, trim = TRUE),
+    "% by variance after missing-value fill)"
+  ))
   print("Scaling done")
 
   feature_map <- NULL
@@ -160,6 +217,38 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
 
   pca_mat <- .forpca %>% select(-any_of(drop_cols)) %>% as.matrix()
   rownames(pca_mat) <- as.character(.forpca$variable)
+
+  if (ncol(pca_mat) < max_pc) {
+    stop(
+      "Top-variable filtering retained ", ncol(pca_mat),
+      " feature(s), but max_pc=", max_pc,
+      " requires at least ", max_pc,
+      ". Increase top_variable_pct or lower max_pc."
+    )
+  }
+
+  feature_note_labels <- list(bquote(bold(n == .(ncol(pca_mat)))))
+  if (top_variable_pct < 100) {
+    variance_percentile <- round(100 - top_variable_pct, 3)
+    feature_note_labels <- append(
+      feature_note_labels,
+      list(bquote(bold(Var >= P[.(variance_percentile)])))
+    )
+  }
+  feature_note_outside_panel <- !is.null(color) || !is.null(shape)
+  feature_note_x <- if (feature_note_outside_panel) 1.18 else 0.98
+  feature_note_y <- if (feature_note_outside_panel) {
+    c(-0.01, -0.065)[seq_along(feature_note_labels)]
+  } else {
+    if (length(feature_note_labels) == 1) 0.045 else c(0.10, 0.045)
+  }
+  feature_note_grob <- grid::textGrob(
+    label = as.expression(feature_note_labels),
+    x = grid::unit(rep(feature_note_x, length(feature_note_labels)), "npc"),
+    y = grid::unit(feature_note_y, "npc"),
+    just = c("right", "top"),
+    gp = grid::gpar(col = "grey35", fontsize = 13)
+  )
 
   pca_res <- prcomp(pca_mat, scale. = FALSE, center = FALSE)
   variance <- pca_res$sdev^2
@@ -323,27 +412,35 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
         colour = color,
         shape = shape,
         label = label,
-      label.repel = label_repel,
-      label.label = label_column,
-      frame = showframe,
-      ## frame.colour = color,
-      ## frame.type = 'convex',
-      frame.alpha = .5,
-      scale_color_manual = .color_list,
-      label.size = 2.5,
-      size = 4,
-      x = x1, y = x2,
-      max.overlaps = Inf,
-      title = title, # why doesn't this work?
-    ) +
+        label.repel = label_repel,
+        label.label = label_column,
+        frame = showframe,
+        ## frame.colour = color,
+        ## frame.type = 'convex',
+        frame.alpha = .5,
+        scale_color_manual = .color_list,
+        label.size = label_size,
+        label.fontface = "bold",
+        size = 4,
+        x = x1, y = x2,
+        max.overlaps = Inf,
+        title = title, # why doesn't this work?
+      ) +
       labs(title = title) +
       ggplot2::theme_classic(base_size = 20) +
-      coord_fixed(ratio = 1) +
+      coord_fixed(ratio = 1, clip = "off") +
+      annotation_custom(
+        grob = feature_note_grob,
+        xmin = -Inf,
+        xmax = Inf,
+        ymin = -Inf,
+        ymax = Inf
+      ) +
       guides(color = guide_legend(override.aes = list(shape = 15, linetype = "solid"))) +
       theme(
         axis.line.x = element_line(linewidth = 1),
         ## axis.line.x.bottom = element_line(size=1),
-        axis.line.y = element_line(linewidth = 1),
+        axis.line.y = element_line(linewidth = 1)
         ## axis.line.y.right = element_line(size=1),
       ) +
       scale_x_continuous(sec.axis = sec_axis(~.)) + # hack: https://stackoverflow.com/questions/63055640/how-to-keep-top-and-bottom-axes-in-ggplot-while-removing-the-panel-border

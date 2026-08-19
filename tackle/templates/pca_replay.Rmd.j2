@@ -54,7 +54,8 @@ source("pca_caption.R", local = TRUE)
 
 The GCT matrix is the authoritative input. Its rows are samples and its columns are
 features, exactly matching the matrix passed to `prcomp()` by tackle. No missing-value
-filling, centering, scaling, normalization, or transposition is performed in this replay.
+filling, feature filtering, centering, scaling, normalization, or transposition is
+performed in this replay.
 
 ## Editable replay parameters
 
@@ -352,16 +353,46 @@ integer_value <- function(x, default) {
   if (is.null(x) || length(x) == 0) return(as.integer(default))
   as.integer(unlist(x, use.names = FALSE)[[1]])
 }
+numeric_value <- function(x, default) {
+  if (is.null(x) || length(x) == 0) return(as.numeric(default))
+  value <- as.numeric(unlist(x, use.names = FALSE)[[1]])
+  if (!is.finite(value)) return(as.numeric(default))
+  value
+}
 
 color_field <- scalar_or_null(plot_params$color)
 shape_field <- scalar_or_null(plot_params$marker)
 label_points <- flag_value(plot_params$annotate)
+annotate_fontsize <- numeric_value(plot_params$annotate_fontsize, 2.5)
 show_frame <- flag_value(plot_params$frame)
 do_encircle <- flag_value(plot_params$encircle) && !is.null(color_field)
 show_loadings <- flag_value(plot_params$show_loadings)
 ntop_loadings <- integer_value(plot_params$ntop_loadings, 10)
 plot_title <- scalar_or_null(plot_params$title)
 normalize_by <- scalar_or_null(ctx$preprocessing$normalize_by)
+top_variable_pct <- numeric_value(ctx$preprocessing$top_variable_pct, 100)
+feature_note_labels <- list(bquote(bold(n == .(ncol(pca_mat)))))
+if (top_variable_pct < 100) {
+  variance_percentile <- round(100 - top_variable_pct, 3)
+  feature_note_labels <- append(
+    feature_note_labels,
+    list(bquote(bold(Var >= P[.(variance_percentile)])))
+  )
+}
+feature_note_outside_panel <- !is.null(color_field) || !is.null(shape_field)
+feature_note_x <- if (feature_note_outside_panel) 1.18 else 0.98
+feature_note_y <- if (feature_note_outside_panel) {
+  c(-0.01, -0.065)[seq_along(feature_note_labels)]
+} else {
+  if (length(feature_note_labels) == 1) 0.045 else c(0.10, 0.045)
+}
+feature_note_grob <- grid::textGrob(
+  label = as.expression(feature_note_labels),
+  x = grid::unit(rep(feature_note_x, length(feature_note_labels)), "npc"),
+  y = grid::unit(feature_note_y, "npc"),
+  just = c("right", "top"),
+  gp = grid::gpar(col = "grey35", fontsize = 13)
+)
 
 if (!is.null(color_field) && !color_field %in% colnames(sample_meta)) {
   stop("Captured color field is absent from GCT row metadata: ", color_field)
@@ -412,7 +443,8 @@ make_pca_plot <- function(pc_pair) {
     label.label = if (label_points) "variable" else NULL,
     frame = show_frame,
     frame.alpha = 0.5,
-    label.size = 2.5,
+    label.size = annotate_fontsize,
+    label.fontface = "bold",
     size = 4,
     x = x1,
     y = x2,
@@ -421,7 +453,14 @@ make_pca_plot <- function(pc_pair) {
   ) +
     labs(title = plot_title) +
     ggplot2::theme_classic(base_size = 20) +
-    coord_fixed(ratio = 1) +
+    coord_fixed(ratio = 1, clip = "off") +
+    annotation_custom(
+      grob = feature_note_grob,
+      xmin = -Inf,
+      xmax = Inf,
+      ymin = -Inf,
+      ymax = Inf
+    ) +
     guides(color = guide_legend(override.aes = list(shape = 15, linetype = "solid"))) +
     theme(
       axis.line.x = element_line(linewidth = 1),

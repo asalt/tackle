@@ -1862,6 +1862,8 @@ def get_outname(
         "colby": "col",
         "markby": "mark",
         "fillna": "fill",
+        "top_variable_pct": "varpct",
+        "annotate_fontsize": "annfs",
         "center": "ctr",
         "scale": "scl",
         "standard_scale": "ss",

@@ -4393,6 +4393,13 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     is_flag=True,
     help="Annotate points on PC plot",
 )
+@click.option(
+    "--annotate-fontsize",
+    type=click.FloatRange(min=0, min_open=True),
+    default=2.5,
+    show_default=True,
+    help="Font size for sample labels drawn by --annotate.",
+)
 @click.option("--center / --no-center", is_flag=True, default=True, show_default=True)
 @click.option(
     "--color",
@@ -4417,7 +4424,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     help=(
         "Figure width and height in inches. By default pca2 starts at 6 x 7 "
         "and expands from the measured rendered color/marker legend and "
-        "statistical caption."
+        "statistical captions."
     ),
 )
 @click.option(
@@ -4425,6 +4432,18 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
     type=click.Choice(["min", "avg"]),
     default="min",
     show_default=True,
+)
+@click.option(
+    "--top-variable-pct",
+    "--top-variable-percent",
+    type=click.FloatRange(min=0, max=100, min_open=True),
+    default=100,
+    show_default=True,
+    help=(
+        "Retain the top percentage of features by variance after --fillna and "
+        "before centering/scaling. The retained count is rounded up; 100 "
+        "retains all features."
+    ),
 )
 @click.option("--frame", is_flag=True, default=False, show_default=True)
 @click.option(
@@ -4534,6 +4553,7 @@ def pca(ctx, annotate, max_pc, color, marker, genefile):
 def pca2(
     ctx,
     annotate,
+    annotate_fontsize,
     frame,
     encircle,
     normalize_by,
@@ -4548,6 +4568,7 @@ def pca2(
     color,
     marker,
     fillna,
+    top_variable_pct,
     show_loadings,
     ntop_loadings,
     figsize,
@@ -4595,6 +4616,10 @@ def pca2(
         outname_kws["load"] = True
     if encircle:
         outname_kws["enc"] = True
+    if annotate and not np.isclose(annotate_fontsize, 2.5):
+        outname_kws["annotate_fontsize"] = f"{annotate_fontsize:g}"
+    if not np.isclose(top_variable_pct, 100.0):
+        outname_kws["top_variable_pct"] = f"{top_variable_pct:g}"
 
     import seaborn as sb
     sb.set_palette("muted")
@@ -4623,6 +4648,7 @@ def pca2(
         _tokeep = [x for x in genes if x in X.index]  # preserve order
         X = X.loc[_tokeep]
         outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
+    candidate_feature_count = int(X.shape[0])
 
     # now convert to correct orientation
     # variable <color> <shape> gene1 gene2 gene3 ...
@@ -4782,7 +4808,9 @@ def pca2(
         scale=scale,
         normalize_by=normalize_by or robjects.NULL,
         label=annotate,
+        label_size=float(annotate_fontsize),
         fillna=fillna or "min",
+        top_variable_pct=float(top_variable_pct),
         showframe=frame,
         encircle=encircle,
         max_pc=max_pc,
@@ -4844,6 +4872,11 @@ def pca2(
         scale=scale,
         norm_by=normalize_by,
         fillna=fillna,
+        top_variable_pct=(
+            f"{top_variable_pct:g}"
+            if not np.isclose(top_variable_pct, 100.0)
+            else None
+        ),
         genefile=outname_kws.get("genefile"),
         scree=scree_component_count,
         outpath=os.path.join(data_obj.outpath, "pca"),
@@ -5171,15 +5204,29 @@ def pca2(
         preprocessing={
             "source_matrix": "data_obj.areas_log_shifted with data_obj.mask restored to NA",
             "fillna": fillna,
+            "top_variable_pct": float(top_variable_pct),
+            "variable_filter_basis": (
+                "feature sample variance after missing-value fill and before "
+                "requested center/scale"
+            ),
+            "variable_filter_count_rule": (
+                "ceiling(candidate_feature_count * top_variable_pct / 100), "
+                "minimum 1"
+            ),
             "center": bool(center),
             "scale": bool(scale),
             "normalize_by": normalize_by,
             "genefile": str(genefile) if genefile else None,
+            "candidate_feature_count": candidate_feature_count,
             "selected_feature_count": int(pca_matrix.shape[1]),
-            "capture_stage": "after fillna and requested center/scale; immediately before prcomp",
+            "capture_stage": (
+                "after fillna, top-variable filtering, and requested center/scale; "
+                "immediately before prcomp"
+            ),
         },
         plot_parameters={
             "annotate": bool(annotate),
+            "annotate_fontsize": float(annotate_fontsize),
             "color": color,
             "marker": marker,
             "encircle": bool(encircle),
@@ -5331,6 +5378,10 @@ def pca2(
                     "marker": marker,
                     "max_pc": max_pc,
                     "fillna": fillna,
+                    "top_variable_pct": float(top_variable_pct),
+                    "annotate_fontsize": float(annotate_fontsize),
+                    "candidate_feature_count": candidate_feature_count,
+                    "selected_feature_count": int(pca_matrix.shape[1]),
                     "show_loadings": bool(show_loadings),
                     "ntop_loadings": int(ntop_loadings),
                     "encircle": bool(encircle),

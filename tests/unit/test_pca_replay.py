@@ -40,11 +40,19 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
         feature_symbols={"101": "AAA", "202": "BBB"},
         pca2_outname=str(tmp_path / "pca" / "analysis_pca2"),
         analysis_outpath=str(tmp_path),
-        preprocessing={"center": True, "scale": False, "fillna": "min"},
+        preprocessing={
+            "center": True,
+            "scale": False,
+            "fillna": "avg",
+            "top_variable_pct": 50.0,
+            "candidate_feature_count": 6,
+            "selected_feature_count": 3,
+        },
         plot_parameters={
             "color": "group",
             "marker": None,
             "annotate": False,
+            "annotate_fontsize": 4.25,
             "frame": False,
             "encircle": False,
             "show_loadings": False,
@@ -77,12 +85,21 @@ def test_write_pca2_replay_preserves_exact_pre_svd_orientation(tmp_path, monkeyp
 
     context = json.loads(files.context_path.read_text(encoding="utf-8"))
     assert context["replay_contract_version"] == 7
-    assert context["authoritative_input"]["orientation"] == "rows are samples; columns are features"
+    assert (
+        context["authoritative_input"]["orientation"]
+        == "rows are samples; columns are features"
+    )
+    assert "post-feature-selection" in context["authoritative_input"]["role"]
     assert context["prcomp_arguments"] == {"center": False, "scale.": False}
     assert context["sample_ids"] == ["SampleA", "SampleB"]
     assert context["feature_ids"] == ["101", "202", "303"]
     assert context["replot_default_pc_pairs"] == [[1, 2], [1, 3], [2, 3]]
     assert context["plot_parameters"]["scree_figsize"] == [8.0, 7.0]
+    assert context["plot_parameters"]["annotate_fontsize"] == 4.25
+    assert context["preprocessing"]["fillna"] == "avg"
+    assert context["preprocessing"]["top_variable_pct"] == 50.0
+    assert context["preprocessing"]["candidate_feature_count"] == 6
+    assert context["preprocessing"]["selected_feature_count"] == 3
     assert context["authoritative_input"]["storage_format"] == "gctx"
     assert context["authoritative_input"]["matrix_dtype"] == "float64"
     assert context["authoritative_input"]["gctx_content_hash"] == "abc123"
@@ -115,6 +132,22 @@ def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
     assert 'plot.caption.position = "plot"' in rmd
     assert "fillna_func" not in rmd
     assert "safe_scale" not in rmd
+    assert "feature_variance" not in rmd
+    assert "labs(title = plot_title)" in rmd
+    assert "annotate_fontsize <- numeric_value(" in rmd
+    assert "label.size = annotate_fontsize" in rmd
+    assert 'label.fontface = "bold"' in rmd
+    assert "label.size = 2.5" not in rmd
+    assert 'coord_fixed(ratio = 1, clip = "off")' in rmd
+    assert "feature_note_grob <- grid::textGrob(" in rmd
+    assert "label = as.expression(feature_note_labels)" in rmd
+    assert 'just = c("right", "top")' in rmd
+    assert 'gp = grid::gpar(col = "grey35", fontsize = 13)' in rmd
+    assert "annotation_custom(" in rmd
+    assert "grob = feature_note_grob" in rmd
+    assert "list(bquote(bold(Var >= P[.(variance_percentile)])))" in rmd
+    assert '" features"' not in rmd
+    assert '"% by variance after ", fill_label, " fill"' not in rmd
     assert "load_required_package" in rmd
     assert "missing_packages" not in rmd
     assert "```{r replay-parameters}" in rmd
