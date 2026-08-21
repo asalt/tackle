@@ -6,6 +6,7 @@ import pytest
 
 from tackle import clusterplot_dispatcher
 from tackle.clusterplot_dispatcher import (
+    _select_cluster2_genes,
     normalize_cluster2_standard_scale,
     normalize_cluster2_z_score,
     standard_scale_cluster2_matrix,
@@ -53,6 +54,33 @@ def test_standard_scale_cluster2_matrix_uses_named_axes():
 
     assert row_scaled.sum(axis=1).tolist() == pytest.approx([1.0, 1.0])
     assert column_scaled.sum(axis=0).tolist() == pytest.approx([1.0, 1.0])
+
+
+def test_select_cluster2_genes_preserves_genefile_order_and_forces_missing_rows():
+    matrix = pd.DataFrame(
+        {"s1": [1.0, 2.0], "s2": [3.0, 4.0]},
+        index=pd.Index(["g1", "g2"], name="GeneID"),
+    )
+    genes = ["g3", "g1", "g2", "g3"]
+
+    selected = _select_cluster2_genes(matrix, genes, force_plot_genes=True)
+
+    assert selected.index.tolist() == ["g3", "g1", "g2"]
+    assert selected.loc["g3"].isna().all()
+    pd.testing.assert_series_equal(selected.loc["g1"], matrix.loc["g1"])
+
+
+def test_select_cluster2_genes_omits_missing_rows_without_force():
+    matrix = pd.DataFrame(
+        {"s1": [1.0, 2.0]},
+        index=pd.Index(["g1", "g2"], name="GeneID"),
+    )
+
+    selected = _select_cluster2_genes(
+        matrix, ["g3", "g2", "g1"], force_plot_genes=False
+    )
+
+    assert selected.index.tolist() == ["g2", "g1"]
 
 
 def test_cluster2_z_score_help_uses_named_default_and_documents_aliases():

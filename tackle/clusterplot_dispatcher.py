@@ -89,6 +89,17 @@ def standard_scale_cluster2_matrix(matrix, mode):
     return matrix.div(col_sums.where(col_sums != 0), axis=1).fillna(0)
 
 
+def _select_cluster2_genes(matrix, genes, force_plot_genes=False):
+    """Select genes in genefile order, optionally retaining absent genes as NA rows."""
+    ordered_genes = list(dict.fromkeys(str(gene) for gene in genes))
+    present_genes = [gene for gene in ordered_genes if gene in matrix.index]
+    selected = matrix.loc[present_genes]
+    selected = selected[~selected.index.duplicated(keep="first")]
+    if force_plot_genes:
+        selected = selected.reindex(ordered_genes)
+    return selected
+
+
 def _json_safe_metadata_color_mapping(mapping):
     colors = {}
     for key, value in mapping.items():
@@ -479,20 +490,7 @@ def run(
         genes = genefile[_key]
         outname_kws["genefile"] = _key
     if genefile:
-        _tokeep = [x for x in genes if x in X.index]  # preserves order
-        # X = X.loc[set(X.index) & set(genes)]
-        X = X.loc[_tokeep]
-        X = X[~X.index.duplicated(keep="first")]  # just in case there are duplicate ids
-        if force_plot_genes:  # add these in and fill as NA
-            # Account for codepaths where GeneID column is not created yet
-            existing_gene_ids = X.index
-            if "GeneID" in X.columns:
-                existing_gene_ids = X["GeneID"].astype(str)
-            missing = set(genes) - set(existing_gene_ids)
-            if missing:
-                Xmissing = pd.DataFrame(index=list(missing), columns=X.columns)
-                Xmissing.index.name = X.index.name
-                X = pd.concat([X, Xmissing])
+        X = _select_cluster2_genes(X, genes, force_plot_genes=force_plot_genes)
 
     annotation_filter = [
         x for x in (annotation_filter or ()) if x not in (None, "", "_all")
@@ -1267,7 +1265,6 @@ def run(
             col_data=col_data,
             # cmap_name=cmap or np.nan,
             gids_to_annotate=gids_to_annotate or robjects.NULL,
-            force_plot_genes=force_plot_genes,
             # genes=genes or robjects.NULL, # this has been filtered above
             show_gene_symbols=gene_symbols,
             standard_scale=standard_scale or robjects.NULL,
@@ -1610,7 +1607,6 @@ def run(
                     row_annot_df=row_annot_df,
                     col_data=col_data,
                     gids_to_annotate=gids_to_annotate or robjects.NULL,
-                    force_plot_genes=force_plot_genes,
                     show_gene_symbols=gene_symbols,
                     standard_scale=standard_scale or robjects.NULL,
                     row_cluster=row_cluster,
