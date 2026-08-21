@@ -553,8 +553,9 @@ cluster2 <- function(data, annot_mat = NULL, cmap_name = NULL,
       }
     minval <- quantiles[["2.5%"]]
     maxval <- quantiles[["97.5%"]]
-    # col <- colorRamp2(c(minval, 0, maxval), c("blue", "white", "red"))
-    col <- colorRamp2(c(minval, 0, maxval), c(color_low, color_mid, color_high))
+    useval <- max(abs(minval), maxval)
+    # col <- colorRamp2(c(minval, 0, maxval), c(color_low, color_mid, color_high))
+    col <- colorRamp2(c(-useval, 0, useval), c(color_low, color_mid, color_high))
   }
 
 
