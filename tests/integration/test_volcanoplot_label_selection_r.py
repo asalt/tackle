@@ -20,6 +20,12 @@ def density_label_sizes(select_labels):
 
 
 @pytest.fixture(scope="module")
+def format_title(select_labels):
+    del select_labels
+    return robjects.globalenv[".format_volcano_title"]
+
+
+@pytest.fixture(scope="module")
 def label_candidates():
     return robjects.r(
         """
@@ -170,3 +176,20 @@ def test_density_label_sizes_use_maximum_for_one_label(density_label_sizes):
     )
 
     assert sizes == [4.0]
+
+
+def test_volcano_title_formatting_wraps_and_humanizes_named_contrast(format_title):
+    result = format_title(
+        "direct_strain_vs_strain_exosome", wrap_width=24, base_size=18
+    )
+
+    assert "_" not in str(result.rx2("text")[0])
+    assert "\n" in str(result.rx2("text")[0])
+    assert float(result.rx2("size")[0]) < 18
+
+
+def test_volcano_title_formatting_keeps_short_titles_at_base_size(format_title):
+    result = format_title("short_title", wrap_width=30, base_size=18)
+
+    assert str(result.rx2("text")[0]) == "short title"
+    assert float(result.rx2("size")[0]) == pytest.approx(18)

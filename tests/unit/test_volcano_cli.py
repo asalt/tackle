@@ -80,3 +80,15 @@ def test_volcano_block_override_is_forwarded(monkeypatch):
     captured = _invoke_volcano(monkeypatch, ["--block", "donor"])
 
     assert captured["block"] == "donor"
+
+
+def test_volcano_title_is_forwarded(monkeypatch):
+    captured = _invoke_volcano(monkeypatch, ["--title", "Drug response"])
+
+    assert captured["title"] == "Drug response"
+
+
+def test_volcano_title_defaults_to_none(monkeypatch):
+    captured = _invoke_volcano(monkeypatch, [])
+
+    assert captured["title"] is None

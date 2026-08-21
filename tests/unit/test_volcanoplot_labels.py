@@ -1,6 +1,8 @@
 import pytest
 
 from tackle.volcanoplot import (
+    _named_contrast_names,
+    _resolve_volcano_title,
     _clean_group_label,
     _dedupe_comparison_label,
     _extract_formula_geneids_for_exclusion,
@@ -14,11 +16,34 @@ def test_dedupe_comparison_label_collapses_duplicate():
         "PCL_Bi_MSC_minus_ctrl = (A+B)/2 - (C+D)/2="
         "PCL_Bi_MSC_minus_ctrl = (A+B)/2 - (C+D)/2"
     )
-
     assert (
         _dedupe_comparison_label(comparison)
         == "PCL_Bi_MSC_minus_ctrl = (A+B)/2 - (C+D)/2"
     )
+
+
+def test_named_contrast_names_only_returns_explicit_names():
+    assert _named_contrast_names(
+        "drug_response=treated - control, late - early, rescue=B - A"
+    ) == {"drug_response", "rescue"}
+
+
+def test_volcano_title_uses_named_contrast_when_not_explicitly_set():
+    names = {"drug_response"}
+
+    assert _resolve_volcano_title(None, "drug_response", names) == "drug_response"
+    assert _resolve_volcano_title(None, None, names) is None
+    assert _resolve_volcano_title(None, "coef_group", names) is None
+
+
+def test_volcano_title_explicit_value_overrides_or_suppresses_default():
+    names = {"drug_response"}
+
+    assert (
+        _resolve_volcano_title("Treatment effect", "drug_response", names)
+        == "Treatment effect"
+    )
+    assert _resolve_volcano_title(" ", "drug_response", names) is None
 
 
 @pytest.mark.parametrize(
@@ -65,7 +90,10 @@ def test_formula_rhs_text_discards_lhs_terms():
 def test_extract_formula_geneids_for_exclusion_only_uses_rhs_terms():
     symbol_to_geneids = {"HER2": ["101"], "EGFR": ["202"]}
 
-    assert _extract_formula_geneids_for_exclusion("HER2 ~ 0 + group", symbol_to_geneids) == []
+    assert (
+        _extract_formula_geneids_for_exclusion("HER2 ~ 0 + group", symbol_to_geneids)
+        == []
+    )
     assert set(
         _extract_formula_geneids_for_exclusion(
             "HER2 ~ HER2 + GeneID_202 + group",

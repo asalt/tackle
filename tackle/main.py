@@ -7491,6 +7491,14 @@ class Float_or_Bool(click.ParamType):
     show_default=True,
     help="Whether to use pValue or B.H. pAdj value for gene highlighting cutoff",
 )
+@click.option(
+    "--title",
+    default=None,
+    help=(
+        "Plot title. When omitted, an explicitly named contrast uses its name; "
+        "unnamed contrasts have no title. Pass a blank value to suppress it."
+    ),
+)
 @click.pass_context
 def volcano(
     ctx,
@@ -7532,6 +7540,7 @@ def volcano(
     scale,
     sig,
     sig_metric,
+    title,
     figsize,
     fill_na_zero,
 ):
@@ -7591,6 +7600,7 @@ def volcano(
         marker_scale=marker_scale,
         formula=formula,
         contrasts=contrasts,
+        title=title,
         limma_robust=limma_robust,
         limma_trend=limma_trend,
         genes=genes,

@@ -81,6 +81,35 @@ def _dedupe_comparison_label(comparison: str) -> str:
     return comparison
 
 
+def _named_contrast_names(contrasts) -> set[str]:
+    """Return names explicitly supplied as ``name=expression`` contrasts."""
+    if not contrasts:
+        return set()
+    raw = contrasts.split(",") if isinstance(contrasts, str) else contrasts
+    names = set()
+    for contrast in raw:
+        text = str(contrast).strip()
+        if "=" not in text:
+            continue
+        name, _expression = text.split("=", 1)
+        if name.strip():
+            names.add(name.strip())
+    return names
+
+
+def _resolve_volcano_title(
+    explicit_title: Optional[str],
+    comparison_name: Optional[str],
+    named_contrasts: set[str],
+) -> Optional[str]:
+    """Resolve an explicit title or the name of an explicitly named contrast."""
+    if explicit_title is not None:
+        return explicit_title if explicit_title.strip() else None
+    if comparison_name and comparison_name.strip() in named_contrasts:
+        return comparison_name.strip()
+    return None
+
+
 def _clean_group_label(value: str) -> str:
     s = value.strip()
     s = re.sub(r"_+", " ", s)
@@ -215,6 +244,7 @@ def volcanoplot(
         force_highlight_geneids=False,
         formula=None,
         contrasts=None,
+        title=None,
         limma_robust=True,
         limma_trend=True,
         impute_missing_values=False,
@@ -284,6 +314,7 @@ def volcanoplot(
             impute_missing_values=impute_missing_values,
             fill_na_zero=fill_na_zero,
             )
+    named_contrasts = _named_contrast_names(contrasts)
 
     meta = data_obj.col_metadata
 
@@ -488,6 +519,9 @@ def volcanoplot(
         _comparison = comparison
         if "=" in _comparison:
             _comparison_name, _comparison = _comparison.split("=", maxsplit=1)
+        plot_title = _resolve_volcano_title(
+            title, _comparison_name, named_contrasts
+        )
 
         # too nested
         # group0, group1 establish
@@ -829,6 +863,9 @@ def volcanoplot(
                     pch=pch,
                     global_xmax=global_xmax,
                     global_ymax=global_ymax,
+                    plot_title=(
+                        plot_title if plot_title is not None else robjects.NULL
+                    ),
                     # x_label_override=x_label_override,
                     # y_label_override=y_label_override,
                     # **kws,
@@ -909,6 +946,9 @@ def volcanoplot(
                         pch=pch,
                         global_xmax=robjects.NA_Real,
                         global_ymax=robjects.NA_Real,
+                        plot_title=(
+                            plot_title if plot_title is not None else robjects.NULL
+                        ),
                         # x_label_override=x_label_override,
                         # y_label_override=y_label_override,
                     )

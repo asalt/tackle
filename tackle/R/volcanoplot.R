@@ -62,6 +62,29 @@ label_size_by.choices <- c("fixed", "density")
   sizes
 }
 
+.format_volcano_title <- function(title,
+                                  wrap_width = 30,
+                                  base_size = 18,
+                                  min_size = 10.5) {
+  if (is.null(title) || length(title) == 0 || is.na(title[[1]])) {
+    return(list(text = NULL, size = base_size))
+  }
+
+  cleaned <- as.character(title[[1]])
+  cleaned <- str_replace_all(cleaned, "_+", " ")
+  cleaned <- str_squish(cleaned)
+  if (!nzchar(cleaned)) {
+    return(list(text = NULL, size = base_size))
+  }
+
+  character_count <- nchar(cleaned)
+  size_scale <- sqrt(min(1, wrap_width / max(character_count, 1)))
+  list(
+    text = str_wrap(cleaned, width = wrap_width, whitespace_only = FALSE),
+    size = max(min_size, base_size * size_scale)
+  )
+}
+
 .select_volcano_labels <- function(label_candidates,
                                    max_labels = 35,
                                    number_by = number_by.choices,
@@ -212,6 +235,7 @@ volcanoplot <- function(X, max_labels = 35,
                         comparison_wrap_width = NULL,
                         global_xmax = NULL,
                         global_ymax = NULL,
+                        plot_title = NULL,
                         x_label_override = NULL,
                         y_label_override = NULL,
                         label_size_by = label_size_by.choices,
@@ -229,6 +253,9 @@ volcanoplot <- function(X, max_labels = 35,
   number_by <- match.arg(number_by, number_by.choices)
   direction <- match.arg(direction, direction.choices)
   label_size_by <- match.arg(label_size_by, label_size_by.choices)
+  formatted_title <- .format_volcano_title(plot_title)
+  plot_title <- formatted_title$text
+  plot_title_size <- formatted_title$size
   linear_fc_cutoff <- fc_cutoff
 
   if (sig_metric == "pAdj") {
@@ -546,12 +573,19 @@ volcanoplot <- function(X, max_labels = 35,
       hjust = c(0, 1), vjust = c(0, 0)
     ) +
     labs(
+      title = plot_title,
       x = xlabel_full,
       y = ylabel_full,
       caption = footnote
     ) +
     theme_classic(base_size=18) +
     theme(
+      plot.title = element_text(
+        face = "bold",
+        hjust = 0.5,
+        lineheight = 0.95,
+        size = plot_title_size
+      ),
       plot.caption = element_text(color = grey(.5), size = 12),
       plot.margin = margin(5.5, 18, 10, 18)
     )
