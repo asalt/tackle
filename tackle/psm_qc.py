@@ -22,6 +22,7 @@ class PsmQcArtifacts:
     ids_over_time_tsv: Path
     charge_distribution_tsv: Path
     missed_cleavage_distribution_tsv: Path
+    modification_distribution_tsv: Path
     plot_paths: tuple[Path, ...]
 
 
@@ -57,6 +58,7 @@ def _selected_columns() -> tuple[str, ...]:
         "RTmin",
         "Sequence",
         "SequenceModi",
+        "SequenceModiCount",
         "Charge",
         "MissedCleavages",
         "q_value",
@@ -86,6 +88,13 @@ def _summary_columns() -> tuple[str, ...]:
         "rows_canonical",
         "unique_sequences",
         "unique_modified_sequences",
+        "modified_psms",
+        "modified_psm_fraction",
+        "modification_occurrences",
+        "rt_source_unit",
+        "rt_scale_to_minutes",
+        "rt_source_p95",
+        "rt_output_unit",
         "rt_min",
         "rt_max",
         "q_value_median",
@@ -109,6 +118,20 @@ def _long_columns(value_name: str) -> tuple[str, ...]:
         value_name,
         "count",
         "fraction",
+    )
+
+
+def _modification_columns() -> tuple[str, ...]:
+    return (
+        "recno",
+        "runno",
+        "searchno",
+        "run_id",
+        "config_sections",
+        "modification",
+        "psm_count",
+        "occurrence_count",
+        "psm_fraction",
     )
 
 
@@ -206,6 +229,47 @@ def _filter_flag(frame, column: str):
     return frame.filter(pl.col(column).cast(pl.Float64, strict=False) == 1)
 
 
+def _normalize_retention_time(frame):
+    """Add minute-scale RT values and report a conservative source-unit inference.
+
+    ``RTmin`` is normally already measured in minutes. A 95th percentile above
+    600 would imply a greater-than-ten-hour LC run, so only that unambiguous
+    range is treated as a seconds-valued export and divided by 60.
+    """
+    pl = _require_polars()
+    details = {
+        "rt_source_unit": "not_available",
+        "rt_scale_to_minutes": None,
+        "rt_source_p95": None,
+        "rt_output_unit": "minutes",
+    }
+    if "RTmin" not in frame.columns:
+        return frame, details
+
+    values = frame.get_column("RTmin").cast(pl.Float64, strict=False).drop_nulls()
+    if len(values) == 0:
+        return frame, details
+
+    source_p95 = float(values.quantile(0.95, interpolation="linear"))
+    seconds_inferred = source_p95 > 600
+    scale = 1 / 60 if seconds_inferred else 1.0
+    details.update(
+        {
+            "rt_source_unit": (
+                "seconds_inferred" if seconds_inferred else "minutes_assumed"
+            ),
+            "rt_scale_to_minutes": scale,
+            "rt_source_p95": source_p95,
+        }
+    )
+    return (
+        frame.with_columns(
+            (pl.col("RTmin").cast(pl.Float64, strict=False) * scale).alias("_RTminutes")
+        ),
+        details,
+    )
+
+
 def _canonicalize_psms(frame):
     if "oriFLAG" in frame.columns:
         return _filter_flag(frame, "oriFLAG"), "applied", "oriFLAG"
@@ -239,11 +303,11 @@ def _run_fields(triplet, sections) -> dict:
 def _ids_over_time(frame, run_fields: dict):
     pl = _require_polars()
     columns = (*run_fields.keys(), "rt_minute", "ids")
-    if "RTmin" not in frame.columns:
+    if "_RTminutes" not in frame.columns:
         return pd.DataFrame(columns=columns)
     result = (
         frame.with_columns(
-            pl.col("RTmin")
+            pl.col("_RTminutes")
             .cast(pl.Float64, strict=False)
             .floor()
             .cast(pl.Int64)
@@ -284,6 +348,48 @@ def _distribution(frame, column: str, value_name: str, run_fields: dict):
     return result.loc[:, columns]
 
 
+def _modification_distribution(frame, run_fields: dict):
+    """Count exact parenthesized and residue-prefixed bracket modification tokens."""
+    pl = _require_polars()
+    columns = _modification_columns()
+    if "SequenceModi" not in frame.columns or frame.height == 0:
+        return pd.DataFrame(columns=columns), 0, 0
+
+    parsed = frame.with_row_index("_psm_index").with_columns(
+        pl.col("SequenceModi")
+        .cast(pl.Utf8, strict=False)
+        .str.extract_all(r"[A-Za-z]\[[^\[\]]+\]|\([^()]+\)")
+        .alias("_modifications")
+    )
+    modified_psms = parsed.filter(pl.col("_modifications").list.len() > 0).height
+    exploded = (
+        parsed.select("_psm_index", "_modifications")
+        .explode("_modifications")
+        .drop_nulls("_modifications")
+        .filter(pl.col("_modifications") != "")
+    )
+    if exploded.height == 0:
+        return pd.DataFrame(columns=columns), modified_psms, 0
+
+    result = (
+        exploded.group_by("_modifications")
+        .agg(
+            pl.col("_psm_index").n_unique().alias("psm_count"),
+            pl.len().alias("occurrence_count"),
+        )
+        .rename({"_modifications": "modification"})
+        .with_columns(
+            (pl.col("psm_count") / pl.lit(frame.height)).alias("psm_fraction")
+        )
+        .sort("occurrence_count", descending=True)
+    )
+    modification_occurrences = int(result.get_column("occurrence_count").sum())
+    result = pd.DataFrame(result.to_dicts())
+    for column_name, value in reversed(tuple(run_fields.items())):
+        result.insert(0, column_name, value)
+    return result.loc[:, columns], modified_psms, modification_occurrences
+
+
 def _summarize_qual(path: Path, triplet, sections):
     pl = _require_polars()
     run_fields = _run_fields(triplet, sections)
@@ -308,6 +414,16 @@ def _summarize_qual(path: Path, triplet, sections):
     rows_psm_use = frame.height
 
     frame, ori_filter, identity_basis = _canonicalize_psms(frame)
+    frame, rt_details = _normalize_retention_time(frame)
+    modifications, modified_psms, parsed_modification_occurrences = (
+        _modification_distribution(frame, run_fields)
+    )
+    modification_occurrences = parsed_modification_occurrences
+    if "SequenceModiCount" in frame.columns:
+        counts = _numeric_series(frame, "SequenceModiCount")
+        if counts is not None and len(counts) > 0:
+            modification_occurrences = max(modification_occurrences, int(counts.sum()))
+            modified_psms = max(modified_psms, int((counts > 0).sum()))
     summary = {
         **run_fields,
         "source_file": str(path),
@@ -321,8 +437,14 @@ def _summarize_qual(path: Path, triplet, sections):
         "rows_canonical": frame.height,
         "unique_sequences": _n_unique(frame, "Sequence"),
         "unique_modified_sequences": _n_unique(frame, "SequenceModi"),
-        "rt_min": _stat(frame, "RTmin", "min"),
-        "rt_max": _stat(frame, "RTmin", "max"),
+        "modified_psms": modified_psms,
+        "modified_psm_fraction": (
+            modified_psms / frame.height if frame.height else None
+        ),
+        "modification_occurrences": modification_occurrences,
+        **rt_details,
+        "rt_min": _stat(frame, "_RTminutes", "min"),
+        "rt_max": _stat(frame, "_RTminutes", "max"),
         "q_value_median": _stat(frame, "q_value", "median"),
         "q_value_p95": _stat(frame, "q_value", "p95"),
         "pep_median": _stat(frame, "PEP", "median"),
@@ -337,6 +459,7 @@ def _summarize_qual(path: Path, triplet, sections):
         _ids_over_time(frame, run_fields),
         _distribution(frame, "Charge", "charge", run_fields),
         _distribution(frame, "MissedCleavages", "missed_cleavages", run_fields),
+        modifications,
     )
 
 
@@ -475,6 +598,62 @@ def _plot_composition(
     return _save_figure(fig, output_root, file_fmts, png_res)
 
 
+def _plot_modifications(frame, output_root, file_fmts, png_res):
+    if frame.empty:
+        return []
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    top_modifications = (
+        frame.groupby("modification", sort=False)["occurrence_count"]
+        .sum()
+        .nlargest(15)
+        .index
+    )
+    run_ids = frame["run_id"].drop_duplicates().tolist()
+    fractions = (
+        frame.pivot(index="run_id", columns="modification", values="psm_fraction")
+        .reindex(index=run_ids, columns=top_modifications)
+        .fillna(0)
+    )
+    occurrences = (
+        frame.pivot(index="run_id", columns="modification", values="occurrence_count")
+        .reindex(index=run_ids, columns=top_modifications)
+        .fillna(0)
+    )
+
+    width = max(6.0, 1.8 + (1.05 * len(top_modifications)))
+    height = max(3.5, 2.1 + (0.48 * len(run_ids)))
+    fig, ax = plt.subplots(figsize=(width, height))
+    vmax = max(float(fractions.to_numpy().max()), 0.001)
+    image = ax.imshow(
+        fractions.to_numpy(), aspect="auto", cmap="Blues", vmin=0, vmax=vmax
+    )
+    ax.set_xticks(
+        range(len(fractions.columns)), fractions.columns, rotation=35, ha="right"
+    )
+    ax.set_yticks(range(len(fractions.index)), fractions.index)
+    ax.set_xlabel("Modification token")
+    ax.set_ylabel("Run")
+    ax.set_title("PSM modifications", fontweight="bold")
+    for row_index, column_index in np.ndindex(fractions.shape):
+        fraction = fractions.iat[row_index, column_index]
+        count = int(occurrences.iat[row_index, column_index])
+        if count:
+            ax.text(
+                column_index,
+                row_index,
+                f"n={count}\n{fraction:.1%}",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white" if fraction >= (0.55 * vmax) else "#222222",
+            )
+    fig.colorbar(image, ax=ax, label="Fraction of canonical PSMs", pad=0.02)
+    fig.tight_layout()
+    return _save_figure(fig, output_root, file_fmts, png_res)
+
+
 def run_psm_qc(
     *,
     config: Mapping,
@@ -497,6 +676,7 @@ def run_psm_qc(
     ids_frames = []
     charge_frames = []
     missed_frames = []
+    modification_frames = []
 
     for triplet, sections in grouped.items():
         run_fields = _run_fields(triplet, sections)
@@ -513,7 +693,9 @@ def run_psm_qc(
             warn(f"PSM QC {run_fields['run_id']}: {message}")
             continue
         try:
-            summary, ids, charge, missed = _summarize_qual(path, triplet, sections)
+            summary, ids, charge, missed, modifications = _summarize_qual(
+                path, triplet, sections
+            )
         except Exception as exc:
             summaries.append(
                 {
@@ -529,6 +711,7 @@ def run_psm_qc(
         ids_frames.append(ids)
         charge_frames.append(charge)
         missed_frames.append(missed)
+        modification_frames.append(modifications)
 
     summary_frame = _with_summary_columns(pd.DataFrame(summaries))
     ids_frame = _concat_frames(
@@ -537,15 +720,18 @@ def run_psm_qc(
     )
     charge_frame = _concat_frames(charge_frames, _long_columns("charge"))
     missed_frame = _concat_frames(missed_frames, _long_columns("missed_cleavages"))
+    modification_frame = _concat_frames(modification_frames, _modification_columns())
 
     summary_tsv = Path(f"{output_stem}_summary.tsv")
     ids_tsv = Path(f"{output_stem}_ids_over_time.tsv")
     charge_tsv = Path(f"{output_stem}_charge_distribution.tsv")
     missed_tsv = Path(f"{output_stem}_missed_cleavage_distribution.tsv")
+    modification_tsv = Path(f"{output_stem}_modification_distribution.tsv")
     summary_frame.to_csv(summary_tsv, sep="\t", index=False)
     ids_frame.to_csv(ids_tsv, sep="\t", index=False)
     charge_frame.to_csv(charge_tsv, sep="\t", index=False)
     missed_frame.to_csv(missed_tsv, sep="\t", index=False)
+    modification_frame.to_csv(modification_tsv, sep="\t", index=False)
 
     plot_paths = [
         *_plot_ids_over_time(
@@ -558,11 +744,18 @@ def run_psm_qc(
             file_fmts,
             png_res,
         ),
+        *_plot_modifications(
+            modification_frame,
+            Path(f"{output_stem}_modifications"),
+            file_fmts,
+            png_res,
+        ),
     ]
     return PsmQcArtifacts(
         summary_tsv=summary_tsv,
         ids_over_time_tsv=ids_tsv,
         charge_distribution_tsv=charge_tsv,
         missed_cleavage_distribution_tsv=missed_tsv,
+        modification_distribution_tsv=modification_tsv,
         plot_paths=tuple(plot_paths),
     )
