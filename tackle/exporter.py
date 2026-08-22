@@ -753,8 +753,8 @@ def _build_workbook_readme(
             "item": "Purpose",
             "value": "",
             "description": (
-                f"Summary of {summary_label}. The sources sheet "
-                "records the originating path and dimensions for each included table."
+                f"Summary of {summary_label}. "
+                "Has the originating path and dimensions for each included table."
             ),
         },
     ]
@@ -765,8 +765,8 @@ def _build_workbook_readme(
                 "item": "MSPC",
                 "value": "one row per loaded GeneID",
                 "description": (
-                    "Broad quantitative export over the complete loaded GeneID universe, "
-                    "including entries outside the filtered area analysis matrix."
+                    "Full quantitative export over the complete possibl GeneIDs, "
+                    "including entries outside filtered area analysis matrix."
                 ),
             }
         )
@@ -1479,20 +1479,22 @@ def build_export_xlsx(
         try:
             if sources_rows:
                 sources_df = pd.DataFrame(sources_rows)
-                sources_df["count_scope"] = sources_df["sheet"].map(
-                    lambda sheet: (
-                        "source TSV before workbook merge"
-                        if str(sheet) == "volcano_merged"
-                        else "rows written to sheet"
-                    )
-                )
-                sources_df["row_unit"] = [
-                    _source_row_unit(path, kind)
-                    for path, kind in zip(
-                        sources_df["relative_path"],
-                        sources_df["kind"],
-                    )
-                ]
+                # not sure we care about this column:
+                # sources_df["count_scope"] = sources_df["sheet"].map(
+                #     lambda sheet: (
+                #         "source TSV before workbook merge"
+                #         if str(sheet) == "volcano_merged"
+                #         else "rows written to sheet"
+                #     )
+                # )
+                # not sure we care about this column
+                # sources_df["row_unit"] = [
+                #     _source_row_unit(path, kind)
+                #     for path, kind in zip(
+                #         sources_df["relative_path"],
+                #         sources_df["kind"],
+                #     )
+                # ]
                 logger.info("Exporter: adding 'sources' sheet with %d entries", len(sources_df))
                 sources_df.to_excel(xw, sheet_name=_sanitize_sheet_name("sources"), index=False)
                 if style:
