@@ -22,6 +22,8 @@ class FakeData:
         self.SRA = "S"
         self.number_sra = 1
         self.normalize_across_species = False
+        self.histone_collapse = True
+        self.histone_dedupe_excluded_geneids = {"histone_duplicate"}
         self.export_all = False
         self.metrics = False
         self.metrics_after_filter = True
@@ -78,6 +80,7 @@ def test_data_snapshot_roundtrip_resets_ephemeral(tmp_path):
     assert restored._gid_symbol is None
     assert restored.panel is None
     assert restored.exps is None
+    assert restored.histone_dedupe_excluded_geneids == {"histone_duplicate"}
 
 
 def test_data_snapshot_cache_save_and_restore(tmp_path):
@@ -95,6 +98,8 @@ def test_data_snapshot_cache_save_and_restore(tmp_path):
     fake1 = FakeData(experiment_file=str(config_file), data_dir=str(tmp_path / "data"))
     cache1 = DataSnapshotCache(config, only_local=False)
     assert cache1.build_key(fake1)["area_log_floor_fraction"] == 0.9
+    assert cache1.build_key(fake1)["histone_collapse"] is True
+    assert cache1.build_key(fake1)["histone_file_hashes"]
     assert cache1.try_restore(fake1) is False
     assert cache1.maybe_save(fake1) is True
 
@@ -108,3 +113,23 @@ def test_data_snapshot_cache_save_and_restore(tmp_path):
     assert cache3.try_restore(
         FakeData(experiment_file=str(config_file), data_dir=str(tmp_path / "data"))
     ) is False
+
+
+def test_histone_collapse_mode_changes_data_snapshot_cache_key(tmp_path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text("[x]\n")
+    collapsed = FakeData(experiment_file=str(config_file), data_dir=str(tmp_path / "data"))
+    uncollapsed = FakeData(experiment_file=str(config_file), data_dir=str(tmp_path / "data"))
+    uncollapsed.histone_collapse = False
+    cache = DataSnapshotCache(
+        CacheConfig(
+            enabled=False,
+            cache_dir=str(tmp_path),
+            max_entries=5,
+            max_bytes=10**9,
+            bust=None,
+        ),
+        only_local=False,
+    )
+
+    assert cache.build_key(collapsed) != cache.build_key(uncollapsed)

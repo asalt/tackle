@@ -206,3 +206,27 @@ def dedupe_histone_rows(
 
     write_histone_dedupe_manifest(records, outpath, logger=logger)
     return deduped
+
+
+def apply_histone_collapse(
+    data: pd.DataFrame,
+    histone_info_object,
+    outpath: str | None = None,
+    *,
+    enabled: bool = True,
+    logger=None,
+) -> tuple[pd.DataFrame, set[str]]:
+    """Apply optional histone deduplication and return the removed GeneIDs."""
+    if not enabled:
+        write_histone_dedupe_manifest([], outpath, logger=logger)
+        return data, set()
+
+    geneids_before = set(data["GeneID"].astype(str))
+    deduped = dedupe_histone_rows(
+        data,
+        histone_info_object,
+        outpath,
+        logger=logger,
+    )
+    excluded_geneids = geneids_before - set(deduped["GeneID"].astype(str))
+    return deduped, excluded_geneids

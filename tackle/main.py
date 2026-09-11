@@ -920,6 +920,15 @@ ANNOTATION_CHOICES = _annotation_choices()
     help="Include annotation columns in export outputs (for example `export --level MSPC`).",
 )
 @click.option(
+    "--histone-collapse/--no-histone-collapse",
+    default=True,
+    show_default=True,
+    help=(
+        "Collapse histone GeneIDs with exactly redundant abundance profiles. "
+        "Use --no-histone-collapse to retain every histone GeneID."
+    ),
+)
+@click.option(
     "--batch",
     type=str,
     default=None,
@@ -1242,6 +1251,7 @@ def main(
     show_help_notices,
     additional_info,
     annotations,
+    histone_collapse,
     batch,
     batch_nonparametric,
     batch_noimputation,
@@ -1447,6 +1457,7 @@ def main(
     data_obj = Data(
         additional_info=additional_info,
         annotations=annotations,
+        histone_collapse=histone_collapse,
         batch=batch,
         batch_nonparametric=batch_nonparametric,
         batch_noimputation=batch_noimputation,

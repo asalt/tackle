@@ -6,6 +6,7 @@ import pytest
 
 from tackle import clusterplot_dispatcher
 from tackle.clusterplot_dispatcher import (
+    _cluster2_genefile_name,
     _select_cluster2_genes,
     normalize_cluster2_standard_scale,
     normalize_cluster2_z_score,
@@ -81,6 +82,37 @@ def test_select_cluster2_genes_omits_missing_rows_without_force():
     )
 
     assert selected.index.tolist() == ["g2", "g1"]
+
+
+def test_force_plot_genes_does_not_restore_histone_dedupe_exclusions():
+    matrix = pd.DataFrame(
+        {"s1": [1.0]},
+        index=pd.Index(["retained_histone"], name="GeneID"),
+    )
+
+    selected = _select_cluster2_genes(
+        matrix,
+        ["collapsed_histone", "unmeasured_gene", "retained_histone"],
+        force_plot_genes=True,
+        histone_dedupe_excluded_geneids={"collapsed_histone"},
+    )
+
+    assert selected.index.tolist() == ["unmeasured_gene", "retained_histone"]
+    assert selected.loc["unmeasured_gene"].isna().all()
+
+
+def test_cluster2_genefile_name_uses_only_the_filename():
+    name = _cluster2_genefile_name("/analysis/dv-parent/gene lists/my genes.tsv")
+
+    assert name == "my_genes"
+    assert "/" not in name
+    assert "dv-parent" not in name
+
+
+def test_cluster2_geneset_name_removes_path_separators_without_dv_encoding():
+    name = _cluster2_genefile_name("GO/pathway\\subset", from_path=False)
+
+    assert name == "GOpathwaysubset"
 
 
 def test_cluster2_z_score_help_uses_named_default_and_documents_aliases():

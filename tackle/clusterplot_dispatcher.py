@@ -89,15 +89,33 @@ def standard_scale_cluster2_matrix(matrix, mode):
     return matrix.div(col_sums.where(col_sums != 0), axis=1).fillna(0)
 
 
-def _select_cluster2_genes(matrix, genes, force_plot_genes=False):
-    """Select genes in genefile order, optionally retaining absent genes as NA rows."""
+def _select_cluster2_genes(
+    matrix,
+    genes,
+    force_plot_genes=False,
+    histone_dedupe_excluded_geneids=None,
+):
+    """Select genes in genefile order without restoring collapsed histone duplicates."""
     ordered_genes = list(dict.fromkeys(str(gene) for gene in genes))
     present_genes = [gene for gene in ordered_genes if gene in matrix.index]
     selected = matrix.loc[present_genes]
     selected = selected[~selected.index.duplicated(keep="first")]
     if force_plot_genes:
-        selected = selected.reindex(ordered_genes)
+        excluded = {str(gene) for gene in (histone_dedupe_excluded_geneids or ())}
+        genes_to_plot = [
+            gene for gene in ordered_genes if gene in present_genes or gene not in excluded
+        ]
+        selected = selected.reindex(genes_to_plot)
     return selected
+
+
+def _cluster2_genefile_name(value, *, from_path=True):
+    """Return a separator-free output name based only on the genefile basename."""
+    name = os.fspath(value)
+    if from_path:
+        name = name.replace("\\", "/").rsplit("/", 1)[-1]
+        name = os.path.splitext(name)[0]
+    return fix_name(name.replace("/", "").replace("\\", ""))
 
 
 def _json_safe_metadata_color_mapping(mapping):
@@ -483,14 +501,34 @@ def run(
     column_title = None
     if genefile and not isinstance(genefile, dict):
         genes = parse_gid_file(genefile, sheet=genefile_sheet)  # default 0
-        outname_kws["genefile"] = fix_name(os.path.splitext(genefile)[0])
+        outname_kws["genefile"] = _cluster2_genefile_name(genefile)
         column_title = outname_kws["genefile"]
     elif genefile and isinstance(genefile, dict):  # this is if already processed
         _key = list(genefile.keys())[0]
         genes = genefile[_key]
-        outname_kws["genefile"] = _key
+        outname_kws["genefile"] = _cluster2_genefile_name(_key, from_path=False)
     if genefile:
-        X = _select_cluster2_genes(X, genes, force_plot_genes=force_plot_genes)
+        histone_dedupe_excluded_geneids = set(
+            getattr(data_obj, "histone_dedupe_excluded_geneids", ()) or ()
+        )
+        blocked_histones = [
+            str(gene)
+            for gene in dict.fromkeys(genes)
+            if str(gene) not in X.index
+            and str(gene) in histone_dedupe_excluded_geneids
+        ]
+        if force_plot_genes and blocked_histones:
+            logger.info(
+                "cluster2 omitted %d force-requested GeneID(s) removed by histone collapse: %s",
+                len(blocked_histones),
+                ",".join(blocked_histones),
+            )
+        X = _select_cluster2_genes(
+            X,
+            genes,
+            force_plot_genes=force_plot_genes,
+            histone_dedupe_excluded_geneids=histone_dedupe_excluded_geneids,
+        )
 
     annotation_filter = [
         x for x in (annotation_filter or ()) if x not in (None, "", "_all")

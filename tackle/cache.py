@@ -263,6 +263,7 @@ class DataSnapshot:
     minval: Any
     batch_applied: Any
     normed: Any
+    histone_dedupe_excluded_geneids: Any
 
     @classmethod
     def from_data(cls, data_obj: Any) -> "DataSnapshot":
@@ -285,6 +286,9 @@ class DataSnapshot:
             minval=getattr(data_obj, "minval", None),
             batch_applied=getattr(data_obj, "batch_applied", None),
             normed=getattr(data_obj, "normed", False),
+            histone_dedupe_excluded_geneids=getattr(
+                data_obj, "histone_dedupe_excluded_geneids", set()
+            ),
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -302,6 +306,7 @@ class DataSnapshot:
             "minval": self.minval,
             "batch_applied": self.batch_applied,
             "normed": self.normed,
+            "histone_dedupe_excluded_geneids": self.histone_dedupe_excluded_geneids,
         }
 
     @classmethod
@@ -326,6 +331,9 @@ class DataSnapshot:
             minval=payload.get("minval"),
             batch_applied=payload.get("batch_applied"),
             normed=payload.get("normed", False),
+            histone_dedupe_excluded_geneids=set(
+                payload.get("histone_dedupe_excluded_geneids", ())
+            ),
         )
 
     def apply_to(self, data_obj: Any) -> None:
@@ -342,6 +350,7 @@ class DataSnapshot:
         data_obj.minval = self.minval
         data_obj.batch_applied = self.batch_applied
         data_obj.normed = self.normed
+        data_obj.histone_dedupe_excluded_geneids = set(self.histone_dedupe_excluded_geneids or ())
 
         if hasattr(data_obj, "_gid_symbol"):
             data_obj._gid_symbol = None
@@ -430,6 +439,9 @@ class DataSnapshotCache:
             cluster_annotate_cols = sorted(cluster_annotate_cols)
 
         experiment_file = getattr(data_obj, "experiment_file")
+        histone_files = sorted(
+            glob.glob(os.path.join(os.path.dirname(__file__), "data", "histone*tsv"))
+        )
         return {
             "schema_version": self.config.schema_version,
             "area_log_floor_fraction": 0.9,
@@ -454,6 +466,10 @@ class DataSnapshotCache:
             "SRA": getattr(data_obj, "SRA"),
             "number_sra": getattr(data_obj, "number_sra"),
             "normalize_across_species": getattr(data_obj, "normalize_across_species"),
+            "histone_collapse": getattr(data_obj, "histone_collapse", True),
+            "histone_file_hashes": {
+                os.path.basename(path): SnapshotCache.hash_file(path) for path in histone_files
+            },
             "export_all": getattr(data_obj, "export_all"),
             "cluster_annotate_cols": cluster_annotate_cols,
             "metrics": getattr(data_obj, "metrics"),

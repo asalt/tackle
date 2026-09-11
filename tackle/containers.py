@@ -514,6 +514,7 @@ class Data:
         self,
         annotations=True,
         additional_info=None,
+        histone_collapse=True,
         batch=None,
         batch_nonparametric=False,
         batch_noimputation=False,
@@ -585,6 +586,8 @@ class Data:
         # Keep this boolean on the Data object so export code can toggle quickly.
         self.annotations = True if annotations is None else bool(annotations)
         self.additional_info = additional_info
+        self.histone_collapse = bool(histone_collapse)
+        self.histone_dedupe_excluded_geneids = set()
         self.batch = batch
         self.batch_nonparametric = batch_nonparametric
         self.batch_noimputation = batch_noimputation
@@ -1344,10 +1347,14 @@ class Data:
         self.data.index.names = ["GeneID", "Metric"]
         self.data = self.data.reset_index()
 
-        from .histone_dedupe import dedupe_histone_rows
+        from .histone_dedupe import apply_histone_collapse
 
-        self.data = dedupe_histone_rows(
-            self.data, HistoneInfo(), self.outpath, logger=logger
+        self.data, self.histone_dedupe_excluded_geneids = apply_histone_collapse(
+            self.data,
+            HistoneInfo(),
+            self.outpath,
+            enabled=self.histone_collapse,
+            logger=logger,
         )
 
         print("done", flush=True)
