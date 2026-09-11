@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -129,8 +130,12 @@ def test_unnormalized_area_omits_annotations_even_when_globally_enabled(export_d
     assert data.annotations is True
 
 
-def test_mspc_creates_and_reports_companion_independently_of_existing_files(export_data):
+def test_mspc_creates_and_reports_companion_independently_of_existing_files(
+    export_data, caplog, monkeypatch
+):
     data = export_data
+    monkeypatch.setattr(logging.getLogger("tackle"), "propagate", True)
+    caplog.set_level(logging.INFO, logger="tackle.containers")
     result = CliRunner().invoke(export_command, ["--level", "MSPC"], obj={"data_obj": data})
     assert result.exit_code == 0, result.output
     assert "- area_unnormalized:" in result.output
@@ -145,13 +150,48 @@ def test_mspc_creates_and_reports_companion_independently_of_existing_files(expo
     assert main_path.read_bytes() == main_contents
     assert main_path.stat().st_mtime_ns == main_mtime
     companion_mtime = companion_path.stat().st_mtime_ns
+    caplog.clear()
     data._perform_data_export(level="MSPC")
     assert companion_path.stat().st_mtime_ns == companion_mtime
+    skipped = [r for r in caplog.records if "Export exists; skipping:" in r.getMessage()]
+    assert len(skipped) == 2
+    assert all(r.levelno == logging.INFO and "--force" in r.getMessage() for r in skipped)
+    assert all(
+        any(str(path) in r.getMessage() for r in skipped) for path in (main_path, companion_path)
+    )
 
     data.df_filtered.loc[("g1", "iBAQ_dstrAdj"), "S2"] = 100.0
+    caplog.clear()
     data._perform_data_export(level="MSPC", force=True)
+    assert not any("Export exists; skipping:" in r.getMessage() for r in caplog.records)
     table = pd.read_table(companion_path, index_col="GeneID")
     assert table.loc["g1", "S2"] == 100.0
+
+
+@pytest.mark.parametrize("level", ["area", "gct", "gct_pca", "zscore"])
+def test_export_skip_is_informational_with_overwrite_hint(
+    export_data, tmp_path, monkeypatch, caplog, level
+):
+    monkeypatch.setattr(logging.getLogger("tackle"), "propagate", True)
+    caplog.set_level(logging.INFO, logger="tackle.containers")
+    monkeypatch.setattr(
+        containers, "get_outname", lambda formatter, **kwargs: str(tmp_path / formatter)
+    )
+    suffix = ".gct" if level in ("gct", "gct_pca") else ".tsv"
+    paths = [tmp_path / f"data_{level}{suffix}"]
+    if level == "zscore":
+        paths.append(tmp_path / "data_zscore_complete.tsv")
+    for path in paths:
+        path.write_text("existing export\n", encoding="utf-8")
+
+    export_data._perform_data_export(level=level)
+
+    skipped = [r for r in caplog.records if "Export exists; skipping:" in r.getMessage()]
+    assert len(skipped) == len(paths)
+    for path in paths:
+        assert path.read_text(encoding="utf-8") == "existing export\n"
+        assert any(str(path) in r.getMessage() for r in skipped)
+    assert all(r.levelno == logging.INFO and "--force" in r.getMessage() for r in skipped)
 
 
 @pytest.mark.parametrize("linear", [False, True])

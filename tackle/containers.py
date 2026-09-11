@@ -1043,7 +1043,7 @@ class Data:
         # Keep a distinct filename even when the analysis uses no normalization:
         # its usual area export may still have reference/batch correction or imputation.
         if os.path.exists(outname) and not force:
-            logger.info(f"Export exists; skipping: {outname}")
+            logger.info("Export exists; skipping: %s (use --force to overwrite).", outname)
             return outname
 
         raw = self.df_filtered.xs("iBAQ_dstrAdj", level="Metric").loc[
@@ -2509,7 +2509,7 @@ class Data:
                 candidates = [p for p in candidates if os.path.exists(p)]
                 if candidates:
                     newest = max(candidates, key=os.path.getmtime)
-                    logger.info(f"Export exists; skipping: {newest}")
+                    logger.info("Export exists; skipping: %s (use --force to overwrite).", newest)
                     return newest
             elif level == "zscore":
                 zscore_paths = (outname, zscore_complete_outname)
@@ -2518,10 +2518,10 @@ class Data:
                     for path in zscore_paths
                 ):
                     for path in zscore_paths:
-                        logger.info(f"Export exists; skipping: {path}")
+                        logger.info("Export exists; skipping: %s (use --force to overwrite).", path)
                     return zscore_paths
             elif os.path.exists(outname):
-                logger.info(f"Export exists; skipping: {outname}")
+                logger.info("Export exists; skipping: %s (use --force to overwrite).", outname)
                 if level == "MSPC":
                     return outname, unnormalized_area_outname
                 return outname
@@ -3024,7 +3024,7 @@ class Data:
                     if candidates:
                         existing = max(set(candidates), key=os.path.getmtime)
                         logger.info(
-                            f"Skipping existing GCT export {existing} (use --force to overwrite)"
+                            "Export exists; skipping: %s (use --force to overwrite).", existing
                         )
                         return existing
                 cdesc = self.col_metadata.copy()
@@ -3193,7 +3193,7 @@ class Data:
                 if path is None:
                     raise RuntimeError("Missing z-score export path")
                 if os.path.exists(path) and not force:
-                    logger.info(f"Export exists; skipping: {path}")
+                    logger.info("Export exists; skipping: %s (use --force to overwrite).", path)
                     continue
                 export = matrix.reset_index()
                 export.insert(1, "Metric", "zscore")
