@@ -428,8 +428,8 @@ def build_methods_references_context(
             "annotation_tsv_count": len(annotation_tsvs),
         },
         "notes": [
-            "Generated Markdown is intentionally separate from data tables to avoid adding provenance-only columns to analytical outputs.",
-            "Render to PDF with pandoc if desired: pandoc methods_references.md -o methods_references.pdf",
+            # "Generated Markdown is intentionally separate from data tables to avoid adding provenance-only columns to analytical outputs.", # this note is not useful
+            "Render to PDF with pandoc: pandoc methods_references.md -o methods_references.pdf",
         ],
     }
 
