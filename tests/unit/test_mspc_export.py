@@ -96,19 +96,37 @@ def test_unnormalized_area_uses_raw_filtered_values_without_mutating_analysis(
     table = pd.read_table(path, index_col="GeneID")
 
     assert path.parent == Path(data.outpath) / "export" / "data_area"
-    assert path.name == "demo_data_area_nz1_none_unnormalized.tsv"
+    assert path.name == "demo_data_area_nz1_none_unnormalized_linear.tsv"
     assert table.index.tolist() == ["g1", "g2"]
-    assert table.columns.tolist() == ["log10_S1", "log10_S2", "GeneSymbol"]
-    np.testing.assert_allclose(
-        table.loc["g1", ["log10_S1", "log10_S2"]].astype(float), np.log10([10 / 9, 1000 / 9])
-    )
+    assert table.columns.tolist() == ["GeneSymbol", "S1", "S2"]
+    expected = data.df_filtered.xs("iBAQ_dstrAdj", level="Metric").astype(float)
+    pd.testing.assert_frame_equal(table[["S1", "S2"]], expected)
     assert table.GeneSymbol.tolist() == ["A", "B"]
-    if fill_na_zero:
-        assert (table.loc["g2", ["log10_S1", "log10_S2"]] == 0).all()
-    else:
-        assert table.loc["g2", ["log10_S1", "log10_S2"]].isna().all()
+    assert table.loc["g2", "S1"] == 0
+    assert pd.isna(table.loc["g2", "S2"])
     for original, current in zip(before, (data.data, data.df_filtered, data.areas_log)):
         pd.testing.assert_frame_equal(original, current)
+
+
+def test_unnormalized_area_omits_annotations_even_when_globally_enabled(export_data, monkeypatch):
+    data = export_data
+    data.annotations = True
+    calls = []
+
+    def annotate(frame, annotations):
+        calls.append(annotations)
+        return frame.assign(TaxonID="9606", GeneDescription="extra annotation")
+
+    monkeypatch.setattr(containers, "add_annotations", annotate)
+
+    companion = pd.read_table(data._export_unnormalized_area())
+    assert companion.columns.tolist() == ["GeneID", "GeneSymbol", "S1", "S2"]
+    assert calls == []
+
+    normal = pd.read_table(data._perform_data_export(level="area"))
+    assert "TaxonID" in normal and "GeneDescription" in normal
+    assert calls == [True]
+    assert data.annotations is True
 
 
 def test_mspc_creates_and_reports_companion_independently_of_existing_files(export_data):
@@ -133,7 +151,7 @@ def test_mspc_creates_and_reports_companion_independently_of_existing_files(expo
     data.df_filtered.loc[("g1", "iBAQ_dstrAdj"), "S2"] = 100.0
     data._perform_data_export(level="MSPC", force=True)
     table = pd.read_table(companion_path, index_col="GeneID")
-    assert table.loc["g1", "log10_S2"] == pytest.approx(np.log10(100 / 9))
+    assert table.loc["g1", "S2"] == 100.0
 
 
 @pytest.mark.parametrize("linear", [False, True])
@@ -164,18 +182,29 @@ def test_unnormalized_companion_cannot_overwrite_unnormalized_analysis_export(ex
 
 
 @pytest.mark.parametrize("fill_na_zero", [False, True])
-def test_unnormalized_area_without_positive_values(export_data, fill_na_zero):
+def test_unnormalized_area_preserves_all_zeros(export_data, fill_na_zero):
     data = export_data
     data.fill_na_zero = fill_na_zero
     data.df_filtered.loc[(slice(None), "iBAQ_dstrAdj"), :] = 0
 
     path = data._export_unnormalized_area()
-    values = pd.read_table(path)[["log10_S1", "log10_S2"]]
+    values = pd.read_table(path)[["S1", "S2"]]
 
-    if fill_na_zero:
-        assert (values == 0).all().all()
-    else:
-        assert values.isna().all().all()
+    assert (values == 0).all().all()
+
+
+def test_existing_logged_companion_does_not_prevent_linear_export(export_data):
+    folder = Path(export_data.outpath) / "export" / "data_area"
+    folder.mkdir(parents=True)
+    old_path = folder / "demo_data_area_nz1_none_unnormalized.tsv"
+    old_contents = "GeneID\tlog10_S1\ng1\t0.045757\n"
+    old_path.write_text(old_contents, encoding="utf-8")
+
+    linear_path = Path(export_data._export_unnormalized_area())
+
+    assert linear_path != old_path
+    assert pd.read_table(linear_path, index_col="GeneID").loc["g1", "S1"] == 10.0
+    assert old_path.read_text(encoding="utf-8") == old_contents
 
 
 def test_cli1_build_copies_primary_mspc_table_when_export_returns_companion(

@@ -997,7 +997,7 @@ class Data:
             .copy()
         )
 
-    def _write_area_export(self, matrix, outname, *, linear=False):
+    def _write_area_export(self, matrix, outname, *, linear=False, include_annotations=True):
         """Write an area-style table with sample labels and gene annotations."""
         export = matrix.copy()
         export["GeneSymbol"] = export.index.map(
@@ -1007,6 +1007,8 @@ class Data:
                 or get_gene_mapper().symbol.get(str(x), x),
             )
         )
+        if not include_annotations:
+            export.insert(0, "GeneSymbol", export.pop("GeneSymbol"))
         export = export.rename_axis("GeneID").reset_index()
         if not linear:
             export = export.rename(
@@ -1017,7 +1019,7 @@ class Data:
                 }
             )
         export["GeneID"] = export["GeneID"].apply(maybe_int)
-        if self.annotations:
+        if include_annotations and self.annotations:
             try:
                 export = add_annotations(export, self.annotations)
             except Exception as e:
@@ -1027,7 +1029,7 @@ class Data:
         return outname
 
     def _export_unnormalized_area(self, *, force=False):
-        """Export filtered raw iBAQ, logged without normalization or imputation."""
+        """Export filtered original linear iBAQ, preserving zeros and missing values."""
         outname = get_outname(
             "data_area",
             normtype="none",
@@ -1037,7 +1039,7 @@ class Data:
             colors_only=self.colors_only,
             batch=False,
             outpath=os.path.join(self.outpath, "export"),
-        ) + "_unnormalized.tsv"
+        ) + "_unnormalized_linear.tsv"
         # Keep a distinct filename even when the analysis uses no normalization:
         # its usual area export may still have reference/batch correction or imputation.
         if os.path.exists(outname) and not force:
@@ -1046,14 +1048,8 @@ class Data:
 
         raw = self.df_filtered.xs("iBAQ_dstrAdj", level="Metric").loc[
             :, self.col_metadata.index
-        ].astype(float)
-        observed = raw.where((raw > 0) & np.isfinite(raw))
-        # Match the ordinary area log transform, using the raw matrix's own floor.
-        log_floor = 0.9 * observed.min().min()
-        logged = np.log10(observed / log_floor)
-        if self.fill_na_zero:
-            logged = logged.fillna(0)
-        return self._write_area_export(logged, outname)
+        ]
+        return self._write_area_export(raw, outname, linear=True, include_annotations=False)
 
     @staticmethod
     def _export_label_token(label) -> str:

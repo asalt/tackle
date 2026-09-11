@@ -3139,9 +3139,11 @@ def correlation(
               If no `--level` is provided, exports the default matrices: area + gct + MSPC.
               `area` and `gct` contain the filtered analysis feature set.
               `MSPC` contains every loaded GeneID in the broad quantitative export.
-              It also writes an unnormalized logged iBAQ area table for the filtered
-              feature set in export/data_area (*_none_unnormalized.tsv), without
-              batch/reference correction or imputation.
+              It also writes original linear iBAQ_dstrAdj values for the filtered
+              feature set in export/data_area (*_none_unnormalized_linear.tsv).
+              This companion contains only GeneID, GeneSymbol, and sample columns.
+              No normalization, log transform, correction, or missing-value substitution
+              is applied to this companion table.
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
