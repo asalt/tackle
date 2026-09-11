@@ -997,6 +997,64 @@ class Data:
             .copy()
         )
 
+    def _write_area_export(self, matrix, outname, *, linear=False):
+        """Write an area-style table with sample labels and gene annotations."""
+        export = matrix.copy()
+        export["GeneSymbol"] = export.index.map(
+            lambda x: self.gid_symbol.get(
+                x,
+                synthetic_symbol_from_header(x)
+                or get_gene_mapper().symbol.get(str(x), x),
+            )
+        )
+        export = export.rename_axis("GeneID").reset_index()
+        if not linear:
+            export = export.rename(
+                columns={
+                    col: f"log10_{col}"
+                    for col in self.col_metadata.index
+                    if col in export.columns and not str(col).startswith("log10_")
+                }
+            )
+        export["GeneID"] = export["GeneID"].apply(maybe_int)
+        if self.annotations:
+            try:
+                export = add_annotations(export, self.annotations)
+            except Exception as e:
+                logger.warning(f"Export area: failed to add annotations: {e}")
+        export.to_csv(outname, sep="\t", index=False)
+        logger.info(f"Wrote {outname}")
+        return outname
+
+    def _export_unnormalized_area(self, *, force=False):
+        """Export filtered raw iBAQ, logged without normalization or imputation."""
+        outname = get_outname(
+            "data_area",
+            normtype="none",
+            name=self.outpath_name,
+            taxon=self.taxon,
+            non_zeros=self.non_zeros,
+            colors_only=self.colors_only,
+            batch=False,
+            outpath=os.path.join(self.outpath, "export"),
+        ) + "_unnormalized.tsv"
+        # Keep a distinct filename even when the analysis uses no normalization:
+        # its usual area export may still have reference/batch correction or imputation.
+        if os.path.exists(outname) and not force:
+            logger.info(f"Export exists; skipping: {outname}")
+            return outname
+
+        raw = self.df_filtered.xs("iBAQ_dstrAdj", level="Metric").loc[
+            :, self.col_metadata.index
+        ].astype(float)
+        observed = raw.where((raw > 0) & np.isfinite(raw))
+        # Match the ordinary area log transform, using the raw matrix's own floor.
+        log_floor = 0.9 * observed.min().min()
+        logged = np.log10(observed / log_floor)
+        if self.fill_na_zero:
+            logged = logged.fillna(0)
+        return self._write_area_export(logged, outname)
+
     @staticmethod
     def _export_label_token(label) -> str:
         """Normalize export label token for column naming."""
@@ -2433,6 +2491,10 @@ class Data:
         zscore_complete_outname = (
             _export_outname("zscore_complete") if level == "zscore" else None
         )
+        # Produce the companion independently, including when the main MSPC file exists.
+        unnormalized_area_outname = (
+            self._export_unnormalized_area(force=force) if level == "MSPC" else None
+        )
 
         # Default behavior: don't overwrite export artifacts unless explicitly requested.
         if not force:
@@ -2464,6 +2526,8 @@ class Data:
                     return zscore_paths
             elif os.path.exists(outname):
                 logger.info(f"Export exists; skipping: {outname}")
+                if level == "MSPC":
+                    return outname, unnormalized_area_outname
                 return outname
 
         if level == "all":
@@ -2698,6 +2762,9 @@ class Data:
 
             for_export.to_csv(outname, sep="\t", index=False)
 
+            logger.info(f"Wrote {outname}")
+            return outname, unnormalized_area_outname
+
         elif level == "align":
             export = self.df_filtered.sort_index(level=[0, 1])
             column_number_mapping = dict()
@@ -2858,6 +2925,9 @@ class Data:
                 export[self.areas == 0] = 0  # fill the zeros back
                 if not self.fill_na_zero:
                     export[self.mask] = np.nan
+            if level == "area":
+                return self._write_area_export(export, outname, linear=linear)
+
             # Always include GeneSymbol in table-like exports.
             export["GeneSymbol"] = export.index.map(
                 lambda x: self.gid_symbol.get(
@@ -2866,28 +2936,6 @@ class Data:
                     or get_gene_mapper().symbol.get(str(x), x),
                 )
             )
-
-            if level == "area":
-                export_out = export.reset_index()
-                if "GeneID" not in export_out.columns and len(export_out.columns) > 0:
-                    export_out = export_out.rename(columns={export_out.columns[0]: "GeneID"})
-                if not linear:
-                    log_renamer = {
-                        col: f"log10_{col}"
-                        for col in self.col_metadata.index
-                        if col in export_out.columns
-                        and not str(col).startswith("log10_")
-                    }
-                    export_out = export_out.rename(columns=log_renamer)
-                export_out["GeneID"] = export_out["GeneID"].apply(maybe_int)
-                if self.annotations:
-                    try:
-                        export_out = add_annotations(export_out, self.annotations)
-                    except Exception as e:
-                        logger.warning(f"Export area: failed to add annotations: {e}")
-                export_out.to_csv(outname, sep="\t", index=False)
-                logger.info(f"Wrote {outname}")
-                return outname
 
             annot_mapper = get_annotation_mapper()
             if level in ("gct", "gct_pca"):

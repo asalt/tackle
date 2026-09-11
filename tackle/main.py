@@ -3139,6 +3139,9 @@ def correlation(
               If no `--level` is provided, exports the default matrices: area + gct + MSPC.
               `area` and `gct` contain the filtered analysis feature set.
               `MSPC` contains every loaded GeneID in the broad quantitative export.
+              It also writes an unnormalized logged iBAQ area table for the filtered
+              feature set in export/data_area (*_none_unnormalized.tsv), without
+              batch/reference correction or imputation.
               `all` returns all the data in long format
               `align` returns all data formatted for import into align!
               `SRA` returns data matrix with SRA values per gene product
@@ -3202,7 +3205,12 @@ def export(ctx, level, force, genesymbols, gene_symbols, linear, gct_gene_covari
         )
         if isinstance(out, (tuple, list)):
             for index, path in enumerate(out):
-                label = l if index == 0 else f"{l}_complete"
+                if index == 0:
+                    label = l
+                elif l == "MSPC":
+                    label = "area_unnormalized"
+                else:
+                    label = f"{l}_complete"
                 exported.append((label, path))
         else:
             exported.append((l, out))

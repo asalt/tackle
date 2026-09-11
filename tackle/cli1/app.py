@@ -245,7 +245,7 @@ def build_cmd(ctx, only_local, force):
             elif role == "gct":
                 src = data_obj.perform_data_export("gct", force=bool(force))
             elif role == "mspc_tsv":
-                src = data_obj.perform_data_export("MSPC", force=bool(force))
+                src, _unnormalized_area = data_obj.perform_data_export("MSPC", force=bool(force))
             else:
                 raise ValueError(f"Unknown role: {role}")
 
