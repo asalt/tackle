@@ -82,6 +82,94 @@ stopifnot(
   long_legend_prepared$fixed_width > 5,
   long_legend_prepared$fig_width >= 9
 )
+
+count_plot <- ggplot(mtcars, aes(wt, mpg, colour = factor(cyl))) +
+  geom_point() +
+  coord_fixed(clip = 'off') +
+  scale_x_continuous(sec.axis = sec_axis(~.)) +
+  scale_y_continuous(sec.axis = sec_axis(~.)) +
+  theme_classic(base_size = 20)
+attr(count_plot, 'tackle_pca_feature_note') <- list(
+  labels = as.expression(list(bquote(bold(n == 1133L)))),
+  color = 'grey35',
+  fontsize = 13
+)
+count_prepared <- pca_prepare_plot_for_output(
+  count_plot,
+  6.25,
+  7,
+  expand_height = TRUE,
+  expand_width = TRUE
+)
+stopifnot(
+  inherits(count_prepared$plot, 'tackle_pca_gtable'),
+  count_prepared$feature_note_line_count == 1L,
+  count_prepared$feature_note_height > 0,
+  count_prepared$fig_height > 7
+)
+count_layout <- count_prepared$plot$layout
+note_layout <- count_layout[count_layout$name == 'pca-feature-note', , drop = FALSE]
+xlab_layout <- count_layout[grepl('^xlab-b', count_layout$name), , drop = FALSE]
+panel_layout <- count_layout[grepl('^panel', count_layout$name), , drop = FALSE]
+stopifnot(
+  nrow(note_layout) == 1L,
+  note_layout$t > max(xlab_layout$b),
+  note_layout$l == min(panel_layout$l),
+  note_layout$r == max(panel_layout$r)
+)
+
+filtered_plot <- count_plot
+attr(filtered_plot, 'tackle_pca_feature_note') <- list(
+  labels = as.expression(list(
+    bquote(bold(n == 567L)),
+    bquote(bold(Var >= P[50]))
+  )),
+  color = 'grey35',
+  fontsize = 13
+)
+filtered_prepared <- pca_prepare_plot_for_output(
+  filtered_plot,
+  6.25,
+  7,
+  expand_height = TRUE,
+  expand_width = TRUE
+)
+stopifnot(
+  filtered_prepared$feature_note_line_count == 2L,
+  filtered_prepared$feature_note_height > count_prepared$feature_note_height,
+  filtered_prepared$fig_height > count_prepared$fig_height
+)
+
+png_path <- tempfile(fileext = '.png')
+print_png_path <- tempfile(fileext = '.png')
+pdf_path <- tempfile(fileext = '.pdf')
+ggsave(
+  png_path,
+  count_prepared$plot,
+  width = count_prepared$fig_width,
+  height = count_prepared$fig_height,
+  dpi = 100
+)
+ggsave(
+  pdf_path,
+  filtered_prepared$plot,
+  width = filtered_prepared$fig_width,
+  height = filtered_prepared$fig_height
+)
+png(
+  print_png_path,
+  width = count_prepared$fig_width,
+  height = count_prepared$fig_height,
+  units = 'in',
+  res = 100
+)
+print(count_prepared$plot)
+dev.off()
+stopifnot(
+  file.info(png_path)$size > 0,
+  file.info(print_png_path)$size > 0,
+  file.info(pdf_path)$size > 0
+)
 """
     result = subprocess.run(
         [rscript, "-e", code],

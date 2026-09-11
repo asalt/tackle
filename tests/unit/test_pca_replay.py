@@ -139,12 +139,11 @@ def test_pca_replay_rmd_uses_stored_matrix_without_preprocessing():
     assert 'label.fontface = "bold"' in rmd
     assert "label.size = 2.5" not in rmd
     assert 'coord_fixed(ratio = 1, clip = "off")' in rmd
-    assert "feature_note_grob <- grid::textGrob(" in rmd
-    assert "label = as.expression(feature_note_labels)" in rmd
-    assert 'just = c("right", "top")' in rmd
-    assert 'gp = grid::gpar(col = "grey35", fontsize = 13)' in rmd
-    assert "annotation_custom(" in rmd
-    assert "grob = feature_note_grob" in rmd
+    assert 'attr(p, "tackle_pca_feature_note") <- list(' in rmd
+    assert "labels = as.expression(feature_note_labels)" in rmd
+    assert 'color = "grey35"' in rmd
+    assert "fontsize = 13" in rmd
+    assert "annotation_custom(" not in rmd
     assert "list(bquote(bold(Var >= P[.(variance_percentile)])))" in rmd
     assert '" features"' not in rmd
     assert '"% by variance after ", fill_label, " fill"' not in rmd

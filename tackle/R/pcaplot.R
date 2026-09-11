@@ -235,20 +235,6 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       list(bquote(bold(Var >= P[.(variance_percentile)])))
     )
   }
-  feature_note_outside_panel <- !is.null(color) || !is.null(shape)
-  feature_note_x <- if (feature_note_outside_panel) 1.18 else 0.98
-  feature_note_y <- if (feature_note_outside_panel) {
-    c(-0.01, -0.065)[seq_along(feature_note_labels)]
-  } else {
-    if (length(feature_note_labels) == 1) 0.045 else c(0.10, 0.045)
-  }
-  feature_note_grob <- grid::textGrob(
-    label = as.expression(feature_note_labels),
-    x = grid::unit(rep(feature_note_x, length(feature_note_labels)), "npc"),
-    y = grid::unit(feature_note_y, "npc"),
-    just = c("right", "top"),
-    gp = grid::gpar(col = "grey35", fontsize = 13)
-  )
 
   pca_res <- prcomp(pca_mat, scale. = FALSE, center = FALSE)
   variance <- pca_res$sdev^2
@@ -429,13 +415,6 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
       labs(title = title) +
       ggplot2::theme_classic(base_size = 20) +
       coord_fixed(ratio = 1, clip = "off") +
-      annotation_custom(
-        grob = feature_note_grob,
-        xmin = -Inf,
-        xmax = Inf,
-        ymin = -Inf,
-        ymax = Inf
-      ) +
       guides(color = guide_legend(override.aes = list(shape = 15, linetype = "solid"))) +
       theme(
         axis.line.x = element_line(linewidth = 1),
@@ -555,6 +534,12 @@ pca2 <- function(data, outname = "pca", outfiletypes = c(".pdf"),
     }
 
     if (!is.null(normalize_by)) p <- p + labs(caption = paste("centered within ", normalize_by))
+
+    attr(p, "tackle_pca_feature_note") <- list(
+      labels = as.expression(feature_note_labels),
+      color = "grey35",
+      fontsize = 13
+    )
 
 
     # THIS doesn't work

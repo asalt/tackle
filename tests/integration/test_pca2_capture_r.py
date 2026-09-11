@@ -55,18 +55,14 @@ stopifnot(identical(rownames(result[['scores']]), rownames(result[['pca_mat']]))
 stopifnot(identical(colnames(result[['scores']]), c('PC1', 'PC2', 'PC3')))
 stopifnot(is.null(result[['plots']][['pc1_vs_pc2']]$labels$tag))
 stopifnot(identical(result[['plots']][['pc1_vs_pc2']]$coordinates$clip, 'off'))
-note_layers <- Filter(
-  function(layer) inherits(layer$geom, 'GeomCustomAnn'),
-  result[['plots']][['pc1_vs_pc2']]$layers
+note_spec <- attr(
+  result[['plots']][['pc1_vs_pc2']],
+  'tackle_pca_feature_note',
+  exact = TRUE
 )
-stopifnot(length(note_layers) == 1L)
-note_grob <- note_layers[[1]]$geom_params$grob
-stopifnot(identical(note_grob$label[[1]], quote(bold(n == 3L))))
-stopifnot(identical(as.numeric(note_grob$x), 1.18))
-stopifnot(identical(as.numeric(note_grob$y), -0.01))
-stopifnot(identical(note_grob$just, c('right', 'top')))
-stopifnot(identical(note_grob$gp$col, 'grey35'))
-stopifnot(identical(note_grob$gp$fontsize, 13))
+stopifnot(identical(note_spec$labels[[1]], quote(bold(n == 3L))))
+stopifnot(identical(note_spec$color, 'grey35'))
+stopifnot(identical(note_spec$fontsize, 13))
 label_layers <- Filter(
   function(layer) inherits(layer$geom, 'GeomTextRepel'),
   result[['plots']][['pc1_vs_pc2']]$layers
@@ -114,16 +110,13 @@ stopifnot(identical(dim(result_avg[['pca_mat']]), c(4L, 2L)))
 stopifnot(setequal(colnames(result_avg[['pca_mat']]), c('g_high', 'g_complete')))
 stopifnot(setequal(colnames(result_min[['pca_mat']]), c('g_high', 'g_missing')))
 stopifnot(identical(as.numeric(result_min[['pca_mat']][, 'g_missing']), c(0, 10, 0, 0)))
-avg_note_layers <- Filter(
-  function(layer) inherits(layer$geom, 'GeomCustomAnn'),
-  result_avg[['plots']][['pc1_vs_pc2']]$layers
+avg_note_spec <- attr(
+  result_avg[['plots']][['pc1_vs_pc2']],
+  'tackle_pca_feature_note',
+  exact = TRUE
 )
-stopifnot(length(avg_note_layers) == 1L)
-avg_note_grob <- avg_note_layers[[1]]$geom_params$grob
-stopifnot(identical(avg_note_grob$label[[1]], quote(bold(n == 2L))))
-stopifnot(identical(avg_note_grob$label[[2]], quote(bold(Var >= P[50]))))
-stopifnot(identical(as.numeric(avg_note_grob$x), c(1.18, 1.18)))
-stopifnot(identical(as.numeric(avg_note_grob$y), c(-0.01, -0.065)))
+stopifnot(identical(avg_note_spec$labels[[1]], quote(bold(n == 2L))))
+stopifnot(identical(avg_note_spec$labels[[2]], quote(bold(Var >= P[50]))))
 """
     result = subprocess.run(
         [rscript, "-e", code],
