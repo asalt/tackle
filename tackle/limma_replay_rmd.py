@@ -29,15 +29,6 @@ def _r_string_vector(values: Any) -> str:
     return f"c(\n  {rendered}\n)"
 
 
-def _r_matrix_shape(value: Any) -> str:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        return "NULL"
-    dimensions = [int(dimension) for dimension in value]
-    if not dimensions:
-        return "NULL"
-    return "c(" + ", ".join(f"{dimension}L" for dimension in dimensions) + ")"
-
-
 def render_limma_replay_rmd(
     *,
     title: str,
@@ -61,7 +52,7 @@ def render_limma_replay_rmd(
             generated_yaml=generated_yaml,
             gct_relpath=gct_relpath,
             outputs_rel_dir=outputs_rel_dir,
-            expected_matrix_shape=_r_matrix_shape(replay_context.get("matrix_shape")),
+            uses_splines="ns(" in (formula_str or ""),
             group_col=_r_string(replay_context.get("group")),
             formula_str=_r_string(formula_str),
             block_col=_r_string(replay_context.get("block")),

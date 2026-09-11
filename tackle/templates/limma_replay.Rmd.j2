@@ -14,6 +14,9 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 library(cmapR)
 library(dplyr)
 library(limma)
+[% if uses_splines %]
+library(splines)
+[% endif %]
 ```
 
 ## Replay Contract
@@ -25,7 +28,6 @@ library(limma)
 ## Editable limma setup
 
 ```{r analysis-setup}
-expected_matrix_shape <- [[[ expected_matrix_shape ]]]
 group_col <- [[[ group_col ]]]
 formula_str <- [[[ formula_str ]]]
 block_col <- [[[ block_col ]]]
@@ -39,68 +41,19 @@ result_labels <- [[[ result_labels ]]]
 ## Load the Modeled Matrix
 
 ```{r load-gct}
-parse_gct_any <- function(path) {
-  exports <- getNamespaceExports("cmapR")
-  if ("parse.gctx" %in% exports) return(cmapR::parse.gctx(path))
-  if ("parse_gctx" %in% exports) return(cmapR::parse_gctx(path))
-  stop("cmapR does not export parse.gctx / parse_gctx")
-}
+stored_ds <- parse_gctx("[[[ gct_relpath ]]]")
+rownames(stored_ds@rdesc) <- stored_ds@rdesc$id # cmapR parse_gctx does not assign rdesc rownames properly, reassigning from id.
+rownames(stored_ds@cdesc) <- stored_ds@cdesc$id # cmapR parse_gctx does not assign cdesc rownames properly, reassigning from id.
 
-stored_ds <- parse_gct_any("[[[ gct_relpath ]]]")
-mat_stored <- stored_ds@mat
-storage.mode(mat_stored) <- "double"
-cdesc <- as.data.frame(stored_ds@cdesc, stringsAsFactors = FALSE)
-rdesc <- as.data.frame(stored_ds@rdesc, stringsAsFactors = FALSE)
-
-if ("id" %in% colnames(cdesc)) rownames(cdesc) <- as.character(cdesc$id)
-missing_samples <- setdiff(colnames(mat_stored), rownames(cdesc))
-if (length(missing_samples) > 0) {
-  stop(paste("Stored metadata is missing samples:", paste(missing_samples, collapse = ", ")))
-}
-cdesc <- cdesc[colnames(mat_stored), , drop = FALSE]
-stopifnot(identical(rownames(cdesc), colnames(mat_stored)))
-
-if ("GeneID" %in% colnames(rdesc)) {
-  rownames(rdesc) <- as.character(rdesc$GeneID)
-} else if ("id" %in% colnames(rdesc)) {
-  rownames(rdesc) <- as.character(rdesc$id)
-}
-
-if (!is.null(expected_matrix_shape)) {
-  if (!identical(as.integer(dim(mat_stored)), as.integer(expected_matrix_shape))) {
-    stop(
-      "Stored matrix shape does not match the captured limma input: ",
-      paste(dim(mat_stored), collapse = " x "), " versus ",
-      paste(expected_matrix_shape, collapse = " x ")
-    )
-  }
-}
-
-mat <- mat_stored
-cat("Modeled matrix dimensions:", paste(dim(mat), collapse = " x "), "\n")
-cat("Missing modeled values:", sum(is.na(mat)), "\n")
-cat("No imputation is performed by this document.\n")
+mat <- stored_ds@mat
+rdesc <- stored_ds@rdesc
+pheno <- stored_ds@cdesc
+dim(mat)
 ```
 
 ## Design and Contrasts
 
 ```{r design-contrasts}
-pheno <- cdesc
-
-if (is.null(formula_str) && is.null(group_col)) {
-  stop("The captured setup is missing both formula_str and group_col.")
-}
-if (!is.null(group_col) && !(group_col %in% colnames(pheno))) {
-  stop(paste0("Missing group column in cdesc: ", group_col))
-}
-if (!is.null(block_col) && !(block_col %in% colnames(pheno))) {
-  stop(paste0("Missing block column in cdesc: ", block_col))
-}
-if (!is.null(formula_str) && grepl("ns\\(", formula_str)) {
-  if (!requireNamespace("splines", quietly = TRUE)) stop("Missing dependency: splines")
-  suppressPackageStartupMessages(library(splines))
-}
-
 sanitize_name <- function(x) {
   x <- gsub("[-: +/]", "_", x)
   gsub("\\?", "qmk", x)
@@ -112,8 +65,6 @@ if (is.null(formula_str)) {
   mod <- model.matrix(as.formula(formula_str), pheno)
 }
 colnames(mod) <- make.names(sanitize_name(colnames(mod)))
-
-if (length(result_labels) == 0) stop("The captured setup contains no limma results to reproduce.")
 
 contrasts_matrix <- NULL
 if (length(contrast_exprs) > 0) {
@@ -131,13 +82,13 @@ block <- NULL
 cor_value <- NULL
 if (!is.null(block_col)) {
   block <- as.factor(pheno[[block_col]])
-  corfit <- duplicateCorrelation(mat_stored, design = mod, block = block)
+  corfit <- duplicateCorrelation(mat, design = mod, block = block)
   cor_value <- corfit$consensus
   cat("duplicateCorrelation consensus:", cor_value, "\n")
 }
 
 fit <- lmFit(
-  as.matrix(mat_stored),
+  mat,
   mod,
   block = block,
   correlation = cor_value
@@ -201,7 +152,7 @@ add_replay_data <- function(tt) {
   }
 
   expression_values <- as.data.frame(
-    mat_stored[gene_ids, , drop = FALSE],
+    mat[gene_ids, , drop = FALSE],
     check.names = FALSE
   )
   cbind(tt, expression_values)
@@ -252,18 +203,11 @@ if (length(tables) > 0) head(tables[[1]], 20)
 
 ## Limma Diagnostic
 
-```{r limma-diagnostic}
-if (length(result_labels) > 0) {
-  spec <- split_result_label(result_labels[[1]])
-  md_path <- file.path(out_dir, paste0("md_plot_", safe_file(spec$left), ".png"))
-  png(md_path, width = 1200, height = 900, res = 150)
-  if (startsWith(spec$left, "coef_")) {
-    plotMD(fit2_base, coef = spec$expr, main = paste0("MD: ", spec$expr))
-  } else {
-    plotMD(fit2_con, coef = spec$expr, main = paste0("MD: ", spec$expr))
-  }
-  dev.off()
-  md_path
+```{r limma-diagnostic, fig.width=8, fig.height=6}
+for (label in result_labels) {
+  spec <- split_result_label(label)
+  md_fit <- if (startsWith(spec$left, "coef_")) fit2_base else fit2_con
+  plotMD(md_fit, coef = spec$expr, main = paste0("MD: ", spec$expr))
 }
 ```
 
@@ -271,11 +215,11 @@ if (length(result_labels) > 0) {
 
 ```{r matrix-summary}
 sample_summary <- data.frame(
-  sample = colnames(mat_stored),
-  mean = colMeans(mat_stored, na.rm = TRUE),
-  median = apply(mat_stored, 2, median, na.rm = TRUE),
-  sd = apply(mat_stored, 2, sd, na.rm = TRUE),
-  na_count = colSums(is.na(mat_stored)),
+  sample = colnames(mat),
+  mean = colMeans(mat, na.rm = TRUE),
+  median = apply(mat, 2, median, na.rm = TRUE),
+  sd = apply(mat, 2, sd, na.rm = TRUE),
+  na_count = colSums(is.na(mat)),
   stringsAsFactors = FALSE
 )
 knitr::kable(sample_summary)

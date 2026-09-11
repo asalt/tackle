@@ -161,7 +161,7 @@ def test_limma_replay_rmd_embeds_editable_setup_without_json_dependency() -> Non
     )
 
     assert "```{r analysis-setup}" in rmd
-    assert "expected_matrix_shape <- c(9556L, 24L)" in rmd
+    assert 'stored_ds <- parse_gctx("limma_input.gctx")' in rmd
     assert 'formula_str <- "~ 0 + c1grp"' in rmd
     assert 'block_col <- "donor_line"' in rmd
     assert "robust_flag <- TRUE" in rmd
@@ -170,6 +170,12 @@ def test_limma_replay_rmd_embeds_editable_setup_without_json_dependency() -> Non
     assert "jsonlite" not in rmd
     assert "read_json" not in rmd
     assert "ctx$" not in rmd
+    assert "for (label in result_labels)" in rmd
+    assert "md_fit <- if" in rmd
+    assert "plotMD(md_fit" in rmd
+    assert "md_path" not in rmd
+    assert "png(" not in rmd
+    assert "dev.off()" not in rmd
 
     # Temporary guards for early-template strings; remove after old bundles age out.
     deprecated_text = ("direct_coefs", "PCA Scope", "PCA is intentionally excluded",
@@ -248,7 +254,7 @@ def test_write_limma_replay_files_prefers_explicit_expression_matrix(tmp_path: P
     assert "limma_input.gctx" in rmd
     assert "Load the Modeled Matrix" in rmd
     assert "lmFit(" in rmd
-    assert "as.matrix(mat_stored)" in rmd
+    assert "mat <- stored_ds@mat" in rmd
     assert "contrasts.fit(" in rmd
     assert "eBayes(" in rmd
     assert "deterministic_gaussian_impute" not in rmd
@@ -327,7 +333,7 @@ def test_write_limma_replay_files_keeps_pre_impute_matrix_as_audit_only(
     assert not Path(pointer["pre_impute_gct_path"]).is_absolute()
 
     rmd = (files.replay_dir / "replay_explore.Rmd").read_text(encoding="utf-8")
-    assert "mat_stored" in rmd
+    assert "mat <- stored_ds@mat" in rmd
     assert "mat_pre_impute" not in rmd
     assert "deterministic_gaussian_impute" not in rmd
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 
@@ -8,10 +9,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tackle.gct_io import write_gctx
+from tackle.gct_io import write_gct, write_gctx
+from tackle.limma_replay_rmd import render_limma_replay_rmd
 
 
-def test_tackle_gctx_with_root_hash_attributes_is_cmapr_compatible(tmp_path):
+@pytest.mark.parametrize("file_format", ["gct", "gctx"])
+def test_tackle_gct_replay_import_preserves_matrix_and_metadata_ids(tmp_path, file_format):
     rscript = shutil.which("Rscript")
     if not rscript:
         pytest.skip("Rscript is not available")
@@ -35,9 +38,10 @@ def test_tackle_gctx_with_root_hash_attributes_is_cmapr_compatible(tmp_path):
         index=rids,
     )
     cdesc = pd.DataFrame({"group": ["A", "B"], "batch": [1, 2]}, index=cids)
-    output = write_gctx(
+    writer = write_gctx if file_format == "gctx" else write_gct
+    output = writer(
         matrix,
-        tmp_path / "compatibility.gctx",
+        tmp_path / f"compatibility.{file_format}",
         row_metadata=rdesc,
         col_metadata=cdesc,
     )
@@ -51,6 +55,22 @@ stopifnot(isTRUE(all.equal(ds@mat[1, 1], 1.25)))
 stopifnot(is.na(ds@mat[2, 2]))
 stopifnot(identical(as.character(ds@rdesc$GeneSymbol), c('LEADING', 'TP53', 'TP53_alias', 'G47', 'SLASH')))
 stopifnot(identical(as.character(ds@cdesc$group), c('A', 'B')))
+"""
+    rmd = render_limma_replay_rmd(
+        title="Import compatibility",
+        generated_at="test",
+        gct_relpath=str(output),
+        outputs_rel_dir="unused",
+        replay_context={},
+    )
+    load_chunk = re.search(r"```\{r load-gct\}\n(.*?)\n```", rmd, re.DOTALL).group(1)
+    code += "\nlibrary(cmapR)\n" + load_chunk + """
+stopifnot(identical(stored_ds@mat, ds@mat))
+stopifnot(identical(rownames(stored_ds@rdesc), rownames(mat)))
+stopifnot(identical(rownames(stored_ds@cdesc), colnames(mat)))
+stopifnot(identical(rdesc['00123', 'GeneSymbol'], 'LEADING'))
+stopifnot(identical(rdesc['TP53', 'GeneSymbol'], 'TP53_alias'))
+stopifnot(identical(pheno['sample_02', 'group'], 'B'))
 """
     result = subprocess.run(
         [rscript, "-e", code],
